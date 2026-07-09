@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<title>Factuur <%= factuur.factuurnummer %></title>
+<style>
+  @page { size: A4; margin: 0; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, "Helvetica Neue", Arial, sans-serif;
+    color: #1c2a3a;
+    background: #f4f5f8;
+  }
+  .page {
+    width: 210mm;
+    min-height: 297mm;
+    padding: 18mm 16mm;
+    background: #f4f5f8;
+  }
+  .top {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 10mm;
+  }
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 4mm;
+  }
+  .logo {
+    width: 16mm;
+    height: 16mm;
+    background: #1c2a4a;
+    border-radius: 1.5mm;
+    flex-shrink: 0;
+  }
+  .brand-name {
+    font-family: Georgia, "Times New Roman", serif;
+    font-size: 17pt;
+    font-weight: 700;
+    color: #1c2a4a;
+    line-height: 1.1;
+  }
+  .brand-people {
+    font-size: 8.5pt;
+    color: #4a5a70;
+    margin-top: 1mm;
+  }
+  .invoice-title {
+    font-size: 26pt;
+    font-weight: 800;
+    color: #1c2a4a;
+    letter-spacing: 0.5px;
+  }
+  .info-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    column-gap: 8mm;
+    margin-bottom: 10mm;
+    font-size: 9.5pt;
+    line-height: 1.55;
+  }
+  .sender { grid-column: 1; grid-row: 1; }
+  .aan-block { grid-column: 1; grid-row: 2; margin-top: 4mm; }
+  .aan-label { font-weight: 700; display: inline-block; width: 9mm; vertical-align: top; }
+  .aan-content { display: inline-block; vertical-align: top; }
+  .gegevens { grid-column: 2; grid-row: 2; align-self: start; }
+  .gegevens table { border-collapse: collapse; }
+  .gegevens td { padding: 0.3mm 0; font-size: 9.5pt; }
+  .gegevens td.label { font-weight: 700; text-align: right; padding-right: 3mm; white-space: nowrap; }
+  .gegevens td.value { text-align: right; white-space: nowrap; }
+
+  table.items {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 6mm;
+  }
+  table.items thead th {
+    background: #1c2a4a;
+    color: #fff;
+    font-size: 8.5pt;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    padding: 3mm 4mm;
+    text-align: left;
+  }
+  table.items thead th.mid { text-align: right; }
+  table.items thead th.totaal { text-align: right; }
+  table.items tbody td {
+    padding: 3mm 4mm;
+    font-size: 9.5pt;
+    border-bottom: 1px solid #dfe3ea;
+  }
+  table.items tbody td.beschrijving { font-weight: 600; }
+  table.items tbody td.mid { text-align: right; color: #4a5a70; }
+  table.items tbody td.totaal { text-align: right; }
+
+  .samenvatting {
+    width: 65mm;
+    margin-left: auto;
+    margin-bottom: 14mm;
+  }
+  .samenvatting table { width: 100%; border-collapse: collapse; }
+  .samenvatting td { padding: 1.6mm 0; font-size: 9.5pt; }
+  .samenvatting td.label { text-align: right; padding-right: 4mm; color: #4a5a70; }
+  .samenvatting td.value { text-align: right; }
+  .samenvatting tr.totaal td { border-top: 1px solid #1c2a4a; font-weight: 800; font-size: 10.5pt; padding-top: 2.5mm; }
+
+  .footer {
+    text-align: center;
+    font-size: 8.5pt;
+    color: #3a4a60;
+    line-height: 1.8;
+  }
+  .footer a { color: #1c2a4a; white-space: nowrap; }
+</style>
+</head>
+<body>
+  <div class="page">
+    <div class="top">
+      <div class="brand">
+        <div class="logo"></div>
+        <div>
+          <div class="brand-name"><%= bedrijf.bedrijfsnaam %></div>
+          <div class="brand-people"><%= bedrijf.eigenaren %></div>
+        </div>
+      </div>
+      <div class="invoice-title">Factuur</div>
+    </div>
+
+    <div class="info-row">
+      <div class="sender">
+        <div><%= bedrijf.bedrijfsnaam %></div>
+        <div><%= bedrijf.adresregel %></div>
+        <div><%= bedrijf.postcode %></div>
+      </div>
+      <div class="aan-block">
+        <span class="aan-label">Aan:</span><span class="aan-content"><%= factuur.klant.bedrijfsnaam %></span><br>
+        <span class="aan-label"></span><span class="aan-content">t.a.v. <%= factuur.klant.tav %></span><br>
+        <span class="aan-label"></span><span class="aan-content"><%= factuur.klant.adres %></span><br>
+        <span class="aan-label"></span><span class="aan-content"><%= factuur.klant.postcode %></span>
+      </div>
+      <div class="gegevens">
+        <table>
+          <tr><td class="label">Datum:</td><td class="value"><%= factuur.datumWeergave %></td></tr>
+          <tr><td class="label">Bank:</td><td class="value"><%= bedrijf.iban %></td></tr>
+          <tr><td class="label">KVK-nummer:</td><td class="value"><%= bedrijf.kvkNummer %></td></tr>
+          <tr><td class="label">Btw-nummer:</td><td class="value"><%= bedrijf.btwNummer %></td></tr>
+          <tr><td class="label">Factuurnummer:</td><td class="value"><%= factuur.factuurnummer %></td></tr>
+        </table>
+      </div>
+    </div>
+
+    <table class="items">
+      <thead>
+        <tr>
+          <th>Beschrijving</th>
+          <% if (factuur.middenKolomLabel) { %><th class="mid"><%= factuur.middenKolomLabel %></th><% } %>
+          <th class="totaal">Totaal</th>
+        </tr>
+      </thead>
+      <tbody>
+        <% factuur.regels.forEach(function(regel) { %>
+        <tr>
+          <td class="beschrijving"><%= regel.beschrijving %></td>
+          <% if (factuur.middenKolomLabel) { %><td class="mid"><%= regel.midden || '-' %></td><% } %>
+          <td class="totaal">&euro; <%= regel.totaalWeergave %></td>
+        </tr>
+        <% }) %>
+      </tbody>
+    </table>
+
+    <div class="samenvatting">
+      <table>
+        <tr><td class="label">Subtotaal</td><td class="value">&euro; <%= factuur.subtotaalWeergave %></td></tr>
+        <tr><td class="label">Btw (<%= bedrijf.btwPercentage %>%)</td><td class="value">&euro; <%= factuur.btwWeergave %></td></tr>
+        <tr class="totaal"><td class="label">Totaal</td><td class="value">&euro; <%= factuur.totaalWeergave %></td></tr>
+      </table>
+    </div>
+
+    <div class="footer">
+      <div>Betaling van deze factuur dient binnen 14 dagen te worden voldaan aan <%= bedrijf.bedrijfsnaam %>.</div>
+      <div>Bij betaling van deze factuur gaat u automatisch akkoord met onze algemene voorwaarden, te vinden op <a href="https://<%= bedrijf.algemeneVoorwaardenUrl %>"><%= bedrijf.algemeneVoorwaardenUrl %></a>.</div>
+      <div>Bedankt voor de samenwerking!</div>
+      <div>Voor al uw vragen zijn wij bereikbaar op <%= bedrijf.email %>.</div>
+    </div>
+  </div>
+</body>
+</html>

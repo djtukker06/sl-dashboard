@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Facturen — Studio Levant</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div class="wrap">
+    <div class="topbar">
+      <a href="/" class="wordmark">Studio <span>Levant</span></a>
+      <nav><a href="/nieuwe-factuur">Nieuwe factuur</a></nav>
+    </div>
+
+    <% if (typeof enkelKlant === 'undefined') { %>
+    <div class="hero">
+      <h1>Factuur overzicht Studio Levant</h1>
+      <p>Overzicht van alle facturen van Studio Levant. Maak hier een nieuwe factuur aan, of bekijk en verwijder een bestaande.</p>
+      <a href="/nieuwe-factuur" class="btn-pil">+ Nieuwe factuur</a>
+    </div>
+
+    <div class="stats">
+      <div class="stat">
+        <div class="n"><%= stats.aantalFacturenDitJaar %></div>
+        <div class="l">Facturen dit jaar</div>
+      </div>
+    </div>
+
+    <div class="section-head"><h2>Facturen</h2></div>
+    <% if (facturen.length === 0) { %>
+      <div class="leeg-melding">Nog geen facturen aangemaakt.</div>
+    <% } else { %>
+      <div class="scroll-wrap facturen-tabel-wrap">
+      <table class="facturen-tabel">
+        <thead>
+          <tr>
+            <th>Nummer</th>
+            <th>Klant</th>
+            <th>Datum</th>
+            <th>Totaal</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          <% facturen.forEach(function(f) { %>
+          <tr>
+            <td><a href="/klanten/<%= f.slug %>/facturen/<%= f.factuurnummer %>/pdf" target="_blank"><%= f.factuurnummer %></a></td>
+            <td><%= f.klant.bedrijfsnaam %></td>
+            <td><%= f.datumWeergave %></td>
+            <td class="bedrag">&euro; <%= f.totaalWeergave %></td>
+            <td>
+              <form method="post" action="/klanten/<%= f.slug %>/facturen/<%= f.factuurnummer %>/verwijderen" onsubmit="return confirm('Factuur <%= f.factuurnummer %> definitief verwijderen?');">
+                <button type="submit" class="verwijder-link" title="Factuur verwijderen">&times;</button>
+              </form>
+            </td>
+          </tr>
+          <% }) %>
+        </tbody>
+      </table>
+      </div>
+    <% } %>
+
+    <div class="section-head" style="margin-top: 40px;"><h2>Klanten</h2></div>
+    <% if (klanten.length === 0) { %>
+      <div class="leeg-melding">Nog geen facturen aangemaakt.</div>
+    <% } else { %>
+      <div class="scroll-wrap klanten-grid-wrap">
+      <div class="klanten-grid">
+        <% klanten.forEach(function(klant) { %>
+          <a class="klant-card" href="/klanten/<%= klant.slug %>">
+            <div class="naam"><%= klant.naam %></div>
+            <div class="meta-row">
+              <span><%= klant.facturen.length %> factu<%= klant.facturen.length === 1 ? 'ur' : 'ren' %></span>
+              <span class="bedrag">&euro; <%= klant.totaalWeergave %></span>
+            </div>
+          </a>
+        <% }) %>
+      </div>
+      </div>
+    <% } %>
+
+    <% } else { %>
+
+    <div class="app-header">
+      <a href="/" class="terug">&larr; Alle klanten</a>
+      <h1><%= enkelKlant %></h1>
+    </div>
+    <ul class="factuur-lijst">
+      <% klanten[0].facturen.forEach(function(factuur) { %>
+        <li>
+          <a href="/klanten/<%= klanten[0].slug %>/facturen/<%= factuur.factuurnummer %>/pdf" target="_blank">
+            Factuur <%= factuur.factuurnummer %>
+          </a>
+          <span class="factuur-meta"><%= factuur.datumWeergave %> &middot; &euro; <%= factuur.totaalWeergave %></span>
+        </li>
+      <% }) %>
+    </ul>
+
+    <% } %>
+  </div>
+</body>
+</html>

@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nieuwe factuur — Studio Levant</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div class="wrap">
+    <div class="topbar">
+      <a href="/" class="wordmark">Studio <span>Levant</span></a>
+      <nav><a href="/">Overzicht</a></nav>
+    </div>
+
+    <header class="app-header">
+      <a href="/" class="terug">&larr; Overzicht</a>
+      <h1>Nieuwe factuur</h1>
+      <div class="factuurnummer-preview">Eerstvolgend nummer: <strong><%= volgendFactuurnummer %></strong></div>
+    </header>
+
+    <form method="post" action="/facturen" class="factuur-form">
+      <section class="card">
+        <h2>Klantgegevens</h2>
+        <div class="grid-2">
+          <label>Bedrijfsnaam klant
+            <input type="text" name="klantBedrijfsnaam" required>
+          </label>
+          <label>T.a.v. (naam eigenaar/contactpersoon)
+            <input type="text" name="klantTav" required>
+          </label>
+          <label>Adres (straat + huisnummer, plaats)
+            <input type="text" name="klantAdres" required>
+          </label>
+          <label>Postcode
+            <input type="text" name="klantPostcode" required>
+          </label>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Factuurregels</h2>
+        <label class="mid-label-input">Naam van de middelste kolom (optioneel, bijv. "Periode" of "Aantal")
+          <input type="text" name="middenKolomLabel" id="middenKolomLabel">
+        </label>
+
+        <table class="regels-table" id="regelsTable">
+          <thead>
+            <tr>
+              <th>Beschrijving</th>
+              <th class="mid-col">Periode / aantal (optioneel)</th>
+              <th>Totaal (&euro;)</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="regelsBody">
+            <tr class="regel-row">
+              <td><input type="text" name="regelBeschrijving[]" required></td>
+              <td class="mid-col"><input type="text" name="regelMidden[]"></td>
+              <td><input type="text" name="regelTotaal[]" required inputmode="decimal"></td>
+              <td><button type="button" class="verwijder-regel" title="Regel verwijderen">&times;</button></td>
+            </tr>
+          </tbody>
+        </table>
+        <button type="button" id="regelToevoegen" class="btn-secundair">+ Regel toevoegen</button>
+      </section>
+
+      <button type="submit" class="btn-primair">Factuur genereren</button>
+    </form>
+  </div>
+
+  <script src="/form.js"></script>
+</body>
+</html>
