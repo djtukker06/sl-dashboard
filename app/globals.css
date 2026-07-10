@@ -12,7 +12,7 @@
   --danger: #c2685a;
 }
 
-* { box-sizing: border-box; }
+* { box-sizing: border-box; margin: 0; padding: 0; }
 
 html, body {
   margin: 0;
@@ -47,13 +47,19 @@ a { color: inherit; }
   text-decoration: none;
 }
 .wordmark span { color: var(--cream-faint); font-weight: 500; }
-.topbar nav a {
+.topbar nav { display: flex; align-items: center; gap: 20px; }
+.topbar nav a, .topbar nav button {
   font-size: 13px;
   letter-spacing: 0.04em;
   color: var(--cream-dim);
   text-decoration: none;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+  padding: 0;
 }
-.topbar nav a:hover { color: var(--cream); }
+.topbar nav a:hover, .topbar nav button:hover { color: var(--cream); }
 
 /* Hero */
 .hero {
@@ -69,13 +75,6 @@ a { color: inherit; }
   letter-spacing: -0.01em;
   margin: 0 0 18px;
   text-wrap: balance;
-}
-.hero h1 .highlight {
-  background: var(--cream);
-  color: var(--bg-page);
-  padding: 2px 10px;
-  border-radius: 4px;
-  display: inline-block;
 }
 .hero p {
   font-size: 16px;
@@ -104,25 +103,7 @@ a { color: inherit; }
   transition: transform 0.15s ease, background 0.15s ease;
 }
 .btn-pil:hover { background: #fff; transform: translateY(-1px); }
-
-.btn-pil-outline {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  background: transparent;
-  color: var(--cream);
-  font-weight: 600;
-  font-size: 13px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  text-decoration: none;
-  padding: 13px 22px;
-  border-radius: 999px;
-  border: 1px solid var(--border);
-  cursor: pointer;
-  font-family: inherit;
-}
-.btn-pil-outline:hover { border-color: var(--cream-dim); }
+.btn-pil:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
 
 /* Stats */
 .stats {
@@ -169,7 +150,7 @@ a { color: inherit; }
   margin: 0;
 }
 
-/* Scrollbare secties: max. ~5 rijen zichtbaar, scrollen met de muis erboven voor meer */
+/* Scrollbare secties: max. ~5 rijen zichtbaar */
 .scroll-wrap {
   overflow-y: auto;
   scrollbar-width: thin;
@@ -186,55 +167,8 @@ a { color: inherit; }
   border-radius: 12px;
   margin-bottom: 8px;
 }
-.facturen-tabel-wrap .facturen-tabel {
-  border: none;
-  border-radius: 0;
-  margin-bottom: 0;
-}
-.facturen-tabel thead th {
-  position: sticky;
-  top: 0;
-  background: var(--panel);
-  z-index: 1;
-}
-
-.klanten-grid-wrap { max-height: 578px; }
-
-/* Klanten lijst: één klant per rij, net als de facturenlijst */
-.klanten-grid {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 12px;
-}
-.klant-card {
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 20px;
-  text-decoration: none;
-  color: var(--cream);
-  display: block;
-  transition: background 0.15s ease, border-color 0.15s ease;
-}
-.klant-card:hover { background: var(--panel-hover); border-color: var(--cream-faint); }
-.klant-card .naam {
-  font-weight: 700;
-  font-size: 16px;
-  margin-bottom: 14px;
-}
-.klant-card .meta-row {
-  display: flex;
-  justify-content: space-between;
-  font-size: 12.5px;
-  color: var(--cream-dim);
-  padding-top: 10px;
-  border-top: 1px solid var(--border);
-}
-.klant-card .meta-row .bedrag {
-  color: var(--cream);
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-}
+.facturen-tabel-wrap .facturen-tabel { border: none; border-radius: 0; margin-bottom: 0; }
+.facturen-tabel thead th { position: sticky; top: 0; background: var(--panel); z-index: 1; }
 
 .facturen-tabel {
   width: 100%;
@@ -279,6 +213,34 @@ a { color: inherit; }
 }
 .verwijder-link:hover { color: var(--danger); }
 
+.klanten-grid-wrap { max-height: 578px; }
+.klanten-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
+.klant-card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 20px;
+  text-decoration: none;
+  color: var(--cream);
+  display: block;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.klant-card:hover { background: var(--panel-hover); border-color: var(--cream-faint); }
+.klant-card .naam { font-weight: 700; font-size: 16px; margin-bottom: 14px; }
+.klant-card .meta-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12.5px;
+  color: var(--cream-dim);
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+.klant-card .meta-row .bedrag { color: var(--cream); font-weight: 600; font-variant-numeric: tabular-nums; }
+
 .leeg-melding {
   color: var(--cream-dim);
   font-size: 14px;
@@ -288,7 +250,6 @@ a { color: inherit; }
   text-align: center;
 }
 
-/* Klant-detail lijst */
 .factuur-lijst { list-style: none; margin: 0; padding: 0; background: var(--panel); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
 .factuur-lijst li {
   display: flex;
@@ -312,60 +273,21 @@ a { color: inherit; }
   margin-bottom: 28px;
   flex-wrap: wrap;
 }
-.app-header h1 {
-  font-size: 22px;
-  margin: 0;
-  font-weight: 800;
-  text-transform: uppercase;
-  letter-spacing: 0.01em;
-}
-.terug {
-  color: var(--cream-dim);
-  text-decoration: none;
-  font-size: 13px;
-}
+.app-header h1 { font-size: 22px; margin: 0; font-weight: 800; text-transform: uppercase; letter-spacing: 0.01em; }
+.terug { color: var(--cream-dim); text-decoration: none; font-size: 13px; }
 .terug:hover { color: var(--cream); }
-.factuurnummer-preview {
-  margin-left: auto;
-  font-size: 13px;
-  color: var(--cream-dim);
-  font-variant-numeric: tabular-nums;
-}
+.factuurnummer-preview { margin-left: auto; font-size: 13px; color: var(--cream-dim); font-variant-numeric: tabular-nums; }
 .factuurnummer-preview strong { color: var(--cream); }
 
-.card {
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  padding: 26px;
-  margin-bottom: 20px;
-}
-.card h2 {
-  font-size: 13px;
-  color: var(--cream-dim);
-  margin: 0 0 18px;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  font-weight: 700;
-}
+.card { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 26px; margin-bottom: 20px; }
+.card h2 { font-size: 13px; color: var(--cream-dim); margin: 0 0 18px; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 700; }
 
-.grid-2 {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 16px 18px;
-}
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px 18px; }
 
-label {
-  display: flex;
-  flex-direction: column;
-  gap: 7px;
-  font-size: 13px;
-  color: var(--cream-dim);
-}
-
+label { display: flex; flex-direction: column; gap: 7px; font-size: 13px; color: var(--cream-dim); position: relative; }
 .mid-label-input { margin-bottom: 18px; }
 
-input[type="text"], input[type="date"] {
+input[type="text"], input[type="date"], input[type="email"], input[type="password"] {
   font-size: 14px;
   padding: 10px 12px;
   background: var(--bg-page);
@@ -428,3 +350,62 @@ input:focus { outline: none; border-color: var(--cream-dim); }
   font-family: inherit;
 }
 .btn-primair:hover { background: #fff; }
+.btn-primair:disabled { opacity: 0.6; cursor: not-allowed; }
+
+.foutmelding {
+  background: rgba(194, 104, 90, 0.12);
+  border: 1px solid var(--danger);
+  color: #e8a99c;
+  padding: 12px 16px;
+  border-radius: 10px;
+  font-size: 13.5px;
+  margin-bottom: 20px;
+}
+
+/* Klant-combobox */
+.combobox-lijst {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  z-index: 10;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+.combobox-optie {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  color: var(--cream);
+  padding: 10px 14px;
+  font-size: 13.5px;
+  cursor: pointer;
+  font-family: inherit;
+}
+.combobox-optie:hover, .combobox-optie:focus { background: var(--panel-hover); }
+.combobox-optie .sub { display: block; color: var(--cream-dim); font-size: 12px; margin-top: 2px; }
+
+/* Login-pagina */
+.login-wrap {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+.login-card {
+  width: 100%;
+  max-width: 360px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 32px;
+}
+.login-card .wordmark { display: block; margin-bottom: 24px; }
+.login-card h1 { font-size: 20px; margin: 0 0 24px; font-weight: 800; text-transform: uppercase; }
+.login-card form { display: flex; flex-direction: column; gap: 16px; }

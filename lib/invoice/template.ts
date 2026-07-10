@@ -1,14 +1,47 @@
-<!doctype html>
+import { INTER_400, INTER_600, INTER_700, INTER_800, EB_GARAMOND_700 } from './font-data';
+
+// EJS-template voor de factuur-PDF. Zelfde visuele ontwerp als de oorspronkelijke
+// Express-versie (navy-op-crème A4-layout), maar met zelf-gehoste, ingebedde fonts
+// (Inter i.p.v. Helvetica Neue/Arial, EB Garamond i.p.v. Georgia) zodat de PDF er op
+// de serverless Vercel-omgeving (Linux, geen Apple-systeemfonts) identiek uitziet aan
+// wat lokaal is goedgekeurd.
+export const FACTUUR_TEMPLATE = `<!doctype html>
 <html lang="nl">
 <head>
 <meta charset="utf-8">
 <title>Factuur <%= factuur.factuurnummer %></title>
 <style>
+  @font-face {
+    font-family: 'Inter';
+    font-weight: 400;
+    src: url(data:font/woff2;base64,${INTER_400}) format('woff2');
+  }
+  @font-face {
+    font-family: 'Inter';
+    font-weight: 600;
+    src: url(data:font/woff2;base64,${INTER_600}) format('woff2');
+  }
+  @font-face {
+    font-family: 'Inter';
+    font-weight: 700;
+    src: url(data:font/woff2;base64,${INTER_700}) format('woff2');
+  }
+  @font-face {
+    font-family: 'Inter';
+    font-weight: 800;
+    src: url(data:font/woff2;base64,${INTER_800}) format('woff2');
+  }
+  @font-face {
+    font-family: 'EB Garamond';
+    font-weight: 700;
+    src: url(data:font/woff2;base64,${EB_GARAMOND_700}) format('woff2');
+  }
+
   @page { size: A4; margin: 0; }
   * { box-sizing: border-box; }
   body {
     margin: 0;
-    font-family: -apple-system, "Helvetica Neue", Arial, sans-serif;
+    font-family: 'Inter', sans-serif;
     color: #1c2a3a;
     background: #f4f5f8;
   }
@@ -37,14 +70,15 @@
     flex-shrink: 0;
   }
   .brand-name {
-    font-family: Georgia, "Times New Roman", serif;
-    font-size: 17pt;
+    font-family: 'EB Garamond', serif;
+    font-size: 18pt;
     font-weight: 700;
     color: #1c2a4a;
     line-height: 1.1;
   }
   .brand-people {
     font-size: 8.5pt;
+    font-weight: 400;
     color: #4a5a70;
     margin-top: 1mm;
   }
@@ -60,6 +94,7 @@
     column-gap: 8mm;
     margin-bottom: 10mm;
     font-size: 9.5pt;
+    font-weight: 400;
     line-height: 1.55;
   }
   .sender { grid-column: 1; grid-row: 1; }
@@ -70,7 +105,7 @@
   .gegevens table { border-collapse: collapse; }
   .gegevens td { padding: 0.3mm 0; font-size: 9.5pt; }
   .gegevens td.label { font-weight: 700; text-align: right; padding-right: 3mm; white-space: nowrap; }
-  .gegevens td.value { text-align: right; white-space: nowrap; }
+  .gegevens td.value { font-weight: 400; text-align: right; white-space: nowrap; }
 
   table.items {
     width: 100%;
@@ -81,6 +116,7 @@
     background: #1c2a4a;
     color: #fff;
     font-size: 8.5pt;
+    font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.4px;
     padding: 3mm 4mm;
@@ -91,6 +127,7 @@
   table.items tbody td {
     padding: 3mm 4mm;
     font-size: 9.5pt;
+    font-weight: 400;
     border-bottom: 1px solid #dfe3ea;
   }
   table.items tbody td.beschrijving { font-weight: 600; }
@@ -103,7 +140,7 @@
     margin-bottom: 14mm;
   }
   .samenvatting table { width: 100%; border-collapse: collapse; }
-  .samenvatting td { padding: 1.6mm 0; font-size: 9.5pt; }
+  .samenvatting td { padding: 1.6mm 0; font-size: 9.5pt; font-weight: 400; }
   .samenvatting td.label { text-align: right; padding-right: 4mm; color: #4a5a70; }
   .samenvatting td.value { text-align: right; }
   .samenvatting tr.totaal td { border-top: 1px solid #1c2a4a; font-weight: 800; font-size: 10.5pt; padding-top: 2.5mm; }
@@ -111,6 +148,7 @@
   .footer {
     text-align: center;
     font-size: 8.5pt;
+    font-weight: 400;
     color: #3a4a60;
     line-height: 1.8;
   }
@@ -189,3 +227,4 @@
   </div>
 </body>
 </html>
+`;

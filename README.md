@@ -1,66 +1,37 @@
 # Studio Levant — Facturen
 
-Een kleine webapp om altijd dezelfde, professionele factuur-PDF te genereren voor Studio Levant. Vul klant- en factuurgegevens in via een formulier, de app rekent BTW/subtotaal/totaal uit, kent automatisch een factuurnummer toe, en bewaart elke factuur (PDF + gegevens) in een archief per klant.
+Interne facturatietool voor Studio Levant. Genereert altijd dezelfde, professionele factuur-PDF, houdt een archief bij per klant, en heeft klant-autocomplete zodat je bij een bekende klant niet steeds opnieuw de gegevens hoeft in te typen.
+
+**Stack**: Next.js (App Router) · Supabase (Postgres, Storage, Auth) · Vercel.
 
 ## Lokaal draaien
 
-```bash
-npm install
-npm start
-```
-
-Ga naar `http://localhost:3000`.
-
-> Node.js staat op deze Mac geïnstalleerd in `~/.local/node`. Als `node`/`npm` niet gevonden wordt, open een nieuwe terminal (het pad is toegevoegd aan `~/.zshrc`) of run eerst:
-> `export PATH="$HOME/.local/node/bin:$PATH"`
-
-## Inloggen
-
-De app zit achter een inlogscherm (gebruikersnaam + wachtwoord, via de standaard browser-inlogpopup). De inloggegevens staan in `.env` (lokaal) en worden nooit meegecommit naar git — zie `.env.example` voor het formaat. Zonder deze variabelen is de app **niet beveiligd**, dus zorg dat ze altijd ingesteld staan zodra de app online staat.
+1. Zorg dat Node.js beschikbaar is (`export PATH="$HOME/.local/node/bin:$PATH"` als het niet gevonden wordt).
+2. `npm install`
+3. Kopieer `.env.local.example` naar `.env.local` en vul de Supabase-projectgegevens in (Project Settings → API in het Supabase-dashboard): `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`.
+4. Draai de migraties in `supabase/migrations/` tegen je Supabase-project (via de Supabase CLI: `supabase link` + `supabase db push`, of plak de SQL-bestanden op volgorde in de SQL Editor van het dashboard).
+5. Maak in het Supabase-dashboard (Authentication → Users → Add user) een inlogaccount aan voor jezelf — er is geen publieke registratie.
+6. `npm run dev` en ga naar `http://localhost:3000`.
 
 ## Hoe het werkt
 
-- **Nieuwe factuur** (`/nieuwe-factuur`): vul klantgegevens en factuurregels in. De middelste kolom (bv. "Periode" of "Aantal") is optioneel — laat het naamveld leeg om die kolom helemaal weg te laten.
-- **Factuurnummer**: wordt automatisch bepaald — `JJ-VVV` (laatste 2 cijfers van het jaar, dan het volgnummer). Telt door per kalenderjaar; begint bij een nieuw jaar automatisch weer bij 001.
-- **Archief**: elke factuur wordt opgeslagen in `data/clients/<klantnaam>/<factuurnummer>.pdf` (+ een `.json` met dezelfde gegevens). De overzichtspagina (`/`) toont alle klanten en hun facturen, gegroepeerd per klant.
-- **Vaste gegevens** (IBAN, KVK, BTW-nummer, adres, BTW-percentage, teksten): staan in [config.js](config.js). Wijzig dit bestand als iets verandert.
+- **Nieuwe factuur** (`/nieuwe-factuur`): vul klantgegevens en factuurregels in. Typ je een klantnaam die al eerder is gebruikt, dan verschijnt een suggestie — kies die en de overige klantgegevens worden automatisch ingevuld. De middelste kolom (bv. "Periode" of "Aantal") is optioneel.
+- **Factuurnummer**: `JJ-VVV`, atomisch toegekend door een Postgres-functie (`create_invoice`), telt door per kalenderjaar, wordt nooit hergebruikt na verwijderen.
+- **Archief**: facturen staan in de Postgres-tabel `invoices`, de PDF's in een **privé** Supabase Storage-bucket (`invoices`). Downloaden gaat via een kortlevende signed URL, nooit een publieke link.
+- **Klanten**: automatisch bijgehouden in de tabel `clients`, ge-upsert op bedrijfsnaam. Een factuur bewaart een eigen snapshot van de klantgegevens op het moment van factureren — een latere adreswijziging van de klant verandert oude facturen dus nooit met terugwerkende kracht.
+- **Vaste bedrijfsgegevens** (IBAN, KVK, BTW-nummer, adres, BTW-percentage, teksten): staan in [lib/config.ts](lib/config.ts).
+- **Login**: Supabase Auth (e-mail/wachtwoord). Nieuwe gebruikers kunnen zich niet zelf registreren — accounts worden handmatig aangemaakt in het Supabase-dashboard.
 
 ## Logo toevoegen
 
-Er staat nu een marineblauw placeholder-vlak in plaats van het logo. Zodra je het logo-bestand hebt:
+Er staat nu een marineblauw placeholder-vlak in plaats van het logo op de factuur. Zodra je het logo-bestand hebt, zet het in `assets/` en laat het weten — dan verwerk ik het als ingebedde afbeelding in [lib/invoice/template.ts](lib/invoice/template.ts).
 
-1. Zet het bestand (bij voorkeur PNG met transparante achtergrond, vierkant, min. 200×200px) in de map `assets/`, bijvoorbeeld `assets/logo.png`.
-2. Open [views/factuur.ejs](views/factuur.ejs), zoek de regel `<div class="logo"></div>` en vervang die door:
-   ```html
-   <img class="logo" src="<%= logoDataUri %>" alt="Studio Levant logo">
-   ```
-3. Vraag me dan om `server.js` aan te passen zodat het logo als data-URI wordt meegegeven aan de template (dit voorkomt problemen met afbeeldingen laden tijdens PDF-generatie). Dat is een kleine aanpassing, ik regel 'm zodra je het bestand hebt.
+## Deployen naar Vercel + facturen.studio-levant.nl
 
-## Online zetten op facturen.studio-levant.nl
+1. Zorg dat de laatste code op GitHub staat (`git push`).
+2. Ga naar [vercel.com](https://vercel.com), maak een gratis account (Hobby-plan), en importeer deze GitHub-repository als nieuw project.
+3. Zet bij "Environment Variables" dezelfde drie Supabase-variabelen als in `.env.local`.
+4. Deploy — Vercel herkent Next.js automatisch, geen extra build-instellingen nodig.
+5. Voeg in Vercel bij "Domains" `facturen.studio-levant.nl` toe, en volg de DNS-instructie die Vercel toont (meestal een CNAME-record bij je huidige hostingpartij/DNS-beheerder, aangezien de hoofdsite via Framer draait).
 
-Je host je site via Framer, en Framer kan geen Node.js-app draaien. Daarom zetten we deze app apart online bij een hostingpartij die dat wél kan, en koppelen we er een subdomein aan via DNS. Twee goede, makkelijke opties met een gratis/goedkope laag én **persistente opslag** (belangrijk, anders raak je je factuur-archief kwijt bij elke herstart):
-
-### Optie A — Render.com (aanbevolen, makkelijkst)
-
-1. Zet dit project in een git-repository (bv. op GitHub — vraag het me, dan regel ik dat).
-2. Maak een gratis account op [render.com](https://render.com) en koppel je GitHub-account.
-3. "New Web Service" → kies deze repository.
-   - Build command: `npm install`
-   - Start command: `npm start`
-4. Voeg een **Persistent Disk** toe (Render noemt dit "Disks"), gekoppeld aan het pad `/opt/render/project/src/data` (of het pad dat Render aangeeft als project-root + `/data`) — zo blijft je factuur-archief bewaard bij elke herstart/update.
-5. Zet bij "Environment" de variabelen `FACTUUR_APP_GEBRUIKERSNAAM` en `FACTUUR_APP_WACHTWOORD` (zie `.env.example`) — anders is de app niet beveiligd zodra hij online staat.
-6. Zodra de service draait, krijg je een URL zoals `studio-levant-facturen.onrender.com`.
-7. Ga naar je DNS-instellingen (bij de partij waar `studio-levant.nl` geregistreerd is — vaak dezelfde plek als waar Framer naar verwijst) en voeg een **CNAME-record** toe:
-   - Naam: `facturen`
-   - Waarde: `studio-levant-facturen.onrender.com`
-7. Voeg in Render bij "Custom Domains" `facturen.studio-levant.nl` toe — Render regelt dan automatisch een SSL-certificaat (HTTPS).
-
-### Optie B — Railway.app
-
-Vergelijkbaar proces: project koppelen via GitHub, een "Volume" toevoegen voor `/data`, en daarna een custom domain + CNAME instellen zoals hierboven.
-
-Ik help je graag stap voor stap zodra je zover bent — laat het weten.
-
-## Belangrijk: back-ups
-
-De map `data/clients/` is je hele factuur-archief (je boekhouding!). Zorg dat de hostingpartij die je kiest een persistente disk gebruikt, en overweeg om deze map periodiek te downloaden/back-uppen (bv. maandelijks handmatig, of via een export-functie die we later kunnen toevoegen).
+**Let op — Supabase gratis project pauzeert na 1 week inactiviteit.** Bij weinig gebruik (een paar facturen per maand) kan het voorkomen dat je project "slaapt". Zet 'm dan eerst even aan in het Supabase-dashboard voordat je een factuur probeert te maken.
