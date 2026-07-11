@@ -11,10 +11,7 @@ export async function signIn(formData: FormData) {
   const { error } = await supabase.auth.signInWithPassword({ email, password });
 
   if (error) {
-    // TIJDELIJK: toont de echte Supabase-foutmelding i.p.v. een generieke tekst, om een
-    // productieprobleem te kunnen diagnosticeren. Zet terug naar een generieke melding
-    // zodra het probleem is opgelost.
-    redirect(`/login?error=${encodeURIComponent(`Inloggen mislukt: ${error.message} (status ${error.status})`)}`);
+    redirect(`/login?error=${encodeURIComponent('Inloggen mislukt. Controleer e-mailadres en wachtwoord.')}`);
   }
 
   redirect('/');
