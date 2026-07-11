@@ -105,7 +105,19 @@ export async function POST(request: Request) {
     totaalWeergave: totalen.totaalWeergave
   });
 
-  const pdfBuffer = await renderPdf(html);
+  let pdfBuffer: Buffer;
+  try {
+    pdfBuffer = await renderPdf(html);
+  } catch (err) {
+    // Factuurnummer en klant zijn al vastgelegd op dit punt (bewuste keuze, zie
+    // create_invoice: nummers worden nooit hergebruikt) — meld duidelijk dat alleen
+    // de PDF zelf niet is gelukt, zodat dit niet als "niets is gebeurd" overkomt.
+    const bericht = err instanceof Error ? err.message : String(err);
+    return NextResponse.json(
+      { error: `PDF genereren mislukt (factuur ${factuur.invoice_number} is wel aangemaakt): ${bericht}` },
+      { status: 500 }
+    );
+  }
   const pdfPath = `${client.id}/${factuur.invoice_number}.pdf`;
 
   const { error: uploadError } = await service.storage
