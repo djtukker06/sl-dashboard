@@ -1,4 +1,5 @@
 import { INTER_400, INTER_600, INTER_700, INTER_800, EB_GARAMOND_700 } from './font-data';
+import { LOGO_PNG_BASE64 } from './logo-data';
 
 // EJS-template voor de factuur-PDF. Zelfde visuele ontwerp als de oorspronkelijke
 // Express-versie (navy-op-crème A4-layout), maar met zelf-gehoste, ingebedde fonts
@@ -68,6 +69,14 @@ export const FACTUUR_TEMPLATE = `<!doctype html>
     background: #1c2a4a;
     border-radius: 1.5mm;
     flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .logo img {
+    width: 62%;
+    height: 62%;
+    object-fit: contain;
   }
   .brand-name {
     font-family: 'EB Garamond', serif;
@@ -159,7 +168,7 @@ export const FACTUUR_TEMPLATE = `<!doctype html>
   <div class="page">
     <div class="top">
       <div class="brand">
-        <div class="logo"></div>
+        <div class="logo"><img src="data:image/png;base64,${LOGO_PNG_BASE64}" alt="Studio Levant"></div>
         <div>
           <div class="brand-name"><%= bedrijf.bedrijfsnaam %></div>
           <div class="brand-people"><%= bedrijf.eigenaren %></div>
