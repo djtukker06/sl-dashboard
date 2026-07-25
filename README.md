@@ -16,7 +16,7 @@ Interne facturatietool voor Studio Levant. Genereert altijd dezelfde, profession
 ## Hoe het werkt
 
 - **Nieuwe factuur** (`/nieuwe-factuur`): vul klantgegevens en factuurregels in. Typ je een klantnaam die al eerder is gebruikt, dan verschijnt een suggestie — kies die en de overige klantgegevens worden automatisch ingevuld. De middelste kolom (bv. "Periode" of "Aantal") is optioneel.
-- **Factuurnummer**: `JJ-VVV`, atomisch toegekend door een Postgres-functie (`create_invoice`), telt door per kalenderjaar, wordt nooit hergebruikt na verwijderen.
+- **Factuurnummer**: `JJ-NNN`. Het formulier stelt automatisch "hoogste bestaande nummer + 1" voor (verwijder je de laatste factuur, dan komt dat nummer weer vrij), maar je kunt het voor het genereren handmatig aanpassen. De Postgres-functie `create_invoice` bewaakt dat een nummer nooit dubbel wordt gebruikt, en dat nummers van vóór dit systeem (2026: 001 t/m 007) bezet blijven.
 - **Archief**: facturen staan in de Postgres-tabel `invoices`, de PDF's in een **privé** Supabase Storage-bucket (`invoices`). Downloaden gaat via een kortlevende signed URL, nooit een publieke link.
 - **Klanten**: automatisch bijgehouden in de tabel `clients`, ge-upsert op bedrijfsnaam. Een factuur bewaart een eigen snapshot van de klantgegevens op het moment van factureren — een latere adreswijziging van de klant verandert oude facturen dus nooit met terugwerkende kracht.
 - **Vaste bedrijfsgegevens** (IBAN, KVK, BTW-nummer, adres, BTW-percentage, teksten): staan in [lib/config.ts](lib/config.ts).

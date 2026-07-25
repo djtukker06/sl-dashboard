@@ -15,6 +15,7 @@ const LEGE_REGEL: RegelInvoer = { beschrijving: '', midden: '', totaal: '' };
 export function InvoiceForm({ volgendFactuurnummer }: { volgendFactuurnummer: string }) {
   const router = useRouter();
 
+  const [factuurnummer, setFactuurnummer] = useState(volgendFactuurnummer);
   const [klantBedrijfsnaam, setKlantBedrijfsnaam] = useState('');
   const [klantTav, setKlantTav] = useState('');
   const [klantAdres, setKlantAdres] = useState('');
@@ -41,6 +42,7 @@ export function InvoiceForm({ volgendFactuurnummer }: { volgendFactuurnummer: st
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
+        factuurnummer,
         klantBedrijfsnaam,
         klantTav,
         klantAdres,
@@ -64,6 +66,21 @@ export function InvoiceForm({ volgendFactuurnummer }: { volgendFactuurnummer: st
   return (
     <form onSubmit={handleSubmit}>
       {fout && <div className="foutmelding">{fout}</div>}
+
+      <section className="card">
+        <h2>Factuurnummer</h2>
+        <label className="factuurnummer-input">
+          Automatisch voorgesteld — pas aan als het anders moet (formaat JJ-NNN)
+          <input
+            type="text"
+            required
+            pattern="\d{2}-\d{3}"
+            title="Formaat: JJ-NNN, bijvoorbeeld 26-009"
+            value={factuurnummer}
+            onChange={(e) => setFactuurnummer(e.target.value)}
+          />
+        </label>
+      </section>
 
       <section className="card">
         <h2>Klantgegevens</h2>
@@ -179,7 +196,7 @@ export function InvoiceForm({ volgendFactuurnummer }: { volgendFactuurnummer: st
       </section>
 
       <button type="submit" className="btn-primair" disabled={bezig}>
-        {bezig ? 'Bezig met genereren…' : `Factuur genereren (${volgendFactuurnummer})`}
+        {bezig ? 'Bezig met genereren…' : `Factuur genereren (${factuurnummer})`}
       </button>
     </form>
   );

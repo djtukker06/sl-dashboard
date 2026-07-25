@@ -286,6 +286,8 @@ a { color: inherit; }
 
 label { display: flex; flex-direction: column; gap: 7px; font-size: 13px; color: var(--cream-dim); position: relative; }
 .mid-label-input { margin-bottom: 18px; }
+.factuurnummer-input { max-width: 320px; }
+.factuurnummer-input input { font-variant-numeric: tabular-nums; }
 
 input[type="text"], input[type="date"], input[type="email"], input[type="password"] {
   font-size: 14px;

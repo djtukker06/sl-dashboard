@@ -6,13 +6,25 @@ export default async function NieuweFactuurPage() {
   const supabase = await createClient();
   const huidigJaar = new Date().getFullYear();
 
-  const { data: counter } = await supabase
-    .from('invoice_counters')
-    .select('last_number')
-    .eq('year', huidigJaar)
-    .maybeSingle();
+  // Voorstel: hoogste bestaande factuur van dit jaar + 1. Verwijder je de laatste
+  // factuur, dan komt dat nummer dus weer vrij. invoice_counters dient alleen nog als
+  // ondergrens voor nummers die buiten dit systeem om zijn uitgegeven (zie migratie 0005).
+  const [{ data: counter }, { data: hoogste }] = await Promise.all([
+    supabase
+      .from('invoice_counters')
+      .select('last_number')
+      .eq('year', huidigJaar)
+      .maybeSingle(),
+    supabase
+      .from('invoices')
+      .select('sequence_number')
+      .eq('year', huidigJaar)
+      .order('sequence_number', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+  ]);
 
-  const volgendVolgnummer = (counter?.last_number || 0) + 1;
+  const volgendVolgnummer = Math.max(counter?.last_number || 0, hoogste?.sequence_number || 0) + 1;
   const volgendFactuurnummer = `${String(huidigJaar).slice(-2)}-${String(volgendVolgnummer).padStart(3, '0')}`;
 
   return (
@@ -31,9 +43,6 @@ export default async function NieuweFactuurPage() {
           &larr; Overzicht
         </Link>
         <h1>Nieuwe factuur</h1>
-        <div className="factuurnummer-preview">
-          Eerstvolgend nummer: <strong>{volgendFactuurnummer}</strong>
-        </div>
       </header>
 
       <InvoiceForm volgendFactuurnummer={volgendFactuurnummer} />

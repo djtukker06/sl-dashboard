@@ -29,8 +29,9 @@ export async function DELETE(
     await service.storage.from('invoices').remove([invoice.pdf_path]);
   }
 
-  // Let op: het factuurnummer wordt hier bewust NIET vrijgegeven — de teller in
-  // invoice_counters telt gewoon door, ook na verwijdering.
+  // Het factuurnummer komt door verwijderen weer vrij: het voorstel voor een nieuwe
+  // factuur is "hoogste bestaande nummer + 1" (zie migratie 0005). Verwijder je de
+  // laatste factuur, dan wordt dat nummer dus opnieuw voorgesteld.
   const { error: deleteError } = await service.from('invoices').delete().eq('id', id);
 
   if (deleteError) {

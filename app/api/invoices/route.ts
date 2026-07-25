@@ -11,6 +11,7 @@ export const runtime = 'nodejs';
 export const maxDuration = 60;
 
 interface InvoiceRequestBody {
+  factuurnummer: string;
   klantBedrijfsnaam: string;
   klantTav: string;
   klantAdres: string;
@@ -27,6 +28,17 @@ export async function POST(request: Request) {
   }
 
   const body: InvoiceRequestBody = await request.json();
+
+  const factuurnummer = (body.factuurnummer || '').trim();
+  const nummerMatch = factuurnummer.match(/^(\d{2})-(\d{3})$/);
+  if (!nummerMatch) {
+    return NextResponse.json(
+      { error: 'Ongeldig factuurnummer. Gebruik het formaat JJ-NNN, bijvoorbeeld 26-009.' },
+      { status: 400 }
+    );
+  }
+  const factuurJaar = 2000 + Number(nummerMatch[1]);
+  const volgnummer = Number(nummerMatch[2]);
 
   const klantBedrijfsnaam = (body.klantBedrijfsnaam || '').trim();
   const klantTav = (body.klantTav || '').trim();
@@ -74,6 +86,8 @@ export async function POST(request: Request) {
 
   const { data: invoice, error: invoiceError } = await service
     .rpc('create_invoice', {
+      p_year: factuurJaar,
+      p_sequence_number: volgnummer,
       p_client_id: client.id,
       p_client_company_name: klantBedrijfsnaam,
       p_client_contact_name: klantTav,
@@ -109,8 +123,7 @@ export async function POST(request: Request) {
   try {
     pdfBuffer = await renderPdf(html);
   } catch (err) {
-    // Factuurnummer en klant zijn al vastgelegd op dit punt (bewuste keuze, zie
-    // create_invoice: nummers worden nooit hergebruikt) — meld duidelijk dat alleen
+    // Factuurnummer en klant zijn al vastgelegd op dit punt — meld duidelijk dat alleen
     // de PDF zelf niet is gelukt, zodat dit niet als "niets is gebeurd" overkomt.
     const bericht = err instanceof Error ? err.message : String(err);
     return NextResponse.json(
