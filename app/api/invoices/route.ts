@@ -18,7 +18,7 @@ interface InvoiceRequestBody {
   klantAdres: string;
   klantPostcode: string;
   middenKolomLabel: string;
-  regels: { beschrijving: string; midden?: string; totaal: string }[];
+  regels: { beschrijving: string; midden?: string; totaal: string; teltMeeInOmzet?: boolean }[];
 }
 
 export async function POST(request: Request) {
@@ -67,7 +67,8 @@ export async function POST(request: Request) {
     .map((r) => ({
       beschrijving: (r.beschrijving || '').trim(),
       midden: (r.midden || '').trim(),
-      totaal: parseBedrag(r.totaal || '0')
+      totaal: parseBedrag(r.totaal || '0'),
+      teltMeeInOmzet: r.teltMeeInOmzet !== false
     }))
     .filter((r) => r.beschrijving !== '');
 
@@ -114,6 +115,7 @@ export async function POST(request: Request) {
       p_mid_column_label: middenKolomLabel || null,
       p_line_items: totalen.regels,
       p_subtotal: totalen.subtotaal,
+      p_revenue_subtotal: totalen.omzet,
       p_vat_percentage: bedrijf.btwPercentage,
       p_vat_amount: totalen.btw,
       p_total: totalen.totaal

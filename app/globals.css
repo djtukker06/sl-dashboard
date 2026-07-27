@@ -152,6 +152,8 @@ a { color: inherit; }
   color: var(--cream-dim);
   margin-top: 6px;
 }
+/* Omzet staat bewust in dezelfde kleine letter als het label, alleen iets lichter. */
+.stat .l .omzet-inline { color: var(--cream); font-variant-numeric: tabular-nums; }
 
 /* Section heading */
 .section-head {
@@ -305,6 +307,15 @@ a { color: inherit; }
 
 label { display: flex; flex-direction: column; gap: 7px; font-size: 13px; color: var(--cream-dim); position: relative; }
 .mid-label-input { margin-bottom: 18px; }
+
+.omzet-col { width: 1%; text-align: center; white-space: nowrap; }
+.regels-table td.omzet-col { text-align: center; }
+.omzet-col input[type="checkbox"] {
+  width: 17px;
+  height: 17px;
+  accent-color: var(--cream);
+  cursor: pointer;
+}
 .factuurnummer-input input { font-variant-numeric: tabular-nums; }
 
 input[type="text"], input[type="date"], input[type="email"], input[type="password"] {

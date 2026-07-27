@@ -16,7 +16,9 @@ export default async function DashboardPage({
   const [{ data: invoices }, { data: klantRecords }] = await Promise.all([
     supabase
       .from('invoices')
-      .select('id, invoice_number, client_id, client_company_name, issued_at, subtotal, total, year')
+      .select(
+        'id, invoice_number, client_id, client_company_name, issued_at, revenue_subtotal, total, year'
+      )
       .order('invoice_number', { ascending: false }),
     supabase.from('clients').select('id, company_name').order('company_name')
   ]);
@@ -24,7 +26,7 @@ export default async function DashboardPage({
   const alleFacturen = (invoices || []) as (InvoiceRow & {
     client_id: string;
     year: number;
-    subtotal: number;
+    revenue_subtotal: number;
   })[];
 
   // Nederlandse tijd: de server draait in UTC, dus rond de jaarwisseling zou het
@@ -37,13 +39,17 @@ export default async function DashboardPage({
 
   // Elk jaar waarin een factuur bestaat blijft zichtbaar; het huidige jaar staat er
   // altijd bij, ook als er nog geen factuur van is.
-  const jaren = Array.from(new Set([huidigJaar, ...alleFacturen.map((f) => f.year)])).sort(
-    (a, b) => b - a
-  );
-  const gekozenJaar = jaren.includes(Number(jaar)) ? Number(jaar) : huidigJaar;
+  const factuurJaren = alleFacturen.map((f) => f.year);
+  const jaren = Array.from(new Set([huidigJaar, ...factuurJaren])).sort((a, b) => b - a);
+
+  // Standaard het nieuwste jaar waarin al een factuur staat: begin januari blijf je zo
+  // nog het afgelopen jaar zien, en zodra de eerste factuur van het nieuwe jaar erin
+  // staat, springt het overzicht daar vanzelf naartoe.
+  const standaardJaar = factuurJaren.length > 0 ? Math.max(...factuurJaren) : huidigJaar;
+  const gekozenJaar = jaren.includes(Number(jaar)) ? Number(jaar) : standaardJaar;
 
   const facturenVanJaar = alleFacturen.filter((f) => f.year === gekozenJaar);
-  const omzetVanJaar = facturenVanJaar.reduce((som, f) => som + f.subtotal, 0);
+  const omzetVanJaar = facturenVanJaar.reduce((som, f) => som + f.revenue_subtotal, 0);
 
   // De klantenlijst komt uit de clients-tabel (niet uit de factuur-snapshots), zodat een
   // hernoemde klant meteen goed staat en een klant zonder facturen ook zichtbaar — en dus
@@ -92,7 +98,7 @@ export default async function DashboardPage({
           {jaren.map((j) => (
             <Link
               key={j}
-              href={j === huidigJaar ? '/' : `/?jaar=${j}`}
+              href={j === standaardJaar ? '/' : `/?jaar=${j}`}
               className={j === gekozenJaar ? 'jaar actief' : 'jaar'}
             >
               {j}
@@ -104,11 +110,12 @@ export default async function DashboardPage({
       <div className="stats">
         <div className="stat">
           <div className="n">{facturenVanJaar.length}</div>
-          <div className="l">Facturen in {gekozenJaar}</div>
-        </div>
-        <div className="stat">
-          <div className="n">&euro; {formatEuro(omzetVanJaar)}</div>
-          <div className="l">Omzet excl. btw</div>
+          <div className="l">
+            Facturen {gekozenJaar} -{' '}
+            <span className="omzet-inline">
+              Omzet excl. btw: &euro; {formatEuro(omzetVanJaar)}
+            </span>
+          </div>
         </div>
       </div>
 

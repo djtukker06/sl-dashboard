@@ -8,9 +8,10 @@ interface RegelInvoer {
   beschrijving: string;
   midden: string;
   totaal: string;
+  teltMeeInOmzet: boolean;
 }
 
-const LEGE_REGEL: RegelInvoer = { beschrijving: '', midden: '', totaal: '' };
+const LEGE_REGEL: RegelInvoer = { beschrijving: '', midden: '', totaal: '', teltMeeInOmzet: true };
 
 export function InvoiceForm({
   volgendFactuurnummer,
@@ -32,7 +33,7 @@ export function InvoiceForm({
   const [bezig, setBezig] = useState(false);
   const [fout, setFout] = useState<string | null>(null);
 
-  function wijzigRegel(index: number, veld: keyof RegelInvoer, waarde: string) {
+  function wijzigRegel(index: number, veld: keyof RegelInvoer, waarde: string | boolean) {
     setRegels((prev) => prev.map((r, i) => (i === index ? { ...r, [veld]: waarde } : r)));
   }
 
@@ -166,6 +167,9 @@ export function InvoiceForm({
               <th>Beschrijving</th>
               <th className="mid-col">Periode / aantal (optioneel)</th>
               <th>Totaal (&euro;)</th>
+              <th className="omzet-col" title="Alleen voor je eigen omzetcijfer — dit komt niet op de factuur">
+                Omzet
+              </th>
               <th></th>
             </tr>
           </thead>
@@ -196,6 +200,18 @@ export function InvoiceForm({
                     onChange={(e) => wijzigRegel(i, 'totaal', e.target.value)}
                   />
                 </td>
+                <td className="omzet-col">
+                  <input
+                    type="checkbox"
+                    checked={regel.teltMeeInOmzet}
+                    title={
+                      regel.teltMeeInOmzet
+                        ? 'Telt mee in je omzetcijfer'
+                        : 'Telt niet mee in je omzetcijfer'
+                    }
+                    onChange={(e) => wijzigRegel(i, 'teltMeeInOmzet', e.target.checked)}
+                  />
+                </td>
                 <td>
                   <button
                     type="button"
@@ -217,6 +233,13 @@ export function InvoiceForm({
         >
           + Regel toevoegen
         </button>
+
+        <p className="veld-hint">
+          Het vinkje <strong>Omzet</strong> is alleen voor jezelf: het bepaalt of een regel
+          meetelt in het omzetcijfer op het overzicht. Zet het uit bij bijvoorbeeld een
+          doorlopende post. Op de factuur en de PDF is er niets van te zien — het
+          factuurtotaal blijft gewoon de som van alle regels.
+        </p>
       </section>
 
       <button type="submit" className="btn-primair" disabled={bezig}>
