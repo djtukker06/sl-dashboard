@@ -110,17 +110,21 @@ export default async function DashboardPage({
       <div className="stats">
         <div className="stat">
           <div className="n">{facturenVanJaar.length}</div>
-          <div className="l">
-            Facturen {gekozenJaar} -{' '}
-            <span className="omzet-inline">
-              Omzet excl. btw: &euro; {formatEuro(omzetVanJaar)}
-            </span>
-          </div>
+          <div className="l">Facturen {gekozenJaar}</div>
+        </div>
+        <div className="stat">
+          <div className="n">&euro; {formatEuro(omzetVanJaar)}</div>
+          <div className="l">Omzet {gekozenJaar} excl. btw</div>
         </div>
       </div>
 
       <div className="section-head">
-        <h2>Facturen {gekozenJaar}</h2>
+        <h2>
+          Facturen {gekozenJaar}{' '}
+          <span className="omzet-inline">
+            - Omzet excl. btw: &euro; {formatEuro(omzetVanJaar)}
+          </span>
+        </h2>
       </div>
       <InvoicesTable invoices={facturenVanJaar} />
 
