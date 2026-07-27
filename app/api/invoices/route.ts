@@ -12,6 +12,7 @@ export const maxDuration = 60;
 
 interface InvoiceRequestBody {
   factuurnummer: string;
+  naamFactuur: string;
   datum: string;
   klantBedrijfsnaam: string;
   klantTav: string;
@@ -56,6 +57,8 @@ export async function POST(request: Request) {
   }
   // Middag UTC: zo valt de factuurdatum in elke tijdzone op dezelfde kalenderdag.
   const issuedAt = `${datum}T12:00:00Z`;
+
+  const naamFactuur = (body.naamFactuur || '').trim() || `Factuur ${factuurnummer}`;
 
   const klantBedrijfsnaam = (body.klantBedrijfsnaam || '').trim();
   const klantTav = (body.klantTav || '').trim();
@@ -127,6 +130,10 @@ export async function POST(request: Request) {
   }
 
   const factuur = invoice as { id: string; invoice_number: string; issued_at: string };
+
+  // Direct vastleggen, niet pas samen met pdf_path: mislukt de PDF-generatie, dan is de
+  // zelfgekozen naam anders kwijt terwijl de factuur wel bestaat.
+  await service.from('invoices').update({ name: naamFactuur }).eq('id', factuur.id);
 
   const html = renderInvoiceHtml({
     factuurnummer: factuur.invoice_number,

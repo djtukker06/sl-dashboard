@@ -329,6 +329,7 @@ label { display: flex; flex-direction: column; gap: 7px; font-size: 13px; color:
   cursor: pointer;
 }
 .factuurnummer-input input { font-variant-numeric: tabular-nums; }
+.naam-factuur-input { margin-top: 16px; }
 
 input[type="text"], input[type="date"], input[type="email"], input[type="password"] {
   font-size: 14px;

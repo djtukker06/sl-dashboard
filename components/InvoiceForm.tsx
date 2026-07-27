@@ -24,6 +24,14 @@ export function InvoiceForm({
 
   const [factuurnummer, setFactuurnummer] = useState(volgendFactuurnummer);
   const [datum, setDatum] = useState(vandaag);
+  const [naamFactuur, setNaamFactuur] = useState(`Factuur ${volgendFactuurnummer}`);
+  // Zolang de naam niet zelf is aangepast, loopt hij mee met het factuurnummer.
+  const [naamZelfAangepast, setNaamZelfAangepast] = useState(false);
+
+  function wijzigFactuurnummer(waarde: string) {
+    setFactuurnummer(waarde);
+    if (!naamZelfAangepast) setNaamFactuur(`Factuur ${waarde}`);
+  }
   const [klantBedrijfsnaam, setKlantBedrijfsnaam] = useState('');
   const [klantTav, setKlantTav] = useState('');
   const [klantAdres, setKlantAdres] = useState('');
@@ -51,6 +59,7 @@ export function InvoiceForm({
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         factuurnummer,
+        naamFactuur,
         datum,
         klantBedrijfsnaam,
         klantTav,
@@ -87,7 +96,7 @@ export function InvoiceForm({
               pattern="\d{2}-\d{3}"
               title="Formaat: JJ-NNN, bijvoorbeeld 26-009"
               value={factuurnummer}
-              onChange={(e) => setFactuurnummer(e.target.value)}
+              onChange={(e) => wijzigFactuurnummer(e.target.value)}
             />
           </label>
           <label>
@@ -100,10 +109,26 @@ export function InvoiceForm({
             />
           </label>
         </div>
+
+        <label className="naam-factuur-input">
+          Naam factuur
+          <input
+            type="text"
+            required
+            value={naamFactuur}
+            onChange={(e) => {
+              setNaamZelfAangepast(true);
+              setNaamFactuur(e.target.value);
+            }}
+          />
+        </label>
+
         <p className="veld-hint">
-          Allebei automatisch ingevuld — pas ze aan als het anders moet, bijvoorbeeld bij
-          het invoeren van een oudere factuur. Het jaartal in het nummer moet gelijk zijn
-          aan het jaar van de datum.
+          Nummer en datum zijn automatisch ingevuld — pas ze aan als het anders moet,
+          bijvoorbeeld bij het invoeren van een oudere factuur. Het jaartal in het nummer
+          moet gelijk zijn aan het jaar van de datum. De naam wordt de bestandsnaam van de
+          PDF; typ er gerust een omschrijving achter. Op de factuur zelf komt de naam niet
+          te staan.
         </p>
       </section>
 
