@@ -4,7 +4,14 @@ import { InvoiceForm } from '@/components/InvoiceForm';
 
 export default async function NieuweFactuurPage() {
   const supabase = await createClient();
-  const huidigJaar = new Date().getFullYear();
+
+  // Datum van vandaag in Nederlandse tijd (en-CA levert het YYYY-MM-DD-formaat dat een
+  // date-input verwacht). De server draait in UTC, dus zonder tijdzone zou je 's nachts
+  // de verkeerde dag — en rond de jaarwisseling het verkeerde jaar — voorgesteld krijgen.
+  const vandaag = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Amsterdam' }).format(
+    new Date()
+  );
+  const huidigJaar = Number(vandaag.slice(0, 4));
 
   // Voorstel: hoogste bestaande factuur van dit jaar + 1. Verwijder je de laatste
   // factuur, dan komt dat nummer dus weer vrij. invoice_counters dient alleen nog als
@@ -45,7 +52,7 @@ export default async function NieuweFactuurPage() {
         <h1>Nieuwe factuur</h1>
       </header>
 
-      <InvoiceForm volgendFactuurnummer={volgendFactuurnummer} />
+      <InvoiceForm volgendFactuurnummer={volgendFactuurnummer} vandaag={vandaag} />
     </div>
   );
 }

@@ -12,10 +12,17 @@ interface RegelInvoer {
 
 const LEGE_REGEL: RegelInvoer = { beschrijving: '', midden: '', totaal: '' };
 
-export function InvoiceForm({ volgendFactuurnummer }: { volgendFactuurnummer: string }) {
+export function InvoiceForm({
+  volgendFactuurnummer,
+  vandaag
+}: {
+  volgendFactuurnummer: string;
+  vandaag: string;
+}) {
   const router = useRouter();
 
   const [factuurnummer, setFactuurnummer] = useState(volgendFactuurnummer);
+  const [datum, setDatum] = useState(vandaag);
   const [klantBedrijfsnaam, setKlantBedrijfsnaam] = useState('');
   const [klantTav, setKlantTav] = useState('');
   const [klantAdres, setKlantAdres] = useState('');
@@ -43,6 +50,7 @@ export function InvoiceForm({ volgendFactuurnummer }: { volgendFactuurnummer: st
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         factuurnummer,
+        datum,
         klantBedrijfsnaam,
         klantTav,
         klantAdres,
@@ -68,18 +76,34 @@ export function InvoiceForm({ volgendFactuurnummer }: { volgendFactuurnummer: st
       {fout && <div className="foutmelding">{fout}</div>}
 
       <section className="card">
-        <h2>Factuurnummer</h2>
-        <label className="factuurnummer-input">
-          Automatisch voorgesteld — pas aan als het anders moet (formaat JJ-NNN)
-          <input
-            type="text"
-            required
-            pattern="\d{2}-\d{3}"
-            title="Formaat: JJ-NNN, bijvoorbeeld 26-009"
-            value={factuurnummer}
-            onChange={(e) => setFactuurnummer(e.target.value)}
-          />
-        </label>
+        <h2>Factuurgegevens</h2>
+        <div className="grid-2">
+          <label className="factuurnummer-input">
+            Factuurnummer (formaat JJ-NNN)
+            <input
+              type="text"
+              required
+              pattern="\d{2}-\d{3}"
+              title="Formaat: JJ-NNN, bijvoorbeeld 26-009"
+              value={factuurnummer}
+              onChange={(e) => setFactuurnummer(e.target.value)}
+            />
+          </label>
+          <label>
+            Factuurdatum
+            <input
+              type="date"
+              required
+              value={datum}
+              onChange={(e) => setDatum(e.target.value)}
+            />
+          </label>
+        </div>
+        <p className="veld-hint">
+          Allebei automatisch ingevuld — pas ze aan als het anders moet, bijvoorbeeld bij
+          het invoeren van een oudere factuur. Het jaartal in het nummer moet gelijk zijn
+          aan het jaar van de datum.
+        </p>
       </section>
 
       <section className="card">

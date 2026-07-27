@@ -106,8 +106,27 @@ a { color: inherit; }
 .btn-pil:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
 
 /* Stats */
+.jaar-keuze {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 18px;
+}
+.jaar {
+  padding: 7px 16px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 13px;
+  color: var(--cream-dim);
+  text-decoration: none;
+  font-variant-numeric: tabular-nums;
+}
+.jaar:hover { border-color: var(--cream-faint); color: var(--cream); }
+.jaar.actief { background: var(--cream); border-color: var(--cream); color: var(--bg-page); font-weight: 700; }
+
 .stats {
   display: inline-flex;
+  flex-wrap: wrap;
   gap: 1px;
   background: var(--border);
   border: 1px solid var(--border);
@@ -286,7 +305,6 @@ a { color: inherit; }
 
 label { display: flex; flex-direction: column; gap: 7px; font-size: 13px; color: var(--cream-dim); position: relative; }
 .mid-label-input { margin-bottom: 18px; }
-.factuurnummer-input { max-width: 320px; }
 .factuurnummer-input input { font-variant-numeric: tabular-nums; }
 
 input[type="text"], input[type="date"], input[type="email"], input[type="password"] {

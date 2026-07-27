@@ -12,6 +12,7 @@ export const maxDuration = 60;
 
 interface InvoiceRequestBody {
   factuurnummer: string;
+  datum: string;
   klantBedrijfsnaam: string;
   klantTav: string;
   klantAdres: string;
@@ -39,6 +40,22 @@ export async function POST(request: Request) {
   }
   const factuurJaar = 2000 + Number(nummerMatch[1]);
   const volgnummer = Number(nummerMatch[2]);
+
+  const datum = (body.datum || '').trim();
+  const datumMatch = datum.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!datumMatch || Number.isNaN(Date.parse(`${datum}T12:00:00Z`))) {
+    return NextResponse.json({ error: 'Ongeldige factuurdatum.' }, { status: 400 });
+  }
+  if (Number(datumMatch[1]) !== factuurJaar) {
+    return NextResponse.json(
+      {
+        error: `Het jaartal in factuurnummer ${factuurnummer} hoort bij ${factuurJaar}, maar de factuurdatum valt in ${datumMatch[1]}. Pas een van beide aan.`
+      },
+      { status: 400 }
+    );
+  }
+  // Middag UTC: zo valt de factuurdatum in elke tijdzone op dezelfde kalenderdag.
+  const issuedAt = `${datum}T12:00:00Z`;
 
   const klantBedrijfsnaam = (body.klantBedrijfsnaam || '').trim();
   const klantTav = (body.klantTav || '').trim();
@@ -88,6 +105,7 @@ export async function POST(request: Request) {
     .rpc('create_invoice', {
       p_year: factuurJaar,
       p_sequence_number: volgnummer,
+      p_issued_at: issuedAt,
       p_client_id: client.id,
       p_client_company_name: klantBedrijfsnaam,
       p_client_contact_name: klantTav,

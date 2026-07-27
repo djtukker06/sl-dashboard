@@ -16,7 +16,7 @@ export function InvoicesTable({ invoices }: { invoices: InvoiceRow[] }) {
   const [isPending, startTransition] = useTransition();
 
   if (invoices.length === 0) {
-    return <div className="leeg-melding">Nog geen facturen aangemaakt.</div>;
+    return <div className="leeg-melding">Nog geen facturen in dit jaar.</div>;
   }
 
   function handleDelete(id: string, factuurnummer: string) {
