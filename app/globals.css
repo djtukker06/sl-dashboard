@@ -245,6 +245,19 @@ a { color: inherit; }
   padding: 4px 8px;
 }
 .verwijder-link:hover { color: var(--danger); }
+.facturen-tabel td.acties-col { width: 1%; white-space: nowrap; padding-right: 0; }
+.bewerk-link {
+  color: var(--cream-dim);
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 6px 14px;
+  display: inline-block;
+}
+.facturen-tabel a.bewerk-link { color: var(--cream-dim); font-weight: 600; }
+.facturen-tabel a.bewerk-link:hover { color: var(--cream); border-color: var(--cream-faint); }
 
 .klanten-grid-wrap { max-height: 578px; }
 .klanten-grid {
@@ -328,6 +341,22 @@ label { display: flex; flex-direction: column; gap: 7px; font-size: 13px; color:
   accent-color: var(--cream);
   cursor: pointer;
 }
+.checkbox-regel {
+  flex-direction: row;
+  align-items: center;
+  gap: 11px;
+  cursor: pointer;
+  color: var(--cream);
+  font-size: 14px;
+}
+.checkbox-regel input[type="checkbox"] {
+  width: 17px;
+  height: 17px;
+  accent-color: var(--cream);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.reden-input { margin-top: 18px; }
 .factuurnummer-input input { font-variant-numeric: tabular-nums; }
 .naam-factuur-input { margin-top: 16px; }
 

@@ -14,14 +14,23 @@ export interface FactuurRegelBerekend extends FactuurRegelInvoer {
   totaalWeergave: string;
 }
 
-export function computeTotals(regels: FactuurRegelInvoer[], btwPercentage: number) {
+// btwVerlegd: de btw wordt verlegd naar de klant, dus wij rekenen er niets over. Het
+// tarief is daarmee effectief 0% — het btw-bedrag is 0 en het totaal is gelijk aan het
+// subtotaal. Op de factuur staat in het btw-vakje "Verlegd" in plaats van een bedrag.
+export function computeTotals(
+  regels: FactuurRegelInvoer[],
+  btwPercentage: number,
+  btwVerlegd = false
+) {
+  const effectiefBtwPercentage = btwVerlegd ? 0 : btwPercentage;
+
   const berekendeRegels: FactuurRegelBerekend[] = regels.map((regel) => ({
     ...regel,
     totaalWeergave: formatEuro(regel.totaal)
   }));
 
   const subtotaal = regels.reduce((som, regel) => som + regel.totaal, 0);
-  const btw = subtotaal * (btwPercentage / 100);
+  const btw = subtotaal * (effectiefBtwPercentage / 100);
   const totaal = subtotaal + btw;
 
   const omzet = regels.reduce(
@@ -34,6 +43,8 @@ export function computeTotals(regels: FactuurRegelInvoer[], btwPercentage: numbe
     omzet,
     subtotaal,
     subtotaalWeergave: formatEuro(subtotaal),
+    btwVerlegd,
+    btwPercentage: effectiefBtwPercentage,
     btw,
     btwWeergave: formatEuro(btw),
     totaal,

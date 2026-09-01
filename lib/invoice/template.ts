@@ -162,6 +162,7 @@ export const FACTUUR_TEMPLATE = `<!doctype html>
     line-height: 1.8;
   }
   .footer a { color: #1c2a4a; white-space: nowrap; }
+  .footer .btw-verlegd { font-weight: 600; color: #1c2a4a; margin-bottom: 1.5mm; }
 </style>
 </head>
 <body>
@@ -222,12 +223,17 @@ export const FACTUUR_TEMPLATE = `<!doctype html>
     <div class="samenvatting">
       <table>
         <tr><td class="label">Subtotaal</td><td class="value">&euro; <%= factuur.subtotaalWeergave %></td></tr>
-        <tr><td class="label">Btw (<%= bedrijf.btwPercentage %>%)</td><td class="value">&euro; <%= factuur.btwWeergave %></td></tr>
+        <% if (factuur.btwVerlegd) { %>
+        <tr><td class="label">Btw</td><td class="value">Verlegd</td></tr>
+        <% } else { %>
+        <tr><td class="label">Btw (<%= factuur.btwPercentage %>%)</td><td class="value">&euro; <%= factuur.btwWeergave %></td></tr>
+        <% } %>
         <tr class="totaal"><td class="label">Totaal</td><td class="value">&euro; <%= factuur.totaalWeergave %></td></tr>
       </table>
     </div>
 
     <div class="footer">
+      <% if (factuur.btwVerlegdReden) { %><div class="btw-verlegd"><%= factuur.btwVerlegdReden %></div><% } %>
       <div>Betaling van deze factuur dient binnen 14 dagen te worden voldaan aan <%= bedrijf.bedrijfsnaam %>.</div>
       <div>Bij betaling van deze factuur gaat u automatisch akkoord met onze algemene voorwaarden, te vinden op <a href="https://<%= bedrijf.algemeneVoorwaardenUrl %>"><%= bedrijf.algemeneVoorwaardenUrl %></a>.</div>
       <div>Bedankt voor de samenwerking!</div>

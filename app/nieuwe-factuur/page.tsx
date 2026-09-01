@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
 import { InvoiceForm } from '@/components/InvoiceForm';
+import { nieuweFactuurBeginwaarden } from '@/lib/invoice/formulier';
 
 export default async function NieuweFactuurPage() {
   const supabase = await createClient();
@@ -52,7 +53,7 @@ export default async function NieuweFactuurPage() {
         <h1>Nieuwe factuur</h1>
       </header>
 
-      <InvoiceForm volgendFactuurnummer={volgendFactuurnummer} vandaag={vandaag} />
+      <InvoiceForm beginwaarden={nieuweFactuurBeginwaarden(volgendFactuurnummer, vandaag)} />
     </div>
   );
 }

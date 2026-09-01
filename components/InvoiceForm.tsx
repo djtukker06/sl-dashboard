@@ -3,41 +3,42 @@
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { ClientCombobox } from './ClientCombobox';
+import { bedrijf } from '@/lib/config';
+import { LEGE_REGEL, type FactuurBeginwaarden, type RegelInvoer } from '@/lib/invoice/formulier';
 
-interface RegelInvoer {
-  beschrijving: string;
-  midden: string;
-  totaal: string;
-  teltMeeInOmzet: boolean;
-}
-
-const LEGE_REGEL: RegelInvoer = { beschrijving: '', midden: '', totaal: '', teltMeeInOmzet: true };
-
+// Zonder factuurId maakt dit formulier een nieuwe factuur aan; mét factuurId bewerkt het
+// een bestaande. Verder is het scherm precies hetzelfde — alleen al ingevuld.
 export function InvoiceForm({
-  volgendFactuurnummer,
-  vandaag
+  beginwaarden,
+  factuurId
 }: {
-  volgendFactuurnummer: string;
-  vandaag: string;
+  beginwaarden: FactuurBeginwaarden;
+  factuurId?: string;
 }) {
   const router = useRouter();
+  const bewerken = Boolean(factuurId);
 
-  const [factuurnummer, setFactuurnummer] = useState(volgendFactuurnummer);
-  const [datum, setDatum] = useState(vandaag);
-  const [naamFactuur, setNaamFactuur] = useState(`Factuur ${volgendFactuurnummer}`);
-  // Zolang de naam niet zelf is aangepast, loopt hij mee met het factuurnummer.
-  const [naamZelfAangepast, setNaamZelfAangepast] = useState(false);
+  const [factuurnummer, setFactuurnummer] = useState(beginwaarden.factuurnummer);
+  const [datum, setDatum] = useState(beginwaarden.datum);
+  const [naamFactuur, setNaamFactuur] = useState(beginwaarden.naamFactuur);
+  // Zolang de naam niet zelf is aangepast, loopt hij mee met het factuurnummer. Bij een
+  // bestaande factuur met een eigen omschrijving blijft die dus staan.
+  const [naamZelfAangepast, setNaamZelfAangepast] = useState(
+    beginwaarden.naamFactuur !== `Factuur ${beginwaarden.factuurnummer}`
+  );
 
   function wijzigFactuurnummer(waarde: string) {
     setFactuurnummer(waarde);
     if (!naamZelfAangepast) setNaamFactuur(`Factuur ${waarde}`);
   }
-  const [klantBedrijfsnaam, setKlantBedrijfsnaam] = useState('');
-  const [klantTav, setKlantTav] = useState('');
-  const [klantAdres, setKlantAdres] = useState('');
-  const [klantPostcode, setKlantPostcode] = useState('');
-  const [middenKolomLabel, setMiddenKolomLabel] = useState('');
-  const [regels, setRegels] = useState<RegelInvoer[]>([{ ...LEGE_REGEL }]);
+  const [klantBedrijfsnaam, setKlantBedrijfsnaam] = useState(beginwaarden.klantBedrijfsnaam);
+  const [klantTav, setKlantTav] = useState(beginwaarden.klantTav);
+  const [klantAdres, setKlantAdres] = useState(beginwaarden.klantAdres);
+  const [klantPostcode, setKlantPostcode] = useState(beginwaarden.klantPostcode);
+  const [middenKolomLabel, setMiddenKolomLabel] = useState(beginwaarden.middenKolomLabel);
+  const [btwVerlegd, setBtwVerlegd] = useState(beginwaarden.btwVerlegd);
+  const [btwVerlegdReden, setBtwVerlegdReden] = useState(beginwaarden.btwVerlegdReden);
+  const [regels, setRegels] = useState<RegelInvoer[]>(beginwaarden.regels);
   const [bezig, setBezig] = useState(false);
   const [fout, setFout] = useState<string | null>(null);
 
@@ -54,8 +55,8 @@ export function InvoiceForm({
     setBezig(true);
     setFout(null);
 
-    const res = await fetch('/api/invoices', {
-      method: 'POST',
+    const res = await fetch(bewerken ? `/api/invoices/${factuurId}` : '/api/invoices', {
+      method: bewerken ? 'PUT' : 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         factuurnummer,
@@ -66,18 +67,33 @@ export function InvoiceForm({
         klantAdres,
         klantPostcode,
         middenKolomLabel,
+        btwVerlegd,
+        btwVerlegdReden,
         regels
       })
     });
 
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
-      setFout(data.error || 'Er ging iets mis bij het aanmaken van de factuur.');
+      setFout(
+        data.error ||
+          (bewerken
+            ? 'Er ging iets mis bij het opslaan van de wijzigingen.'
+            : 'Er ging iets mis bij het aanmaken van de factuur.')
+      );
       setBezig(false);
       return;
     }
 
     const data = await res.json();
+
+    if (bewerken) {
+      // Terug naar het overzicht, met een verse serverrender: het bijgewerkte bedrag en
+      // de jaaromzet moeten er meteen goed staan.
+      router.push('/');
+      router.refresh();
+      return;
+    }
     router.push(`/api/invoices/${data.id}/pdf`);
   }
 
@@ -129,6 +145,47 @@ export function InvoiceForm({
           moet gelijk zijn aan het jaar van de datum. De naam wordt de bestandsnaam van de
           PDF; typ er gerust een omschrijving achter. Op de factuur zelf komt de naam niet
           te staan.
+        </p>
+      </section>
+
+      <section className="card">
+        <h2>Btw</h2>
+        <label className="checkbox-regel">
+          <input
+            type="checkbox"
+            checked={btwVerlegd}
+            onChange={(e) => setBtwVerlegd(e.target.checked)}
+          />
+          <span>Btw verlegd — geen btw op deze factuur</span>
+        </label>
+
+        {btwVerlegd && (
+          <label className="reden-input">
+            Reden btw verlegd
+            <input
+              type="text"
+              value={btwVerlegdReden}
+              placeholder="Bijv. Btw verlegd conform artikel 12 lid 5 Wet OB 1968."
+              onChange={(e) => setBtwVerlegdReden(e.target.value)}
+            />
+          </label>
+        )}
+
+        <p className="veld-hint">
+          {btwVerlegd ? (
+            <>
+              Op de factuur staat bij Btw <strong>Verlegd</strong> in plaats van een bedrag,
+              en het totaal is gelijk aan het subtotaal. De reden komt als extra regel
+              onderaan de PDF te staan, boven de vaste teksten. Laat je hem leeg, dan komt
+              er geen extra regel bij.
+            </>
+          ) : (
+            <>
+              Er wordt {bedrijf.btwPercentage}% btw gerekend, zoals gebruikelijk. Vink dit
+              aan als de btw verlegd wordt naar de klant — dan komt er geen btw-bedrag op
+              de factuur.
+            </>
+          )}
         </p>
       </section>
 
@@ -268,7 +325,13 @@ export function InvoiceForm({
       </section>
 
       <button type="submit" className="btn-primair" disabled={bezig}>
-        {bezig ? 'Bezig met genereren…' : `Factuur genereren (${factuurnummer})`}
+        {bewerken
+          ? bezig
+            ? 'Bezig met opslaan…'
+            : 'Wijzigingen opslaan'
+          : bezig
+            ? 'Bezig met genereren…'
+            : `Factuur genereren (${factuurnummer})`}
       </button>
     </form>
   );

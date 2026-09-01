@@ -1,6 +1,115 @@
 import { NextResponse } from 'next/server';
+import { revalidatePath } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
 import { createServiceRoleClient } from '@/lib/supabase/service-role';
+import { computeTotals } from '@/lib/invoice/calculations';
+import { parseFactuurInvoer, type FactuurInvoerBody } from '@/lib/invoice/invoer';
+import { bewaarFactuurPdf, upsertKlant } from '@/lib/invoice/opslag';
+import { bedrijf } from '@/lib/config';
+
+export const runtime = 'nodejs';
+export const maxDuration = 60;
+
+// Bewerken van een bestaande factuur: dezelfde factuur (zelfde id, zelfde plek in het
+// archief) krijgt bijgewerkte gegevens, een nieuw bedrag en een nieuwe PDF. De oude PDF
+// wordt vervangen — die is na het bewerken immers niet meer de factuur die geldt.
+export async function PUT(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) {
+    return NextResponse.json({ error: 'Niet ingelogd.' }, { status: 401 });
+  }
+
+  const { id } = await params;
+  const body: FactuurInvoerBody = await request.json();
+
+  const parsed = parseFactuurInvoer(body);
+  if (!parsed.ok) {
+    return NextResponse.json({ error: parsed.fout }, { status: 400 });
+  }
+  const invoer = parsed.invoer;
+
+  const service = createServiceRoleClient();
+
+  const { data: bestaand, error: fetchError } = await service
+    .from('invoices')
+    .select('id, pdf_path')
+    .eq('id', id)
+    .maybeSingle();
+
+  if (fetchError || !bestaand) {
+    return NextResponse.json({ error: 'Factuur niet gevonden.' }, { status: 404 });
+  }
+
+  const klantResultaat = await upsertKlant(service, invoer.klant);
+  if (!klantResultaat.ok) {
+    return NextResponse.json({ error: klantResultaat.fout }, { status: 500 });
+  }
+  const clientId = klantResultaat.id;
+
+  const totalen = computeTotals(invoer.regels, bedrijf.btwPercentage, invoer.btwVerlegd);
+
+  const { data: invoice, error: updateError } = await service
+    .rpc('update_invoice', {
+      p_id: id,
+      p_year: invoer.jaar,
+      p_sequence_number: invoer.volgnummer,
+      p_issued_at: invoer.issuedAt,
+      p_name: invoer.naamFactuur,
+      p_client_id: clientId,
+      p_client_company_name: invoer.klant.bedrijfsnaam,
+      p_client_contact_name: invoer.klant.tav,
+      p_client_address: invoer.klant.adres,
+      p_client_postal_code: invoer.klant.postcode,
+      p_mid_column_label: invoer.middenKolomLabel || null,
+      p_line_items: totalen.regels,
+      p_subtotal: totalen.subtotaal,
+      p_revenue_subtotal: totalen.omzet,
+      p_vat_percentage: totalen.btwPercentage,
+      p_vat_amount: totalen.btw,
+      p_total: totalen.totaal,
+      p_vat_reverse_charged: invoer.btwVerlegd,
+      p_vat_reverse_charge_reason: invoer.btwVerlegdReden || null
+    })
+    .single();
+
+  if (updateError || !invoice) {
+    return NextResponse.json(
+      { error: `Factuur bijwerken mislukt: ${updateError?.message}` },
+      { status: 500 }
+    );
+  }
+
+  const factuur = invoice as { id: string; invoice_number: string; issued_at: string };
+
+  const pdfResultaat = await bewaarFactuurPdf(service, {
+    factuurId: factuur.id,
+    clientId,
+    factuurnummer: factuur.invoice_number,
+    datum: new Date(factuur.issued_at),
+    invoer,
+    totalen,
+    vorigPad: bestaand.pdf_path
+  });
+
+  if (pdfResultaat.fout) {
+    // De gegevens staan al goed in het archief; alleen de PDF is nog de oude. Zeg dat
+    // erbij, zodat duidelijk is dat opnieuw opslaan genoeg is om het recht te trekken.
+    return NextResponse.json(
+      { error: `${pdfResultaat.fout} (de wijzigingen zijn wel opgeslagen, alleen de PDF is nog de oude)` },
+      { status: 500 }
+    );
+  }
+
+  revalidatePath('/');
+  revalidatePath(`/klanten/${clientId}`);
+  revalidatePath(`/facturen/${id}/bewerken`);
+
+  return NextResponse.json({ id: factuur.id, invoiceNumber: factuur.invoice_number });
+}
 
 export async function DELETE(
   _request: Request,

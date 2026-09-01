@@ -16,6 +16,11 @@ export interface FactuurVoorRender {
   middenKolomLabel: string;
   regels: FactuurRegelBerekend[];
   subtotaalWeergave: string;
+  // Het percentage van deze factuur zelf (0 bij verlegde btw), niet dat uit config —
+  // zo klopt het label ook op een factuur waarop geen btw is gerekend.
+  btwPercentage: number;
+  btwVerlegd: boolean;
+  btwVerlegdReden: string;
   btwWeergave: string;
   totaalWeergave: string;
 }
