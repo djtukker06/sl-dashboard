@@ -1,5 +1,6 @@
 import { parseBedrag } from '@/lib/format';
 import type { FactuurRegelInvoer } from './calculations';
+import type { BtwVerlegdAls } from './formulier';
 
 // Wat het formulier verstuurt, zowel bij het aanmaken (POST) als bij het bewerken (PUT)
 // van een factuur. Beide routes controleren het op precies dezelfde manier, zodat een
@@ -14,6 +15,7 @@ export interface FactuurInvoerBody {
   klantPostcode?: string;
   middenKolomLabel?: string;
   btwVerlegd?: boolean;
+  btwVerlegdAls?: string;
   btwVerlegdReden?: string;
   regels?: { beschrijving?: string; midden?: string; totaal?: string; teltMeeInOmzet?: boolean }[];
 }
@@ -27,6 +29,7 @@ export interface FactuurInvoer {
   klant: { bedrijfsnaam: string; tav: string; adres: string; postcode: string };
   middenKolomLabel: string;
   btwVerlegd: boolean;
+  btwVerlegdAls: BtwVerlegdAls;
   btwVerlegdReden: string;
   regels: FactuurRegelInvoer[];
 }
@@ -90,6 +93,8 @@ export function parseFactuurInvoer(body: FactuurInvoerBody): ParseResultaat {
       },
       middenKolomLabel: (body.middenKolomLabel || '').trim(),
       btwVerlegd,
+      // Alles wat geen 'nvt' is, wordt 'verlegd' — zo was het vóór deze keuze ook.
+      btwVerlegdAls: body.btwVerlegdAls === 'nvt' ? 'nvt' : 'verlegd',
       // Zonder verlegde btw hoort er ook geen toelichting op de factuur te staan.
       btwVerlegdReden: btwVerlegd ? (body.btwVerlegdReden || '').trim() : '',
       regels

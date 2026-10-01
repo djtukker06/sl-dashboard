@@ -9,6 +9,14 @@ export interface RegelInvoer {
   teltMeeInOmzet: boolean;
 }
 
+// Wat er bij een verlegde btw in het btw-vakje op de factuur staat.
+export type BtwVerlegdAls = 'verlegd' | 'nvt';
+
+export const BTW_VERLEGD_TEKST: Record<BtwVerlegdAls, string> = {
+  verlegd: 'Verlegd',
+  nvt: 'N.v.t.'
+};
+
 export interface FactuurBeginwaarden {
   factuurnummer: string;
   datum: string;
@@ -19,6 +27,7 @@ export interface FactuurBeginwaarden {
   klantPostcode: string;
   middenKolomLabel: string;
   btwVerlegd: boolean;
+  btwVerlegdAls: BtwVerlegdAls;
   btwVerlegdReden: string;
   regels: RegelInvoer[];
 }
@@ -44,6 +53,7 @@ export function nieuweFactuurBeginwaarden(
     klantPostcode: '',
     middenKolomLabel: '',
     btwVerlegd: false,
+    btwVerlegdAls: 'verlegd',
     btwVerlegdReden: '',
     regels: [{ ...LEGE_REGEL }]
   };
@@ -62,6 +72,7 @@ export interface FactuurRecord {
   line_items: unknown;
   vat_reverse_charged?: boolean | null;
   vat_reverse_charge_reason?: string | null;
+  vat_reverse_charge_display?: string | null;
 }
 
 interface OpgeslagenRegel {
@@ -90,6 +101,7 @@ export function beginwaardenVanFactuur(factuur: FactuurRecord): FactuurBeginwaar
     klantPostcode: factuur.client_postal_code || '',
     middenKolomLabel: factuur.mid_column_label || '',
     btwVerlegd: factuur.vat_reverse_charged === true,
+    btwVerlegdAls: factuur.vat_reverse_charge_display === 'nvt' ? 'nvt' : 'verlegd',
     btwVerlegdReden: factuur.vat_reverse_charge_reason || '',
     regels:
       regels.length > 0

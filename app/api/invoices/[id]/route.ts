@@ -85,6 +85,12 @@ export async function PUT(
 
   const factuur = invoice as { id: string; invoice_number: string; issued_at: string };
 
+  // Los van update_invoice, zodat die functie niet opnieuw aangemaakt hoeft te worden.
+  await service
+    .from('invoices')
+    .update({ vat_reverse_charge_display: invoer.btwVerlegdAls })
+    .eq('id', factuur.id);
+
   const pdfResultaat = await bewaarFactuurPdf(service, {
     factuurId: factuur.id,
     clientId,

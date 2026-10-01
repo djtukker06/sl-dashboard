@@ -356,6 +356,29 @@ label { display: flex; flex-direction: column; gap: 7px; font-size: 13px; color:
   cursor: pointer;
   flex-shrink: 0;
 }
+.checkbox-regel input[type="radio"] {
+  width: 17px;
+  height: 17px;
+  margin: 0;
+  accent-color: var(--cream);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.btw-weergave-keuze {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 24px;
+  margin: 18px 0 0;
+  padding: 0;
+  border: none;
+}
+.btw-weergave-keuze legend {
+  width: 100%;
+  margin-bottom: 10px;
+  padding: 0;
+  font-size: 13px;
+  color: var(--cream-dim);
+}
 .reden-input { margin-top: 18px; }
 .factuurnummer-input input { font-variant-numeric: tabular-nums; }
 .naam-factuur-input { margin-top: 16px; }

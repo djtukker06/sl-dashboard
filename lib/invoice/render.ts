@@ -20,6 +20,8 @@ export interface FactuurVoorRender {
   // zo klopt het label ook op een factuur waarop geen btw is gerekend.
   btwPercentage: number;
   btwVerlegd: boolean;
+  // De tekst in het btw-vakje bij een verlegde btw: "Verlegd" of "N.v.t.".
+  btwVerlegdTekst: string;
   btwVerlegdReden: string;
   btwWeergave: string;
   totaalWeergave: string;

@@ -65,6 +65,12 @@ export async function POST(request: Request) {
   // Direct vastleggen, niet pas samen met pdf_path: mislukt de PDF-generatie, dan is de
   // zelfgekozen naam anders kwijt terwijl de factuur wel bestaat.
   await service.from('invoices').update({ name: invoer.naamFactuur }).eq('id', factuur.id);
+  // Apart van de naam: draait de deploy even voor op migratie 0010, dan mislukt alleen
+  // dit en blijft de naam gewoon bewaard.
+  await service
+    .from('invoices')
+    .update({ vat_reverse_charge_display: invoer.btwVerlegdAls })
+    .eq('id', factuur.id);
 
   const pdfResultaat = await bewaarFactuurPdf(service, {
     factuurId: factuur.id,

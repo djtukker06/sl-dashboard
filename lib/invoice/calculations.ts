@@ -16,7 +16,8 @@ export interface FactuurRegelBerekend extends FactuurRegelInvoer {
 
 // btwVerlegd: de btw wordt verlegd naar de klant, dus wij rekenen er niets over. Het
 // tarief is daarmee effectief 0% — het btw-bedrag is 0 en het totaal is gelijk aan het
-// subtotaal. Op de factuur staat in het btw-vakje "Verlegd" in plaats van een bedrag.
+// subtotaal. Op de factuur staat in het btw-vakje "Verlegd" of "N.v.t." (per factuur te
+// kiezen) in plaats van een bedrag.
 export function computeTotals(
   regels: FactuurRegelInvoer[],
   btwPercentage: number,

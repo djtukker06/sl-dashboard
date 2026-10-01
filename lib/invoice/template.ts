@@ -224,7 +224,7 @@ export const FACTUUR_TEMPLATE = `<!doctype html>
       <table>
         <tr><td class="label">Subtotaal</td><td class="value">&euro; <%= factuur.subtotaalWeergave %></td></tr>
         <% if (factuur.btwVerlegd) { %>
-        <tr><td class="label">Btw</td><td class="value">Verlegd</td></tr>
+        <tr><td class="label">Btw</td><td class="value"><%= factuur.btwVerlegdTekst %></td></tr>
         <% } else { %>
         <tr><td class="label">Btw (<%= factuur.btwPercentage %>%)</td><td class="value">&euro; <%= factuur.btwWeergave %></td></tr>
         <% } %>

@@ -3,6 +3,7 @@ import type { computeTotals } from './calculations';
 import type { FactuurInvoer } from './invoer';
 import { renderInvoiceHtml } from './render';
 import { renderPdf } from './pdf';
+import { BTW_VERLEGD_TEKST } from './formulier';
 
 type Totalen = ReturnType<typeof computeTotals>;
 
@@ -63,6 +64,7 @@ export async function bewaarFactuurPdf(
     subtotaalWeergave: totalen.subtotaalWeergave,
     btwPercentage: totalen.btwPercentage,
     btwVerlegd: totalen.btwVerlegd,
+    btwVerlegdTekst: BTW_VERLEGD_TEKST[invoer.btwVerlegdAls],
     btwVerlegdReden: invoer.btwVerlegdReden,
     btwWeergave: totalen.btwWeergave,
     totaalWeergave: totalen.totaalWeergave

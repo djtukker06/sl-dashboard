@@ -4,7 +4,13 @@ import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { ClientCombobox } from './ClientCombobox';
 import { bedrijf } from '@/lib/config';
-import { LEGE_REGEL, type FactuurBeginwaarden, type RegelInvoer } from '@/lib/invoice/formulier';
+import {
+  BTW_VERLEGD_TEKST,
+  LEGE_REGEL,
+  type BtwVerlegdAls,
+  type FactuurBeginwaarden,
+  type RegelInvoer
+} from '@/lib/invoice/formulier';
 
 // Zonder factuurId maakt dit formulier een nieuwe factuur aan; mét factuurId bewerkt het
 // een bestaande. Verder is het scherm precies hetzelfde — alleen al ingevuld.
@@ -37,6 +43,7 @@ export function InvoiceForm({
   const [klantPostcode, setKlantPostcode] = useState(beginwaarden.klantPostcode);
   const [middenKolomLabel, setMiddenKolomLabel] = useState(beginwaarden.middenKolomLabel);
   const [btwVerlegd, setBtwVerlegd] = useState(beginwaarden.btwVerlegd);
+  const [btwVerlegdAls, setBtwVerlegdAls] = useState<BtwVerlegdAls>(beginwaarden.btwVerlegdAls);
   const [btwVerlegdReden, setBtwVerlegdReden] = useState(beginwaarden.btwVerlegdReden);
   const [regels, setRegels] = useState<RegelInvoer[]>(beginwaarden.regels);
   const [bezig, setBezig] = useState(false);
@@ -68,6 +75,7 @@ export function InvoiceForm({
         klantPostcode,
         middenKolomLabel,
         btwVerlegd,
+        btwVerlegdAls,
         btwVerlegdReden,
         regels
       })
@@ -160,6 +168,24 @@ export function InvoiceForm({
         </label>
 
         {btwVerlegd && (
+          <fieldset className="btw-weergave-keuze">
+            <legend>Op de factuur bij Btw</legend>
+            {(Object.keys(BTW_VERLEGD_TEKST) as BtwVerlegdAls[]).map((optie) => (
+              <label key={optie} className="checkbox-regel">
+                <input
+                  type="radio"
+                  name="btwVerlegdAls"
+                  value={optie}
+                  checked={btwVerlegdAls === optie}
+                  onChange={() => setBtwVerlegdAls(optie)}
+                />
+                <span>{BTW_VERLEGD_TEKST[optie]}</span>
+              </label>
+            ))}
+          </fieldset>
+        )}
+
+        {btwVerlegd && (
           <label className="reden-input">
             Reden btw verlegd
             <input
@@ -174,7 +200,8 @@ export function InvoiceForm({
         <p className="veld-hint">
           {btwVerlegd ? (
             <>
-              Op de factuur staat bij Btw <strong>Verlegd</strong> in plaats van een bedrag,
+              Op de factuur staat bij Btw{' '}
+              <strong>{BTW_VERLEGD_TEKST[btwVerlegdAls]}</strong> in plaats van een bedrag,
               en het totaal is gelijk aan het subtotaal. De reden komt als extra regel
               onderaan de PDF te staan, boven de vaste teksten. Laat je hem leeg, dan komt
               er geen extra regel bij.
