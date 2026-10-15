@@ -9,6 +9,16 @@ export interface RegelInvoer {
   teltMeeInOmzet: boolean;
 }
 
+// Hetzelfde formulier en dezelfde PDF dienen voor twee soorten documenten.
+export type DocumentSoort = 'factuur' | 'prijsopgave';
+
+// De naam die een document krijgt zolang je hem niet zelf aanpast. Een prijsopgave
+// hoeft geen nummer te hebben; dan is het gewoon "Prijsopgave".
+export function standaardNaam(soort: DocumentSoort, nummer: string): string {
+  const woord = soort === 'factuur' ? 'Factuur' : 'Prijsopgave';
+  return nummer.trim() ? `${woord} ${nummer.trim()}` : woord;
+}
+
 // Wat er bij een verlegde btw in het btw-vakje op de factuur staat.
 export type BtwVerlegdAls = 'verlegd' | 'nvt';
 
@@ -29,8 +39,14 @@ export interface FactuurBeginwaarden {
   btwVerlegd: boolean;
   btwVerlegdAls: BtwVerlegdAls;
   btwVerlegdReden: string;
+  // Alleen bij facturen. De regels bevatten altijd de volledige prijzen; het percentage
+  // bepaalt welk deel daarvan deze factuur in rekening brengt.
+  aanbetaling: boolean;
+  aanbetalingPercentage: number;
   regels: RegelInvoer[];
 }
+
+export const STANDAARD_AANBETALING_PERCENTAGE = 50;
 
 export const LEGE_REGEL: RegelInvoer = {
   beschrijving: '',
@@ -55,7 +71,19 @@ export function nieuweFactuurBeginwaarden(
     btwVerlegd: false,
     btwVerlegdAls: 'verlegd',
     btwVerlegdReden: '',
+    aanbetaling: false,
+    aanbetalingPercentage: STANDAARD_AANBETALING_PERCENTAGE,
     regels: [{ ...LEGE_REGEL }]
+  };
+}
+
+export function nieuwePrijsopgaveBeginwaarden(
+  nummer: string,
+  datum: string
+): FactuurBeginwaarden {
+  return {
+    ...nieuweFactuurBeginwaarden(nummer, datum),
+    naamFactuur: standaardNaam('prijsopgave', nummer)
   };
 }
 
@@ -73,6 +101,7 @@ export interface FactuurRecord {
   vat_reverse_charged?: boolean | null;
   vat_reverse_charge_reason?: string | null;
   vat_reverse_charge_display?: string | null;
+  deposit_percentage?: number | null;
 }
 
 interface OpgeslagenRegel {
@@ -103,6 +132,8 @@ export function beginwaardenVanFactuur(factuur: FactuurRecord): FactuurBeginwaar
     btwVerlegd: factuur.vat_reverse_charged === true,
     btwVerlegdAls: factuur.vat_reverse_charge_display === 'nvt' ? 'nvt' : 'verlegd',
     btwVerlegdReden: factuur.vat_reverse_charge_reason || '',
+    aanbetaling: typeof factuur.deposit_percentage === 'number',
+    aanbetalingPercentage: factuur.deposit_percentage ?? STANDAARD_AANBETALING_PERCENTAGE,
     regels:
       regels.length > 0
         ? regels.map((regel) => ({
@@ -113,5 +144,33 @@ export function beginwaardenVanFactuur(factuur: FactuurRecord): FactuurBeginwaar
             teltMeeInOmzet: regel.teltMeeInOmzet !== false
           }))
         : [{ ...LEGE_REGEL }]
+  };
+}
+
+// De kolommen van een prijsopgave. Bijna alles mag leeg zijn.
+export interface PrijsopgaveRecord {
+  quote_number: string | null;
+  issued_at: string;
+  name: string | null;
+  client_company_name: string | null;
+  client_contact_name: string | null;
+  client_address: string | null;
+  client_postal_code: string | null;
+  mid_column_label: string | null;
+  line_items: unknown;
+  vat_reverse_charged: boolean | null;
+  vat_reverse_charge_reason: string | null;
+  vat_reverse_charge_display: string | null;
+}
+
+export function beginwaardenVanPrijsopgave(prijsopgave: PrijsopgaveRecord): FactuurBeginwaarden {
+  const nummer = prijsopgave.quote_number || '';
+  return {
+    ...beginwaardenVanFactuur({
+      ...prijsopgave,
+      invoice_number: nummer,
+      client_company_name: prijsopgave.client_company_name || ''
+    }),
+    naamFactuur: prijsopgave.name || standaardNaam('prijsopgave', nummer)
   };
 }

@@ -14,9 +14,17 @@ interface ClientComboboxProps {
   value: string;
   onChange: (value: string) => void;
   onSelectClient: (client: ClientSuggestion) => void;
+  required?: boolean;
+  label?: string;
 }
 
-export function ClientCombobox({ value, onChange, onSelectClient }: ClientComboboxProps) {
+export function ClientCombobox({
+  value,
+  onChange,
+  onSelectClient,
+  required = true,
+  label = 'Bedrijfsnaam klant'
+}: ClientComboboxProps) {
   const [suggesties, setSuggesties] = useState<ClientSuggestion[]>([]);
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLLabelElement>(null);
@@ -50,11 +58,11 @@ export function ClientCombobox({ value, onChange, onSelectClient }: ClientCombob
 
   return (
     <label ref={containerRef}>
-      Bedrijfsnaam klant
+      {label}
       <input
         type="text"
         name="klantBedrijfsnaam"
-        required
+        required={required}
         autoComplete="off"
         value={value}
         onChange={(e) => {

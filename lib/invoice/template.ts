@@ -10,7 +10,7 @@ export const FACTUUR_TEMPLATE = `<!doctype html>
 <html lang="nl">
 <head>
 <meta charset="utf-8">
-<title>Factuur <%= factuur.factuurnummer %></title>
+<title><%= factuur.soort === 'prijsopgave' ? 'Prijsopgave' : 'Factuur' %> <%= factuur.factuurnummer %></title>
 <style>
   @font-face {
     font-family: 'Inter';
@@ -163,6 +163,20 @@ export const FACTUUR_TEMPLATE = `<!doctype html>
   }
   .footer a { color: #1c2a4a; white-space: nowrap; }
   .footer .btw-verlegd { font-weight: 600; color: #1c2a4a; margin-bottom: 1.5mm; }
+  .footer .aanbetaling { font-weight: 600; color: #1c2a4a; margin-bottom: 1.5mm; }
+  .title-block { text-align: right; }
+  .aanbetaling-label {
+    display: inline-block;
+    margin-top: 2mm;
+    padding: 1.2mm 3mm;
+    background: #1c2a4a;
+    color: #fff;
+    border-radius: 1mm;
+    font-size: 9pt;
+    font-weight: 700;
+    letter-spacing: 0.4px;
+    text-transform: uppercase;
+  }
 </style>
 </head>
 <body>
@@ -175,7 +189,14 @@ export const FACTUUR_TEMPLATE = `<!doctype html>
           <div class="brand-people"><%= bedrijf.eigenaren %></div>
         </div>
       </div>
-      <div class="invoice-title">Factuur</div>
+      <% if (factuur.aanbetalingPercentage) { %>
+      <div class="title-block">
+        <div class="invoice-title">Factuur</div>
+        <div class="aanbetaling-label">Aanbetaling <%= factuur.aanbetalingPercentage %>%</div>
+      </div>
+      <% } else { %>
+      <div class="invoice-title"><%= factuur.soort === 'prijsopgave' ? 'Prijsopgave' : 'Factuur' %></div>
+      <% } %>
     </div>
 
     <div class="info-row">
@@ -184,19 +205,23 @@ export const FACTUUR_TEMPLATE = `<!doctype html>
         <div><%= bedrijf.adresregel %></div>
         <div><%= bedrijf.postcode %></div>
       </div>
+      <% if (factuur.aanRegels.length > 0) { %>
       <div class="aan-block">
-        <span class="aan-label">Aan:</span><span class="aan-content"><%= factuur.klant.bedrijfsnaam %></span><br>
-        <span class="aan-label"></span><span class="aan-content">t.a.v. <%= factuur.klant.tav %></span><br>
-        <span class="aan-label"></span><span class="aan-content"><%= factuur.klant.adres %></span><br>
-        <span class="aan-label"></span><span class="aan-content"><%= factuur.klant.postcode %></span>
+        <% factuur.aanRegels.forEach(function(regel, i) { %><% if (i > 0) { %><br>
+        <% } %><span class="aan-label"><%= i === 0 ? 'Aan:' : '' %></span><span class="aan-content"><%= regel %></span><% }) %>
       </div>
+      <% } %>
       <div class="gegevens">
         <table>
           <tr><td class="label">Datum:</td><td class="value"><%= factuur.datumWeergave %></td></tr>
-          <tr><td class="label">Bank:</td><td class="value"><%= bedrijf.iban %></td></tr>
+          <% if (factuur.soort !== 'prijsopgave') { %><tr><td class="label">Bank:</td><td class="value"><%= bedrijf.iban %></td></tr><% } %>
           <tr><td class="label">KVK-nummer:</td><td class="value"><%= bedrijf.kvkNummer %></td></tr>
           <tr><td class="label">Btw-nummer:</td><td class="value"><%= bedrijf.btwNummer %></td></tr>
+          <% if (factuur.soort === 'prijsopgave') { %>
+          <% if (factuur.factuurnummer) { %><tr><td class="label">Prijsopgavenummer:</td><td class="value"><%= factuur.factuurnummer %></td></tr><% } %>
+          <% } else { %>
           <tr><td class="label">Factuurnummer:</td><td class="value"><%= factuur.factuurnummer %></td></tr>
+          <% } %>
         </table>
       </div>
     </div>
@@ -206,7 +231,7 @@ export const FACTUUR_TEMPLATE = `<!doctype html>
         <tr>
           <th>Beschrijving</th>
           <% if (factuur.middenKolomLabel) { %><th class="mid"><%= factuur.middenKolomLabel %></th><% } %>
-          <th class="totaal">Totaal</th>
+          <th class="totaal"><% if (factuur.aanbetalingPercentage) { %>Aanbetaling (<%= factuur.aanbetalingPercentage %>%)<% } else { %>Totaal<% } %></th>
         </tr>
       </thead>
       <tbody>
@@ -228,15 +253,20 @@ export const FACTUUR_TEMPLATE = `<!doctype html>
         <% } else { %>
         <tr><td class="label">Btw (<%= factuur.btwPercentage %>%)</td><td class="value">&euro; <%= factuur.btwWeergave %></td></tr>
         <% } %>
-        <tr class="totaal"><td class="label">Totaal</td><td class="value">&euro; <%= factuur.totaalWeergave %></td></tr>
+        <tr class="totaal"><td class="label"><%= factuur.aanbetalingPercentage ? 'Totaal aanbetaling' : 'Totaal' %></td><td class="value">&euro; <%= factuur.totaalWeergave %></td></tr>
       </table>
     </div>
 
     <div class="footer">
+      <% if (factuur.aanbetalingPercentage) { %><div class="aanbetaling">Deze factuur betreft een aanbetaling van <%= factuur.aanbetalingPercentage %>% van het totale opdrachtbedrag van &euro; <%= factuur.volledigTotaalWeergave %><%= factuur.btwVerlegd ? '' : ' (incl. btw)' %>. Het resterende bedrag van &euro; <%= factuur.restantWeergave %> dient op een later moment te worden voldaan.</div><% } %>
       <% if (factuur.btwVerlegdReden) { %><div class="btw-verlegd"><%= factuur.btwVerlegdReden %></div><% } %>
+      <% if (factuur.soort === 'prijsopgave') { %>
+      <div>Op deze prijsopgave zijn onze algemene voorwaarden van toepassing, te vinden op <a href="https://<%= bedrijf.algemeneVoorwaardenUrl %>"><%= bedrijf.algemeneVoorwaardenUrl %></a>.</div>
+      <% } else { %>
       <div>Betaling van deze factuur dient binnen 14 dagen te worden voldaan aan <%= bedrijf.bedrijfsnaam %>.</div>
       <div>Bij betaling van deze factuur gaat u automatisch akkoord met onze algemene voorwaarden, te vinden op <a href="https://<%= bedrijf.algemeneVoorwaardenUrl %>"><%= bedrijf.algemeneVoorwaardenUrl %></a>.</div>
       <div>Bedankt voor de samenwerking!</div>
+      <% } %>
       <div>Voor al uw vragen zijn wij bereikbaar op <%= bedrijf.email %>.</div>
     </div>
   </div>

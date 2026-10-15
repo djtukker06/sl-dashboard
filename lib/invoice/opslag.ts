@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { computeTotals } from './calculations';
-import type { FactuurInvoer } from './invoer';
-import { renderInvoiceHtml } from './render';
+import type { FactuurInvoer, PrijsopgaveInvoer } from './invoer';
+import { renderInvoiceHtml, type FactuurVoorRender } from './render';
 import { renderPdf } from './pdf';
 import { BTW_VERLEGD_TEKST } from './formulier';
 
@@ -55,9 +55,48 @@ export async function bewaarFactuurPdf(
 ): Promise<{ fout?: string }> {
   const { factuurId, clientId, factuurnummer, datum, invoer, totalen, vorigPad } = opties;
 
-  const html = renderInvoiceHtml({
-    factuurnummer,
-    datum,
+  return bewaarPdf(service, {
+    tabel: 'invoices',
+    id: factuurId,
+    render: { factuurnummer, datum, ...renderVelden(invoer, totalen) },
+    pdfPath: vorigPad
+      ? `${clientId}/${factuurnummer}-${Date.now().toString(36)}.pdf`
+      : `${clientId}/${factuurnummer}.pdf`,
+    vorigPad
+  });
+}
+
+// Hetzelfde voor een prijsopgave. Die PDF's staan in dezelfde privé-bucket, maar in een
+// eigen map, los van de klantmappen van de facturen.
+export async function bewaarPrijsopgavePdf(
+  service: SupabaseClient,
+  opties: {
+    prijsopgaveId: string;
+    invoer: PrijsopgaveInvoer;
+    totalen: Totalen;
+    vorigPad?: string | null;
+  }
+): Promise<{ fout?: string }> {
+  const { prijsopgaveId, invoer, totalen, vorigPad } = opties;
+
+  return bewaarPdf(service, {
+    tabel: 'quotes',
+    id: prijsopgaveId,
+    render: {
+      soort: 'prijsopgave',
+      factuurnummer: invoer.nummer,
+      datum: new Date(invoer.issuedAt),
+      ...renderVelden(invoer, totalen)
+    },
+    pdfPath: vorigPad
+      ? `prijsopgaven/${prijsopgaveId}-${Date.now().toString(36)}.pdf`
+      : `prijsopgaven/${prijsopgaveId}.pdf`,
+    vorigPad
+  });
+}
+
+function renderVelden(invoer: FactuurInvoer | PrijsopgaveInvoer, totalen: Totalen) {
+  return {
     klant: invoer.klant,
     middenKolomLabel: invoer.middenKolomLabel,
     regels: totalen.regels,
@@ -67,8 +106,25 @@ export async function bewaarFactuurPdf(
     btwVerlegdTekst: BTW_VERLEGD_TEKST[invoer.btwVerlegdAls],
     btwVerlegdReden: invoer.btwVerlegdReden,
     btwWeergave: totalen.btwWeergave,
-    totaalWeergave: totalen.totaalWeergave
-  });
+    totaalWeergave: totalen.totaalWeergave,
+    aanbetalingPercentage: totalen.aanbetalingPercentage,
+    volledigTotaalWeergave: totalen.volledigTotaalWeergave,
+    restantWeergave: totalen.restantWeergave
+  };
+}
+
+async function bewaarPdf(
+  service: SupabaseClient,
+  opties: {
+    tabel: 'invoices' | 'quotes';
+    id: string;
+    render: FactuurVoorRender;
+    pdfPath: string;
+    vorigPad?: string | null;
+  }
+): Promise<{ fout?: string }> {
+  const { tabel, id, render, pdfPath, vorigPad } = opties;
+  const html = renderInvoiceHtml(render);
 
   let pdfBuffer: Buffer;
   try {
@@ -77,10 +133,6 @@ export async function bewaarFactuurPdf(
     const bericht = err instanceof Error ? err.message : String(err);
     return { fout: `PDF genereren mislukt: ${bericht}` };
   }
-
-  const pdfPath = vorigPad
-    ? `${clientId}/${factuurnummer}-${Date.now().toString(36)}.pdf`
-    : `${clientId}/${factuurnummer}.pdf`;
 
   const { error: uploadError } = await service.storage
     .from('invoices')
@@ -91,12 +143,12 @@ export async function bewaarFactuurPdf(
   }
 
   const { error: updateError } = await service
-    .from('invoices')
+    .from(tabel)
     .update({ pdf_path: pdfPath })
-    .eq('id', factuurId);
+    .eq('id', id);
 
   if (updateError) {
-    return { fout: `PDF vastleggen bij de factuur mislukt: ${updateError.message}` };
+    return { fout: `PDF vastleggen mislukt: ${updateError.message}` };
   }
 
   if (vorigPad && vorigPad !== pdfPath) {

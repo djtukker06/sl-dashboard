@@ -379,6 +379,23 @@ label { display: flex; flex-direction: column; gap: 7px; font-size: 13px; color:
   font-size: 13px;
   color: var(--cream-dim);
 }
+.keuze-rij { display: flex; flex-wrap: wrap; gap: 10px 24px; }
+.aanbetaling-slider { margin-top: 20px; }
+.aanbetaling-slider-kop {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+.aanbetaling-slider-kop strong {
+  font-size: 18px;
+  color: var(--cream);
+  font-variant-numeric: tabular-nums;
+}
+.aanbetaling-slider input[type="range"] {
+  width: 100%;
+  accent-color: var(--cream);
+  cursor: pointer;
+}
 .reden-input { margin-top: 18px; }
 .factuurnummer-input input { font-variant-numeric: tabular-nums; }
 .naam-factuur-input { margin-top: 16px; }

@@ -1,28 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { createServiceRoleClient } from '@/lib/supabase/service-role';
-
-// Maakt van een zelfgekozen factuurnaam een bruikbare bestandsnaam: stuurtekens eruit,
-// tekens die Windows/macOS niet in bestandsnamen toestaan vervangen door een streepje.
-function veiligeBestandsnaam(naam: string, terugvalNummer: string): string {
-  const zonderStuurtekens = [...naam]
-    .filter((teken) => {
-      const code = teken.codePointAt(0) ?? 0;
-      return code >= 0x20 && code !== 0x7f;
-    })
-    .join('');
-
-  const opgeschoond = zonderStuurtekens
-    .replace(/[/\\:*?"<>|]/g, '-')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, 120)
-    // Een punt aan het eind is op Windows niet toegestaan.
-    .replace(/\.+$/, '')
-    .trim();
-
-  return `${opgeschoond || `Factuur ${terugvalNummer}`}.pdf`;
-}
+import { pdfHeaders, veiligeBestandsnaam } from '@/lib/invoice/bestandsnaam';
 
 export async function GET(
   _request: Request,
@@ -61,14 +40,9 @@ export async function GET(
     return NextResponse.json({ error: 'Kon de factuur-PDF niet ophalen.' }, { status: 500 });
   }
 
-  const bestandsnaam = veiligeBestandsnaam(invoice.name || '', invoice.invoice_number);
-  const asciiNaam = bestandsnaam.replace(/[^ -~]/g, '_');
-
   return new NextResponse(new Uint8Array(await bestand.arrayBuffer()), {
-    headers: {
-      'Content-Type': 'application/pdf',
-      'Content-Disposition': `inline; filename="${asciiNaam}"; filename*=UTF-8''${encodeURIComponent(bestandsnaam)}`,
-      'Cache-Control': 'private, no-store'
-    }
+    headers: pdfHeaders(
+      veiligeBestandsnaam(invoice.name || '', `Factuur ${invoice.invoice_number}`)
+    )
   });
 }

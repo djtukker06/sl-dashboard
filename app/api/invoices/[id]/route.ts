@@ -50,7 +50,12 @@ export async function PUT(
   }
   const clientId = klantResultaat.id;
 
-  const totalen = computeTotals(invoer.regels, bedrijf.btwPercentage, invoer.btwVerlegd);
+  const totalen = computeTotals(
+    invoer.regels,
+    bedrijf.btwPercentage,
+    invoer.btwVerlegd,
+    invoer.aanbetalingPercentage
+  );
 
   const { data: invoice, error: updateError } = await service
     .rpc('update_invoice', {
@@ -90,6 +95,22 @@ export async function PUT(
     .from('invoices')
     .update({ vat_reverse_charge_display: invoer.btwVerlegdAls })
     .eq('id', factuur.id);
+
+  // Het aanbetalingspercentage staat los van de databasefunctie, net als de btw-weergave.
+  // Mislukt dit bij een aanbetaling (bijv. omdat migratie 0012 nog niet gedraaid is), dan
+  // stoppen we: anders zou de factuur straks als reguliere factuur te bewerken zijn,
+  // terwijl de opgeslagen bedragen die van de aanbetaling zijn.
+  const { error: aanbetalingError } = await service
+    .from('invoices')
+    .update({ deposit_percentage: invoer.aanbetalingPercentage })
+    .eq('id', factuur.id);
+
+  if (aanbetalingError && invoer.aanbetalingPercentage !== null) {
+    return NextResponse.json(
+      { error: `Aanbetalingspercentage opslaan mislukt: ${aanbetalingError.message}` },
+      { status: 500 }
+    );
+  }
 
   const pdfResultaat = await bewaarFactuurPdf(service, {
     factuurId: factuur.id,

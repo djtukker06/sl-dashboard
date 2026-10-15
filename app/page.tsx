@@ -78,6 +78,7 @@ export default async function DashboardPage({
         </Link>
         <nav>
           <Link href="/nieuwe-factuur">Nieuwe factuur</Link>
+          <Link href="/prijsopgaven">Prijsopgaven</Link>
           <LogoutButton />
         </nav>
       </div>

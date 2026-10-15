@@ -1,6 +1,6 @@
 import { parseBedrag } from '@/lib/format';
 import type { FactuurRegelInvoer } from './calculations';
-import type { BtwVerlegdAls } from './formulier';
+import { standaardNaam, type BtwVerlegdAls } from './formulier';
 
 // Wat het formulier verstuurt, zowel bij het aanmaken (POST) als bij het bewerken (PUT)
 // van een factuur. Beide routes controleren het op precies dezelfde manier, zodat een
@@ -17,6 +17,8 @@ export interface FactuurInvoerBody {
   btwVerlegd?: boolean;
   btwVerlegdAls?: string;
   btwVerlegdReden?: string;
+  aanbetaling?: boolean;
+  aanbetalingPercentage?: number;
   regels?: { beschrijving?: string; midden?: string; totaal?: string; teltMeeInOmzet?: boolean }[];
 }
 
@@ -31,6 +33,8 @@ export interface FactuurInvoer {
   btwVerlegd: boolean;
   btwVerlegdAls: BtwVerlegdAls;
   btwVerlegdReden: string;
+  // Null bij een reguliere factuur; anders 5 t/m 95, per 5%.
+  aanbetalingPercentage: number | null;
   regels: FactuurRegelInvoer[];
 }
 
@@ -60,21 +64,20 @@ export function parseFactuurInvoer(body: FactuurInvoerBody): ParseResultaat {
   }
 
   const klantBedrijfsnaam = (body.klantBedrijfsnaam || '').trim();
-
-  const regels: FactuurRegelInvoer[] = (body.regels || [])
-    .map((r) => ({
-      beschrijving: (r.beschrijving || '').trim(),
-      midden: (r.midden || '').trim(),
-      totaal: parseBedrag(r.totaal || '0'),
-      teltMeeInOmzet: r.teltMeeInOmzet !== false
-    }))
-    .filter((r) => r.beschrijving !== '');
+  const regels = parseRegels(body);
 
   if (!klantBedrijfsnaam || regels.length === 0) {
     return { ok: false, fout: 'Vul een klantnaam in en voeg minimaal 1 factuurregel toe.' };
   }
 
-  const btwVerlegd = body.btwVerlegd === true;
+  let aanbetalingPercentage: number | null = null;
+  if (body.aanbetaling === true) {
+    const pct = Number(body.aanbetalingPercentage);
+    if (!Number.isInteger(pct) || pct < 5 || pct > 95 || pct % 5 !== 0) {
+      return { ok: false, fout: 'Kies een aanbetalingspercentage tussen 5% en 95%, per 5%.' };
+    }
+    aanbetalingPercentage = pct;
+  }
 
   return {
     ok: true,
@@ -92,12 +95,81 @@ export function parseFactuurInvoer(body: FactuurInvoerBody): ParseResultaat {
         postcode: (body.klantPostcode || '').trim()
       },
       middenKolomLabel: (body.middenKolomLabel || '').trim(),
-      btwVerlegd,
-      // Alles wat geen 'nvt' is, wordt 'verlegd' — zo was het vóór deze keuze ook.
-      btwVerlegdAls: body.btwVerlegdAls === 'nvt' ? 'nvt' : 'verlegd',
-      // Zonder verlegde btw hoort er ook geen toelichting op de factuur te staan.
-      btwVerlegdReden: btwVerlegd ? (body.btwVerlegdReden || '').trim() : '',
+      ...parseBtw(body),
+      aanbetalingPercentage,
       regels
     }
+  };
+}
+
+// Een prijsopgave: dezelfde velden als een factuur, maar bijna alles mag leeg — een
+// nummer, klantnaam, t.a.v., adres en postcode zijn allemaal optioneel. Alleen een
+// geldige datum en minimaal één regel zijn nodig.
+export interface PrijsopgaveInvoer {
+  nummer: string;
+  issuedAt: string;
+  naam: string;
+  klant: FactuurInvoer['klant'];
+  middenKolomLabel: string;
+  btwVerlegd: boolean;
+  btwVerlegdAls: BtwVerlegdAls;
+  btwVerlegdReden: string;
+  regels: FactuurRegelInvoer[];
+}
+
+export function parsePrijsopgaveInvoer(
+  body: FactuurInvoerBody
+): { ok: false; fout: string } | { ok: true; invoer: PrijsopgaveInvoer } {
+  const nummer = (body.factuurnummer || '').trim();
+
+  const datum = (body.datum || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(datum) || Number.isNaN(Date.parse(`${datum}T12:00:00Z`))) {
+    return { ok: false, fout: 'Ongeldige datum.' };
+  }
+
+  const regels = parseRegels(body);
+  if (regels.length === 0) {
+    return { ok: false, fout: 'Voeg minimaal 1 regel toe.' };
+  }
+
+  return {
+    ok: true,
+    invoer: {
+      nummer,
+      // Middag UTC: zo valt de datum in elke tijdzone op dezelfde kalenderdag.
+      issuedAt: `${datum}T12:00:00Z`,
+      naam: (body.naamFactuur || '').trim() || standaardNaam('prijsopgave', nummer),
+      klant: {
+        bedrijfsnaam: (body.klantBedrijfsnaam || '').trim(),
+        tav: (body.klantTav || '').trim(),
+        adres: (body.klantAdres || '').trim(),
+        postcode: (body.klantPostcode || '').trim()
+      },
+      middenKolomLabel: (body.middenKolomLabel || '').trim(),
+      ...parseBtw(body),
+      regels
+    }
+  };
+}
+
+function parseRegels(body: FactuurInvoerBody): FactuurRegelInvoer[] {
+  return (body.regels || [])
+    .map((r) => ({
+      beschrijving: (r.beschrijving || '').trim(),
+      midden: (r.midden || '').trim(),
+      totaal: parseBedrag(r.totaal || '0'),
+      teltMeeInOmzet: r.teltMeeInOmzet !== false
+    }))
+    .filter((r) => r.beschrijving !== '');
+}
+
+function parseBtw(body: FactuurInvoerBody) {
+  const btwVerlegd = body.btwVerlegd === true;
+  return {
+    btwVerlegd,
+    // Alles wat geen 'nvt' is, wordt 'verlegd' — zo was het vóór deze keuze ook.
+    btwVerlegdAls: (body.btwVerlegdAls === 'nvt' ? 'nvt' : 'verlegd') as BtwVerlegdAls,
+    // Zonder verlegde btw hoort er ook geen toelichting op het document te staan.
+    btwVerlegdReden: btwVerlegd ? (body.btwVerlegdReden || '').trim() : ''
   };
 }
