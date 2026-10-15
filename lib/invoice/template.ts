@@ -262,7 +262,7 @@ export const FACTUUR_TEMPLATE = `<!doctype html>
     </div>
 
     <div class="footer">
-      <% if (factuur.aanbetalingPercentage) { %><div class="aanbetaling">Deze factuur betreft een aanbetaling van <%= factuur.aanbetalingPercentage %>% van het totale opdrachtbedrag van &euro; <%= factuur.volledigSubtotaalWeergave %> (excl. btw). Het resterende bedrag van &euro; <%= factuur.restantWeergave %> (excl. btw) dient op een later moment te worden voldaan.</div><% } %>
+      <% if (factuur.aanbetalingPercentage) { %><div class="aanbetaling">Deze factuur betreft een aanbetaling van <%= factuur.aanbetalingPercentage %>% van het totale opdrachtbedrag van &euro; <%= factuur.volledigSubtotaalWeergave %> (excl. btw). Het resterende bedrag van &euro; <%= factuur.restantWeergave %> (excl. btw) dient te worden voldaan na de oplevering van het project.</div><% } %>
       <% if (factuur.restbetaling) { %><div class="aanbetaling">Deze factuur betreft het resterende bedrag (<%= factuur.restbetaling.percentage %>%) van de opdracht, na de aanbetaling van <%= 100 - factuur.restbetaling.percentage %>% op factuur <%= factuur.restbetaling.aanbetalingNummer %>.</div><% } %>
       <% if (factuur.btwVerlegdReden) { %><div class="btw-verlegd"><%= factuur.btwVerlegdReden %></div><% } %>
       <% if (factuur.soort === 'prijsopgave') { %>
