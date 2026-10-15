@@ -2,10 +2,9 @@ import { NextResponse } from 'next/server';
 import { revalidatePath } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
 import { createServiceRoleClient } from '@/lib/supabase/service-role';
-import { computeTotals } from '@/lib/invoice/calculations';
 import { parseFactuurInvoer, type FactuurInvoerBody } from '@/lib/invoice/invoer';
-import { bewaarFactuurPdf, upsertKlant } from '@/lib/invoice/opslag';
-import { bedrijf } from '@/lib/config';
+import { upsertKlant } from '@/lib/invoice/opslag';
+import { maakFactuurAan } from '@/lib/invoice/aanmaken';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -32,86 +31,12 @@ export async function POST(request: Request) {
   }
   const clientId = klantResultaat.id;
 
-  const totalen = computeTotals(
-    invoer.regels,
-    bedrijf.btwPercentage,
-    invoer.btwVerlegd,
-    invoer.aanbetalingPercentage
-  );
-
-  const { data: invoice, error: invoiceError } = await service
-    .rpc('create_invoice', {
-      p_year: invoer.jaar,
-      p_sequence_number: invoer.volgnummer,
-      p_issued_at: invoer.issuedAt,
-      p_client_id: clientId,
-      p_client_company_name: invoer.klant.bedrijfsnaam,
-      p_client_contact_name: invoer.klant.tav,
-      p_client_address: invoer.klant.adres,
-      p_client_postal_code: invoer.klant.postcode,
-      p_mid_column_label: invoer.middenKolomLabel || null,
-      p_line_items: totalen.regels,
-      p_subtotal: totalen.subtotaal,
-      p_revenue_subtotal: totalen.omzet,
-      p_vat_percentage: totalen.btwPercentage,
-      p_vat_amount: totalen.btw,
-      p_total: totalen.totaal,
-      p_vat_reverse_charged: invoer.btwVerlegd,
-      p_vat_reverse_charge_reason: invoer.btwVerlegdReden || null
-    })
-    .single();
-
-  if (invoiceError || !invoice) {
-    return NextResponse.json({ error: `Factuur aanmaken mislukt: ${invoiceError?.message}` }, { status: 500 });
-  }
-
-  const factuur = invoice as { id: string; invoice_number: string; issued_at: string };
-
-  // Direct vastleggen, niet pas samen met pdf_path: mislukt de PDF-generatie, dan is de
-  // zelfgekozen naam anders kwijt terwijl de factuur wel bestaat.
-  await service.from('invoices').update({ name: invoer.naamFactuur }).eq('id', factuur.id);
-  // Apart van de naam: draait de deploy even voor op migratie 0010, dan mislukt alleen
-  // dit en blijft de naam gewoon bewaard.
-  await service
-    .from('invoices')
-    .update({ vat_reverse_charge_display: invoer.btwVerlegdAls })
-    .eq('id', factuur.id);
-
-  // Het aanbetalingspercentage staat los van de databasefunctie, net als de btw-weergave.
-  // Mislukt dit bij een aanbetaling (bijv. omdat migratie 0012 nog niet gedraaid is), dan
-  // stoppen we: anders zou de factuur straks als reguliere factuur te bewerken zijn,
-  // terwijl de opgeslagen bedragen die van de aanbetaling zijn.
-  const { error: aanbetalingError } = await service
-    .from('invoices')
-    .update({ deposit_percentage: invoer.aanbetalingPercentage })
-    .eq('id', factuur.id);
-
-  if (aanbetalingError && invoer.aanbetalingPercentage !== null) {
-    return NextResponse.json(
-      { error: `Aanbetalingspercentage opslaan mislukt: ${aanbetalingError.message} (factuur ${factuur.invoice_number} is wel aangemaakt, maar nog zonder PDF)` },
-      { status: 500 }
-    );
-  }
-
-  const pdfResultaat = await bewaarFactuurPdf(service, {
-    factuurId: factuur.id,
-    clientId,
-    factuurnummer: factuur.invoice_number,
-    datum: new Date(factuur.issued_at),
-    invoer,
-    totalen
-  });
-
-  if (pdfResultaat.fout) {
-    // Factuurnummer en klant zijn al vastgelegd op dit punt — meld duidelijk dat alleen
-    // de PDF zelf niet is gelukt, zodat dit niet als "niets is gebeurd" overkomt.
-    return NextResponse.json(
-      { error: `${pdfResultaat.fout} (factuur ${factuur.invoice_number} is wel aangemaakt)` },
-      { status: 500 }
-    );
+  const resultaat = await maakFactuurAan(service, { invoer, clientId });
+  if (!resultaat.ok) {
+    return NextResponse.json({ error: resultaat.fout }, { status: 500 });
   }
 
   revalidatePath('/');
 
-  return NextResponse.json({ id: factuur.id, invoiceNumber: factuur.invoice_number });
+  return NextResponse.json({ id: resultaat.id, invoiceNumber: resultaat.invoiceNumber });
 }

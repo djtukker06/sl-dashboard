@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useTransition } from 'react';
 import { deleteInvoice } from '@/app/actions/invoices';
 import { formatDatumNL, formatEuro } from '@/lib/format';
+import { RestfactuurKnop } from './RestfactuurKnop';
 
 export interface InvoiceRow {
   id: string;
@@ -11,9 +12,19 @@ export interface InvoiceRow {
   client_company_name: string;
   issued_at: string;
   total: number;
+  deposit_percentage?: number | null;
+  remainder_percentage?: number | null;
+  // Bij een aanbetaling: de restfactuur, als die er al is.
+  restfactuur?: { id: string; invoice_number: string } | null;
 }
 
-export function InvoicesTable({ invoices }: { invoices: InvoiceRow[] }) {
+export function InvoicesTable({
+  invoices,
+  volgendNummer
+}: {
+  invoices: InvoiceRow[];
+  volgendNummer?: string;
+}) {
   const [isPending, startTransition] = useTransition();
 
   if (invoices.length === 0) {
@@ -47,6 +58,36 @@ export function InvoicesTable({ invoices }: { invoices: InvoiceRow[] }) {
                 <a href={`/api/invoices/${f.id}/pdf`} target="_blank" rel="noreferrer">
                   {f.invoice_number}
                 </a>
+                {typeof f.deposit_percentage === 'number' && (
+                  <span className="soort-label">Aanbetaling {f.deposit_percentage}%</span>
+                )}
+                {typeof f.remainder_percentage === 'number' && (
+                  <span className="soort-label">Restbetaling {f.remainder_percentage}%</span>
+                )}
+                {typeof f.deposit_percentage === 'number' && (
+                  <div className="rest-regel">
+                    {f.restfactuur ? (
+                      <>
+                        Restfactuur:{' '}
+                        <a
+                          href={`/api/invoices/${f.restfactuur.id}/pdf`}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          {f.restfactuur.invoice_number}
+                        </a>
+                      </>
+                    ) : (
+                      volgendNummer && (
+                        <RestfactuurKnop
+                          factuurId={f.id}
+                          volgendNummer={volgendNummer}
+                          restPercentage={100 - f.deposit_percentage}
+                        />
+                      )
+                    )}
+                  </div>
+                )}
               </td>
               <td>{f.client_company_name}</td>
               <td>{formatDatumNL(new Date(f.issued_at))}</td>

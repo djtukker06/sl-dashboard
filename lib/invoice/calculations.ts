@@ -58,7 +58,6 @@ export function computeTotals(
   );
 
   const volledigSubtotaal = regels.reduce((som, regel) => som + regel.totaal, 0);
-  const volledigTotaal = volledigSubtotaal * (1 + effectiefBtwPercentage / 100);
 
   return {
     regels: berekendeRegels,
@@ -72,7 +71,8 @@ export function computeTotals(
     totaal,
     totaalWeergave: formatEuro(totaal),
     aanbetalingPercentage,
-    volledigTotaalWeergave: formatEuro(volledigTotaal),
-    restantWeergave: formatEuro(volledigTotaal - totaal)
+    // Beide excl. btw: zo staan ze in de regel onderaan de PDF.
+    volledigSubtotaalWeergave: formatEuro(volledigSubtotaal),
+    restantWeergave: formatEuro(volledigSubtotaal - subtotaal)
   };
 }

@@ -189,10 +189,14 @@ export const FACTUUR_TEMPLATE = `<!doctype html>
           <div class="brand-people"><%= bedrijf.eigenaren %></div>
         </div>
       </div>
-      <% if (factuur.aanbetalingPercentage) { %>
+      <% if (factuur.aanbetalingPercentage || factuur.restbetaling) { %>
       <div class="title-block">
         <div class="invoice-title">Factuur</div>
+        <% if (factuur.aanbetalingPercentage) { %>
         <div class="aanbetaling-label">Aanbetaling <%= factuur.aanbetalingPercentage %>%</div>
+        <% } else { %>
+        <div class="aanbetaling-label">Restbetaling <%= factuur.restbetaling.percentage %>%</div>
+        <% } %>
       </div>
       <% } else { %>
       <div class="invoice-title"><%= factuur.soort === 'prijsopgave' ? 'Prijsopgave' : 'Factuur' %></div>
@@ -258,7 +262,8 @@ export const FACTUUR_TEMPLATE = `<!doctype html>
     </div>
 
     <div class="footer">
-      <% if (factuur.aanbetalingPercentage) { %><div class="aanbetaling">Deze factuur betreft een aanbetaling van <%= factuur.aanbetalingPercentage %>% van het totale opdrachtbedrag van &euro; <%= factuur.volledigTotaalWeergave %><%= factuur.btwVerlegd ? '' : ' (incl. btw)' %>. Het resterende bedrag van &euro; <%= factuur.restantWeergave %> dient op een later moment te worden voldaan.</div><% } %>
+      <% if (factuur.aanbetalingPercentage) { %><div class="aanbetaling">Deze factuur betreft een aanbetaling van <%= factuur.aanbetalingPercentage %>% van het totale opdrachtbedrag van &euro; <%= factuur.volledigSubtotaalWeergave %> (excl. btw). Het resterende bedrag van &euro; <%= factuur.restantWeergave %> (excl. btw) dient op een later moment te worden voldaan.</div><% } %>
+      <% if (factuur.restbetaling) { %><div class="aanbetaling">Deze factuur betreft het resterende bedrag (<%= factuur.restbetaling.percentage %>%) van de opdracht, na de aanbetaling van <%= 100 - factuur.restbetaling.percentage %>% op factuur <%= factuur.restbetaling.aanbetalingNummer %>.</div><% } %>
       <% if (factuur.btwVerlegdReden) { %><div class="btw-verlegd"><%= factuur.btwVerlegdReden %></div><% } %>
       <% if (factuur.soort === 'prijsopgave') { %>
       <div>Op deze prijsopgave zijn onze algemene voorwaarden van toepassing, te vinden op <a href="https://<%= bedrijf.algemeneVoorwaardenUrl %>"><%= bedrijf.algemeneVoorwaardenUrl %></a>.</div>

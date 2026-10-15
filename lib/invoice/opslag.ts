@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { computeTotals } from './calculations';
 import type { FactuurInvoer, PrijsopgaveInvoer } from './invoer';
-import { renderInvoiceHtml, type FactuurVoorRender } from './render';
+import { renderInvoiceHtml, type FactuurVoorRender, type Restbetaling } from './render';
 import { renderPdf } from './pdf';
 import { BTW_VERLEGD_TEKST } from './formulier';
 
@@ -51,14 +51,16 @@ export async function bewaarFactuurPdf(
     invoer: FactuurInvoer;
     totalen: Totalen;
     vorigPad?: string | null;
+    restbetaling?: Restbetaling | null;
   }
 ): Promise<{ fout?: string }> {
-  const { factuurId, clientId, factuurnummer, datum, invoer, totalen, vorigPad } = opties;
+  const { factuurId, clientId, factuurnummer, datum, invoer, totalen, vorigPad, restbetaling } =
+    opties;
 
   return bewaarPdf(service, {
     tabel: 'invoices',
     id: factuurId,
-    render: { factuurnummer, datum, ...renderVelden(invoer, totalen) },
+    render: { factuurnummer, datum, ...renderVelden(invoer, totalen), restbetaling },
     pdfPath: vorigPad
       ? `${clientId}/${factuurnummer}-${Date.now().toString(36)}.pdf`
       : `${clientId}/${factuurnummer}.pdf`,
@@ -108,7 +110,7 @@ function renderVelden(invoer: FactuurInvoer | PrijsopgaveInvoer, totalen: Totale
     btwWeergave: totalen.btwWeergave,
     totaalWeergave: totalen.totaalWeergave,
     aanbetalingPercentage: totalen.aanbetalingPercentage,
-    volledigTotaalWeergave: totalen.volledigTotaalWeergave,
+    volledigSubtotaalWeergave: totalen.volledigSubtotaalWeergave,
     restantWeergave: totalen.restantWeergave
   };
 }

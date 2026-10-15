@@ -36,7 +36,7 @@ export async function PUT(
 
   const { data: bestaand, error: fetchError } = await service
     .from('invoices')
-    .select('id, pdf_path')
+    .select('*')
     .eq('id', id)
     .maybeSingle();
 
@@ -119,7 +119,15 @@ export async function PUT(
     datum: new Date(factuur.issued_at),
     invoer,
     totalen,
-    vorigPad: bestaand.pdf_path
+    vorigPad: bestaand.pdf_path,
+    // Een restfactuur blijft bij het aanpassen een restfactuur, met dezelfde vermelding.
+    restbetaling:
+      typeof bestaand.remainder_percentage === 'number' && bestaand.remainder_of_number
+        ? {
+            percentage: bestaand.remainder_percentage,
+            aanbetalingNummer: bestaand.remainder_of_number
+          }
+        : null
   });
 
   if (pdfResultaat.fout) {

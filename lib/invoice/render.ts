@@ -31,10 +31,18 @@ export interface FactuurVoorRender {
   btwWeergave: string;
   totaalWeergave: string;
   // Alleen bij een aanbetalingsfactuur: het percentage, en de volledige opdracht en het
-  // restant (incl. btw) voor de regel onderaan de PDF.
+  // restant (beide excl. btw) voor de regel onderaan de PDF.
   aanbetalingPercentage?: number | null;
-  volledigTotaalWeergave?: string;
+  volledigSubtotaalWeergave?: string;
   restantWeergave?: string;
+  // Alleen bij een restfactuur: welk deel van de opdracht deze factuur betreft, en op
+  // welke factuur de aanbetaling stond.
+  restbetaling?: Restbetaling | null;
+}
+
+export interface Restbetaling {
+  percentage: number;
+  aanbetalingNummer: string;
 }
 
 export function renderInvoiceHtml(factuur: FactuurVoorRender): string {
@@ -55,6 +63,8 @@ export function renderInvoiceHtml(factuur: FactuurVoorRender): string {
       soort,
       aanRegels,
       aanbetalingPercentage: factuur.aanbetalingPercentage ?? null,
+      // Een factuur is óf een aanbetaling óf een restfactuur, nooit allebei.
+      restbetaling: factuur.aanbetalingPercentage ? null : (factuur.restbetaling ?? null),
       datumWeergave: formatDatumNL(factuur.datum)
     },
     bedrijf
