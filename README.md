@@ -1,7 +1,7 @@
 # Studio Levant — backoffice
 
 Eén backoffice voor Studio Levant: een dashboard voor elke dag, met mail, agenda & taken,
-facturen en social media in dezelfde omgeving. Na het inloggen (Supabase Auth) zie je links
+facturen, uitgaven en social media in dezelfde omgeving. Na het inloggen (Supabase Auth) zie je links
 altijd dezelfde navigatierail met het Studio Levant-beeldmerk; een klik op het logo brengt
 je vanuit elke module terug naar het dashboard.
 
@@ -9,16 +9,18 @@ je vanuit elke module terug naar het dashboard.
 
 | Module | Route | Wat |
 |---|---|---|
-| Dashboard | `/` | "Vandaag": begroeting, snelle acties, snelinvoer voor taken, dagplanning, taken, deze week, inbox, facturen en recente social posts |
+| Dashboard | `/` | "Vandaag": begroeting, snelle acties, snelinvoer voor taken, dagplanning, taken, deze week, inbox, facturen, uitgaven en recente social posts |
 | Mail | `/mail` | Inbox van info@studio-levant.nl (Private Email): lezen, beantwoorden, doorsturen, nieuwe mail, mail → taak |
 | Agenda | `/agenda` | Taken en afspraken in één agenda (week/maand), snelinvoer in gewone taal |
 | Facturen | `/facturen` | De facturentool: facturen, prijsopgaven, klanten en PDF's (ongewijzigd) |
+| Uitgaven | `/uitgaven` | Bonnetjes en betaalde facturen: foto/PDF toevoegen, automatisch uitlezen, btw-indicatie, export voor de boekhouder |
 | Social | `/social` | De social-media-tool (voorheen lokaal), met dezelfde schermen en werking |
 
 ## Eerste keer inrichten (checklist)
 
 1. **SQL uitvoeren** in Supabase: `supabase/UITVOEREN_IN_SQL_EDITOR.sql` (zie hieronder).
-   Tot dan tonen social en de agenda een nette melding "nog niet ingericht".
+   Tot dan tonen social, de agenda en uitgaven een nette melding "nog niet ingericht".
+   Al eerder uitgevoerd (0014–0019)? Dan alleen `supabase/UITVOEREN_0020_UITGAVEN.sql`.
 2. **Oude social-posts importeren** met `scripts/importeer-social-projecten.mjs`
    (zie "Social-projecten importeren").
 3. **Omgevingsvariabelen** zetten in `.env.local` en in Vercel (zie "Omgevingsvariabelen"),
@@ -39,7 +41,8 @@ je vanuit elke module terug naar het dashboard.
 ## Database inrichten: één SQL-bestand
 
 Alles wat de nieuwe modules nodig hebben staat in **`supabase/UITVOEREN_IN_SQL_EDITOR.sql`**:
-de migraties 0014–0019 achter elkaar, in één transactie.
+de migraties 0014–0020 achter elkaar, in één transactie. Wie 0014–0019 al heeft uitgevoerd,
+draait alleen **`supabase/UITVOEREN_0020_UITGAVEN.sql`** (uitgaven; zelfde opzet met controletabel).
 
 | Migratie | Inhoud |
 |---|---|
@@ -49,6 +52,7 @@ de migraties 0014–0019 achter elkaar, in één transactie.
 | `0017_social_storage_limieten.sql` | max. 50 MB en alleen beeld/ZIP/PDF in `social-assets` |
 | `0018_agenda_taken.sql` | tabellen `tasks` en `calendar_events` (RLS, `updated_at`-trigger) |
 | `0019_mail_opslag.sql` | privé-bucket `mail-tmp` voor grote mailbijlagen |
+| `0020_uitgaven.sql` | tabellen `expenses` en `expense_files` (RLS, `updated_at`-trigger), privé-buckets `uitgaven` (25 MB, jpeg/png/webp/heic/pdf) en `uitgaven-export` (50 MB, ZIP) |
 
 **Uitvoeren:** Supabase-dashboard → je project → **SQL Editor** → *New query* → plak het hele
 bestand → **Run**. Onderaan verschijnt een controletabel; elke regel moet `ok` tonen.
@@ -93,7 +97,7 @@ onder **Project Settings → Environment Variables** (Production én Preview):
 | `NEXT_PUBLIC_SUPABASE_URL` | ja | URL van het Supabase-project |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | ja | Publieke anon-key (login in de browser) |
 | `SUPABASE_SERVICE_ROLE_KEY` | ja | Geheime service-role key, alleen op de server |
-| `ANTHROPIC_API_KEY` | voor social | Anthropic-key voor het genereren van social posts |
+| `ANTHROPIC_API_KEY` | voor social en uitgaven | Anthropic-key voor het genereren van social posts en het uitlezen van bonnetjes (zonder key: uitgaven handmatig invullen) |
 | `MAIL_USER`, `MAIL_PASSWORD` | voor mail | Mailbox voor `/mail` (zie "Mail koppelen") |
 | `MAIL_IMAP_HOST`, `MAIL_IMAP_PORT`, `MAIL_SMTP_HOST`, `MAIL_SMTP_PORT` | nee | Standaard `mail.privateemail.com`, 993 en 465 |
 | `MAIL_FROM_NAME`, `MAIL_HANDTEKENING` | nee | Afzendernaam (standaard "Studio Levant") en handtekening (`\n` = nieuwe regel) |
@@ -126,8 +130,9 @@ worden ingevuld; de instellingen-dialoog laat alleen zien of er een key op de se
 ## Dashboard
 
 `app/(app)/page.tsx`: kop met dag, weeknummer en begroeting; snelle acties (Taak, Nieuwe
-factuur, Nieuwe post, Nieuwe mail); snelinvoer voor taken; widgets Vandaag, Taken, Deze week,
-Inbox, Facturen en Social. Elke widget laadt los (eigen laad-, leeg- en foutstaat), zodat één
+factuur, Nieuwe prijsopgave, + Bonnetje, Nieuwe post, Nieuwe mail); snelinvoer voor taken;
+widgets Vandaag, Taken, Deze week, Inbox, Facturen, Uitgaven (deze maand, te controleren,
+laatste 3) en Social. Elke widget laadt los (eigen laad-, leeg- en foutstaat), zodat één
 trage of nog niet ingerichte bron de rest niet blokkeert. De facturen-widget is alleen-lezen
 en rekent met dezelfde regels als het facturenoverzicht (omzet excl. btw per jaar; open =
 aanbetaling zonder restfactuur).
@@ -142,6 +147,44 @@ aanbetaling zonder restfactuur).
   `!`/`!laag` en `@klant`. Begint de tekst met `afspraak` (of staat er een tijdvak in), dan
   wordt het een afspraak. Alle datums in Europe/Amsterdam-tijd.
 - Tests: `node scripts/test-snelinvoer.mjs` (ook zomer-/wintertijd rond 25 okt 2026).
+
+## Uitgaven
+
+Bonnetjes en betaalde facturen op `/uitgaven`, met een widget en de knop **+ Bonnetje** op het
+dashboard en **Als uitgave** bij bijlagen in mail.
+
+- **Toevoegen.** Sleep foto's/PDF's op de pagina, kies ze met **Bonnetje toevoegen**, maak op
+  de telefoon een **Foto maken** (camera), of plak een screenshot met `⌘V`. Meerdere tegelijk
+  kan; elk bestand wordt een eigen concept. Foto's worden in de browser verkleind (max.
+  2400 px, JPEG). Uploads gaan via een signed upload-URL direct naar de privé-bucket
+  `uitgaven` (buiten de 4,5 MB-limiet van Vercel om; max. 25 MB per bestand).
+- **Automatisch uitlezen** (`lib/uitgaven/claude.ts`, model `claude-sonnet-5-5`, gestructureerde
+  JSON-uitvoer): leverancier, datum, bedrag incl. btw, btw-bedrag en -tarief, valuta,
+  factuurnummer, korte omschrijving, categorie en (als zichtbaar) betaalwijze. Het vult
+  alleen lege velden; automatisch ingevulde velden krijgen een zandkleurige stip tot je ze
+  aanpast. Bij een bekende leverancier gaat de laatst gebruikte categorie/betaalwijze voor.
+  Zonder `ANTHROPIC_API_KEY`, bij HEIC-foto's (die de API niet leest) of bij een fout blijft
+  het een concept dat je zelf invult.
+- **Controleren.** Concepten staan bovenaan met "Controleren"; **Klopt, volgende** zet een
+  concept op *verwerkt* en opent het volgende. Bewerken gaat in het zijpaneel (`⌘ Enter` =
+  opslaan, `Esc` = sluiten); bestanden bekijk je daar (afbeelding of PDF via een signed URL van
+  5 minuten). Verwijderen vraagt om bevestiging en haalt ook de bestanden uit de opslag.
+- **Overzicht.** Periode maand/kwartaal/jaar/eigen, zoeken (`/`), filters op categorie,
+  leverancier, status en betaalwijze, totalen incl./excl. btw, gegroepeerd per maand.
+  Uitgaven in een andere valuta dan EUR tellen niet mee in de totalen.
+- **Btw & cijfers.** Per kwartaal de voorbelasting (btw op uitgaven, verlegd telt als 0)
+  tegenover de btw op verstuurde facturen (alleen gelezen uit `invoices`: `vat_amount` per
+  factuurdatum; aanbetaling en restfactuur zijn elk een eigen factuur, verlegd = 0; omzet =
+  `revenue_subtotal` zoals het facturenoverzicht), met een **indicatie** te betalen/terug te
+  vragen, en uitgaven per categorie. Geen fiscaal advies.
+- **Export voor de boekhouder** (knop *Exporteren*, voor de gekozen periode en filters):
+  CSV (puntkomma, Nederlandse decimalen, opent in Excel) en een ZIP met alle bonnetjes als
+  `JJJJ-MM-DD_leverancier_bedrag.ext` plus de CSV. De ZIP gaat via de bucket
+  `uitgaven-export` en een signed URL (5 min); boven ±45 MB in delen.
+- **Code:** `lib/uitgaven/` (model en pure functies, repo, opslag, Claude, btw, export,
+  client), `app/api/uitgaven/**`, `components/uitgaven/`, `app/(app)/uitgaven.css`.
+  Tests zonder database/netwerk: `node scripts/test-uitgaven.mjs`; één echte Claude-aanroep
+  met een gegenereerd testbonnetje: `ANTHROPIC_API_KEY=… node scripts/test-uitgaven.mjs --claude`.
 
 ## Mail koppelen (Namecheap Private Email)
 
@@ -221,12 +264,14 @@ Oude adressen blijven werken via tijdelijke redirects in `next.config.ts`: `/nie
 | `/api/agenda`, `/api/taken…`, `/api/afspraken…` | Agenda-API (503 `tabel_ontbreekt` vóór de SQL) |
 | `/mail` | Mail (`?map=`, `?uid=`, `?nieuw=1`) |
 | `/api/mail/…` | Mail-API (503 `niet_gekoppeld` zonder mail-variabelen) |
+| `/uitgaven` | Uitgaven (`?uitgave=<id>` opent het paneel, `?toevoegen=1`, `?tab=btw`) |
+| `/api/uitgaven/…` | Uitgaven-API (503 `tabel_ontbreekt`/`opslag_ontbreekt` vóór de SQL) |
 | `/social` | Social-media-tool (`#p=<id>` opent een project, `#nieuw` een nieuwe post) |
 | `/api/social/…`, `/social-files/…` | Social-API (spiegelt de oude Express-API) en de bestanden die slides laden |
 
 **Beveiliging.** Alles behalve `/login`, `/wachtwoord-vergeten`, `/auth/*`, de logo's en de
 shell-bestanden zit achter de login. `proxy.ts` stuurt niet-ingelogde bezoekers naar
-`/login` (de API's van social, agenda en mail krijgen een echte 401), en **elke** pagina en
+`/login` (de API's van social, agenda, mail en uitgaven krijgen een echte 401), en **elke** pagina en
 API-route controleert daarnaast zelf de sessie. Nieuwe tabellen hebben RLS. Mail-HTML wordt
 op de server gesaneerd en in een gesandboxte iframe zonder scripts getoond.
 
@@ -238,6 +283,7 @@ node scripts/rooktest-shell.mjs --alleen-statisch     # React-rail en social-rai
 npx next start -p 3107 &                              # (na de build)
 node scripts/rooktest-shell.mjs http://localhost:3107 # alle pagina's -> /login, alle API's weigeren
 node scripts/test-snelinvoer.mjs                      # snelinvoer agenda (incl. zomer-/wintertijd)
+node scripts/test-uitgaven.mjs                        # uitgaven: bedragen, btw, CSV, uitlezen (nagebootst)
 node scripts/test-brand-guard-parity.mjs              # social-port gelijk aan het origineel
 node scripts/genereer-sql-editor.mjs --controleer     # SQL-bestand actueel
 node --experimental-strip-types scripts/rooktest-render.mjs   # social-renderer (lokale Chrome nodig)
@@ -312,4 +358,7 @@ git push -u origin dashboard
 - **Mail:** de link in een taak die met "Taak maken" uit een mail is gemaakt werkt niet meer
   zodra die mail naar een andere map is verplaatst (het uid verandert dan).
 - **Agenda:** geen herhalende afspraken (bewust, voor nu).
+- **Uitgaven:** HEIC-foto's worden opgeslagen maar niet automatisch uitgelezen en in de
+  meeste browsers niet als voorbeeld getoond (Safari/iPhone levert bij "Foto maken" gewoon
+  JPEG). Bedragen in andere valuta worden niet omgerekend. Het btw-overzicht is een indicatie.
 - **Social op de telefoon** is net als het origineel niet geoptimaliseerd voor kleine schermen.

@@ -1,8 +1,11 @@
 'use client';
 
 import { Fragment, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { adresNaam, bijlageUrl, downloadBijlage, grootteTekst, initialen, MailApiFout, volleDatum } from '@/lib/mail/client';
 import { useToast } from '@/components/agenda/Toast';
+import { uitgavenApi } from '@/lib/uitgaven/client';
+import { isBestandsType, typeUitNaam } from '@/lib/uitgaven/model';
 import type { Adres, Bericht, MapRol } from '@/lib/mail/types';
 import { Icoon, type MailIcoonNaam } from './Iconen';
 import { VeiligeMailFrame } from './VeiligeMailFrame';
@@ -17,6 +20,9 @@ export type LezerActie =
   | 'ongelezen'
   | 'vlag'
   | 'taak';
+
+/** PDF's en foto's kunnen als uitgave (bonnetje/betaalde factuur) worden opgeslagen. */
+const kanUitgave = (x: { naam: string; type: string }) => isBestandsType(x.type.toLowerCase()) || typeUitNaam(x.naam) !== null;
 
 const URL_RE = /(https?:\/\/[^\s<>"']+[^\s<>"'.,;:!?)\]])|([\w.+-]+@[\w-]+\.[\w.-]+\w)/g;
 
@@ -121,7 +127,27 @@ export function Lezer({
   // Per bericht opnieuw geblokkeerd: de sleutel van de component is map+uid (zie MailApp).
   const [beelden, setBeelden] = useState(false);
   const [downloadt, setDownloadt] = useState<string | null>(null);
+  const [bewaart, setBewaart] = useState<string | null>(null);
   const toast = useToast();
+  const router = useRouter();
+
+  // "Opslaan als uitgave": de server haalt de bijlage op, zet hem bij de uitgaven en leest hem uit.
+  async function alsUitgave(map: string, uid: number, deel: string, onderwerp: string) {
+    if (bewaart) return;
+    setBewaart(deel);
+    try {
+      const { uitgave } = await uitgavenApi.uitMail({ map, uid, deel, onderwerp });
+      const wat = uitgave.leverancier ? `${uitgave.leverancier}${uitgave.totaal !== null ? ` · € ${uitgave.totaal.toLocaleString('nl-NL', { minimumFractionDigits: 2 })}` : ''}` : 'Concept';
+      toast(`Opgeslagen als uitgave: ${wat}`, {
+        actie: { label: 'Controleren', onClick: () => router.push(`/uitgaven?uitgave=${uitgave.id}`) },
+        duur: 8000
+      });
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'Opslaan als uitgave is mislukt.', { fout: true });
+    } finally {
+      setBewaart(null);
+    }
+  }
 
   async function download(e: React.MouseEvent<HTMLAnchorElement>, map: string, uid: number, deel: string, naam: string) {
     // Gewone klik via fetch (fout als melding); met modifier-toetsen de browser laten doen.
@@ -223,7 +249,7 @@ export function Lezer({
         {b.bijlagen.length > 0 && (
           <ul className="ml-bijlagen" aria-label="Bijlagen">
             {b.bijlagen.map((x) => (
-              <li key={x.deel}>
+              <li key={x.deel} className="ml-bijlage-rij">
                 <a
                   className="ml-bijlage"
                   href={bijlageUrl(b.map, b.uid, x.deel)}
@@ -237,6 +263,18 @@ export function Lezer({
                   <span className="ml-bijlage-grootte">{grootteTekst(x.grootte)}</span>
                   <Icoon naam="download" grootte={15} className="ml-icoon ml-bijlage-dl" />
                 </a>
+                {kanUitgave(x) && (
+                  <button
+                    type="button"
+                    className="ml-bijlage-uitgave"
+                    title="Opslaan als uitgave (bonnetje of betaalde factuur) en automatisch uitlezen"
+                    aria-busy={bewaart === x.deel || undefined}
+                    disabled={bewaart !== null}
+                    onClick={() => alsUitgave(b.map, b.uid, x.deel, b.onderwerp)}
+                  >
+                    {bewaart === x.deel ? 'Bezig…' : 'Als uitgave'}
+                  </button>
+                )}
               </li>
             ))}
           </ul>

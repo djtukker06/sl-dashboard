@@ -1,0 +1,76 @@
+import { randomUUID } from 'node:crypto';
+import { vandaag as vandaagNL } from '@/lib/agenda/datum';
+import { haalBijlage } from '@/lib/mail/berichten';
+import { MailFout } from '@/lib/mail/fout';
+import { metImap } from '@/lib/mail/imap';
+import { controleerMap, parseUid } from '@/lib/mail/mappen';
+import { dbFout, fout, json, leesJson, uitgavenRoute } from '@/lib/uitgaven/api';
+import { isBestandsType, MAX_BESTAND_BYTES, schoon, snuffelType, typeUitNaam } from '@/lib/uitgaven/model';
+import { nieuwPad, upload, verwijder } from '@/lib/uitgaven/opslag';
+import { moetUitgave } from '@/lib/uitgaven/repo';
+import { leesUitgaveUit } from '@/lib/uitgaven/uitlezen';
+
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+export const maxDuration = 60;
+
+// POST /api/uitgaven/uit-mail  { map, uid, deel, onderwerp? } → { uitgave }
+// "Opslaan als uitgave" in de mail-lezer: haalt de bijlage server-side op via IMAP (zoals de
+// download-route), zet hem in de bucket uitgaven, maakt een concept en leest het uit.
+export const POST = uitgavenRoute(async (request, _ctx, sb) => {
+  const b = await leesJson(request);
+  const deel = typeof b.deel === 'string' ? b.deel : '';
+  const mapNaam = typeof b.map === 'string' ? b.map : 'INBOX';
+
+  let bijlage: { naam: string; type: string; inhoud: Buffer };
+  try {
+    const uid = parseUid(String(b.uid ?? ''));
+    bijlage = await metImap(async (c) => {
+      const map = await controleerMap(c, mapNaam);
+      return haalBijlage(c, map.pad, uid, deel, MAX_BESTAND_BYTES);
+    });
+  } catch (e) {
+    if (e instanceof MailFout) return fout(e.status, e.message, e.code);
+    throw e;
+  }
+
+  // Het echte type uit de inhoud; de naam of het opgegeven type als die niets zegt.
+  const type =
+    snuffelType(bijlage.inhoud.subarray(0, 16)) ??
+    typeUitNaam(bijlage.naam) ??
+    (isBestandsType(bijlage.type) ? bijlage.type : null);
+  if (!type) return fout(400, 'Alleen PDF’s en foto’s (jpg, png, webp, heic) kunnen als uitgave worden opgeslagen.');
+
+  const id = randomUUID();
+  const pad = nieuwPad(id, bijlage.naam || 'bijlage', type);
+  await upload(pad, bijlage.inhoud, type);
+
+  const onderwerp = schoon(b.onderwerp, 300);
+  const nieuw = await sb.from('expenses').insert({ id, source: 'mail', source_ref: onderwerp ? `Mail: ${onderwerp}` : 'Mail' });
+  if (nieuw.error) {
+    await verwijder([pad]);
+    throw dbFout(nieuw.error);
+  }
+  const bestand = await sb.from('expense_files').insert({
+    expense_id: id,
+    storage_path: pad,
+    file_name: schoon(bijlage.naam, 200) || pad.split('/').pop(),
+    mime_type: type,
+    size_bytes: bijlage.inhoud.length
+  });
+  if (bestand.error) {
+    await sb.from('expenses').delete().eq('id', id);
+    await verwijder([pad]);
+    throw dbFout(bestand.error);
+  }
+
+  // Uitlezen mislukt nooit hard: dan blijft het een concept om zelf in te vullen.
+  try {
+    const uitgave = await leesUitgaveUit(sb, id, vandaagNL());
+    return json({ uitgave }, 201);
+  } catch (e) {
+    console.error('[uitgaven] uitlezen na mail', (e as Error)?.message ?? e);
+    const { uitgave } = await moetUitgave(sb, id);
+    return json({ uitgave }, 201);
+  }
+});

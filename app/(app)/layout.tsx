@@ -6,8 +6,9 @@ import '../../public/shell/shell.css';
 import './app.css';
 import './agenda.css';
 import './mail.css';
+import './uitgaven.css';
 
-// Gedeelde shell voor alle ingelogde React-pagina's (dashboard, mail, agenda, facturen).
+// Gedeelde shell voor alle ingelogde React-pagina's (dashboard, mail, agenda, uitgaven, facturen).
 // De social-module (statisch HTML) krijgt dezelfde rail via app/social/route.ts.
 // Login en wachtwoordherstel staan buiten deze route-group en dus zonder rail.
 export default async function AppLayout({ children }: Readonly<{ children: React.ReactNode }>) {

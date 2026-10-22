@@ -8,7 +8,10 @@ import type { IcoonNaam } from '@/lib/shell/iconen';
 //   1. Voeg hieronder één entry toe aan MODULES (en zo nodig een icoon in lib/shell/iconen.ts).
 //   2. Maak de pagina's in app/(app)/<module>/ — dan staan ze automatisch in de shell.
 //   3. Eventueel API-routes in app/api/<module>/ (elke route controleert zelf de sessie).
-//   4. Eventueel een migratie supabase/migrations/00NN_<module>.sql.
+//   4. Eventueel een migratie supabase/migrations/00NN_<module>.sql (idempotent, met RLS),
+//      opgenomen in scripts/genereer-sql-editor.mjs, en het API-pad in de 401-lijst van proxy.ts.
+// Voorbeelden van complete modules: agenda (tabellen + API + paneel), mail (externe koppeling)
+// en uitgaven (tabellen + Storage-uploads + Claude + export; zie README "Uitgaven").
 // Zet `actief: false` om een module tijdelijk uit de navigatie te halen.
 
 export type Module = {
@@ -67,6 +70,18 @@ export const MODULES: Module[] = [
     icoon: 'factuur',
     actief: true,
     snelactie: { label: 'Nieuwe factuur', href: '/facturen/nieuwe-factuur' }
+  },
+  {
+    id: 'uitgaven',
+    naam: 'Uitgaven',
+    kort: 'Uitgaven',
+    beschrijving: 'Bonnetjes en betaalde facturen, btw en export voor de boekhouder',
+    href: '/uitgaven',
+    icoon: 'uitgaven',
+    actief: true,
+    // Op het dashboard is dit een knop die direct de bestandskiezer opent
+    // (components/uitgaven/BonnetjeKnop.tsx); deze link is de terugval.
+    snelactie: { label: 'Bonnetje toevoegen', href: '/uitgaven?toevoegen=1' }
   },
   {
     id: 'social',

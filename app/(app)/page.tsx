@@ -14,6 +14,8 @@ import { FacturenWidget } from '@/components/dashboard/FacturenWidget';
 import { SocialWidget } from '@/components/dashboard/SocialWidget';
 import { PlanningSkelet, PlanningWidgets } from '@/components/dashboard/PlanningWidgets';
 import { TaakKnop } from '@/components/dashboard/TaakKnop';
+import { UitgavenWidget } from '@/components/dashboard/UitgavenWidget';
+import { BonnetjeKnop } from '@/components/uitgaven/BonnetjeKnop';
 
 export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'Dashboard · Studio Levant' };
@@ -45,6 +47,7 @@ export default async function DashboardPage() {
         <Link className="db-knop" href="/facturen/prijsopgaven/nieuw">
           Nieuwe prijsopgave
         </Link>
+        <BonnetjeKnop />
         <a className="db-knop" href="/social#nieuw">
           Nieuwe post
         </a>
@@ -74,9 +77,15 @@ export default async function DashboardPage() {
           <SocialWidget />
         </Suspense>
 
-        <Suspense fallback={<KaartSkelet label="Facturen" className="db-smal db-facturen" />}>
-          <FacturenWidget />
-        </Suspense>
+        {/* Facturen en uitgaven onder elkaar naast de posts. */}
+        <div className="db-smal db-stapel">
+          <Suspense fallback={<KaartSkelet label="Facturen" className="db-facturen" />}>
+            <FacturenWidget />
+          </Suspense>
+          <Suspense fallback={<KaartSkelet label="Uitgaven" className="db-uitgaven" />}>
+            <UitgavenWidget />
+          </Suspense>
+        </div>
       </div>
     </div>
   );
