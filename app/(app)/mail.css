@@ -1,0 +1,723 @@
+/* ==========================================================
+   Studio Levant — mail (ml-) en de inbox-widget op het dashboard
+   (db-inbox, db-mail). Tokens: public/shell/shell.css (--sl-*).
+   Knoppen/kaarten: app.css (db-). Toasts: agenda.css (ag-toast).
+   ========================================================== */
+
+.ml-icoon { display: block; flex: 0 0 auto; }
+.ml-code {
+  font-family: var(--sl-mono);
+  font-size: .92em;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: var(--sl-raise);
+  border: 1px solid var(--sl-line-soft);
+  color: var(--sl-text);
+  white-space: nowrap;
+}
+
+/* ---------- pagina ---------- */
+.ml-app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  height: 100dvh;
+  min-height: 560px;
+  background: var(--sl-bg);
+  color: var(--sl-text);
+  font-family: var(--sl-font);
+}
+.ml-app .sl-kop { flex: 0 0 auto; }
+.ml {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 220px 380px minmax(0, 1fr);
+}
+.ml.ml-middel { grid-template-columns: 340px minmax(0, 1fr); }
+
+/* ---------- mappen ---------- */
+.ml-mappen {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 16px 12px;
+  border-right: 1px solid var(--sl-line);
+}
+.ml-mappen-lijst { list-style: none; margin: 0; padding: 0; display: grid; gap: 1px; }
+.ml-map {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  width: 100%;
+  padding: 8px 10px 8px 12px;
+  border: 0;
+  border-radius: var(--sl-r);
+  background: transparent;
+  color: var(--sl-muted);
+  font-family: var(--sl-font);
+  font-size: 14px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  position: relative;
+  transition: background-color .15s var(--sl-ease), color .15s var(--sl-ease);
+}
+.ml-map:hover { background: var(--sl-panel); color: var(--sl-text); }
+.ml-map[aria-current="true"] { background: var(--sl-raise); color: var(--sl-text); }
+.ml-map[aria-current="true"]::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 8px;
+  bottom: 8px;
+  width: 2px;
+  background: var(--sl-sand);
+}
+.ml-map-naam { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ml-map-aantal {
+  font-family: var(--sl-mono);
+  font-size: 11px;
+  color: var(--sl-muted);
+  font-variant-numeric: tabular-nums;
+}
+.ml-map-aantal-sterk {
+  min-width: 20px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--sl-sand);
+  color: var(--sl-dark);
+  font-weight: 700;
+  text-align: center;
+}
+.ml-map-skelet { padding: 12px; }
+.ml-mappen-sectie {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  margin: 18px 0 6px;
+  padding: 6px 12px;
+  border: 0;
+  background: transparent;
+  color: var(--sl-muted);
+  font-family: var(--sl-mono);
+  font-size: 10.5px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.ml-mappen-sectie:hover { color: var(--sl-text); }
+.ml-draai { transition: transform .2s var(--sl-ease); }
+.ml-draai.ml-open { transform: rotate(180deg); }
+.ml-mappen-fout { display: grid; gap: 10px; justify-items: start; padding: 8px 12px; font-size: 13px; color: var(--sl-danger); }
+.ml-mappen-fout p { margin: 0; line-height: 1.5; }
+
+.ml-toetsen { margin-top: auto; padding: 16px 12px 0; font-size: 12px; color: var(--sl-muted); }
+.ml-toetsen summary {
+  cursor: pointer;
+  font-family: var(--sl-mono);
+  font-size: 10.5px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  list-style: none;
+}
+.ml-toetsen summary::-webkit-details-marker { display: none; }
+.ml-toetsen summary:hover { color: var(--sl-text); }
+.ml-toetsen dl { margin: 10px 0 0; display: grid; gap: 6px; }
+.ml-toetsen dl > div { display: flex; gap: 10px; align-items: baseline; }
+.ml-toetsen dt { flex: 0 0 64px; }
+.ml-toetsen dd { margin: 0; }
+
+/* mappenkeuze (smallere schermen): knop met popover */
+.ml-mapkeuze { position: relative; flex: 0 0 auto; }
+.ml-mapkeuze-knop {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 36px;
+  padding: 0 10px 0 12px;
+  border: 1px solid var(--sl-line);
+  border-radius: var(--sl-r);
+  background: transparent;
+  color: var(--sl-text);
+  font-family: var(--sl-font);
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.ml-mapkeuze-knop:hover { background: var(--sl-hover); }
+.ml-pop-achter { position: fixed; inset: 0; z-index: 40; }
+.ml-pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 41;
+  width: 260px;
+  max-height: min(70vh, 520px);
+  overflow-y: auto;
+  padding: 8px;
+  background: var(--sl-bg);
+  border: 1px solid var(--sl-line);
+  border-radius: 6px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, .5);
+  animation: sl-pop-in .16s var(--sl-ease);
+}
+
+/* ---------- lijst ---------- */
+.ml-lijst {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  border-right: 1px solid var(--sl-line);
+  background: var(--sl-bg);
+}
+.ml-lijst-kop {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--sl-line);
+}
+.ml-zoek {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--sl-line);
+  border-radius: var(--sl-r);
+  color: var(--sl-muted);
+  transition: border-color .2s var(--sl-ease);
+}
+.ml-zoek:focus-within { border-color: var(--sl-sand); color: var(--sl-text); }
+.ml-zoek-veld {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--sl-text);
+  font-family: var(--sl-font);
+  font-size: 14px;
+  color-scheme: dark;
+}
+.ml-zoek-veld::placeholder { color: var(--sl-faint); }
+.ml-lijst-info {
+  margin: 0;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--sl-line-soft);
+  font-family: var(--sl-mono);
+  font-size: 10.5px;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--sl-muted);
+}
+.ml-lijst-scroll { position: relative; flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.ml-rijen { list-style: none; margin: 0; padding: 0; }
+.ml-rijen > li { position: relative; border-bottom: 1px solid var(--sl-line-soft); }
+.ml-rij {
+  display: grid;
+  grid-template-columns: 10px minmax(0, 1fr);
+  grid-template-areas: "stip boven" ". onder";
+  column-gap: 8px;
+  row-gap: 4px;
+  width: 100%;
+  padding: 12px 40px 13px 12px;
+  border: 0;
+  background: transparent;
+  color: var(--sl-muted);
+  font-family: var(--sl-font);
+  text-align: left;
+  cursor: pointer;
+  position: relative;
+  transition: background-color .12s var(--sl-ease);
+}
+.ml-rij:hover { background: var(--sl-panel); }
+.ml-rij[aria-current="true"] { background: var(--sl-raise); }
+.ml-rij[aria-current="true"]::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--sl-sand);
+}
+.ml-rij:focus-visible { outline: none; box-shadow: inset 0 0 0 1px var(--sl-sand); }
+.ml-rij-stip { grid-area: stip; align-self: center; width: 7px; height: 7px; border-radius: 50%; }
+.ml-rij-nieuw .ml-rij-stip { background: var(--sl-sand); }
+.ml-rij-boven { grid-area: boven; display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+.ml-rij-van {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--sl-text);
+}
+.ml-rij-nieuw .ml-rij-van { font-weight: 800; }
+.ml-rij-datum {
+  flex: 0 0 auto;
+  font-family: var(--sl-mono);
+  font-size: 10.5px;
+  letter-spacing: .04em;
+  color: var(--sl-muted);
+}
+.ml-rij-nieuw .ml-rij-datum { color: var(--sl-text); }
+.ml-rij-onder { grid-area: onder; display: flex; align-items: center; gap: 8px; min-width: 0; }
+.ml-rij-onderwerp { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+.ml-rij-nieuw .ml-rij-onderwerp { color: var(--sl-text); font-weight: 600; }
+.ml-rij-tekens { display: inline-flex; gap: 4px; color: var(--sl-muted); }
+.ml-rij-icoon { display: block; }
+.ml-rij-vlag {
+  position: absolute;
+  right: 8px;
+  bottom: 9px;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--sl-r);
+  background: transparent;
+  color: var(--sl-faint);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity .15s var(--sl-ease), color .15s var(--sl-ease), background-color .15s var(--sl-ease);
+}
+.ml-rijen > li:hover .ml-rij-vlag, .ml-rij-vlag:focus-visible, .ml-rij-vlag.ml-aan { opacity: 1; }
+.ml-rij-vlag:hover { color: var(--sl-text); background: var(--sl-hover); }
+.ml-rij-vlag.ml-aan { color: var(--sl-danger); }
+.ml-rij-vlag.ml-aan svg { fill: currentColor; }
+.ml-rij-vlag:focus-visible { outline: none; box-shadow: var(--sl-focus); }
+.ml-rij-skelet { display: grid; gap: 8px; padding: 16px 18px 16px 30px; }
+.ml-meer { display: flex; justify-content: center; padding: 16px; }
+.ml-laadbalk {
+  position: sticky;
+  bottom: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--sl-sand), transparent);
+  background-size: 50% 100%;
+  background-repeat: no-repeat;
+  animation: ml-laad 1.1s linear infinite;
+}
+@keyframes ml-laad { from { background-position: -50% 0; } to { background-position: 150% 0; } }
+
+/* ---------- lege staten ---------- */
+.ml-leeg { display: grid; gap: 8px; justify-items: start; padding: 28px 20px; }
+.ml-leeg-groot { place-content: center; justify-items: center; text-align: center; height: 100%; padding: 40px; }
+.ml-leeg-icoon { color: var(--sl-faint); margin-bottom: 6px; }
+.ml-leeg-titel { margin: 0; font-size: 15px; font-weight: 600; color: var(--sl-text); }
+.ml-leeg-tekst { margin: 0; font-size: 13px; line-height: 1.7; color: var(--sl-muted); max-width: 46ch; }
+.ml-fout { color: var(--sl-danger); }
+
+/* ---------- lezer ---------- */
+.ml-lezer {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--sl-bg);
+}
+.ml-lezer-leeg { position: relative; }
+.ml-acties {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-wrap: wrap;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--sl-line);
+}
+.ml-actie {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 34px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--sl-r);
+  background: transparent;
+  color: var(--sl-muted);
+  font-family: var(--sl-font);
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color .15s var(--sl-ease), color .15s var(--sl-ease);
+}
+.ml-actie:hover { background: var(--sl-panel); color: var(--sl-text); }
+.ml-actie:focus-visible, .ml-link:focus-visible, .ml-bijlage:focus-visible, .ml-map:focus-visible,
+.ml-mapkeuze-knop:focus-visible, .ml-balk-knop:focus-visible, .ml-terug:focus-visible, .ml-mappen-sectie:focus-visible {
+  outline: none;
+  box-shadow: var(--sl-focus);
+}
+.ml-actie.ml-aan { color: var(--sl-danger); }
+.ml-actie.ml-aan svg { fill: currentColor; }
+.ml-acties-scheiding { width: 1px; height: 18px; margin: 0 6px; background: var(--sl-line); }
+.ml-lezer-scroll { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow-y: auto; }
+.ml-lezer-kop { padding: 26px 32px 18px; display: grid; gap: 18px; }
+.ml-lezer-onderwerp {
+  margin: 0;
+  font-size: clamp(20px, 1.8vw, 26px);
+  line-height: 1.25;
+  font-weight: 600;
+  letter-spacing: -.005em;
+  color: var(--sl-text);
+  overflow-wrap: anywhere;
+}
+.ml-lezer-afzender { display: flex; align-items: flex-start; gap: 14px; }
+.ml-avatar {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  border: 1px solid var(--sl-line);
+  background: var(--sl-panel);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--sl-text);
+}
+.ml-lezer-wie { flex: 1; min-width: 0; display: grid; gap: 3px; }
+.ml-lezer-van { margin: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; font-size: 14px; }
+.ml-lezer-adres { font-family: var(--sl-mono); font-size: 11.5px; color: var(--sl-muted); overflow-wrap: anywhere; }
+.ml-lezer-regel { margin: 0; display: flex; gap: 8px; font-size: 12.5px; color: var(--sl-muted); min-width: 0; }
+.ml-lezer-regel > span:last-child { min-width: 0; overflow-wrap: anywhere; }
+.ml-lezer-regel-label {
+  flex: 0 0 auto;
+  font-family: var(--sl-mono);
+  font-size: 10.5px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  line-height: 18px;
+}
+.ml-lezer-datum {
+  flex: 0 0 auto;
+  font-family: var(--sl-mono);
+  font-size: 11px;
+  letter-spacing: .04em;
+  color: var(--sl-muted);
+  white-space: nowrap;
+}
+.ml-lezer-skelet { display: grid; gap: 12px; padding: 30px 32px; }
+.ml-lezer-skelet-vlak { height: 280px; margin-top: 12px; border-radius: var(--sl-r); background: var(--sl-panel); }
+
+/* bijlagen */
+.ml-bijlagen { list-style: none; margin: 0; padding: 0 32px 16px; display: flex; flex-wrap: wrap; gap: 8px; }
+.ml-bijlage {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 320px;
+  padding: 7px 10px;
+  border: 1px solid var(--sl-line);
+  border-radius: var(--sl-r);
+  background: var(--sl-panel);
+  color: var(--sl-text);
+  font-size: 13px;
+  text-decoration: none;
+  transition: border-color .15s var(--sl-ease), background-color .15s var(--sl-ease);
+}
+a.ml-bijlage:hover { border-color: var(--sl-sand); background: var(--sl-raise); }
+.ml-bijlage-naam { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ml-bijlage-grootte { flex: 0 0 auto; font-family: var(--sl-mono); font-size: 10.5px; color: var(--sl-muted); }
+.ml-bijlage-dl { color: var(--sl-muted); }
+.ml-bijlage-weg {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--sl-muted);
+  cursor: pointer;
+}
+.ml-bijlage-weg:hover { background: var(--sl-hover); color: var(--sl-text); }
+.ml-bijlage-keuze { cursor: pointer; }
+.ml-bijlage-keuze input { accent-color: var(--sl-sand); margin: 0; }
+.ml-bijlage-keuze.ml-uit { opacity: .55; }
+
+/* balk boven de mail (externe beelden, te groot) */
+.ml-balk {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 32px 14px;
+  padding: 9px 10px 9px 14px;
+  border: 1px solid var(--sl-line);
+  border-radius: var(--sl-r);
+  background: var(--sl-panel);
+  font-size: 13px;
+  color: var(--sl-muted);
+}
+.ml-balk > span { display: inline-flex; align-items: center; gap: 8px; }
+.ml-balk-knop {
+  flex: 0 0 auto;
+  padding: 5px 12px;
+  border: 1px solid var(--sl-line);
+  border-radius: var(--sl-r);
+  background: transparent;
+  color: var(--sl-text);
+  font-family: var(--sl-font);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.ml-balk-knop:hover { background: var(--sl-hover); }
+
+/* de mail zelf: wit "papier" met de gesandboxte iframe */
+.ml-papier {
+  flex: 1 0 380px;
+  display: flex;
+  margin: 0 32px 32px;
+  border-radius: var(--sl-r);
+  overflow: hidden;
+  background: #fff;
+  box-shadow: 0 0 0 1px var(--sl-line-soft);
+}
+.ml-frame { flex: 1; width: 100%; min-height: 100%; border: 0; display: block; background: #fff; }
+.ml-tekst {
+  margin: 0;
+  padding: 4px 32px 40px;
+  font-family: var(--sl-font);
+  font-size: 14.5px;
+  line-height: 1.65;
+  color: var(--sl-text);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-width: 78ch;
+}
+.ml-tekst a { color: var(--sl-sand); text-underline-offset: 2px; }
+.ml-tekst-citaat { color: var(--sl-muted); }
+.ml-terug {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 12px;
+  padding: 6px 10px;
+  border: 1px solid var(--sl-line);
+  border-radius: var(--sl-r);
+  background: transparent;
+  color: var(--sl-text);
+  font-family: var(--sl-font);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+/* ---------- opstellen ---------- */
+.ml-opsteller {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--sl-bg);
+  animation: ml-in .18s var(--sl-ease);
+}
+@keyframes ml-in { from { opacity: 0; transform: translateY(6px); } }
+.ml-opsteller-kop {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px 8px 24px;
+  min-height: 51px;
+  border-bottom: 1px solid var(--sl-line);
+}
+.ml-opsteller-form { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.ml-velden { border-bottom: 1px solid var(--sl-line); }
+.ml-veld-rij {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 46px;
+  padding: 0 24px;
+  border-bottom: 1px solid var(--sl-line-soft);
+}
+.ml-veld-rij:last-child { border-bottom: 0; }
+.ml-veld-rij:focus-within .ml-veld-label { color: var(--sl-text); }
+.ml-veld-label {
+  flex: 0 0 76px;
+  font-family: var(--sl-mono);
+  font-size: 10.5px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--sl-muted);
+}
+.ml-veld-statisch { flex: 1; min-width: 0; font-size: 14px; color: var(--sl-muted); overflow: hidden; text-overflow: ellipsis; }
+.ml-adres { position: relative; flex: 1; min-width: 0; }
+.ml-veld, input.ml-veld[type="text"] {
+  width: 100%;
+  border-radius: 0;
+  min-width: 0;
+  padding: 12px 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--sl-text);
+  font-family: var(--sl-font);
+  font-size: 14px;
+  color-scheme: dark;
+}
+.ml-adres .ml-veld { display: block; }
+input.ml-veld:focus { border: 0; }
+.ml-suggesties {
+  position: absolute;
+  top: calc(100% - 2px);
+  left: -10px;
+  right: 0;
+  z-index: 30;
+  list-style: none;
+  margin: 0;
+  padding: 6px;
+  max-width: 460px;
+  background: var(--sl-bg);
+  border: 1px solid var(--sl-line);
+  border-radius: 6px;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, .5);
+}
+.ml-suggestie { display: grid; gap: 1px; padding: 8px 10px; border-radius: var(--sl-r); cursor: pointer; }
+.ml-suggestie[aria-selected="true"] { background: var(--sl-raise); }
+.ml-suggestie-naam { font-size: 13.5px; font-weight: 500; color: var(--sl-text); }
+.ml-suggestie-adres { font-family: var(--sl-mono); font-size: 11px; color: var(--sl-muted); }
+.ml-link {
+  flex: 0 0 auto;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: var(--sl-r);
+  background: transparent;
+  color: var(--sl-muted);
+  font-family: var(--sl-font);
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.ml-link:hover { color: var(--sl-text); }
+.ml-tekstvak {
+  flex: 1;
+  min-height: 220px;
+  width: 100%;
+  padding: 20px 24px;
+  border: 0;
+  outline: none;
+  resize: none;
+  background: transparent;
+  color: var(--sl-text);
+  font-family: var(--sl-font);
+  font-size: 14.5px;
+  line-height: 1.65;
+  color-scheme: dark;
+}
+.ml-bijlagen-opstel { padding: 12px 24px 0; border-top: 1px solid var(--sl-line-soft); }
+.ml-opsteller-fout { margin: 12px 24px 0; font-size: 13px; color: var(--sl-danger); }
+.ml-opsteller-voet {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 14px 24px 18px;
+}
+.ml-opsteller-hint { margin-left: 6px; font-size: 12px; color: var(--sl-muted); display: inline-flex; align-items: center; gap: 4px; }
+.ml-opsteller-weg { margin-left: auto; }
+
+/* ---------- niet gekoppeld ---------- */
+.ml-setup { display: grid; justify-items: start; gap: 14px; max-width: 640px; padding: 56px 40px; }
+.ml-setup h2 { margin: 0; font-size: clamp(24px, 2.8vw, 34px); line-height: 1.15; font-weight: 400; text-transform: uppercase; }
+.ml-setup-tekst { margin: 0; font-size: 15px; line-height: 1.65; color: var(--sl-muted); }
+.ml-setup-klein { font-size: 13.5px; }
+.ml-setup-vars { margin: 8px 0; padding: 0; width: 100%; display: grid; border-top: 1px solid var(--sl-line-soft); }
+.ml-setup-vars > div {
+  display: grid;
+  grid-template-columns: minmax(170px, auto) 1fr;
+  gap: 16px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--sl-line-soft);
+  align-items: baseline;
+}
+.ml-setup-vars dt { font-size: 13px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.ml-setup-vars dd { margin: 0; font-size: 13.5px; color: var(--sl-muted); }
+.ml-setup-verplicht {
+  font-family: var(--sl-mono);
+  font-size: 9.5px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--sl-sand);
+}
+
+.ml-draait { animation: ml-draai .8s linear infinite; }
+@keyframes ml-draai { to { transform: rotate(360deg); } }
+
+/* ---------- inbox-widget op het dashboard ---------- */
+.db-mails { margin: -8px -10px; }
+.db-mail { justify-content: flex-start; gap: 10px; align-items: flex-start; }
+.db-mail .db-rij-hoofd { flex: 1; }
+.db-mail-stip { flex: 0 0 auto; width: 7px; height: 7px; margin-top: 7px; border-radius: 50%; }
+.db-mail-nieuw .db-mail-stip { background: var(--sl-sand); }
+.db-mail-van { font-size: 13.5px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.db-mail-nieuw .db-mail-van { font-weight: 800; }
+.db-mail-onderwerp { font-size: 12.5px; color: var(--sl-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.db-mail-nieuw .db-mail-onderwerp { color: var(--sl-text); }
+.db-mail-tijd { flex: 0 0 auto; font-family: var(--sl-mono); font-size: 10.5px; color: var(--sl-muted); margin-top: 2px; }
+.db-inbox-skelet { display: grid; gap: 18px; }
+.db-inbox-skelet-rij { display: grid; gap: 8px; }
+
+/* ---------- responsive ---------- */
+@media (max-width: 1100px) {
+  .ml-lezer-kop { padding: 22px 24px 16px; }
+  .ml-bijlagen, .ml-tekst { padding-left: 24px; padding-right: 24px; }
+  .ml-balk, .ml-papier { margin-left: 24px; margin-right: 24px; }
+  .ml-actie-label { display: none; }
+  .ml-actie { padding: 0 9px; }
+}
+@media (min-width: 1500px) {
+  .ml { grid-template-columns: 240px 420px minmax(0, 1fr); }
+}
+@media (max-width: 720px) {
+  .ml-app {
+    height: calc(100dvh - var(--sl-tab-h) - env(safe-area-inset-bottom));
+    min-height: 0;
+  }
+  .ml-app .sl-kop { flex-direction: row; align-items: center; padding: 12px 16px; min-height: 0; }
+  .ml-app .sl-kop-label { display: none; }
+  .ml-verberg-mobiel { display: none; }
+  .ml, .ml.ml-middel { grid-template-columns: minmax(0, 1fr); }
+  .ml-mobiel-lijst .ml-lezer, .ml-mobiel-lijst .ml-opsteller { display: none; }
+  .ml-mobiel-lezer .ml-lijst { display: none; }
+  .ml-lijst { border-right: 0; }
+  .ml-lijst-kop { padding: 10px 12px; }
+  .ml-rij { padding: 12px 44px 13px 10px; }
+  .ml-rij-vlag { opacity: 1; color: transparent; }
+  .ml-rij-vlag.ml-aan { color: var(--sl-danger); }
+  .ml-acties { padding: 6px 8px; gap: 0; overflow-x: auto; flex-wrap: nowrap; }
+  .ml-acties-scheiding { margin: 0 2px; }
+  .ml-lezer-kop { padding: 18px 16px 14px; gap: 14px; }
+  .ml-lezer-afzender { flex-wrap: wrap; }
+  .ml-lezer-datum { width: 100%; padding-left: 52px; }
+  .ml-bijlagen, .ml-tekst { padding-left: 16px; padding-right: 16px; }
+  .ml-balk, .ml-papier { margin-left: 12px; margin-right: 12px; }
+  .ml-papier { flex-basis: 60vh; margin-bottom: 16px; }
+  .ml-veld-rij { padding: 0 16px; }
+  .ml-veld-label { flex-basis: 60px; }
+  .ml-tekstvak { padding: 16px; font-size: 16px; }
+  .ml-veld { font-size: 16px; }
+  .ml-opsteller-voet { padding: 12px 16px 16px; }
+  .ml-opsteller-hint { display: none; }
+  .ml-setup { padding: 32px 16px; }
+  .ml-setup-vars > div { grid-template-columns: 1fr; gap: 4px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ml-draait, .ml-laadbalk { animation: none; }
+  .ml-opsteller, .ml-pop { animation: none; }
+}

@@ -67,6 +67,47 @@ online, met dezelfde schermen en werking.
   wordt het een afspraak. Alle datums in Europe/Amsterdam-tijd.
 - Tests: `node scripts/test-snelinvoer.mjs` (ook zomer-/wintertijd rond 25 okt 2026).
 
+## Mail (Namecheap Private Email)
+
+De inbox van studio-levant.nl staat op `/mail` en als widget op het dashboard; de rail toont
+het aantal ongelezen mails. Lezen, zoeken, markeren, archiveren, verwijderen (naar de
+prullenbak, nooit definitief), bijlagen downloaden, beantwoorden (met juiste threading),
+allen beantwoorden, doorsturen (met de originele bijlagen) en nieuwe mail met bijlagen
+(samen max. 4 MB). Vanuit een mail maak je met één klik (of `t`) een taak "Reageren: …"
+voor vandaag.
+
+**Koppelen.** Zet in Vercel (en lokaal in `.env.local`):
+
+| Variabele | Waarde voor Private Email |
+|---|---|
+| `MAIL_USER` | `info@studio-levant.nl` (het volledige adres) |
+| `MAIL_PASSWORD` | het wachtwoord van die mailbox |
+| `MAIL_IMAP_HOST` / `MAIL_IMAP_PORT` | `mail.privateemail.com` / `993` (SSL) — standaardwaarden, mag leeg |
+| `MAIL_SMTP_HOST` / `MAIL_SMTP_PORT` | `mail.privateemail.com` / `465` (SSL) — standaardwaarden, mag leeg |
+| `MAIL_FROM_NAME` | bv. `Studio Levant` |
+| `MAIL_HANDTEKENING` | optioneel, bv. `Met vriendelijke groet,\nDaniel\nStudio Levant` |
+
+Zonder `MAIL_USER`/`MAIL_PASSWORD` tonen `/mail` en het dashboard een nette uitleg; er
+komt geen foutmelding. Het wachtwoord blijft op de server.
+
+**Hoe het werkt.**
+- Elke API-route opent één IMAP-sessie en logt daarna uit (geen open verbindingen; past bij
+  Vercel). `lib/mail/` bevat de verbinding (`imap.ts`), mappen (`mappen.ts`), berichten
+  (`berichten.ts`), sanering (`saneren.ts`), verzenden (`smtp.ts`) en grote bijlagen
+  (`opslag.ts`).
+- Een bericht wordt met PEEK opgehaald; de app zet het pas op gelezen als het even open
+  staat (of nooit, na "Ongelezen").
+- Verzonden mail wordt via IMAP `APPEND` in Verzonden bewaard (SMTP doet dat niet zelf).
+- **Veilig tonen:** de HTML wordt op de server gesaneerd (geen scripts, iframes, formulieren,
+  `on*`-attributen of `javascript:`-links) en daarna getoond in een iframe met `sandbox`
+  zonder scripts en zonder same-origin, plus een CSP die alleen inline stijlen en
+  `data:`-afbeeldingen toestaat. Externe afbeeldingen (tracking-pixels) laden pas na
+  "Tonen". Bijlagen worden altijd als download geserveerd (`nosniff`, HTML/SVG als
+  `application/octet-stream`).
+- Bijlagen groter dan 4 MB (Vercel-limiet) gaan via de privé-bucket `mail-tmp`
+  (migratie `0019_mail_opslag.sql`) en een signed URL van 60 s.
+- Sneltoetsen op `/mail`: `j`/`k`, `r`, `a`, `f`, `e`, `#`, `u`, `s`, `t`, `c`, `/`, `⌘ Enter`.
+
 ## Modules en routes
 
 | Route | Inhoud |
@@ -83,6 +124,8 @@ online, met dezelfde schermen en werking.
 | `/social-files/…` | Slides, huisstijl-CSS, logo's en beeldmateriaal die de slides laden |
 | `/agenda` | Agenda & taken: takenlijst, week/maand, snelinvoer (`?dag=`, `?weergave=maand`, `?taak=`, `?afspraak=`) |
 | `/api/agenda`, `/api/taken…`, `/api/afspraken…` | Agenda-API (sessie-check, RLS; 503 `tabel_ontbreekt` vóór migratie 0018) |
+| `/mail` | Mail: mappen, lijst, lezen, beantwoorden, doorsturen, nieuwe mail (`?map=`, `?uid=`, `?nieuw=1`) |
+| `/api/mail/…` | Mail-API (IMAP/SMTP; sessie-check; 503 `niet_gekoppeld` zonder mail-env-vars) |
 
 Elke pagina en elke API-route zit achter de login: `proxy.ts` stuurt niet-ingelogde
 bezoekers naar `/login`, en elke API-route controleert daarnaast zelf de sessie.
@@ -102,6 +145,9 @@ Project Settings → Environment Variables:
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Publieke anon-key (login in de browser) |
 | `SUPABASE_SERVICE_ROLE_KEY` | Geheime service-role key, alleen op de server |
 | `ANTHROPIC_API_KEY` | Anthropic-key voor het genereren van social posts |
+| `MAIL_USER`, `MAIL_PASSWORD` | Mailbox voor `/mail` (verplicht voor mail; zie "Mail") |
+| `MAIL_IMAP_HOST`, `MAIL_IMAP_PORT`, `MAIL_SMTP_HOST`, `MAIL_SMTP_PORT` | Optioneel; standaard `mail.privateemail.com`, 993 en 465 |
+| `MAIL_FROM_NAME`, `MAIL_HANDTEKENING` | Optioneel: afzendernaam (standaard "Studio Levant") en handtekening (`\n` = nieuwe regel) |
 
 De API-key kan niet meer in de social-tool zelf worden ingevuld (het oude
 `.env`-bestand in de Social-media-tool-map is vervallen). De instellingen-dialoog

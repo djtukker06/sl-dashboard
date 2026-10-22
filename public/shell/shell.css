@@ -118,6 +118,27 @@ body.sl-met-rail { grid-template-columns: var(--sl-rail-w) 272px 1fr; }
 .sl-rail-item[aria-current="page"] { color: var(--sl-text); background: var(--sl-raise); }
 .sl-rail-item[aria-current="page"]::before { background: var(--sl-sand); }
 .sl-rail-item .sl-icoon { display: block; flex: 0 0 auto; }
+/* ongelezen mail (public/shell/shell.js) */
+.sl-rail-badge {
+  position: absolute;
+  top: 5px;
+  left: calc(50% + 6px);
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--sl-sand);
+  color: var(--sl-dark);
+  font-family: var(--sl-mono);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 18px;
+  text-align: center;
+  letter-spacing: 0;
+  box-shadow: 0 0 0 2px var(--sl-bg);
+  pointer-events: none;
+  animation: sl-pop-in .2s var(--sl-ease);
+}
 .sl-rail-label {
   font-family: var(--sl-mono);
   font-size: 9.5px;
@@ -250,6 +271,7 @@ body.sl-met-rail { grid-template-columns: var(--sl-rail-w) 272px 1fr; }
   .sl-rail-nav li { flex: 1; display: flex; }
   .sl-rail-item { flex: 1; justify-content: center; margin: 6px 2px; padding: 6px 0; gap: 6px; }
   .sl-rail-item::before { left: 25%; right: 25%; top: -7px; bottom: auto; width: auto; height: 2px; }
+  .sl-rail-badge { top: 0; left: calc(50% + 4px); }
   .sl-rail-foot { margin: 0; padding: 0 6px; border-top: 0; align-items: center; }
   .sl-avatar { width: 28px; height: 28px; font-size: 11px; }
   .sl-account-knop { gap: 6px; }

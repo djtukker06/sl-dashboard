@@ -27,6 +27,9 @@
     "app/api/social/projects/*/slides/*/png/route.ts": {
       "memory": 2048,
       "maxDuration": 120
+    },
+    "app/api/mail/**/route.ts": {
+      "maxDuration": 30
     }
   }
 }

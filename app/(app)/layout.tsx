@@ -5,6 +5,7 @@ import { Rail } from '@/components/shell/Rail';
 import '../../public/shell/shell.css';
 import './app.css';
 import './agenda.css';
+import './mail.css';
 
 // Gedeelde shell voor alle ingelogde React-pagina's (dashboard, mail, agenda, facturen).
 // De social-module (statisch HTML) krijgt dezelfde rail via app/social/route.ts.

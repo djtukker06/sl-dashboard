@@ -44,13 +44,15 @@ export async function proxy(request: NextRequest) {
     // loginpagina zou daar als HTML met status 200 binnenkomen. Geef de API en de
     // slide-bestanden daarom een echte 401; app.js stuurt dan zelf door naar /login.
     // (Alleen voor social en de nieuwe modules, zodat de facturen-API zich exact gedraagt
-    // als voorheen.) De agenda-API gebruikt fetch() vanuit de agenda en het dashboard.
+    // als voorheen.) De agenda- en mail-API gebruiken fetch() vanuit hun pagina's, het
+    // dashboard en de rail (mail-badge).
     if (
       pad.startsWith('/api/social') ||
       pad.startsWith('/social-files') ||
       pad === '/api/agenda' ||
       pad.startsWith('/api/taken') ||
-      pad.startsWith('/api/afspraken')
+      pad.startsWith('/api/afspraken') ||
+      pad.startsWith('/api/mail')
     ) {
       return NextResponse.json({ error: 'Niet ingelogd.' }, { status: 401 });
     }

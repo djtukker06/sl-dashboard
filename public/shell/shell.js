@@ -19,6 +19,78 @@
     open.querySelector("summary")?.focus();
   });
 
+  // ---- mail-badge: aantal ongelezen in de inbox op het Mail-item van de rail.
+  // /api/mail/status opent een IMAP-verbinding; daarom 60 s cache in sessionStorage
+  // (gedeeld met de mailpagina en de dashboard-widget, die "sl-mail-ongelezen" sturen).
+  const MAIL_CACHE = "sl-mail-status";
+  const MAIL_MS = 60_000;
+  const leesStatus = () => {
+    try {
+      const ruw = sessionStorage.getItem(MAIL_CACHE);
+      if (!ruw) return null;
+      const { t, v } = JSON.parse(ruw);
+      return Date.now() - t < MAIL_MS ? v : null;
+    } catch {
+      return null;
+    }
+  };
+  const schrijfStatus = (v) => {
+    try {
+      sessionStorage.setItem(MAIL_CACHE, JSON.stringify({ t: Date.now(), v }));
+    } catch {
+      /* geen opslag: dan zonder cache */
+    }
+  };
+  const toonBadge = (aantal) => {
+    for (const a of document.querySelectorAll('.sl-rail-item[href="/mail"]')) {
+      let badge = a.querySelector(".sl-rail-badge");
+      if (!aantal) {
+        badge?.remove();
+        a.removeAttribute("aria-label");
+        continue;
+      }
+      if (!badge) {
+        badge = document.createElement("span");
+        badge.className = "sl-rail-badge";
+        badge.setAttribute("aria-hidden", "true");
+        a.appendChild(badge);
+      }
+      badge.textContent = aantal > 99 ? "99+" : String(aantal);
+      a.setAttribute("aria-label", `Mail, ${aantal} ongelezen`);
+    }
+  };
+  let mailBezig = false;
+  const ververs = async (forceer) => {
+    if (!document.querySelector('.sl-rail-item[href="/mail"]')) return;
+    const cache = forceer ? null : leesStatus();
+    if (cache) return toonBadge(cache.geconfigureerd ? cache.ongelezen : 0);
+    if (mailBezig) return;
+    mailBezig = true;
+    try {
+      const res = await fetch("/api/mail/status", { cache: "no-store", credentials: "same-origin" });
+      if (!res.ok) return; // bv. 401 of mailserver onbereikbaar: badge gewoon niet tonen
+      const v = await res.json();
+      schrijfStatus(v);
+      toonBadge(v.geconfigureerd ? v.ongelezen : 0);
+    } catch {
+      /* offline: niets tonen */
+    } finally {
+      mailBezig = false;
+    }
+  };
+  window.addEventListener("sl-mail-ongelezen", (e) => toonBadge(Number(e.detail) || 0));
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") ververs(false);
+  });
+  // Elke 2 minuten (alleen als het tabblad zichtbaar is); de cache voorkomt dubbel werk.
+  setInterval(() => {
+    if (document.visibilityState === "visible") ververs(false);
+  }, 120_000);
+  // Op /mail en het dashboard haalt de pagina zelf het aantal op (en meldt het via het
+  // event); daar wachten we even zodat er niet twee IMAP-verbindingen tegelijk opengaan.
+  const eigenOphaler = location.pathname === "/mail" || location.pathname === "/";
+  setTimeout(() => ververs(false), eigenOphaler ? 4000 : 0);
+
   // ---- social: /social#nieuw (snelle actie op het dashboard) opent "Nieuwe post".
   // De hash wordt hier al gelezen: app.js vervangt hem bij het opstarten door #p=<id>.
   if (location.pathname === "/social" && location.hash === "#nieuw") {

@@ -1,7 +1,7 @@
 /* ==========================================================
    Studio Levant — stijlen voor de React-pagina's in de shell
    (dashboard, mail, agenda). Tokens: public/shell/shell.css (--sl-*).
-   Prefixen: sl-kop (modulekop), db- (dashboard), sl-binnenkort.
+   Prefixen: sl-kop (modulekop), db- (dashboard).
    Facturen gebruikt zijn eigen globals.css en blijft ongewijzigd.
    ========================================================== */
 
@@ -246,36 +246,6 @@
 .db-post-leeg { font-family: var(--sl-mono); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--sl-faint); }
 .db-post-naam { font-size: 14px; font-weight: 500; line-height: 1.35; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-/* ---------- binnenkort (module in opbouw) ---------- */
-.sl-binnenkort {
-  display: grid;
-  justify-items: start;
-  gap: 14px;
-  max-width: 560px;
-  padding: 64px 40px;
-  color: var(--sl-text);
-  font-family: var(--sl-font);
-}
-.sl-binnenkort-icoon { color: var(--sl-sand); margin-bottom: 6px; display: flex; }
-.sl-binnenkort h2 { margin: 0; font-size: clamp(26px, 3vw, 36px); line-height: 1.15; font-weight: 400; text-transform: uppercase; }
-.sl-binnenkort-tekst { margin: 0; font-size: 15px; line-height: 1.6; color: var(--sl-muted); }
-.sl-binnenkort ul { list-style: none; margin: 6px 0 14px; padding: 0; display: grid; gap: 10px; width: 100%; }
-.sl-binnenkort li {
-  padding: 12px 0 0 22px;
-  border-top: 1px solid var(--sl-line-soft);
-  position: relative;
-  font-size: 14px;
-}
-.sl-binnenkort li::before {
-  content: "";
-  position: absolute;
-  left: 2px;
-  top: 19px;
-  width: 8px;
-  height: 2px;
-  background: var(--sl-sand);
-}
-
 /* ---------- responsive ---------- */
 @media (max-width: 1180px) {
   .db-breed, .db-smal { grid-column: span 6; }
@@ -291,7 +261,6 @@
   .sl-kop-titel { white-space: normal; }
   .db-grid { padding: 16px 16px 32px; gap: 16px; }
   .db-posts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .sl-binnenkort { padding: 40px 16px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .db-skelet { animation: none; }

@@ -6,7 +6,10 @@ import { createClient } from '@/lib/supabase/server';
 import { accountGegevens } from '@/lib/shell/rail';
 import { dagLabel, groet, isoWeek } from '@/lib/dashboard/tijd';
 import { ModuleKop } from '@/components/shell/ModuleKop';
-import { Kaart, KaartMelding, KaartSkelet } from '@/components/dashboard/Kaart';
+import { Kaart, KaartSkelet } from '@/components/dashboard/Kaart';
+import { InboxWidget } from '@/components/dashboard/InboxWidget';
+import { NietGekoppeld } from '@/components/mail/NietGekoppeld';
+import { mailGeconfigureerd } from '@/lib/mail/config';
 import { FacturenWidget } from '@/components/dashboard/FacturenWidget';
 import { SocialWidget } from '@/components/dashboard/SocialWidget';
 import { PlanningSkelet, PlanningWidgets } from '@/components/dashboard/PlanningWidgets';
@@ -27,6 +30,7 @@ export default async function DashboardPage() {
 
   const nu = new Date();
   const { voornaam } = accountGegevens(user.email, user.user_metadata);
+  const mailGekoppeld = mailGeconfigureerd();
 
   return (
     <div className="db">
@@ -44,6 +48,11 @@ export default async function DashboardPage() {
         <a className="db-knop" href="/social#nieuw">
           Nieuwe post
         </a>
+        {mailGekoppeld && (
+          <Link className="db-knop" href="/mail?nieuw=1">
+            Nieuwe mail
+          </Link>
+        )}
       </ModuleKop>
 
       <div className="db-grid">
@@ -52,19 +61,22 @@ export default async function DashboardPage() {
           <PlanningWidgets />
         </Suspense>
 
-        <Suspense fallback={<KaartSkelet label="Facturen" className="db-smal db-facturen" />}>
-          <FacturenWidget />
-        </Suspense>
+        {/* Inbox: client-component, zodat IMAP de eerste weergave niet ophoudt. */}
+        {mailGekoppeld ? (
+          <InboxWidget />
+        ) : (
+          <Kaart label="Inbox" href="/mail" linkTekst="Mail" className="db-smal db-inbox">
+            <NietGekoppeld compact />
+          </Kaart>
+        )}
 
         <Suspense fallback={<KaartSkelet label="Recente posts" regels={2} className="db-breed" />}>
           <SocialWidget />
         </Suspense>
 
-        <Kaart label="Inbox" href="/mail" linkTekst="Mail" className="db-smal">
-          <KaartMelding titel="Mail is nog niet gekoppeld">
-            De inbox van info@studio-levant.nl verschijnt hier zodra de mailkoppeling is ingesteld.
-          </KaartMelding>
-        </Kaart>
+        <Suspense fallback={<KaartSkelet label="Facturen" className="db-smal db-facturen" />}>
+          <FacturenWidget />
+        </Suspense>
       </div>
     </div>
   );
