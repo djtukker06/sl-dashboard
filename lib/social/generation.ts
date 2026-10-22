@@ -55,14 +55,22 @@ export async function runGeneration(
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
       let open = true;
-      const send = (data: unknown) => {
+      const write = (chunk: string) => {
         if (!open) return;
         try {
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
+          controller.enqueue(encoder.encode(chunk));
         } catch {
           open = false;
         }
       };
+      const send = (data: unknown) => write(`data: ${JSON.stringify(data)}\n\n`);
+      // dashboard: een commentaarregel van 2 KB vooraf, zodat browsers (Safari buffert de
+      // eerste 1024 bytes) en proxies de eerste status direct doorgeven. De client negeert
+      // regels zonder "data: ".
+      write(":" + " ".repeat(2048) + "\n\n");
+      // dashboard: hartslag tijdens het (minutenlange) denken, zodat een stille verbinding
+      // niet door een proxy wordt afgebroken.
+      const heartbeat = setInterval(() => write(": ping\n\n"), 15_000);
       const timer = setTimeout(
         () => {
           timedOut = true;
@@ -125,6 +133,7 @@ export async function runGeneration(
         else if (!abort.signal.aborted) send({ type: "error", message: friendlyError(err) });
       } finally {
         clearTimeout(timer);
+        clearInterval(heartbeat);
         request.signal.removeEventListener("abort", onClientAbort);
         open = false;
         try {
@@ -142,7 +151,10 @@ export async function runGeneration(
   return new Response(stream, {
     headers: {
       "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache",
+      // dashboard: no-transform + X-Accel-Buffering: geen gzip/buffering onderweg, anders
+      // komen status- en voortgangsevents pas aan het eind binnen.
+      "Cache-Control": "no-cache, no-transform",
+      "X-Accel-Buffering": "no",
       Connection: "keep-alive",
     },
   });

@@ -3,8 +3,9 @@
 // writeSlide, refreshChrome) door Supabase-tabellen uit migratie 0014.
 // Alle functies gebruiken de service-role client: ALLEEN aanroepen ná requireUser().
 
+import { bucketOntbreekt, tabelOntbreekt } from "@/lib/db/ontbreekt";
 import { applyChrome, stripChrome } from "./brand-guard";
-import { BUCKET, HttpError, db } from "./http";
+import { BUCKET, HttpError, db, NIET_INGERICHT, BUCKET_NIET_INGERICHT } from "./http";
 import { safe } from "./ids";
 
 export type Asset = { file: string; kind: "beeld" | "inspiratie"; note: string };
@@ -49,6 +50,11 @@ const iso = (ts: string | null | undefined) => (ts ? new Date(ts).toISOString() 
 
 function dbFail(err: unknown, message = "Er ging iets mis met de database."): never {
   console.error(err);
+  // Tabellen/RPC nog niet aangemaakt (migraties 0014–0017 niet uitgevoerd): geen
+  // algemene 500, maar een duidelijke 503. De frontend toont dan een setupmelding in
+  // plaats van een lege lijst die leest als "al je posts zijn weg".
+  if (tabelOntbreekt(err)) throw new HttpError(503, NIET_INGERICHT);
+  if (bucketOntbreekt(err)) throw new HttpError(503, BUCKET_NIET_INGERICHT);
   throw new HttpError(500, message);
 }
 
@@ -272,7 +278,7 @@ export type Brand = { css: string; guide: string };
 export async function getBrand(): Promise<Brand> {
   const { data, error } = await db().from("social_brand").select("css, guide").eq("id", 1).maybeSingle();
   if (error) dbFail(error);
-  if (!data) throw new HttpError(500, "De huisstijl staat nog niet in de database (migratie 0016).");
+  if (!data) throw new HttpError(503, "De huisstijl staat nog niet in de database: voer in Supabase migratie 0016 uit.");
   return { css: data.css as string, guide: data.guide as string };
 }
 

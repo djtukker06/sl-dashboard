@@ -16,6 +16,7 @@ const state = {
   editor: null, // {file, index, mode, original, dirty}
   reviseFile: null,
   reviseDraft: null, // {file, feedback} na een mislukte aanpassing
+  loadError: null, // dashboard: {message, setup} als de projecten niet geladen konden worden
 };
 
 // ---------------------------------------------------------------- helpers
@@ -29,6 +30,16 @@ function escapeHtml(value) {
     .replace(/'/g, "&#39;");
 }
 
+// dashboard: sessie verlopen? (401 van de proxy, of toch een redirect naar /login)
+// Stuur dan naar de loginpagina; daarna kom je hier terug (ook op hetzelfde project).
+function sessionExpired(res) {
+  const toLogin = res.redirected && new URL(res.url).pathname.startsWith("/login");
+  if (res.status !== 401 && !toLogin) return false;
+  location.href = `/login?next=${encodeURIComponent(location.pathname + location.hash)}`;
+  return true;
+}
+const SESSION_MSG = "Je sessie is verlopen. Log opnieuw in."; // dashboard:
+
 async function api(method, url, body) {
   const opts = { method, headers: {} };
   if (body !== undefined) {
@@ -36,11 +47,14 @@ async function api(method, url, body) {
     opts.body = JSON.stringify(body);
   }
   const res = await fetch(url, opts);
+  if (sessionExpired(res)) throw new Error(SESSION_MSG); // dashboard:
   const type = res.headers.get("content-type") || "";
   const data = type.includes("application/json") ? await res.json().catch(() => null) : await res.text();
   if (!res.ok) {
     const msg = (data && data.error) || (typeof data === "string" && data) || `Fout ${res.status}`;
-    throw new Error(msg);
+    const err = new Error(msg);
+    err.status = res.status; // dashboard: 503 = social nog niet ingericht
+    throw err;
   }
   return data;
 }
@@ -76,6 +90,8 @@ function debounce(fn, ms) {
 
 const fmt = (key) => state.formats[key] || { label: key, w: 1080, h: 1350 };
 const pad = (n) => String(n).padStart(2, "0");
+// dashboard: zelfde regel als slug() in lib/social/ids.ts (bestandsnamen van exports)
+const slug = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "post";
 const projectUrl = (suffix = "") => `${API_BASE}/projects/${encodeURIComponent(state.project.id)}${suffix}`; // dashboard: API_BASE
 const slideApi = (file, suffix = "") => projectUrl(`/slides/${encodeURIComponent(file)}${suffix}`);
 const slideSrc = (file) =>
@@ -109,6 +125,15 @@ async function init() {
     $("#projectFormat").innerHTML = options;
     $("#newFormat").innerHTML = options;
     updateKeyStatus(status.hasKey);
+    // dashboard: database nog niet ingericht (migraties 0014–0017)? Dan geen lege lijst
+    // tonen, maar een duidelijke setupmelding.
+    if (status.setup && !status.setup.tables) {
+      state.loadError = {
+        setup: true,
+        message:
+          "De social-module is nog niet ingericht: voer in Supabase de migraties 0014–0017 uit en importeer daarna de bestaande posts.",
+      };
+    }
     if (!status.hasKey) {
       toast("Stel eerst een Anthropic API-key in.", true);
       $("#settingsDialog").showModal();
@@ -134,6 +159,23 @@ function updateKeyStatus(hasKey) {
   $("#keyStatus").textContent = hasKey
     ? "Er is een API-key ingesteld op de server."
     : "Er is nog geen API-key ingesteld op de server.";
+  $("#apiKey").value = hasKey ? "••••••••••••••••" : ""; // dashboard: alleen een masker, nooit de key zelf
+}
+
+// dashboard: in plaats van "Opslaan" — de status van de key opnieuw opvragen
+async function checkKey() {
+  const btn = $("#checkKey");
+  btn.disabled = true;
+  try {
+    const status = await api("GET", `${API_BASE}/status`);
+    updateKeyStatus(status.hasKey);
+    if (status.hasKey) toast("API-key ingesteld.");
+    else toast("Er is nog geen API-key ingesteld op de server (ANTHROPIC_API_KEY).", true);
+  } catch (err) {
+    toast(err.message, true);
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 // ---------------------------------------------------------------- sidebar
@@ -141,8 +183,11 @@ function updateKeyStatus(hasKey) {
 async function loadProjects() {
   try {
     state.projects = await api("GET", `${API_BASE}/projects`); // dashboard: API_BASE
+    state.loadError = null; // dashboard:
   } catch (err) {
-    toast(err.message, true);
+    // dashboard: fout bewaren; showEmpty() toont dan een melding i.p.v. het welkomstscherm
+    if (err.message !== SESSION_MSG) state.loadError = { setup: err.status === 503, message: err.message };
+    if (!state.loadError?.setup) toast(err.message, true);
     state.projects = [];
   }
   renderProjectList();
@@ -176,7 +221,26 @@ function showEmpty() {
   $("#projectView").classList.add("hidden");
   $("#emptyState").classList.remove("hidden");
   history.replaceState(null, "", location.pathname);
+  // dashboard: bij een laadfout geen "+ Nieuwe post"-intro (dat leest als "posts kwijt")
+  const err = state.loadError;
+  $("#setupNotice").classList.toggle("hidden", !err);
+  $("#emptyIntro").classList.toggle("hidden", Boolean(err));
+  if (err) {
+    $("#setupLabel").textContent = err.setup ? "Nog niet ingericht" : "Posts konden niet worden geladen";
+    $("#setupText").textContent = err.message;
+  }
   renderProjectList();
+}
+
+// dashboard: na een laadfout opnieuw proberen zonder de pagina te verversen
+async function retryLoad() {
+  const btn = $("#retryLoad");
+  btn.disabled = true;
+  await loadProjects();
+  btn.disabled = false;
+  if (state.loadError) return showEmpty();
+  if (state.projects.length) await openProject(state.projects[0].id);
+  else showEmpty();
 }
 
 function openNewDialog() {
@@ -491,6 +555,7 @@ async function downloadPng(file, btn) {
   btn.disabled = true;
   try {
     const res = await fetch(slideApi(file, "/png"));
+    if (sessionExpired(res)) return; // dashboard:
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
       throw new Error(data.error || `Fout ${res.status}`);
@@ -498,7 +563,11 @@ async function downloadPng(file, btn) {
     const blob = await res.blob();
     const cd = res.headers.get("content-disposition") || "";
     const m = cd.match(/filename\*?=(?:UTF-8'')?"?([^";]+)"?/i);
-    const name = m ? decodeURIComponent(m[1]) : `slide-${pad(state.project.slides.indexOf(file) + 1)}.png`;
+    // dashboard: na een redirect naar Storage (grote PNG) is content-disposition cross-origin
+    // niet leesbaar; bouw dan dezelfde naam als de server (<slug>-NN.png)
+    const name = m
+      ? decodeURIComponent(m[1])
+      : `${slug(state.project.name)}-${pad(state.project.slides.indexOf(file) + 1)}.png`;
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -594,6 +663,7 @@ async function streamGeneration(url, body) {
       body: JSON.stringify(body || {}),
       signal: state.abort.signal,
     });
+    if (sessionExpired(res)) throw new Error(SESSION_MSG); // dashboard:
     const type = res.headers.get("content-type") || "";
     if (!res.ok || !type.includes("text/event-stream")) {
       const data = type.includes("application/json") ? await res.json().catch(() => ({})) : {};
@@ -812,11 +882,48 @@ function toggleMenu(menu) {
   menu.classList.toggle("hidden", !open);
 }
 
-function exportAs(ext) {
+// dashboard: online duurt een export (Chromium start koud) 10–60 s. Daarom eerst fetch:
+// de knop toont zolang "Bezig…", en een fout komt als melding in beeld in plaats van
+// als mislukte download. De server stuurt door naar een signed URL; die downloadt onder
+// de juiste naam.
+async function exportAs(ext) {
   closeMenus();
   if (!state.project?.slides.length) return toast("Er zijn nog geen slides om te exporteren.", true);
+  const btn = $("#exportBtn");
+  if (btn.disabled) return;
+  const label = btn.textContent;
+  btn.textContent = "Bezig…";
+  btn.disabled = true;
   toast("Exporteren… dit kan even duren");
-  download(projectUrl(`/export.${ext}`));
+  const ctrl = new AbortController();
+  try {
+    const res = await fetch(projectUrl(`/export.${ext}`), { signal: ctrl.signal });
+    if (sessionExpired(res)) return;
+    const type = res.headers.get("content-type") || "";
+    if (!res.ok) {
+      const data = type.includes("application/json") ? await res.json().catch(() => null) : null;
+      throw new Error((data && data.error) || `Fout ${res.status}`);
+    }
+    if (res.redirected && new URL(res.url).origin !== location.origin) {
+      ctrl.abort(); // de inhoud niet twee keer ophalen
+      download(res.url);
+    } else {
+      const href = URL.createObjectURL(await res.blob());
+      const a = document.createElement("a");
+      a.href = href;
+      a.download = `${slug(state.project.name)}.${ext}`;
+      document.body.append(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(href), 60_000);
+    }
+    toast("Export klaar.");
+  } catch (err) {
+    toast(err.message, true);
+  } finally {
+    btn.textContent = label;
+    btn.disabled = false;
+  }
 }
 
 // dashboard: online is er geen Finder; download in plaats daarvan een ZIP met de HTML-bestanden
@@ -830,6 +937,7 @@ async function openFolder() {
   const ctrl = new AbortController();
   try {
     const res = await fetch(projectUrl("/source.zip"), { signal: ctrl.signal });
+    if (sessionExpired(res)) return; // dashboard:
     const type = res.headers.get("content-type") || "";
     if (!res.ok) {
       const data = type.includes("application/json") ? await res.json().catch(() => null) : null;
@@ -896,6 +1004,8 @@ async function saveBrand() {
   try {
     await api("PUT", `${API_BASE}/brand`, { guide: $("#brandGuide").value, css: $("#brandCss").value }); // dashboard: API_BASE
     $("#brandDialog").close();
+    // dashboard: brand.css wordt 60 s gecachet; ververs die cache vóór het herladen
+    await fetch(`${FILES_BASE}/brand/brand.css`, { cache: "reload" }).catch(() => {});
     reloadAllFrames();
     toast("Huisstijl opgeslagen.");
   } catch (err) {
@@ -938,7 +1048,8 @@ function bindEvents() {
     if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) reviseSlide();
   });
   $("#brandSave").addEventListener("click", saveBrand);
-  // dashboard: geen key-invoer meer in de instellingen-dialoog
+  $("#checkKey").addEventListener("click", checkKey); // dashboard: i.p.v. saveKey
+  $("#retryLoad").addEventListener("click", retryLoad); // dashboard:
 
   // projectkop
   $("#projectName").addEventListener("change", () => {

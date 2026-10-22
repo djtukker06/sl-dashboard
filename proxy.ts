@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { createServerClient } from '@supabase/ssr';
+import { veiligVervolg } from '@/lib/vervolg';
 
 // In Next.js 16 heet dit bestand "proxy.ts" (was "middleware.ts"). Ververst de
 // Supabase-sessie op elk request en stuurt niet-ingelogde bezoekers naar /login.
@@ -34,18 +35,32 @@ export async function proxy(request: NextRequest) {
   const isLoginPath = pad.startsWith('/login');
   // Wachtwoord herstellen moet zonder sessie kunnen; /nieuw-wachtwoord niet (die
   // vereist de sessie die /auth/callback opent).
-  const isPubliekPad = isLoginPath || pad === '/wachtwoord-vergeten' || pad === '/auth/callback';
+  // /auth/uitloggen handelt zelf af (ook met een al verlopen sessie: dan gewoon naar /login).
+  const isPubliekPad =
+    isLoginPath || pad === '/wachtwoord-vergeten' || pad === '/auth/callback' || pad === '/auth/uitloggen';
 
   if (!user && !isPubliekPad) {
+    // Social is een statische frontend die fetch() gebruikt: een redirect naar de
+    // loginpagina zou daar als HTML met status 200 binnenkomen. Geef de API en de
+    // slide-bestanden daarom een echte 401; app.js stuurt dan zelf door naar /login.
+    // (Alleen voor social, zodat de facturen-API zich exact gedraagt als voorheen.)
+    if (pad.startsWith('/api/social') || pad.startsWith('/social-files')) {
+      return NextResponse.json({ error: 'Niet ingelogd.' }, { status: 401 });
+    }
     const url = request.nextUrl.clone();
     url.pathname = '/login';
+    url.search = '';
+    // Na het inloggen terug naar waar je was (bv. een bladwijzer naar /social).
+    // De hash (#p=…) neemt de loginpagina zelf mee (components/VervolgVeld.tsx).
+    // Alleen voor pagina's (niet voor losse bestanden zoals /social/app.js).
+    if (veiligVervolg(pad) !== '/' && !/\.[a-z0-9]+$/i.test(pad)) {
+      url.searchParams.set('next', pad + request.nextUrl.search);
+    }
     return NextResponse.redirect(url);
   }
 
   if (user && isLoginPath) {
-    const url = request.nextUrl.clone();
-    url.pathname = '/';
-    return NextResponse.redirect(url);
+    return NextResponse.redirect(new URL(veiligVervolg(request.nextUrl.searchParams.get('next')), request.url));
   }
 
   return supabaseResponse;
@@ -53,6 +68,7 @@ export async function proxy(request: NextRequest) {
 
 export const config = {
   matcher: [
-    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)'
+    // shell/ (shell.css, shell.js) en brand/ (logo's) zijn openbare, statische bestanden.
+    '/((?!_next/static|_next/image|favicon.ico|shell/|brand/|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)'
   ]
 };

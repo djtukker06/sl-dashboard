@@ -1,0 +1,265 @@
+/* ==========================================================
+   Studio Levant — gedeelde shell (navigatierail)
+   Eén bron voor alle modules:
+   - React-pagina's: geïmporteerd in app/(app)/layout.tsx
+   - social (statisch HTML): gelinkt door app/social/route.ts
+   Alles heeft het voorvoegsel sl-, zodat niets botst met de
+   :root-variabelen van facturen (globals.css) of social (app.css).
+   Kleuren = huisstijl Studio Levant (gelijk aan social/app.css).
+   ========================================================== */
+
+:root {
+  --sl-bg: #232323;
+  --sl-panel: #292929;
+  --sl-raise: #2f2e2e;
+  --sl-hover: #333232;
+  --sl-line: #3c3b3b;
+  --sl-line-soft: #312f2f;
+  --sl-text: #e3dedb;
+  --sl-muted: #868382;
+  --sl-faint: #6f6b6a;
+  --sl-sand: #e3dedb;
+  --sl-sand-hover: #f1eeec;
+  --sl-dark: #232323;
+  --sl-danger: #d98c7a;
+  --sl-font: "Manrope", system-ui, sans-serif;
+  --sl-mono: "Fragment Mono", ui-monospace, monospace;
+  --sl-ease: cubic-bezier(.2, .7, .2, 1);
+  --sl-r: 4px;
+  --sl-rail-w: 76px;
+  --sl-head-h: 96px;
+  --sl-tab-h: 64px;
+  --sl-focus: 0 0 0 2px var(--sl-bg), 0 0 0 3px var(--sl-sand);
+}
+
+/* ---------- lay-out ---------- */
+.sl-shell {
+  display: grid;
+  grid-template-columns: var(--sl-rail-w) minmax(0, 1fr);
+  min-height: 100vh;
+  background: var(--sl-bg);
+}
+.sl-main { min-width: 0; }
+
+/* social: rail als extra eerste kolom vóór de eigen sidebar en main (app.css blijft gelijk) */
+body.sl-met-rail { grid-template-columns: var(--sl-rail-w) 272px 1fr; }
+@media (max-width: 860px) {
+  body.sl-met-rail { grid-template-columns: var(--sl-rail-w) 220px 1fr; }
+}
+
+/* ---------- rail ---------- */
+.sl-rail {
+  position: sticky;
+  top: 0;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  width: var(--sl-rail-w);
+  height: 100vh;
+  height: 100dvh;
+  background: var(--sl-bg);
+  border-right: 1px solid var(--sl-line);
+  font-family: var(--sl-font);
+  color: var(--sl-text);
+  -webkit-font-smoothing: antialiased;
+}
+.sl-rail *, .sl-rail *::before, .sl-rail *::after { box-sizing: border-box; }
+
+.sl-rail-logo {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  height: var(--sl-head-h);
+  border-bottom: 1px solid var(--sl-line);
+  text-decoration: none;
+}
+.sl-rail-logo img {
+  display: block;
+  width: 36px;
+  height: auto;
+  transition: transform .25s var(--sl-ease), opacity .2s var(--sl-ease);
+}
+.sl-rail-logo:hover img { transform: scale(1.06); }
+
+.sl-rail-nav {
+  list-style: none;
+  margin: 0;
+  padding: 12px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.sl-rail-nav li { margin: 0; padding: 0; }
+.sl-rail-item {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+  margin: 0 8px;
+  padding: 11px 2px 10px;
+  border-radius: var(--sl-r);
+  color: var(--sl-muted);
+  text-decoration: none;
+  transition: color .2s var(--sl-ease), background-color .2s var(--sl-ease);
+}
+.sl-rail-item::before {
+  content: "";
+  position: absolute;
+  left: -8px;
+  top: 12px;
+  bottom: 12px;
+  width: 2px;
+  background: transparent;
+  transition: background-color .2s var(--sl-ease);
+}
+.sl-rail-item:hover { color: var(--sl-text); background: var(--sl-panel); }
+.sl-rail-item[aria-current="page"] { color: var(--sl-text); background: var(--sl-raise); }
+.sl-rail-item[aria-current="page"]::before { background: var(--sl-sand); }
+.sl-rail-item .sl-icoon { display: block; flex: 0 0 auto; }
+.sl-rail-label {
+  font-family: var(--sl-mono);
+  font-size: 9.5px;
+  line-height: 1;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.sl-rail-foot {
+  margin-top: auto;
+  padding: 12px 0 16px;
+  border-top: 1px solid var(--sl-line);
+  display: flex;
+  justify-content: center;
+}
+
+/* ---------- account ---------- */
+.sl-account { position: relative; }
+.sl-account-knop {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 4px;
+  cursor: pointer;
+  border-radius: var(--sl-r);
+  color: var(--sl-muted);
+  transition: color .2s var(--sl-ease);
+}
+.sl-account-knop::-webkit-details-marker { display: none; }
+.sl-account-knop::marker { content: ""; }
+.sl-account-knop:hover, .sl-account[open] .sl-account-knop { color: var(--sl-text); }
+.sl-avatar {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 1px solid var(--sl-line);
+  background: var(--sl-panel);
+  color: var(--sl-text);
+  font-family: var(--sl-font);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  transition: border-color .2s var(--sl-ease);
+}
+.sl-account-knop:hover .sl-avatar, .sl-account[open] .sl-avatar { border-color: var(--sl-sand); }
+.sl-account-label {
+  font-family: var(--sl-mono);
+  font-size: 9.5px;
+  line-height: 1;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.sl-account-pop {
+  position: absolute;
+  left: calc(100% + 14px);
+  bottom: 0;
+  z-index: 70;
+  min-width: 240px;
+  padding: 6px;
+  background: var(--sl-bg);
+  border: 1px solid var(--sl-line);
+  border-radius: 6px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, .5);
+  animation: sl-pop-in .18s var(--sl-ease);
+}
+.sl-account-pop form { margin: 0; padding: 0; display: block; }
+.sl-account-mail {
+  margin: 0 0 4px;
+  padding: 10px 12px 12px;
+  border-bottom: 1px solid var(--sl-line);
+  font-family: var(--sl-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--sl-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sl-account-link {
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: 9px 12px;
+  border: 0;
+  border-radius: var(--sl-r);
+  background: none;
+  color: var(--sl-text);
+  font-family: var(--sl-font);
+  font-size: 13.5px;
+  font-weight: 500;
+  line-height: 1.4;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background-color .2s var(--sl-ease);
+}
+.sl-account-link:hover { background: var(--sl-panel); }
+@keyframes sl-pop-in { from { opacity: 0; transform: translateY(4px); } }
+
+/* focus: alleen bij toetsenbordgebruik, in de huisstijl */
+.sl-rail a:focus-visible, .sl-rail summary:focus-visible, .sl-rail button:focus-visible {
+  outline: none;
+  box-shadow: var(--sl-focus);
+}
+.sl-rail-logo:focus-visible { box-shadow: inset 0 0 0 1px var(--sl-sand); }
+
+/* ---------- mobiel: tabbalk onderaan ---------- */
+@media (max-width: 720px) {
+  .sl-shell { grid-template-columns: minmax(0, 1fr); padding-bottom: calc(var(--sl-tab-h) + env(safe-area-inset-bottom)); }
+  .sl-rail {
+    position: fixed;
+    top: auto;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: auto;
+    height: calc(var(--sl-tab-h) + env(safe-area-inset-bottom));
+    padding-bottom: env(safe-area-inset-bottom);
+    flex-direction: row;
+    border-right: 0;
+    border-top: 1px solid var(--sl-line);
+  }
+  .sl-rail-logo { display: none; }
+  .sl-rail-nav { flex: 1; flex-direction: row; padding: 0; gap: 0; }
+  .sl-rail-nav li { flex: 1; display: flex; }
+  .sl-rail-item { flex: 1; justify-content: center; margin: 6px 2px; padding: 6px 0; gap: 6px; }
+  .sl-rail-item::before { left: 25%; right: 25%; top: -7px; bottom: auto; width: auto; height: 2px; }
+  .sl-rail-foot { margin: 0; padding: 0 6px; border-top: 0; align-items: center; }
+  .sl-avatar { width: 28px; height: 28px; font-size: 11px; }
+  .sl-account-knop { gap: 6px; }
+  .sl-account-pop { left: auto; right: 0; bottom: calc(100% + 12px); }
+
+  /* social: rail valt uit de grid, de eigen kolommen houden hun ruimte */
+  body.sl-met-rail { grid-template-columns: 220px 1fr; padding-bottom: calc(var(--sl-tab-h) + env(safe-area-inset-bottom)); }
+  body.sl-met-rail > .sidebar, body.sl-met-rail > main { height: calc(100vh - var(--sl-tab-h)); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sl-rail *, .sl-account-pop { transition-duration: .01ms !important; animation-duration: .01ms !important; }
+}

@@ -16,19 +16,16 @@ const nextConfig: NextConfig = {
       './node_modules/@sparticuz/chromium/bin/**/*'
     ],
     // De logo's zijn niet publiek: deze route serveert ze pas na een sessiecheck.
-    '/social-files/brand/**': ['./assets/social-brand/**/*']
-  },
-  // De social-module is een statische frontend (public/social/index.html, app.js, app.css).
-  // /social toont die pagina. Rewrites in een array worden ná de public-bestanden en vóór
-  // dynamische routes toegepast; de proxy (proxy.ts) draait daarvóór en stuurt niet-ingelogde
-  // bezoekers dus altijd eerst naar /login.
-  async rewrites() {
-    return [{ source: '/social', destination: '/social/index.html' }];
+    '/social-files/brand/**': ['./assets/social-brand/**/*'],
+    // /social leest de social-HTML via fs in en zet de gedeelde rail erin (app/social/route.ts).
+    '/social': ['./assets/social-app/index.html']
   },
   // De facturenschermen staan sinds het dashboard onder /facturen. Oude bookmarks
   // blijven werken via deze tijdelijke redirects (de query, bv. ?jaar=, gaat mee).
   async redirects() {
     return [
+      // De social-HTML wordt sinds de gedeelde shell door app/social/route.ts geserveerd.
+      { source: '/social/index.html', destination: '/social', permanent: false },
       // Oud jaaroverzicht (/?jaar=2025) → facturenoverzicht met hetzelfde jaar.
       { source: '/', has: [{ type: 'query', key: 'jaar' }], destination: '/facturen', permanent: false },
       { source: '/nieuwe-factuur', destination: '/facturen/nieuwe-factuur', permanent: false },

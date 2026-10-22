@@ -11,9 +11,8 @@ export default async function WachtwoordVergetenPage({
   return (
     <div className="login-wrap">
       <div className="login-card">
-        <span className="wordmark">
-          Studio <span>Levant</span>
-        </span>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img className="login-banner" src="/brand/banner-licht.png" alt="Studio Levant" width={800} height={297} />
         <h1>Wachtwoord vergeten</h1>
         {error && <div className="foutmelding">{error}</div>}
         {verstuurd ? (

@@ -1,9 +1,17 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createServiceRoleClient } from "@/lib/supabase/service-role";
+import { bucketOntbreekt } from "@/lib/db/ontbreekt";
 import { safe } from "./ids";
 
 export const BUCKET = "social-assets";
+
+/** Melding zolang de social-tabellen niet bestaan (migraties nog niet uitgevoerd). */
+export const NIET_INGERICHT =
+  "De social-module is nog niet ingericht: voer in Supabase de migraties 0014–0017 uit en importeer daarna de bestaande posts.";
+/** Melding zolang de Storage-bucket social-assets niet bestaat. */
+export const BUCKET_NIET_INGERICHT =
+  "De opslag voor social (bucket social-assets) bestaat nog niet: voer in Supabase migratie 0015 uit.";
 
 /** Fout met HTTP-status, zoals `httpError()` in Social-media-tool/server.js:93-95. */
 export class HttpError extends Error {
@@ -25,14 +33,18 @@ export function jsonError(status: number, message: string) {
  * Eerste regel van élke social-route: controleert de Supabase-sessie (net als de
  * facturen-API). Zonder ingelogde gebruiker volgt een 401 `{ error: 'Niet ingelogd.' }`.
  * Pas daarna mag de route de service-role client gebruiken.
+ *
+ * Gebruikt getClaims(): dat verifieert de JWT (bij asymmetrische signing keys lokaal,
+ * zonder netwerkcall; anders valt Supabase zelf terug op de Auth-server). Een slide-
+ * thumbnail laadt zo de slide, brand.css en logo's zonder ~5 auth-roundtrips per frame.
+ * De proxy (proxy.ts) heeft de sessie op hetzelfde request al ververst.
  */
-export async function requireUser() {
+export async function requireUser(): Promise<{ id: string; email: string | null }> {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) throw new HttpError(401, "Niet ingelogd.");
-  return user;
+  const { data, error } = await supabase.auth.getClaims();
+  const claims = data?.claims;
+  if (error || !claims?.sub) throw new HttpError(401, "Niet ingelogd.");
+  return { id: String(claims.sub), email: typeof claims.email === "string" ? claims.email : null };
 }
 
 /** Service-role client; alleen aanroepen ná `requireUser()`. */
@@ -128,6 +140,7 @@ export async function redirectToSigned(
   const { error: upErr } = await storage.upload(objectPath, bytes, { contentType, upsert: true });
   if (upErr) {
     console.error(upErr);
+    if (bucketOntbreekt(upErr)) throw new HttpError(503, BUCKET_NIET_INGERICHT);
     throw new HttpError(500, "Kon de export niet klaarzetten.");
   }
   const { data, error } = await storage.createSignedUrl(objectPath, 300, { download: name });
