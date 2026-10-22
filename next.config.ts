@@ -9,7 +9,12 @@ const nextConfig: NextConfig = {
   // dynamisch inleest — die moeten dus expliciet worden meegenomen in de deploy-bundel.
   // Geldt voor alle API-routes (ook PUT/restfactuur/prijsopgaven), niet alleen /api/invoices.
   outputFileTracingIncludes: {
-    '/api/**': ['./node_modules/@sparticuz/chromium/bin/**/*']
+    '/api/**': ['./node_modules/@sparticuz/chromium/bin/**/*'],
+    // Social-export rendert de logo's mee (gelezen via fs uit public/), plus Chromium.
+    '/api/social/**': [
+      './public/social-files/brand/**/*',
+      './node_modules/@sparticuz/chromium/bin/**/*'
+    ]
   },
   // De facturenschermen staan sinds het dashboard onder /facturen. Oude bookmarks
   // blijven werken via deze tijdelijke redirects (de query, bv. ?jaar=, gaat mee).

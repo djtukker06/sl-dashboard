@@ -5,6 +5,28 @@
     },
     "app/api/quotes/**/route.ts": {
       "memory": 2048
+    },
+    "app/api/social/projects/*/generate/route.ts": {
+      "maxDuration": 300
+    },
+    "app/api/social/projects/*/slides/*/revise/route.ts": {
+      "maxDuration": 300
+    },
+    "app/api/social/projects/*/export.zip/route.ts": {
+      "memory": 2048,
+      "maxDuration": 120
+    },
+    "app/api/social/projects/*/export.pdf/route.ts": {
+      "memory": 2048,
+      "maxDuration": 120
+    },
+    "app/api/social/projects/*/source.zip/route.ts": {
+      "memory": 2048,
+      "maxDuration": 120
+    },
+    "app/api/social/projects/*/slides/*/png/route.ts": {
+      "memory": 2048,
+      "maxDuration": 120
     }
   }
 }
