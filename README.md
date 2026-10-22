@@ -45,3 +45,132 @@ Er staat nu een marineblauw placeholder-vlak in plaats van het logo op de factuu
 5. Voeg in Vercel bij "Domains" `facturen.studio-levant.nl` toe, en volg de DNS-instructie die Vercel toont (meestal een CNAME-record bij je huidige hostingpartij/DNS-beheerder, aangezien de hoofdsite via Framer draait).
 
 **Let op — Supabase gratis project pauzeert na 1 week inactiviteit.** Bij weinig gebruik (een paar facturen per maand) kan het voorkomen dat je project "slaapt". Zet 'm dan eerst even aan in het Supabase-dashboard voordat je een factuur probeert te maken.
+
+---
+
+# Studio Levant Dashboard
+
+Deze repo is uitgegroeid tot één overkoepelend backoffice-dashboard voor Studio Levant.
+Na inloggen (Supabase Auth, dezelfde login als voorheen) kom je op een dashboard met
+tegels per module. De facturentool hierboven werkt precies zoals altijd, alleen onder
+`/facturen`. De social-media-tool (voorheen de lokale "Levant Social Studio") draait nu
+online, met dezelfde schermen en werking.
+
+## Modules en routes
+
+| Route | Inhoud |
+|---|---|
+| `/` | Dashboard met moduletegels (uit `lib/modules.ts`) |
+| `/login` | Inloggen; daarna naar `/` |
+| `/facturen` | Facturenoverzicht (met `?jaar=`) |
+| `/facturen/nieuwe-factuur`, `/facturen/[id]/bewerken` | Factuur maken en bewerken |
+| `/facturen/klanten/[clientId]` | Klantpagina |
+| `/facturen/prijsopgaven`, `/facturen/prijsopgaven/nieuw`, `/facturen/prijsopgaven/[id]/bewerken` | Prijsopgaven |
+| `/api/invoices…`, `/api/quotes…`, `/api/clients/search` | Facturen-API (ongewijzigd) |
+| `/social` | Social-media-tool (statische frontend in `public/social/`) |
+| `/api/social/…` | Social-API (spiegelt de oude Express-API: `/api/X` werd `/api/social/X`) |
+| `/social-files/…` | Slides, huisstijl-CSS, logo's en beeldmateriaal die de slides laden |
+
+Elke pagina en elke API-route zit achter de login: `proxy.ts` stuurt niet-ingelogde
+bezoekers naar `/login`, en elke API-route controleert daarnaast zelf de sessie.
+
+Oude adressen blijven werken via tijdelijke redirects in `next.config.ts`:
+`/nieuwe-factuur`, `/klanten/…`, `/prijsopgaven/…` en `/?jaar=…` gaan naar dezelfde
+pagina onder `/facturen`.
+
+## Omgevingsvariabelen
+
+Lokaal in `.env.local` (zie `.env.local.example`), online in Vercel onder
+Project Settings → Environment Variables:
+
+| Variabele | Waarvoor |
+|---|---|
+| `NEXT_PUBLIC_SUPABASE_URL` | URL van het Supabase-project |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Publieke anon-key (login in de browser) |
+| `SUPABASE_SERVICE_ROLE_KEY` | Geheime service-role key, alleen op de server |
+| `ANTHROPIC_API_KEY` | Anthropic-key voor het genereren van social posts |
+
+De API-key kan niet meer in de social-tool zelf worden ingevuld (het oude
+`.env`-bestand in de Social-media-tool-map is vervallen). De instellingen-dialoog
+laat alleen zien of er een key op de server staat.
+
+## Database-migraties 0014–0016 (social-module)
+
+De social-module heeft drie nieuwe migraties. De bestaande facturen-migraties
+0001–0013 zijn niet veranderd.
+
+- `supabase/migrations/0014_social.sql`: tabellen `social_projects`, `social_slides`,
+  `social_versions` en `social_brand`, met RLS en de functie `social_restore_latest`.
+- `supabase/migrations/0015_social_storage.sql`: privé Storage-bucket `social-assets`.
+- `supabase/migrations/0016_social_brand_seed.sql`: de huisstijl (`brand.css` en
+  `huisstijl.md`) als startwaarde.
+
+Draai ze in volgorde, **eerst op een testproject** en pas daarna op het echte project:
+
+- via de Supabase SQL-editor: plak elk bestand en voer het uit, of
+- met de CLI: `supabase link --project-ref <ref>` en daarna `supabase db push`.
+
+## Social-projecten importeren
+
+De projecten van de oude lokale tool (`Social-media-tool/projects/`) kun je overzetten
+met `scripts/importeer-social-projecten.mjs`. Draai eerst de migraties.
+
+```bash
+# 1. Dry-run (standaard): toont alleen wat er geïmporteerd zou worden, schrijft niets
+node scripts/importeer-social-projecten.mjs --bron ../Social-media-tool
+
+# 2. Echt importeren: vraagt om bevestiging door de Supabase-host over te typen
+SUPABASE_URL=https://<ref>.supabase.co SUPABASE_SERVICE_ROLE_KEY=<key> \
+  node scripts/importeer-social-projecten.mjs --bron ../Social-media-tool --uitvoeren
+```
+
+Het script slaat `.prullenbak` over, neemt alle slide-bestanden en versies mee en zet
+het beeldmateriaal in de bucket `social-assets`. Het is veilig om opnieuw te draaien
+(upsert). Dode verwijzingen naar beeldmateriaal worden gemeld en overgeslagen.
+
+## Deployen op Vercel
+
+- Maak een nieuw Vercel-project voor deze repo, of koppel de repo aan het bestaande
+  project (en domein) van de facturentool. Oude bookmarks blijven werken via de
+  redirects.
+- Zet de vier omgevingsvariabelen hierboven.
+- Zet **Fluid compute** aan (standaard bij nieuwe projecten). Dan kan de generatie
+  van social posts tot `maxDuration` 300 seconden duren, ook op het Hobby-plan.
+- `vercel.json` geeft de PDF- en exportroutes `memory` 2048 MB (Chromium via
+  `@sparticuz/chromium`), en generate/revise `maxDuration` 300. Controleer na de eerste
+  build in het Vercel-dashboard (Functions) dat deze instellingen zijn toegepast.
+
+## Nieuwe git-remote toevoegen
+
+Deze map is gekopieerd uit de facturen-repo; de oude `origin` is bewust verwijderd,
+zodat een push nooit per ongeluk in de facturen-repo belandt. Maak een nieuwe (lege)
+repo aan, bijvoorbeeld op GitHub, en koppel die:
+
+```bash
+git remote add origin git@github.com:<account>/studio-levant-dashboard.git
+git push -u origin dashboard
+```
+
+## Een module toevoegen
+
+1. Voeg één entry toe aan `MODULES` in `lib/modules.ts` (id, naam, beschrijving, `href`,
+   icoon, `actief: true`). Het dashboard toont de tegel automatisch. Een nieuw icoon
+   voeg je toe in `components/dashboard/ModuleIcoon.tsx`.
+2. Maak een map `app/<module>/` met de pagina's. Zet `<DashboardLink />` in de navigatie,
+   zodat je terug kunt naar het dashboard.
+3. Eventueel: API-routes in `app/api/<module>/`. Begin elke route met een sessiecheck,
+   zoals de bestaande routes.
+4. Eventueel: een migratie `supabase/migrations/00NN_<module>.sql` met RLS aan, in de
+   stijl van de bestaande migraties.
+
+## Bekende beperkingen
+
+- **Generatie maximaal 5 minuten.** Duurt een generatie langer, dan stopt de server met
+  een melding. Probeer het opnieuw of met minder beelden.
+- **Uploads maximaal 5 MB per afbeelding** (limiet van Anthropic). Foto's worden in de
+  browser al verkleind; dit raakt vooral grote GIF's.
+- **Export via een Storage-link.** PNG-zip, PDF en de ZIP met HTML-bestanden worden eerst
+  in Storage gezet; je browser downloadt ze via een tijdelijke link (5 minuten geldig).
+  Oude exports in `social-assets/exports/` worden nog niet automatisch opgeruimd.
+- **"Map met HTML-bestanden tonen"** is online "HTML-bestanden downloaden (ZIP)".
+- **De lokale `.env`-key is vervallen**; de key staat in `ANTHROPIC_API_KEY` op de server.
