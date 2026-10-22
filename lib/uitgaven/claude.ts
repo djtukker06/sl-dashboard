@@ -52,21 +52,19 @@ export const SCHEMA = {
     totaal: { ...getal, description: 'Totaalbedrag inclusief btw (wat er betaald is).' },
     btwBedrag: { ...getal, description: 'Totaal btw-bedrag. 0 als er geen btw is of de btw verlegd is.' },
     btwTarief: {
-      type: ['string', 'null'],
-      enum: ['21', '9', '0', 'verlegd', 'geen', null],
+      // Met '%': de API weigert enum-strings die op een getal lijken ('21'); leesTarief haalt het teken weg.
+      anyOf: [{ type: 'string', enum: ['21%', '9%', '0%', 'verlegd', 'geen'] }, { type: 'null' }],
       description: 'Btw-tarief. Bij meerdere tarieven: het tarief van het grootste deel.'
     },
     valuta: { ...leeg, description: 'ISO-valutacode, bv. EUR of USD.' },
     factuurnummer: { ...leeg, description: 'Factuur- of bonnummer, als zichtbaar.' },
     omschrijving: { ...leeg, description: 'Korte Nederlandse omschrijving waarvoor het is (max. 8 woorden), bv. "Adobe Creative Cloud maandabonnement".' },
     categorie: {
-      type: ['string', 'null'],
-      enum: [...CATEGORIEEN.map((c) => c.id), null],
+      anyOf: [{ type: 'string', enum: CATEGORIEEN.map((c) => c.id) }, { type: 'null' }],
       description: 'Best passende categorie.'
     },
     betaalmethode: {
-      type: ['string', 'null'],
-      enum: ['zakelijk', 'prive', 'creditcard', 'contant', null],
+      anyOf: [{ type: 'string', enum: ['zakelijk', 'prive', 'creditcard', 'contant'] }, { type: 'null' }],
       description: 'Alleen als het zichtbaar is: pin/iDEAL/overboeking/incasso = zakelijk, creditcard = creditcard, contant = contant. Anders null.'
     }
   }
@@ -81,7 +79,7 @@ Geef precies de gevraagde velden terug. Regels:
 - Vul alleen in wat je echt op het document ziet; anders null. Verzin niets.
 - Bedragen als getal met punt als decimaalteken (12.5), zonder valutateken.
 - totaal = het betaalde bedrag inclusief btw. btwBedrag = de totale btw op het document.
-- Bij "btw verlegd" / "reverse charge" / "VAT reverse charged": btwTarief "verlegd", btwBedrag 0.
+- Bij "btw verlegd" / "reverse charge" / "VAT reverse charged": btwTarief "verlegd", btwBedrag 0. Tarieven als "21%", "9%" of "0%".
 - Buitenlandse factuur zonder btw (bv. een Amerikaans softwarebedrijf): btwTarief "geen", btwBedrag 0.
 - Datum als YYYY-MM-DD. Nederlandse datums zijn dag-maand-jaar.
 - leverancier: de verkoper (niet Studio Levant zelf, dat is de klant). Gebruik de gangbare naam.${
