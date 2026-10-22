@@ -15,9 +15,11 @@
 -- Veilig om nogmaals uit te voeren; alles draait in één transactie.
 -- (Dit zit ook in UITVOEREN_IN_SQL_EDITOR.sql; één van beide uitvoeren is genoeg.)
 --
--- Daarna (eenmalig, zie README "Team & toegang"):
+-- EERST (vóór je dit uitvoert, zie README "Team & toegang"):
 --   - Authentication -> Sign In / Providers: "Allow new users to sign up" UIT,
 --     "Allow anonymous sign-ins" UIT, "Confirm email" AAN.
+--   - Authentication -> Users: staat daar iemand die er niet hoort? Verwijder die eerst.
+-- Daarna (eenmalig):
 --   - Authentication -> Emails -> "Invite user": link naar
 --     {{ .SiteURL }}/auth/callback?token_hash={{ .TokenHash }}&type=invite&next=/nieuw-wachtwoord
 --   - Teamlid toevoegen: node --env-file=.env.local scripts/teamlid-toevoegen.mjs --email … --naam "…"
@@ -249,14 +251,17 @@ grant execute on function public.is_actief_teamlid(uuid) to authenticated, servi
 
 -- ---------------------------------------------------------------------------------
 -- 2. Lidmaatschap zaaien — ALLEEN bij de eerste keer (zolang team_members leeg is).
---    Elke bestaande, niet-anonieme gebruiker (bevestigd of al eens ingelogd) wordt actief lid; de oudste
---    wordt eigenaar. Daarna komen er alleen nog leden bij via scripts/teamlid-toevoegen.mjs.
---    Controleer na het uitvoeren de lijst onderaan: staat er iemand tussen die er niet
---    hoort, deactiveer die dan met scripts/teamlid-verwijderen.mjs.
+--    Alleen de OUDSTE bestaande, niet-anonieme gebruiker (bevestigd of al eens ingelogd;
+--    nu: Daniel) wordt actief lid en eigenaar. Andere bestaande accounts worden bewust NIET
+--    automatisch lid: zolang "Allow new users to sign up" aan stond, kan een buitenstaander
+--    zich hebben geregistreerd. Ze staan als melding (NOTICE) in de uitvoer; een echte
+--    collega voeg je daarna toe met scripts/teamlid-toevoegen.mjs. Controleer na het
+--    uitvoeren de lijst onderaan (aantal leden + wie).
 -- ---------------------------------------------------------------------------------
 do $$
 declare
   palet text[] := array['#c8a97e', '#8f6b4a', '#6e7b5b', '#b5654a', '#5b6b7b', '#9a7fa0'];
+  overig record;
 begin
   if exists (select 1 from public.team_members) then
     return;
@@ -286,6 +291,7 @@ begin
         coalesce(left(nullif(split_part(b.naam, ' ', 2), ''), 1), '')
       ) as initialen
     from basis b
+    where b.nr = 1
   ),
   profielen as (
     insert into public.profiles (id, naam, initialen, kleur, email)
@@ -295,9 +301,20 @@ begin
     returning id
   )
   insert into public.team_members (user_id, actief, rol)
-  select id, true, case when nr = 1 then 'eigenaar' else 'lid' end
+  select id, true, 'eigenaar'
   from met_initialen
   on conflict (user_id) do nothing;
+
+  -- Andere bestaande accounts: niet automatisch lid, wel melden.
+  for overig in
+    select coalesce(u.email, '(geen e-mailadres)') as email
+    from auth.users u
+    where not exists (select 1 from public.team_members m where m.user_id = u.id)
+      and coalesce((to_jsonb(u)->>'is_anonymous')::boolean, false) = false
+    order by u.created_at, u.id
+  loop
+    raise notice 'Niet automatisch teamlid: % (hoort het erbij? voeg toe met scripts/teamlid-toevoegen.mjs)', overig.email;
+  end loop;
 end
 $$;
 
@@ -874,6 +891,7 @@ from (values
   ('functie taak_aanmaken',   to_regprocedure('public.taak_aanmaken(jsonb)') is not null),
   ('RLS aan op alle tabellen', not exists (select 1 from pg_class c where c.relnamespace = 'public'::regnamespace and c.relkind = 'r' and not c.relrowsecurity)),
   ('minstens één actief teamlid', exists (select 1 from public.team_members where actief)),
+  ('aantal actieve teamleden: ' || (select count(*) from public.team_members where actief) || ' (zie hieronder wie)', true),
   ('minstens één eigenaar',   exists (select 1 from public.team_members where actief and rol = 'eigenaar')),
   ('elke taak heeft iemand',  not exists (select 1 from public.tasks t where not exists (select 1 from public.task_assignees a where a.task_id = t.id))),
   ('geen open policies (public)', not exists (select 1 from pg_policies where schemaname = 'public' and (coalesce(qual, '') || ' ' || coalesce(with_check, '')) ~* 'auth\.uid\(\)( AS uid\))? IS NOT NULL')),

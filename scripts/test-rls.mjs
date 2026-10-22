@@ -254,11 +254,13 @@ async function scenarioA() {
   checkControle(await voerUit(db, team, "UITVOEREN_0021_TEAM.sql"), "A: 0021_TEAM (1e keer)");
   checkControle(await voerUit(db, team, "UITVOEREN_0021_TEAM.sql (2x)"), "A: 0021_TEAM (2e keer)");
 
-  // Zaaien: alleen bevestigde, niet-anonieme gebruikers; de oudste is eigenaar.
+  // Zaaien: alleen de oudste bevestigde, niet-anonieme gebruiker (eigenaar). Andere
+  // bestaande accounts (mogelijk zelf geregistreerd door een buitenstaander) NIET.
   const leden = (await db.query("select user_id, rol, actief from public.team_members order by toegevoegd_op, user_id")).rows;
   const rolVan = Object.fromEntries(leden.map((l) => [l.user_id, l.rol]));
   check(rolVan[U.daniel] === "eigenaar", "zaaien: Daniel (oudste) is eigenaar");
-  check(rolVan[U.mark] === "lid", "zaaien: bevestigde tweede gebruiker is lid");
+  check(!(U.mark in rolVan), "zaaien: bevestigde tweede gebruiker wordt NIET automatisch lid");
+  check(leden.length === 1, "zaaien: precies één lid (de oudste)", `${leden.length}`);
   check(!(U.onbevestigd in rolVan), "zaaien: onbevestigd account is geen lid");
   check(!(U.anoniem in rolVan), "zaaien: anoniem account is geen lid");
   const prof = (await db.query("select naam, initialen from public.profiles where id = $1", [U.daniel])).rows[0];
@@ -276,7 +278,11 @@ async function scenarioA() {
   checkControle(await voerUit(db, lees("supabase/UITVOEREN_IN_SQL_EDITOR.sql"), "UITVOEREN_IN_SQL_EDITOR.sql"), "A: IN_SQL_EDITOR opnieuw");
   checkControle(await voerUit(db, lees("supabase/UITVOEREN_0020_UITGAVEN.sql"), "UITVOEREN_0020_UITGAVEN.sql"), "A: 0020_UITGAVEN opnieuw");
   const nLeden = (await db.query("select count(*)::int as n from public.team_members")).rows[0].n;
-  check(nLeden === 2, "opnieuw uitvoeren zaait geen extra leden", `${nLeden}`);
+  check(nLeden === 1, "opnieuw uitvoeren zaait geen extra leden", `${nLeden}`);
+
+  // Mark komt er (zoals in het echt) bij via het teamlid-script: profiel + lidmaatschap.
+  await db.query("insert into public.profiles (id, naam, initialen, email) values ($1, 'Mark', 'M', 'mark@studio-levant.nl')", [U.mark]);
+  await db.query("insert into public.team_members (user_id, actief, rol) values ($1, true, 'lid')", [U.mark]);
 
   await zaaiNa0021(db);
   await matrix(db);

@@ -3,7 +3,13 @@
 //
 //   1. Bestaat er nog geen account: Supabase stuurt een uitnodiging (inviteUserByEmail).
 //      De link komt binnen op /auth/callback en gaat door naar /nieuw-wachtwoord.
-//      Bestaat het account al: een eventuele blokkade (na verwijderen) wordt opgeheven.
+//      Bestaat het account al en was het ooit lid (gedeactiveerd): een eventuele blokkade
+//      wordt opgeheven en het wordt weer actief.
+//      Bestaat het account al maar was het NOOIT lid: dan is het mogelijk door een ander
+//      aangemaakt (zelf registreren, met een wachtwoord dat hij kent). Zo'n account wordt
+//      NIET vertrouwd: het wordt verwijderd (met al zijn sessies) en er volgt een nieuwe
+//      uitnodiging, zodat het lid zelf een wachtwoord kiest. Alleen met
+//      --bestaand-account-vertrouwen (als je het account zelf hebt aangemaakt) blijft het staan.
 //   2. Profiel (naam, initialen, kleur) en lidmaatschap (team_members, actief) worden gezet.
 //
 // Vereist migratie 0021 (supabase/UITVOEREN_0021_TEAM.sql). Sleutels alleen uit de omgeving:
@@ -14,7 +20,12 @@
 //   --naam "<naam>"        verplicht (1–80 tekens; voornaam komt in de begroeting)
 //   --initialen <XY>       optioneel (1–3 tekens; standaard uit de naam)
 //   --kleur <#rrggbb>      optioneel (standaard een tint uit het huisstijlpalet)
-//   --rol lid|eigenaar     optioneel (standaard: lid; een bestaande rol blijft anders staan)
+//   --rol lid|eigenaar     optioneel (standaard: lid; een bestaande rol blijft anders staan).
+//                          'eigenaar' geeft GEEN toegang tot de standaard-mailbox (MAIL_USER):
+//                          die is alleen van het account met dat adres / de oudste eigenaar.
+//   --bestaand-account-vertrouwen
+//                          een bestaand account dat nog nooit lid was NIET verwijderen maar
+//                          zo lid maken (alleen als je zeker weet dat jij het hebt aangemaakt)
 //   --site <https://…>     basis-URL voor de uitnodigingslink (standaard NEXT_PUBLIC_SITE_URL)
 //   --dry-run              alleen laten zien wat er zou gebeuren; niets wijzigen
 //   --help
@@ -30,13 +41,21 @@ import {
 } from "./teamlid-gemeen.mjs";
 
 const HELP = `Gebruik: node --env-file=.env.local scripts/teamlid-toevoegen.mjs --email <adres> --naam "<naam>"
-                [--initialen XY] [--kleur #rrggbb] [--rol lid|eigenaar] [--site https://…] [--dry-run]
+                [--initialen XY] [--kleur #rrggbb] [--rol lid|eigenaar] [--site https://…]
+                [--bestaand-account-vertrouwen] [--dry-run]
 
 Voegt een teamlid toe aan de Studio Levant-backoffice: nodigt het account uit (als het nog
-niet bestaat) en zet profiel + actief lidmaatschap. Leest sleutels alleen uit de omgeving.`;
+niet bestaat) en zet profiel + actief lidmaatschap. Leest sleutels alleen uit de omgeving.
+
+Een bestaand account dat nog nooit lid was, wordt uit voorzorg verwijderd en opnieuw
+uitgenodigd (iemand anders kan het met een eigen wachtwoord hebben aangemaakt), tenzij
+--bestaand-account-vertrouwen. Zet in Supabase "Allow new users to sign up" UIT vóór je
+dit script gebruikt.
+
+--rol eigenaar geeft geen toegang tot de standaard-mailbox (MAIL_USER/MAIL_PASSWORD).`;
 
 const args = leesArgumenten(process.argv.slice(2), {
-  vlaggen: ["dry-run", "help"],
+  vlaggen: ["dry-run", "help", "bestaand-account-vertrouwen"],
   waarden: ["email", "naam", "initialen", "kleur", "rol", "site"],
 });
 if (args.help) {
@@ -85,14 +104,39 @@ const kleur = (args.kleur || KLEUREN[leden.length % KLEUREN.length]).toLowerCase
 let gebruiker = await vindGebruiker(sb, email);
 const bestaand = gebruiker ? leden.find((l) => l.user_id === gebruiker.id) : null;
 const rol = args.rol || bestaand?.rol || "lid";
+const VERTROUWEN = Boolean(args["bestaand-account-vertrouwen"]);
+// Een bestaand account dat nooit lid was: niet vertrouwen (zie boven).
+const onbekendAccount = Boolean(gebruiker && !bestaand);
 
 if (DRY) {
   console.log(`[dry-run] Account: ${gebruiker ? `bestaat (${gebruiker.id})` : "bestaat nog niet → uitnodiging"}`);
-  if (!gebruiker) console.log(`[dry-run] Uitnodigingslink → ${site || "<Site URL van Supabase>"}/auth/callback?next=/nieuw-wachtwoord`);
+  if (gebruiker) {
+    console.log(`[dry-run]   aangemaakt:   ${gebruiker.created_at ?? "?"}`);
+    console.log(`[dry-run]   bevestigd:    ${gebruiker.email_confirmed_at ?? "nee"}`);
+    console.log(`[dry-run]   laatst in:    ${gebruiker.last_sign_in_at ?? "nooit"}`);
+    console.log(`[dry-run]   lidmaatschap: ${bestaand ? (bestaand.actief ? "actief" : "gedeactiveerd") : "nooit lid geweest"}`);
+  }
+  if (onbekendAccount && !VERTROUWEN) {
+    console.log("[dry-run] Dit account was nooit lid: het zou worden VERWIJDERD (met zijn sessies) en opnieuw uitgenodigd.");
+    console.log("          Zelf aangemaakt? Gebruik dan --bestaand-account-vertrouwen.");
+  } else if (onbekendAccount) {
+    console.log("[dry-run] --bestaand-account-vertrouwen: het bestaande account zou zonder uitnodiging lid worden.");
+  }
+  if (!gebruiker || (onbekendAccount && !VERTROUWEN)) console.log(`[dry-run] Uitnodigingslink → ${site || "<Site URL van Supabase>"}/auth/callback?next=/nieuw-wachtwoord`);
   if (gebruiker?.banned_until && new Date(gebruiker.banned_until) > new Date()) console.log("[dry-run] Blokkade zou worden opgeheven.");
   console.log(`[dry-run] Profiel: ${naam} (${initialen}, ${kleur}); lidmaatschap: actief, rol ${rol}${bestaand ? ` (was ${bestaand.actief ? "actief" : "gedeactiveerd"}, ${bestaand.rol})` : ""}.`);
   console.log("[dry-run] Er is niets gewijzigd.");
   process.exit(0);
+}
+
+if (onbekendAccount && !VERTROUWEN) {
+  // Nooit lid geweest: mogelijk door een ander geregistreerd. Weggooien (dat beëindigt ook
+  // zijn sessies) en hieronder opnieuw uitnodigen, zodat het lid zelf een wachtwoord kiest.
+  if (!site) fout("geen basis-URL voor de uitnodiging: geef --site https://… op of zet NEXT_PUBLIC_SITE_URL.");
+  const weg = await sb.auth.admin.deleteUser(gebruiker.id);
+  if (weg.error) fout(`bestaand account (nooit lid) kon niet worden verwijderd: ${weg.error.message}`);
+  console.log("Bestaand account zonder lidmaatschap verwijderd (het was niet door dit script aangemaakt); er volgt een nieuwe uitnodiging.");
+  gebruiker = null;
 }
 
 if (!gebruiker) {

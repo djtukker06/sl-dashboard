@@ -12,15 +12,18 @@ import { ontsleutel } from './kluis';
 //   1. Een eigen mailbox, gekoppeld via /account: tabel user_mailboxes (migratie 0021),
 //      wachtwoord versleuteld met MAIL_ENCRYPTION_KEY (lib/mail/kluis.ts). Alleen de server
 //      leest die tabel (service-role, altijd met het eigen user-id).
-//   2. Anders de mailbox uit de env hieronder. Die is van de eigenaar (Daniel) en alleen
-//      bruikbaar voor het account met hetzelfde adres als MAIL_USER, de eigenaar van het
-//      team (rol 'eigenaar'), of de overgangsmodus zolang 0021 niet is uitgevoerd.
+//   2. Anders de mailbox uit de env hieronder. Die is van Daniel en alleen bruikbaar voor
+//      ÉÉN account (magEnvMailbox): het account met hetzelfde adres als MAIL_USER, anders
+//      het account uit MAIL_ENV_USER_ID (als die gezet is), anders de OUDSTE actieve eigenaar
+//      (Daniel). Een tweede eigenaar (bv. de compagnon) krijgt hem dus nooit. Plus de
+//      overgangsmodus zolang 0021 niet is uitgevoerd (toen was er maar één gebruiker).
 //   3. Anders: niet gekoppeld (de schermen verwijzen naar /account).
 //
 //   MAIL_USER, MAIL_PASSWORD                verplicht
 //   MAIL_IMAP_HOST (mail.privateemail.com), MAIL_IMAP_PORT (993, SSL)
 //   MAIL_SMTP_HOST (mail.privateemail.com), MAIL_SMTP_PORT (465, SSL)
 //   MAIL_FROM_NAME (Studio Levant), MAIL_HANDTEKENING (optioneel, "\n" = nieuwe regel)
+//   MAIL_ENV_USER_ID (optioneel): user-id (uuid) van het account dat de env-mailbox krijgt
 
 const STANDAARD_HOST = 'mail.privateemail.com';
 
@@ -56,11 +59,39 @@ function envMailConfig(): MailConfig | null {
   };
 }
 
-/** Mag dit teamlid de mailbox uit de env gebruiken? (zie boven) */
-export function magEnvMailbox(lid: Pick<Teamlid, 'email' | 'rol' | 'overgang'>): boolean {
+/** De oudste actieve eigenaar (zelfde volgorde als public.team_eigenaar()), of null. */
+async function oudsteEigenaar(lid: Pick<Teamlid, 'sb'>): Promise<string | null> {
+  const { data, error } = await lid.sb
+    .from('team_members')
+    .select('user_id')
+    .eq('rol', 'eigenaar')
+    .eq('actief', true)
+    .order('toegevoegd_op', { ascending: true })
+    .order('user_id', { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  if (error) {
+    console.error('[mail] eigenaar bepalen mislukt', error.code ?? '', error.message);
+    return null; // fail closed: dan geen standaard-mailbox
+  }
+  return (data as { user_id: string } | null)?.user_id ?? null;
+}
+
+/**
+ * Mag dit teamlid de mailbox uit de env gebruiken? Altijd hooguit één account (zie boven):
+ *   1. hetzelfde adres als MAIL_USER;
+ *   2. anders, met MAIL_ENV_USER_ID gezet: alleen dat user-id;
+ *   3. anders de oudste actieve eigenaar (niet zomaar elke eigenaar).
+ */
+export async function magEnvMailbox(lid: Pick<Teamlid, 'userId' | 'email' | 'rol' | 'overgang' | 'sb'>): Promise<boolean> {
   const envUser = process.env.MAIL_USER?.trim().toLowerCase();
   if (!envUser) return false;
-  return lid.overgang || lid.rol === 'eigenaar' || lid.email.trim().toLowerCase() === envUser;
+  if (lid.overgang) return true;
+  if (lid.email.trim().toLowerCase() === envUser) return true;
+  const vast = process.env.MAIL_ENV_USER_ID?.trim().toLowerCase();
+  if (vast) return lid.userId.toLowerCase() === vast;
+  if (lid.rol !== 'eigenaar') return false;
+  return (await oudsteEigenaar(lid)) === lid.userId;
 }
 
 export interface MailboxRij {
@@ -126,7 +157,7 @@ export async function mailboxVoor(lid: Teamlid): Promise<{ cfg: MailConfig | nul
     if (wachtwoord !== null) return { cfg: configUitRij(rij, wachtwoord), bron: 'eigen' };
     console.warn('[mail] eigen mailbox niet te ontsleutelen (andere MAIL_ENCRYPTION_KEY?): opnieuw koppelen via /account.');
   }
-  if (magEnvMailbox(lid)) {
+  if (await magEnvMailbox(lid)) {
     const env = envMailConfig();
     if (env) return { cfg: env, bron: 'standaard' };
   }
@@ -134,8 +165,8 @@ export async function mailboxVoor(lid: Teamlid): Promise<{ cfg: MailConfig | nul
 }
 
 /** Het adres van de standaard-mailbox, alleen als dit teamlid hem mag gebruiken. */
-export function standaardAdresVoor(lid: Teamlid): string | null {
-  return magEnvMailbox(lid) ? envMailConfig()?.user ?? null : null;
+export async function standaardAdresVoor(lid: Teamlid): Promise<string | null> {
+  return (await magEnvMailbox(lid)) ? envMailConfig()?.user ?? null : null;
 }
 
 /**

@@ -6,12 +6,16 @@ import type { MailboxStatus } from './types';
 
 /** De mailbox-status voor /account. Nooit het wachtwoord, ook niet versleuteld. */
 export async function mailboxStatus(lid: Teamlid): Promise<MailboxStatus> {
-  const [{ rij, ingericht }, { bron }] = await Promise.all([eigenMailboxRij(lid), mailboxVoor(lid)]);
+  const [{ rij, ingericht }, { bron }, standaardAdres] = await Promise.all([
+    eigenMailboxRij(lid),
+    mailboxVoor(lid),
+    standaardAdresVoor(lid)
+  ]);
   return {
     bron,
     ingericht,
     sleutel: kluisBeschikbaar(),
-    standaardAdres: standaardAdresVoor(lid),
+    standaardAdres,
     eigen: rij
       ? {
           email: rij.email,

@@ -12,13 +12,25 @@ import { useAfvinken } from '@/components/agenda/useAfvinken';
 import { useTaakDialoog, useTaakGebeurtenis } from '@/components/taken/TakenProvider';
 import { Kaart, KaartMelding } from './Kaart';
 
-export type PlanningData = { taken: Taak[]; afspraken: Afspraak[]; teLaat: Taak[]; uitgedeeld: Taak[] };
+export type PlanningData = {
+  taken: Taak[];
+  afspraken: Afspraak[];
+  teLaat: Taak[];
+  /** Jouw open taken zonder deadline. */
+  zonderDeadline: Taak[];
+  /** Jouw eerstvolgende open taken met een deadline na deze 7 dagen. */
+  later: Taak[];
+  uitgedeeld: Taak[];
+};
 
 const VERVERS_MS = 2 * 60_000;
+/** Zelfde aantal als DASHBOARD_EXTRA_MAX in lib/agenda/repo.ts. */
+const EXTRA_MAX = 8;
 
 /**
  * Jouw planning op het dashboard: Vandaag, Deze week, Taken en "Uitgedeeld door jou".
- * Alleen taken voor jou en afspraken waar jij bij hoort. Krijgt de eerste gegevens van de
+ * Alleen taken voor jou en afspraken waar jij bij hoort; ook taken zonder deadline of
+ * met een deadline na deze week (groepen "Zonder deadline" en "Later"). Krijgt de eerste gegevens van de
  * server (PlanningWidgets) en houdt ze daarna zelf bij; ververst bij terugkomen en elke
  * 2 minuten (zo verschijnt werk van je compagnon vanzelf). Vereist <DashboardTaken> erboven.
  */
@@ -44,12 +56,22 @@ export function Planning({
     setBezig(true);
     laatst.current = Date.now();
     try {
-      const [bereik, laat, uit] = await Promise.all([
+      const [bereik, laat, ooit, gepland, uit] = await Promise.all([
         agendaApi.bereik(vandaag, plusDagen(vandaag, 6), 'ik'),
         agendaApi.taken('telaat', { wie: 'ik' }),
+        agendaApi.taken('ooit', { wie: 'ik' }),
+        agendaApi.taken('gepland', { wie: 'ik' }),
         agendaApi.uitgedeeld()
       ]);
-      setData({ taken: bereik.tasks, afspraken: bereik.events, teLaat: laat.tasks, uitgedeeld: uit.tasks });
+      const grens = plusDagen(vandaag, 6);
+      setData({
+        taken: bereik.tasks,
+        afspraken: bereik.events,
+        teLaat: laat.tasks,
+        zonderDeadline: ooit.tasks.slice(0, EXTRA_MAX),
+        later: gepland.tasks.filter((t) => !!t.datum && t.datum > grens).slice(0, EXTRA_MAX),
+        uitgedeeld: uit.tasks
+      });
       setFout(null);
     } catch (e) {
       setFout(e && typeof e === 'object' && 'nietIngericht' in e && (e as { nietIngericht: boolean }).nietIngericht ? 'niet-ingericht' : 'fout');
@@ -89,6 +111,8 @@ export function Planning({
             ...d,
             taken: d.taken.map((x) => (x.id === t.id ? { ...x, ...t } : x)),
             teLaat: d.teLaat.map((x) => (x.id === t.id ? { ...x, ...t } : x)),
+            zonderDeadline: d.zonderDeadline.map((x) => (x.id === t.id ? { ...x, ...t } : x)),
+            later: d.later.map((x) => (x.id === t.id ? { ...x, ...t } : x)),
             uitgedeeld: d.uitgedeeld.map((x) => (x.id === t.id ? { ...x, ...t } : x))
           }
         : d
@@ -125,7 +149,7 @@ export function Planning({
     );
   }
 
-  const d = data ?? { taken: [], afspraken: [], teLaat: [], uitgedeeld: [] };
+  const d = data ?? { taken: [], afspraken: [], teLaat: [], zonderDeadline: [], later: [], uitgedeeld: [] };
   const opUitgedeeld = d.uitgedeeld.length > 0;
   return (
     <>
@@ -349,28 +373,37 @@ function TakenKaart({
   const teLaat = data.teLaat;
   const vandaagTaken = data.taken.filter((t) => t.datum === vandaag && (!t.afgerond || recent(t)));
   const binnenkort = data.taken.filter((t) => t.datum && t.datum > vandaag && (!t.afgerond || recent(t))).slice(0, 5);
+  // Ook taken zonder deadline en met een deadline na deze week: een taak op jouw naam
+  // hoort altijd ergens op je dashboard te staan.
+  const grens = plusDagen(vandaag, 6);
+  const zonderDeadline = data.zonderDeadline.filter((t) => !t.afgerond || recent(t));
+  const later = data.later.filter((t) => !!t.datum && t.datum > grens && (!t.afgerond || recent(t)));
   const groepen = [
     { id: 'telaat', titel: 'Te laat', taken: teLaat, gevaar: true, datum: true },
     { id: 'vandaag', titel: 'Vandaag', taken: vandaagTaken, gevaar: false, datum: false },
-    { id: 'binnenkort', titel: 'Binnenkort', taken: binnenkort, gevaar: false, datum: true }
+    { id: 'binnenkort', titel: 'Binnenkort', taken: binnenkort, gevaar: false, datum: true },
+    { id: 'later', titel: 'Later', taken: later, gevaar: false, datum: true },
+    { id: 'zonder', titel: 'Zonder deadline', taken: zonderDeadline, gevaar: false, datum: false }
   ].filter((g) => g.taken.length);
   const open = teLaat.filter((t) => !t.afgerond).length + vandaagTaken.filter((t) => !t.afgerond).length;
+  const vol = data.zonderDeadline.length >= EXTRA_MAX || data.later.length >= EXTRA_MAX;
 
   return (
     <Kaart label={open ? `Taken · ${open} open` : 'Taken'} href="/agenda" linkTekst="Alle taken" className="db-breed">
       {groepen.length === 0 ? (
         <KaartMelding
-          titel="Geen open taken"
+          titel="Geen taken voor jou"
           actie={
             <button type="button" className="db-knop" onClick={onNieuw}>
               + Taak
             </button>
           }
         >
-          Niets achterstallig en niets voor jou gepland in de komende dagen.
+          Er staan geen open taken op jouw naam: niets achterstallig, niets gepland en niets zonder deadline.
         </KaartMelding>
       ) : (
-        groepen.map((g) => (
+        <>
+        {groepen.map((g) => (
           <section key={g.id} className="ag-groep">
             <h3 className={`ag-groep-kop${g.gevaar ? ' is-gevaar' : ''}`}>
               <span>{g.titel}</span>
@@ -382,7 +415,13 @@ function TakenKaart({
               ))}
             </ul>
           </section>
-        ))
+        ))}
+        {vol && (
+          <p className="db-rustig">
+            <Link href="/agenda">Meer taken in de agenda</Link>
+          </p>
+        )}
+        </>
       )}
     </Kaart>
   );

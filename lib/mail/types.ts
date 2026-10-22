@@ -112,5 +112,10 @@ export const MAIL_ENV_VARS: { naam: string; uitleg: string; verplicht: boolean }
   { naam: 'MAIL_IMAP_HOST', uitleg: 'mail.privateemail.com (poort MAIL_IMAP_PORT=993)', verplicht: false },
   { naam: 'MAIL_SMTP_HOST', uitleg: 'mail.privateemail.com (poort MAIL_SMTP_PORT=465)', verplicht: false },
   { naam: 'MAIL_FROM_NAME', uitleg: 'afzendernaam, bv. Studio Levant', verplicht: false },
-  { naam: 'MAIL_HANDTEKENING', uitleg: 'handtekening onder nieuwe mails (\\n = nieuwe regel)', verplicht: false }
+  { naam: 'MAIL_HANDTEKENING', uitleg: 'handtekening onder nieuwe mails (\\n = nieuwe regel)', verplicht: false },
+  {
+    naam: 'MAIL_ENV_USER_ID',
+    uitleg: 'user-id van het account dat deze mailbox krijgt (standaard: wie hetzelfde adres heeft, anders de oudste eigenaar)',
+    verplicht: false
+  }
 ];

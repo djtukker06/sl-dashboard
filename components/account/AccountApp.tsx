@@ -244,7 +244,19 @@ function MailboxBlok({ start }: { start: MailboxStatus | null }) {
     : !status.sleutel
       ? 'Koppelen staat nog uit: de server mist MAIL_ENCRYPTION_KEY (zie README, "Mail per gebruiker").'
       : '';
-  const wachtwoordBewaard = Boolean(eigen?.heeftWachtwoord && eigen.leesbaar && eigen.email === f.email.trim().toLowerCase());
+  // Het opgeslagen wachtwoord geldt alleen voor precies dezelfde verbinding (adres, servers,
+  // poorten); wijzig je daar iets, dan moet je het opnieuw invullen (de server eist dat ook).
+  const gelijk = (x: string, y: string) => x.trim().toLowerCase() === y.trim().toLowerCase();
+  const zelfdeVerbinding = Boolean(
+    eigen &&
+      gelijk(eigen.email, f.email) &&
+      gelijk(eigen.imapHost, f.imapHost) &&
+      eigen.imapPort === f.imapPort &&
+      gelijk(eigen.smtpHost, f.smtpHost) &&
+      eigen.smtpPort === f.smtpPort
+  );
+  const wachtwoordBewaard = Boolean(eigen?.heeftWachtwoord && eigen.leesbaar && zelfdeVerbinding);
+  const wachtwoordOpnieuw = Boolean(eigen?.heeftWachtwoord && eigen.leesbaar && !zelfdeVerbinding);
 
   async function opslaan(e: React.FormEvent) {
     e.preventDefault();
@@ -255,7 +267,10 @@ function MailboxBlok({ start }: { start: MailboxStatus | null }) {
       return;
     }
     if (!v.waarde.wachtwoord && !wachtwoordBewaard) {
-      setMelding({ soort: 'fout', tekst: 'Vul je wachtwoord in.' });
+      setMelding({
+        soort: 'fout',
+        tekst: wachtwoordOpnieuw ? 'Je wijzigt de server of het adres: vul je wachtwoord opnieuw in.' : 'Vul je wachtwoord in.'
+      });
       return;
     }
     setBezig('opslaan');
@@ -349,7 +364,14 @@ function MailboxBlok({ start }: { start: MailboxStatus | null }) {
                 type="password"
                 value={f.wachtwoord}
                 maxLength={500}
-                placeholder={wachtwoordBewaard ? '•••••••• (opgeslagen)' : 'Wachtwoord van je mailbox'}
+                required={!wachtwoordBewaard}
+                placeholder={
+                  wachtwoordBewaard
+                    ? '•••••••• (opgeslagen)'
+                    : wachtwoordOpnieuw
+                      ? 'Opnieuw invullen (server of adres gewijzigd)'
+                      : 'Wachtwoord van je mailbox'
+                }
                 autoComplete="new-password"
                 onChange={(e) => zet('wachtwoord', e.target.value)}
               />

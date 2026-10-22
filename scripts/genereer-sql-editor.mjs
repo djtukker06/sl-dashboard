@@ -64,6 +64,7 @@ const CONTROLE_TEAM = [
   "  ('functie taak_aanmaken',   to_regprocedure('public.taak_aanmaken(jsonb)') is not null)",
   "  ('RLS aan op alle tabellen', not exists (select 1 from pg_class c where c.relnamespace = 'public'::regnamespace and c.relkind = 'r' and not c.relrowsecurity))",
   "  ('minstens één actief teamlid', exists (select 1 from public.team_members where actief))",
+  "  ('aantal actieve teamleden: ' || (select count(*) from public.team_members where actief) || ' (zie hieronder wie)', true)",
   "  ('minstens één eigenaar',   exists (select 1 from public.team_members where actief and rol = 'eigenaar'))",
   "  ('elke taak heeft iemand',  not exists (select 1 from public.tasks t where not exists (select 1 from public.task_assignees a where a.task_id = t.id)))",
   `  ('geen open policies (public)', not exists (select 1 from pg_policies where schemaname = 'public' and ${OPEN_POLICY}))`,
@@ -94,9 +95,11 @@ ${regels.join(",\n")}
 `;
 }
 
-const TEAM_STAPPEN = `-- Daarna (eenmalig, zie README "Team & toegang"):
+const TEAM_STAPPEN = `-- EERST (vóór je dit uitvoert, zie README "Team & toegang"):
 --   - Authentication -> Sign In / Providers: "Allow new users to sign up" UIT,
 --     "Allow anonymous sign-ins" UIT, "Confirm email" AAN.
+--   - Authentication -> Users: staat daar iemand die er niet hoort? Verwijder die eerst.
+-- Daarna (eenmalig):
 --   - Authentication -> Emails -> "Invite user": link naar
 --     {{ .SiteURL }}/auth/callback?token_hash={{ .TokenHash }}&type=invite&next=/nieuw-wachtwoord
 --   - Teamlid toevoegen: node --env-file=.env.local scripts/teamlid-toevoegen.mjs --email … --naam "…"`;
@@ -232,7 +235,8 @@ function bouwTeam() {
 --
 -- Wat dit doet:
 --   - team_members (de allowlist) + profiles; alleen ACTIEVE teamleden mogen nog iets.
---     De huidige gebruiker(s) worden bij de eerste keer automatisch lid (de oudste eigenaar).
+--     Alleen de oudste bestaande gebruiker (Daniel) wordt bij de eerste keer automatisch lid
+--     (eigenaar); andere bestaande accounts niet (ze staan als NOTICE in de uitvoer).
 --   - ALLE policies (facturen, klanten, social, agenda, uitgaven, Storage) gaan van
 --     "ingelogd" naar "actief teamlid" (is_teamlid()).
 --   - create_invoice/update_invoice zijn niet meer aan te roepen met de anon key.

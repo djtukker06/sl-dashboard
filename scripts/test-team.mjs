@@ -98,6 +98,12 @@ test("toevoegen --help", () => {
   const r = draai("teamlid-toevoegen.mjs", ["--help"]);
   assert.equal(r.status, 0);
   assert.match(r.stdout, /--email/);
+  assert.match(r.stdout, /--bestaand-account-vertrouwen/);
+  assert.match(r.stdout, /geen toegang tot de standaard-mailbox/);
+});
+test("toevoegen kent --bestaand-account-vertrouwen (dry-run)", () => {
+  const r = draai("teamlid-toevoegen.mjs", ["--email", "a@b.nl", "--naam", "X", "--bestaand-account-vertrouwen", "--dry-run"]);
+  assert.equal(r.status, 0, r.stderr);
 });
 test("verwijderen --help", () => {
   const r = draai("teamlid-verwijderen.mjs", ["--help"]);

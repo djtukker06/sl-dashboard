@@ -18,12 +18,17 @@ je vanuit elke module terug naar het dashboard.
 
 ## Eerste keer inrichten (checklist)
 
-1. **SQL uitvoeren** in Supabase: `supabase/UITVOEREN_IN_SQL_EDITOR.sql` (zie hieronder).
+1. **Eerst: Supabase-instellingen voor teamtoegang** (zie "Team & toegang"): aanmelden en
+   anonieme sign-ins UIT, "Confirm email" AAN, Redirect URLs strak, uitnodigingsmail
+   aanpassen. Kijk bij *Authentication → Users* of er alleen accounts staan die je kent.
+   Doe dit **vóór** de SQL: zo kan niemand zich nog registreren terwijl het team wordt
+   ingericht.
+2. **SQL uitvoeren** in Supabase: `supabase/UITVOEREN_IN_SQL_EDITOR.sql` (zie hieronder).
    Tot dan tonen social, de agenda en uitgaven een nette melding "nog niet ingericht".
    Al eerder uitgevoerd (0014–0019)? Dan `supabase/UITVOEREN_0020_UITGAVEN.sql`.
    Al eerder uitgevoerd (0014–0020)? Dan alleen `supabase/UITVOEREN_0021_TEAM.sql`.
-2. **Supabase-instellingen voor teamtoegang** (zie "Team & toegang"): aanmelden en anonieme
-   sign-ins UIT, "Confirm email" AAN, Redirect URLs strak, uitnodigingsmail aanpassen.
+   Alleen de oudste bestaande gebruiker (Daniel) wordt automatisch lid (eigenaar); controleer
+   onderaan het aantal leden en wie het zijn.
 3. **Oude social-posts importeren** met `scripts/importeer-social-projecten.mjs`
    (zie "Social-projecten importeren").
 4. **Omgevingsvariabelen** zetten in `.env.local` en in Vercel (zie "Omgevingsvariabelen"),
@@ -60,11 +65,13 @@ uitvoeren nooit de oude open policies terugzet.
 | `0018_agenda_taken.sql` | tabellen `tasks` en `calendar_events` (RLS, `updated_at`-trigger) |
 | `0019_mail_opslag.sql` | privé-bucket `mail-tmp` voor grote mailbijlagen |
 | `0020_uitgaven.sql` | tabellen `expenses` en `expense_files` (RLS, `updated_at`-trigger), privé-buckets `uitgaven` (25 MB, jpeg/png/webp/heic/pdf) en `uitgaven-export` (50 MB, ZIP) |
-| `0021_team_en_taken.sql` | `team_members` (allowlist) + `profiles`, `is_teamlid()` in **alle** policies (ook facturen en Storage), `create_invoice`/`update_invoice` alleen nog voor de service-role, `projects`, `task_assignees`, `task_subtasks`, `event_attendees`, `user_mailboxes`; zaait het lidmaatschap van de huidige gebruiker(s) |
+| `0021_team_en_taken.sql` | `team_members` (allowlist) + `profiles`, `is_teamlid()` in **alle** policies (ook facturen en Storage), `create_invoice`/`update_invoice` alleen nog voor de service-role, `projects`, `task_assignees`, `task_subtasks`, `event_attendees`, `user_mailboxes`; zaait het lidmaatschap van de oudste bestaande gebruiker (Daniel, eigenaar); andere bestaande accounts worden niet automatisch lid |
 
 **Uitvoeren:** Supabase-dashboard → je project → **SQL Editor** → *New query* → plak het hele
 bestand → **Run**. Onderaan verschijnt een controletabel; elke regel moet `ok` tonen.
-Daaronder staat wie er toegang heeft (`teamlid: Naam <adres> (rol)`): controleer dat lijstje.
+Daaronder staan het aantal actieve teamleden en wie er toegang heeft
+(`teamlid: Naam <adres> (rol)`): controleer dat lijstje. Bestaande accounts die niet
+automatisch lid zijn geworden, staan als *NOTICE* in de uitvoer.
 
 De controletabel van 0021 test onder meer:
 
@@ -129,7 +136,8 @@ onder **Project Settings → Environment Variables** (Production én Preview):
 | `SUPABASE_SERVICE_ROLE_KEY` | ja | Geheime service-role key, alleen op de server |
 | `ANTHROPIC_API_KEY` | voor social en uitgaven | Anthropic-key voor het genereren van social posts en het uitlezen van bonnetjes (zonder key: uitgaven handmatig invullen) |
 | `MAIL_ENCRYPTION_KEY` | voor eigen mailboxen | 32 bytes, base64 (`openssl rand -base64 32`). Versleutelt de mailbox-wachtwoorden die teamleden via `/account` koppelen (AES-256-GCM). Geheim; niet wijzigen zonder dat iedereen opnieuw koppelt (zie "Mail per gebruiker") |
-| `MAIL_USER`, `MAIL_PASSWORD` | nee | Standaard-mailbox van de eigenaar (zie "Mail koppelen"). Alleen voor het account met dat adres of de eigenaar, en alleen zolang die geen eigen mailbox heeft gekoppeld |
+| `MAIL_USER`, `MAIL_PASSWORD` | nee | Standaard-mailbox van Daniel (zie "Mail koppelen"). Voor precies één account: hetzelfde adres als `MAIL_USER`, anders `MAIL_ENV_USER_ID`, anders de oudste eigenaar; alleen zolang die geen eigen mailbox heeft gekoppeld |
+| `MAIL_ENV_USER_ID` | nee | User-id (uuid) van het account dat de standaard-mailbox krijgt, als dat niet het account met het adres uit `MAIL_USER` is. Leeg = de oudste actieve eigenaar |
 | `MAIL_IMAP_HOST`, `MAIL_IMAP_PORT`, `MAIL_SMTP_HOST`, `MAIL_SMTP_PORT` | nee | Standaard `mail.privateemail.com`, 993 en 465 |
 | `MAIL_FROM_NAME`, `MAIL_HANDTEKENING` | nee | Afzendernaam (standaard "Studio Levant") en handtekening (`\n` = nieuwe regel) |
 | `CHROME_PATH` | nee, alleen lokaal | Eigen Chrome/Chromium voor social-exports tijdens `npm run dev` |
@@ -169,7 +177,7 @@ komen er alleen bij via een script met de service-role key ("aan de achterkant")
 
 | Rol | Wat |
 |---|---|
-| `eigenaar` | Alles wat een lid mag, plus: valt terug op de standaard-mailbox uit de serverinstellingen (`MAIL_USER`/`MAIL_PASSWORD`) zolang hij geen eigen mailbox koppelt. De laatste actieve eigenaar kan niet worden gedeactiveerd. Bij het uitvoeren van 0021 wordt de oudste bestaande gebruiker (Daniel) eigenaar. |
+| `eigenaar` | Wat een lid mag; de laatste actieve eigenaar kan niet worden gedeactiveerd. Bij het uitvoeren van 0021 wordt de oudste bestaande gebruiker (Daniel) eigenaar. De standaard-mailbox (`MAIL_USER`/`MAIL_PASSWORD`) is van **één** account: hetzelfde adres als `MAIL_USER`, anders `MAIL_ENV_USER_ID`, anders de **oudste** eigenaar. Een tweede eigenaar (bv. de compagnon) krijgt hem niet. |
 | `lid` | Ziet en maakt alle gedeelde bedrijfsdata; eigen taken, agenda en mailbox. |
 
 Rechten op data zijn verder gelijk: facturen en prijsopgaven maakt iedereen in het team via
@@ -199,9 +207,15 @@ node --env-file=.env.local scripts/teamlid-toevoegen.mjs --email mark@studio-lev
 node --env-file=.env.local scripts/teamlid-toevoegen.mjs --email mark@studio-levant.nl --naam "Mark"
 ```
 
-Nodigt het account uit (als het nog niet bestaat; anders wordt een blokkade opgeheven) en
-zet profiel (naam, initialen, kleur) en een actief lidmaatschap. Opties: `--initialen`,
-`--kleur #rrggbb`, `--rol lid|eigenaar`, `--site https://…`, `--help`.
+Nodigt het account uit (als het nog niet bestaat) en zet profiel (naam, initialen, kleur) en
+een actief lidmaatschap. Een oud-teamlid (gedeactiveerd) krijgt zijn toegang terug (blokkade
+opgeheven). Een **bestaand account dat nooit lid was** wordt niet vertrouwd (iemand anders kan
+het met een eigen wachtwoord hebben aangemaakt): het script verwijdert het, met zijn sessies,
+en stuurt een nieuwe uitnodiging. Heb je het account zelf aangemaakt, gebruik dan
+`--bestaand-account-vertrouwen`. `--dry-run` toont van een gevonden account wanneer het is
+aangemaakt, bevestigd en laatst ingelogd. Opties: `--initialen`, `--kleur #rrggbb`,
+`--rol lid|eigenaar` (eigenaar geeft géén toegang tot de standaard-mailbox), `--site https://…`,
+`--bestaand-account-vertrouwen`, `--dry-run`, `--help`.
 
 **Teamlid de toegang ontnemen:**
 
@@ -368,8 +382,9 @@ eigen mailbox. Welke mailbox de app voor je gebruikt (`lib/mail/config.ts`):
    in (servers en poorten staan onder *Geavanceerd*; standaard Private Email). **Verbinding
    testen en opslaan** logt eerst echt in met IMAP en SMTP; pas als dat lukt wordt het
    wachtwoord opgeslagen. *Ontkoppelen* verwijdert het record (en het wachtwoord).
-2. Anders, voor de eigenaar of het account met hetzelfde adres als `MAIL_USER`: de
-   standaard-mailbox uit de omgevingsvariabelen (zie hieronder).
+2. Anders, voor precies één account: hetzelfde adres als `MAIL_USER`, anders het account uit
+   `MAIL_ENV_USER_ID`, anders de **oudste** actieve eigenaar (Daniel): de standaard-mailbox
+   uit de omgevingsvariabelen (zie hieronder). Een tweede eigenaar krijgt hem nooit.
 3. Anders: "niet gekoppeld", met een link naar `/account`.
 
 **Zo is het beveiligd.**
@@ -377,7 +392,9 @@ eigen mailbox. Welke mailbox de app voor je gebruikt (`lib/mail/config.ts`):
   AES-256-GCM met de server-sleutel `MAIL_ENCRYPTION_KEY`, een nieuwe willekeurige IV per keer
   en het user-id als AAD (een gekopieerde ciphertext werkt niet bij een ander account). Het
   wachtwoord komt nooit terug naar de browser: het veld is alleen-schrijven ("•••••••• (opgeslagen)";
-  leeg laten = behouden).
+  leeg laten = behouden). Leeg laten mag alleen als adres, servers én poorten gelijk blijven;
+  wijzig je daar iets, dan moet het wachtwoord opnieuw (anders zou een gestolen sessie het
+  bewaarde wachtwoord naar een andere server kunnen laten sturen).
 - De tabel heeft RLS aan en géén policies, en `anon`/`authenticated` hebben er geen rechten op:
   alleen de server leest hem (service-role, altijd met het eigen user-id).
 - Servers worden eerst opgezocht; interne adressen (loopback, privé-netwerk, link-local,
@@ -395,9 +412,9 @@ opnieuw in". (`sleutel_versie` is er voor een latere rotatie.)
 
 ## Mail koppelen (Namecheap Private Email)
 
-De standaard-mailbox hieronder (env) is die van de eigenaar en is alleen bruikbaar voor het
-account met hetzelfde adres als `MAIL_USER` of de eigenaar van het team, en alleen zolang
-die geen eigen mailbox heeft gekoppeld. Andere teamleden koppelen hun eigen mailbox via
+De standaard-mailbox hieronder (env) is die van Daniel en is alleen bruikbaar voor één
+account: hetzelfde adres als `MAIL_USER`, anders `MAIL_ENV_USER_ID`, anders de oudste
+eigenaar, en alleen zolang die geen eigen mailbox heeft gekoppeld. Andere teamleden koppelen hun eigen mailbox via
 `/account` (zie hierboven).
 
 De inbox van studio-levant.nl staat op `/mail` en als widget op het dashboard; de rail toont

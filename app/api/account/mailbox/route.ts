@@ -17,7 +17,8 @@ export const maxDuration = 60;
 //   GET     → MailboxStatus (zonder wachtwoord)
 //   POST    { email, wachtwoord?, imapHost, imapPort, smtpHost, smtpPort, fromName, handtekening }
 //           → eerst echt inloggen (IMAP + SMTP), dan versleuteld opslaan → MailboxStatus
-//           Leeg wachtwoord = het opgeslagen wachtwoord houden.
+//           Leeg wachtwoord = het opgeslagen wachtwoord houden, ALLEEN als adres, servers en
+//           poorten ongewijzigd zijn (anders 400 'wachtwoord_nodig').
 //   DELETE  → ontkoppelen → MailboxStatus
 
 const GEEN_CACHE = { 'Cache-Control': 'private, no-store' } as const;
@@ -28,6 +29,21 @@ const NIET_INGERICHT =
   'Een eigen mailbox koppelen kan pas als de teambeveiliging actief is: voer in Supabase supabase/UITVOEREN_0021_TEAM.sql uit.';
 const GEEN_SLEUTEL =
   'Koppelen staat uit: de server heeft nog geen MAIL_ENCRYPTION_KEY (zie README, "Mail per gebruiker").';
+
+/** Zelfde adres, servers en poorten als het opgeslagen record? (hosts zonder hoofdletters) */
+function zelfdeVerbinding(
+  rij: { email: string; imap_host: string; imap_port: number; smtp_host: string; smtp_port: number },
+  invoer: { email: string; imapHost: string; imapPort: number; smtpHost: string; smtpPort: number }
+): boolean {
+  const gelijk = (x: string, y: string) => x.trim().toLowerCase() === y.trim().toLowerCase();
+  return (
+    gelijk(rij.email, invoer.email) &&
+    gelijk(rij.imap_host, invoer.imapHost) &&
+    Number(rij.imap_port) === invoer.imapPort &&
+    gelijk(rij.smtp_host, invoer.smtpHost) &&
+    Number(rij.smtp_port) === invoer.smtpPort
+  );
+}
 
 export const GET = teamlidRoute(async (_request, _ctx, lid) => json(await mailboxStatus(lid)), { label: 'account/mailbox' });
 
@@ -49,9 +65,18 @@ export const POST = teamlidRoute(
     const { rij, ingericht } = await eigenMailboxRij(lid);
     if (!ingericht) return fout(409, NIET_INGERICHT, 'niet_ingericht');
     if (!invoer.wachtwoord) {
-      // Wachtwoord leeg gelaten: het opgeslagen wachtwoord gebruiken (alleen voor hetzelfde adres).
-      const bewaard = rij && rij.email === invoer.email ? ontsleutel(rij.wachtwoord_enc, lid.userId) : null;
-      if (!bewaard) return fout(400, 'Vul je wachtwoord in.');
+      // Wachtwoord leeg gelaten: het opgeslagen wachtwoord alleen hergebruiken als de HELE
+      // verbinding (adres, servers en poorten) gelijk blijft. Anders zou een gestolen sessie
+      // het bewaarde wachtwoord naar een eigen server kunnen laten sturen.
+      const zelfdeServer = rij !== null && zelfdeVerbinding(rij, invoer);
+      const bewaard = rij && zelfdeServer ? ontsleutel(rij.wachtwoord_enc, lid.userId) : null;
+      if (!bewaard) {
+        return fout(
+          400,
+          rij && !zelfdeServer ? 'Je wijzigt de server of het adres: vul je wachtwoord opnieuw in.' : 'Vul je wachtwoord in.',
+          'wachtwoord_nodig'
+        );
+      }
       invoer.wachtwoord = bewaard;
     }
 

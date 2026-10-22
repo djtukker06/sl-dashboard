@@ -401,17 +401,46 @@ export async function uitgedeeld(bron: AgendaBron, max = 50): Promise<Taak[]> {
     .sort(sorteerTaken);
 }
 
-/** Alles voor het eigen dashboard: deze 7 dagen + achterstallige open taken + uitgedeeld. */
-export async function dashboardPlanning(
-  bron: AgendaBron,
-  vandaag: string
-): Promise<{ taken: Taak[]; afspraken: Afspraak[]; teLaat: Taak[]; uitgedeeld: Taak[] }> {
-  const [bereik, teLaat, uit] = await Promise.all([
+/** Hoeveel taken het dashboard per extra groep ("Zonder deadline", "Later") meeneemt. */
+export const DASHBOARD_EXTRA_MAX = 8;
+
+export interface DashboardPlanning {
+  taken: Taak[];
+  afspraken: Afspraak[];
+  teLaat: Taak[];
+  /** Jouw open taken zonder deadline. */
+  zonderDeadline: Taak[];
+  /** Jouw eerstvolgende open taken met een deadline ná deze 7 dagen. */
+  later: Taak[];
+  uitgedeeld: Taak[];
+}
+
+/** Open taken met een deadline na de dashboardweek (vandaag + 6), eerstvolgende eerst. */
+export function latereTaken(taken: Taak[], vandaag: string, max = DASHBOARD_EXTRA_MAX): Taak[] {
+  const grens = plusDagen(vandaag, 6);
+  return taken.filter((t) => !!t.datum && t.datum > grens).slice(0, max);
+}
+
+/**
+ * Alles voor het eigen dashboard: deze 7 dagen, achterstallige open taken, jouw open taken
+ * zonder deadline en de eerstvolgende daarna (zodat elke taak op jouw naam hier te zien
+ * is), plus wat je aan anderen uitdeelde.
+ */
+export async function dashboardPlanning(bron: AgendaBron, vandaag: string): Promise<DashboardPlanning> {
+  const [bereik, teLaat, ooit, gepland, uit] = await Promise.all([
     agendaBereik(bron, vandaag, plusDagen(vandaag, 6), 'ik'),
     takenVoorFilter(bron, 'telaat', vandaag, { wie: 'ik' }),
+    takenVoorFilter(bron, 'ooit', vandaag, { wie: 'ik' }),
+    takenVoorFilter(bron, 'gepland', vandaag, { wie: 'ik' }),
     uitgedeeld(bron)
   ]);
-  return { ...bereik, teLaat, uitgedeeld: uit };
+  return {
+    ...bereik,
+    teLaat,
+    zonderDeadline: ooit.slice(0, DASHBOARD_EXTRA_MAX),
+    later: latereTaken(gepland, vandaag),
+    uitgedeeld: uit
+  };
 }
 
 // ---------------------------------------------------------------------------------
