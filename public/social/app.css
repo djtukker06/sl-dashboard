@@ -186,6 +186,15 @@ label > input, label > textarea, label > select {
   border-bottom: 1px solid var(--line);
 }
 .brand img { height: 56px; width: auto; max-width: 100%; display: block; }
+/* dashboard: modulekop i.p.v. banner (logo staat alleen in de rail) */
+.brand { flex-direction: column; align-items: flex-start; justify-content: center; gap: 6px; }
+.brand .mono { margin: 0; }
+.brand-titel {
+  font-size: 26px; line-height: 1.1; font-weight: 700; text-transform: uppercase;
+  color: var(--text); text-decoration: none; transition: color .16s var(--ease);
+}
+.brand-titel:hover { color: var(--sand-hover); }
+.brand-titel:focus-visible { outline: none; box-shadow: var(--focus); border-radius: 2px; }
 .brand:focus-visible { outline-offset: -4px; }
 .sidebar-label { margin: 6px 2px -4px; }
 .search { padding: 8px 11px; font-size: 13px; background: var(--panel); border-color: var(--line-soft); }
@@ -263,7 +272,7 @@ main { min-width: 0; height: 100vh; overflow: hidden; }
   text-transform: uppercase;
   letter-spacing: 0;
   margin: 0;
-  font-weight: 400;
+  font-weight: 700; /* huisstijl: titels Manrope Bold */
   max-width: 14em;
 }
 .hl {
@@ -305,7 +314,7 @@ main { min-width: 0; height: 100vh; overflow: hidden; }
 }
 .title-input {
   font-size: 22px;
-  font-weight: 400;
+  font-weight: 700; /* huisstijl: titels Manrope Bold */
   letter-spacing: -0.02em;
   background: transparent;
   border-color: transparent;
@@ -578,7 +587,7 @@ dialog::backdrop { background: rgba(18,18,18,.72); backdrop-filter: blur(2px); }
 dialog h3 {
   margin: 0 0 16px;
   font-size: 24px;
-  font-weight: 400;
+  font-weight: 700; /* huisstijl: titels Manrope Bold */
   letter-spacing: 0;
   text-transform: uppercase;
 }

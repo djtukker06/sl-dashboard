@@ -635,7 +635,7 @@ input.ml-veld:focus { border: 0; }
 
 /* ---------- niet gekoppeld ---------- */
 .ml-setup { display: grid; justify-items: start; gap: 14px; max-width: 640px; padding: 56px 40px; }
-.ml-setup h2 { margin: 0; font-size: clamp(24px, 2.8vw, 34px); line-height: 1.15; font-weight: 400; text-transform: uppercase; }
+.ml-setup h2 { margin: 0; font-size: clamp(24px, 2.8vw, 34px); line-height: 1.15; font-weight: 700; text-transform: uppercase; }
 .ml-setup-tekst { margin: 0; font-size: 15px; line-height: 1.65; color: var(--sl-muted); }
 .ml-setup-klein { font-size: 13.5px; }
 .ml-setup-vars { margin: 8px 0; padding: 0; width: 100%; display: grid; border-top: 1px solid var(--sl-line-soft); }
