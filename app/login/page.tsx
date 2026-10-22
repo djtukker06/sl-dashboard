@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { signIn } from '@/app/actions/login';
 
 export default async function LoginPage({
@@ -28,6 +29,9 @@ export default async function LoginPage({
             Inloggen
           </button>
         </form>
+        <Link href="/wachtwoord-vergeten" className="login-link">
+          Wachtwoord vergeten?
+        </Link>
       </div>
     </div>
   );

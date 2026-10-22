@@ -26,6 +26,7 @@ export default async function DashboardPage() {
           Studio <span>Levant</span>
         </Link>
         <nav>
+          <Link href="/nieuw-wachtwoord">Wachtwoord wijzigen</Link>
           <LogoutButton />
         </nav>
       </div>

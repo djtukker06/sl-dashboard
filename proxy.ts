@@ -30,9 +30,13 @@ export async function proxy(request: NextRequest) {
 
   const { data: { user } } = await supabase.auth.getUser();
 
-  const isLoginPath = request.nextUrl.pathname.startsWith('/login');
+  const pad = request.nextUrl.pathname;
+  const isLoginPath = pad.startsWith('/login');
+  // Wachtwoord herstellen moet zonder sessie kunnen; /nieuw-wachtwoord niet (die
+  // vereist de sessie die /auth/callback opent).
+  const isPubliekPad = isLoginPath || pad === '/wachtwoord-vergeten' || pad === '/auth/callback';
 
-  if (!user && !isLoginPath) {
+  if (!user && !isPubliekPad) {
     const url = request.nextUrl.clone();
     url.pathname = '/login';
     return NextResponse.redirect(url);
