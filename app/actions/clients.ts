@@ -52,8 +52,8 @@ export async function updateClient(
     return { error: 'Klant niet gevonden.' };
   }
 
-  revalidatePath('/');
-  revalidatePath(`/klanten/${id}`);
+  revalidatePath('/facturen');
+  revalidatePath(`/facturen/klanten/${id}`);
   return {};
 }
 
@@ -86,6 +86,6 @@ export async function deleteClient(id: string): Promise<KlantActieResultaat> {
     return { error: `Verwijderen mislukt: ${error.message}` };
   }
 
-  revalidatePath('/');
-  redirect('/');
+  revalidatePath('/facturen');
+  redirect('/facturen');
 }

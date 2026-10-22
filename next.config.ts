@@ -7,8 +7,20 @@ const nextConfig: NextConfig = {
   // De output-file-tracer volgt alleen require()/import-statements, niet de losse
   // Chromium-binaire bestanden (.br) die @sparticuz/chromium pas tijdens het draaien
   // dynamisch inleest — die moeten dus expliciet worden meegenomen in de deploy-bundel.
+  // Geldt voor alle API-routes (ook PUT/restfactuur/prijsopgaven), niet alleen /api/invoices.
   outputFileTracingIncludes: {
-    '/api/invoices': ['./node_modules/@sparticuz/chromium/bin/**/*']
+    '/api/**': ['./node_modules/@sparticuz/chromium/bin/**/*']
+  },
+  // De facturenschermen staan sinds het dashboard onder /facturen. Oude bookmarks
+  // blijven werken via deze tijdelijke redirects (de query, bv. ?jaar=, gaat mee).
+  async redirects() {
+    return [
+      // Oud jaaroverzicht (/?jaar=2025) → facturenoverzicht met hetzelfde jaar.
+      { source: '/', has: [{ type: 'query', key: 'jaar' }], destination: '/facturen', permanent: false },
+      { source: '/nieuwe-factuur', destination: '/facturen/nieuwe-factuur', permanent: false },
+      { source: '/klanten/:path*', destination: '/facturen/klanten/:path*', permanent: false },
+      { source: '/prijsopgaven/:path*', destination: '/facturen/prijsopgaven/:path*', permanent: false }
+    ];
   }
 };
 

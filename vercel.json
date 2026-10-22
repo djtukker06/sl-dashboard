@@ -1,6 +1,9 @@
 {
   "functions": {
-    "app/api/invoices/route.ts": {
+    "app/api/invoices/**/route.ts": {
+      "memory": 2048
+    },
+    "app/api/quotes/**/route.ts": {
       "memory": 2048
     }
   }

@@ -139,8 +139,8 @@ export async function PUT(
     );
   }
 
-  revalidatePath('/');
-  revalidatePath(`/klanten/${clientId}`);
+  revalidatePath('/facturen');
+  revalidatePath(`/facturen/klanten/${clientId}`);
   revalidatePath(`/facturen/${id}/bewerken`);
 
   return NextResponse.json({ id: factuur.id, invoiceNumber: factuur.invoice_number });

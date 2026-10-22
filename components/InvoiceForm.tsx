@@ -125,7 +125,7 @@ export function InvoiceForm({
     if (bewerken) {
       // Terug naar het overzicht, met een verse serverrender: het bijgewerkte bedrag en
       // de jaaromzet moeten er meteen goed staan.
-      router.push(isFactuur ? '/' : '/prijsopgaven');
+      router.push(isFactuur ? '/facturen' : '/facturen/prijsopgaven');
       router.refresh();
       return;
     }

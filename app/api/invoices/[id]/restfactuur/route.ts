@@ -112,8 +112,8 @@ export async function POST(
     return NextResponse.json({ error: resultaat.fout }, { status: 500 });
   }
 
-  revalidatePath('/');
-  revalidatePath(`/klanten/${aanbetaling.client_id}`);
+  revalidatePath('/facturen');
+  revalidatePath(`/facturen/klanten/${aanbetaling.client_id}`);
 
   return NextResponse.json({ id: resultaat.id, invoiceNumber: resultaat.invoiceNumber });
 }

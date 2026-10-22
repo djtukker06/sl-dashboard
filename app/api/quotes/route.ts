@@ -56,7 +56,7 @@ export async function POST(request: Request) {
     );
   }
 
-  revalidatePath('/prijsopgaven');
+  revalidatePath('/facturen/prijsopgaven');
 
   return NextResponse.json({ id: prijsopgave.id });
 }

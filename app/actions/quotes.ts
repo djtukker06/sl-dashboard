@@ -25,5 +25,5 @@ export async function deleteQuote(id: string) {
 
   await service.from('quotes').delete().eq('id', id);
 
-  revalidatePath('/prijsopgaven');
+  revalidatePath('/facturen/prijsopgaven');
 }

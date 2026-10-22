@@ -17,7 +17,7 @@ export function ClientsList({ clients }: { clients: ClientRow[] }) {
     <div className="scroll-wrap klanten-grid-wrap">
       <div className="klanten-grid">
         {clients.map((klant) => (
-          <Link key={klant.id} className="klant-card" href={`/klanten/${klant.id}`}>
+          <Link key={klant.id} className="klant-card" href={`/facturen/klanten/${klant.id}`}>
             <div className="naam">{klant.company_name}</div>
             <div className="meta-row">
               <span>

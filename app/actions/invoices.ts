@@ -26,5 +26,5 @@ export async function deleteInvoice(id: string) {
   // Factuurnummer wordt bewust niet vrijgegeven — de teller blijft doortellen.
   await service.from('invoices').delete().eq('id', id);
 
-  revalidatePath('/');
+  revalidatePath('/facturen');
 }

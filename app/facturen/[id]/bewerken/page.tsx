@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { DashboardLink } from '@/components/DashboardLink';
 import { notFound } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import { InvoiceForm } from '@/components/InvoiceForm';
@@ -23,16 +24,17 @@ export default async function FactuurBewerkenPage({
   return (
     <div className="wrap">
       <div className="topbar">
-        <Link href="/" className="wordmark">
+        <Link href="/facturen" className="wordmark">
           Studio <span>Levant</span>
         </Link>
         <nav>
-          <Link href="/nieuwe-factuur">Nieuwe factuur</Link>
+          <DashboardLink />
+          <Link href="/facturen/nieuwe-factuur">Nieuwe factuur</Link>
         </nav>
       </div>
 
       <header className="app-header">
-        <Link href="/" className="terug">
+        <Link href="/facturen" className="terug">
           &larr; Overzicht
         </Link>
         <h1>Factuur {factuur.invoice_number} aanpassen</h1>

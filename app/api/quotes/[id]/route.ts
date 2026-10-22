@@ -71,8 +71,8 @@ export async function PUT(
     );
   }
 
-  revalidatePath('/prijsopgaven');
-  revalidatePath(`/prijsopgaven/${id}/bewerken`);
+  revalidatePath('/facturen/prijsopgaven');
+  revalidatePath(`/facturen/prijsopgaven/${id}/bewerken`);
 
   return NextResponse.json({ id });
 }

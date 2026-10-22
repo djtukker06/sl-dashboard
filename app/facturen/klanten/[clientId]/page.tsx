@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { DashboardLink } from '@/components/DashboardLink';
 import { notFound } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import { ClientEditForm, type KlantRecord } from '@/components/ClientEditForm';
@@ -34,16 +35,17 @@ export default async function KlantDetailPage({
   return (
     <div className="wrap">
       <div className="topbar">
-        <Link href="/" className="wordmark">
+        <Link href="/facturen" className="wordmark">
           Studio <span>Levant</span>
         </Link>
         <nav>
-          <Link href="/nieuwe-factuur">Nieuwe factuur</Link>
+          <DashboardLink />
+          <Link href="/facturen/nieuwe-factuur">Nieuwe factuur</Link>
         </nav>
       </div>
 
       <div className="app-header">
-        <Link href="/" className="terug">
+        <Link href="/facturen" className="terug">
           &larr; Alle klanten
         </Link>
         <h1>{klant.company_name}</h1>

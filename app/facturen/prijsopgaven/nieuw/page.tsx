@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { DashboardLink } from '@/components/DashboardLink';
 import { createClient } from '@/lib/supabase/server';
 import { InvoiceForm } from '@/components/InvoiceForm';
 import { nieuwePrijsopgaveBeginwaarden } from '@/lib/invoice/formulier';
@@ -29,16 +30,17 @@ export default async function NieuwePrijsopgavePage() {
   return (
     <div className="wrap">
       <div className="topbar">
-        <Link href="/" className="wordmark">
+        <Link href="/facturen" className="wordmark">
           Studio <span>Levant</span>
         </Link>
         <nav>
-          <Link href="/prijsopgaven">Prijsopgaven</Link>
+          <DashboardLink />
+          <Link href="/facturen/prijsopgaven">Prijsopgaven</Link>
         </nav>
       </div>
 
       <header className="app-header">
-        <Link href="/prijsopgaven" className="terug">
+        <Link href="/facturen/prijsopgaven" className="terug">
           &larr; Prijsopgaven
         </Link>
         <h1>Nieuwe prijsopgave</h1>

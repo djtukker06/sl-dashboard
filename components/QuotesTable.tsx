@@ -56,7 +56,7 @@ export function QuotesTable({ quotes }: { quotes: QuoteRow[] }) {
                 <td>{formatDatumNL(new Date(p.issued_at))}</td>
                 <td className="bedrag">&euro; {formatEuro(p.total)}</td>
                 <td className="acties-col">
-                  <Link href={`/prijsopgaven/${p.id}/bewerken`} className="bewerk-link">
+                  <Link href={`/facturen/prijsopgaven/${p.id}/bewerken`} className="bewerk-link">
                     Aanpassen
                   </Link>
                 </td>

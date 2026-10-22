@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { DashboardLink } from '@/components/DashboardLink';
 import { createClient } from '@/lib/supabase/server';
 import { LogoutButton } from '@/components/LogoutButton';
 import { QuotesTable, type QuoteRow } from '@/components/QuotesTable';
@@ -19,12 +20,13 @@ export default async function PrijsopgavenPage() {
   return (
     <div className="wrap">
       <div className="topbar">
-        <Link href="/" className="wordmark">
+        <Link href="/facturen" className="wordmark">
           Studio <span>Levant</span>
         </Link>
         <nav>
-          <Link href="/">Facturen</Link>
-          <Link href="/prijsopgaven/nieuw">Nieuwe prijsopgave</Link>
+          <DashboardLink />
+          <Link href="/facturen">Facturen</Link>
+          <Link href="/facturen/prijsopgaven/nieuw">Nieuwe prijsopgave</Link>
           <LogoutButton />
         </nav>
       </div>
@@ -35,7 +37,7 @@ export default async function PrijsopgavenPage() {
           Overzicht van alle prijsopgaven. Deze staan los van de facturen en tellen niet mee
           in de omzet.
         </p>
-        <Link href="/prijsopgaven/nieuw" className="btn-pil">
+        <Link href="/facturen/prijsopgaven/nieuw" className="btn-pil">
           + Nieuwe prijsopgave
         </Link>
       </div>

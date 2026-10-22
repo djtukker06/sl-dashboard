@@ -36,7 +36,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: resultaat.fout }, { status: 500 });
   }
 
-  revalidatePath('/');
+  revalidatePath('/facturen');
 
   return NextResponse.json({ id: resultaat.id, invoiceNumber: resultaat.invoiceNumber });
 }

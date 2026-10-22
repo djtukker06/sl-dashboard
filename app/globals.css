@@ -583,3 +583,45 @@ input:focus { outline: none; border-color: var(--cream-dim); }
 .login-card .wordmark { display: block; margin-bottom: 24px; }
 .login-card h1 { font-size: 20px; margin: 0 0 24px; font-weight: 800; text-transform: uppercase; }
 .login-card form { display: flex; flex-direction: column; gap: 16px; }
+
+/* Dashboard (overkoepelend, app/page.tsx) — alleen nieuwe .dash-*-classes */
+.dash-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 16px;
+}
+.dash-tegel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 190px;
+  padding: 24px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  color: var(--cream);
+  text-decoration: none;
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+}
+.dash-tegel:hover { background: var(--panel-hover); border-color: var(--cream-faint); transform: translateY(-1px); }
+.dash-tegel:focus-visible { outline: 2px solid var(--cream); outline-offset: 2px; }
+.dash-icoon { color: var(--cream); margin-bottom: 6px; }
+.dash-tegel-naam {
+  font-weight: 800;
+  font-size: 18px;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+.dash-tegel-tekst { font-size: 14px; line-height: 1.5; color: var(--cream-dim); }
+.dash-tegel-pijl {
+  margin-top: auto;
+  font-size: 12.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--cream-faint);
+}
+.dash-tegel:hover .dash-tegel-pijl { color: var(--cream); }
+@media (max-width: 560px) {
+  .dash-grid { grid-template-columns: 1fr; }
+  .dash-tegel { min-height: 0; }
+}
