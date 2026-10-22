@@ -147,6 +147,8 @@ body.sl-met-rail { grid-template-columns: var(--sl-rail-w) 272px 1fr; }
   text-transform: uppercase;
   white-space: nowrap;
 }
+/* "Boekhouding" is het langste label: iets minder spatiëring, zodat het binnen de rail past. */
+.sl-rail-item[href="/boekhouding"] .sl-rail-label { letter-spacing: 0.01em; }
 
 .sl-rail-foot {
   margin-top: auto;

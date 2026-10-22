@@ -2,48 +2,52 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ModuleKop } from '@/components/shell/ModuleKop';
+import { BoekhoudingKop } from '@/components/boekhouding/BoekhoudingKop';
 import { ToastProvider, useToast } from '@/components/agenda/Toast';
+import { Persoon } from '@/components/team/Persoon';
+import { useActieveLeden, useTeam } from '@/components/team/TeamProvider';
 import { typtIn } from '@/lib/agenda/client';
-import { csvExportUrl, downloadLink, euro, uitgavenApi, UitgavenApiFout } from '@/lib/uitgaven/client';
+import { downloadLink, euro, uitgavenApi, UitgavenApiFout, type ZoekResultaat } from '@/lib/uitgaven/client';
 import {
-  BETAALWIJZEN,
-  CATEGORIEEN,
-  STATUSSEN,
-  betaalLabel,
-  categorieLabel,
-  filterUitgaven,
-  isDatum,
+  SOORTEN,
   korteDatumNL,
   maandLabel,
+  maandNaam,
   maandSleutel,
   periodeLabel,
   periodeRond,
   schuifPeriode,
-  totalen,
-  type Filters,
+  soortLabel,
   type Leverancier,
   type Periode,
-  type PeriodeSoort,
+  type Soort,
   type Uitgave
 } from '@/lib/uitgaven/model';
 import { BtwOverzicht } from './BtwOverzicht';
 import { UgIcoon } from './Iconen';
+import { uploadNaam } from './RecenteBonnetjes';
 import { Toevoegen } from './Toevoegen';
 import { UitgavePaneel } from './UitgavePaneel';
 import { useUploads } from './useUploads';
 
+// Bonnetjes & inkoopfacturen: uploaden en snel terugvinden. Geen boekhoudpakket: de velden
+// (leverancier, datum, bedrag, …) zijn optioneel en vooral hulp bij het zoeken. Btw-overzicht
+// en de export voor de boekhouder staan onder "Meer".
+
 type Tab = 'overzicht' | 'btw';
+type Weergave = 'galerij' | 'lijst';
+const WEERGAVE_SLEUTEL = 'sl-bonnetjes-weergave';
+const PAD = '/boekhouding/bonnetjes';
 
 export function UitgavenApp(props: { vandaag: string; openUitgave: string | null; toevoegen: boolean; startTab: Tab }) {
   return (
     <ToastProvider>
-      <Uitgaven {...props} />
+      <Bonnetjes {...props} />
     </ToastProvider>
   );
 }
 
-/** Nieuwste eerst; zonder datum bovenaan (die moeten nog gecontroleerd worden). */
+/** Zonder datum (net geüpload) bovenaan, daarna nieuwste eerst; gelijk aan de server. */
 function sorteer(a: Uitgave, b: Uitgave) {
   if (a.datum !== b.datum) {
     if (!a.datum) return -1;
@@ -53,7 +57,7 @@ function sorteer(a: Uitgave, b: Uitgave) {
   return a.aangemaakt < b.aangemaakt ? 1 : -1;
 }
 
-function Uitgaven({
+function Bonnetjes({
   vandaag,
   openUitgave,
   toevoegen,
@@ -66,36 +70,82 @@ function Uitgaven({
 }) {
   const toast = useToast();
   const router = useRouter();
+  const { mijnId } = useTeam();
+  const leden = useActieveLeden();
   const [tab, setTab] = useState<Tab>(startTab);
-  const [periode, setPeriode] = useState<Periode>(() => periodeRond('maand', vandaag));
-  const [data, setData] = useState<{ sleutel: string; uitgaven: Uitgave[] } | null>(null);
-  const [laadFout, setLaadFout] = useState<{ sleutel: string; fout: Error } | null>(null);
-  const [teller, setTeller] = useState(0);
-  const [filters, setFilters] = useState<Filters>({});
-  const [selectie, setSelectie] = useState<Uitgave | null>(null);
-  const [controleren, setControleren] = useState(false);
-  const [leveranciers, setLeveranciers] = useState<Leverancier[]>([]);
-  const [exportOpen, setExportOpen] = useState(false);
-  const zoekRef = useRef<HTMLInputElement>(null);
-  const sleutel = `${periode.van}|${periode.tot}`;
+
+  // ---------- zoeken en filters ----------
+  const [zoekInvoer, setZoekInvoer] = useState('');
+  const [zoek, setZoek] = useState('');
+  const [jaar, setJaar] = useState<number | null>(null);
+  const [maand, setMaand] = useState<number | null>(null);
+  const [soort, setSoort] = useState<Soort | ''>('');
+  const [door, setDoor] = useState('');
+  const [weergave, setWeergave] = useState<Weergave>('galerij');
+
+  useEffect(() => {
+    const t = window.setTimeout(() => setZoek(zoekInvoer.trim()), 250);
+    return () => window.clearTimeout(t);
+  }, [zoekInvoer]);
+
+  useEffect(() => {
+    try {
+      const w = localStorage.getItem(WEERGAVE_SLEUTEL);
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      if (w === 'lijst' || w === 'galerij') setWeergave(w);
+    } catch {
+      /* geen opslag: standaard galerij */
+    }
+  }, []);
+  function kiesWeergave(w: Weergave) {
+    setWeergave(w);
+    try {
+      localStorage.setItem(WEERGAVE_SLEUTEL, w);
+    } catch {
+      /* niet bewaren */
+    }
+  }
+
+  const params = useMemo(
+    () => ({
+      q: zoek || undefined,
+      jaar: jaar ? String(jaar) : undefined,
+      maand: jaar && maand ? String(maand) : undefined,
+      soort: soort || undefined,
+      door: door || undefined
+    }),
+    [zoek, jaar, maand, soort, door]
+  );
+  const sleutel = JSON.stringify(params);
+  const heeftFilter = Boolean(zoek || jaar || soort || door);
 
   // ---------- data ----------
+  const [data, setData] = useState<{ sleutel: string; res: ZoekResultaat } | null>(null);
+  const [laadFout, setLaadFout] = useState<{ sleutel: string; fout: Error } | null>(null);
+  const [teller, setTeller] = useState(0);
+  const [selectie, setSelectie] = useState<Uitgave | null>(null);
+  const [leveranciers, setLeveranciers] = useState<Leverancier[]>([]);
+  const [meerOpen, setMeerOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
+  const zoekRef = useRef<HTMLInputElement>(null);
+  const kiezerRef = useRef<HTMLInputElement>(null);
+  const meerRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
-    let weg = false;
+    const ac = new AbortController();
+    const p = JSON.parse(sleutel) as Record<string, string | undefined>;
     uitgavenApi
-      .lijst(periode.van, periode.tot)
-      .then((r) => {
-        if (weg) return;
-        setData({ sleutel: `${periode.van}|${periode.tot}`, uitgaven: r.uitgaven.sort(sorteer) });
+      .zoek(p, ac.signal)
+      .then((res) => {
+        setData({ sleutel, res: { ...res, uitgaven: res.uitgaven.sort(sorteer) } });
         setLaadFout(null);
       })
       .catch((e) => {
-        if (!weg) setLaadFout({ sleutel: `${periode.van}|${periode.tot}`, fout: e });
+        if ((e as Error)?.name === 'AbortError') return;
+        setLaadFout({ sleutel, fout: e instanceof Error ? e : new Error('Laden mislukt.') });
       });
-    return () => {
-      weg = true;
-    };
-  }, [periode.van, periode.tot, teller]);
+    return () => ac.abort();
+  }, [sleutel, teller]);
 
   const laadLeveranciers = useCallback(() => {
     uitgavenApi
@@ -105,13 +155,20 @@ function Uitgaven({
   }, []);
   useEffect(laadLeveranciers, [laadLeveranciers]);
 
-  // Verversen als je terugkomt naar het tabblad (bv. bonnetje toegevoegd op je telefoon).
+  // Verversen als je terugkomt (bv. bonnetje geüpload op je telefoon of door je compagnon);
+  // dan zijn ook de thumbnails (signed URL's van 10 min) weer vers.
   useEffect(() => {
     const opFocus = () => {
       if (document.visibilityState === 'visible') setTeller((t) => t + 1);
     };
     document.addEventListener('visibilitychange', opFocus);
-    return () => document.removeEventListener('visibilitychange', opFocus);
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === 'visible') setTeller((t) => t + 1);
+    }, 8 * 60 * 1000);
+    return () => {
+      document.removeEventListener('visibilitychange', opFocus);
+      window.clearInterval(interval);
+    };
   }, []);
 
   // ?uitgave=<id> opent direct het paneel (vanaf het dashboard of na "Opslaan als uitgave" in mail).
@@ -121,302 +178,298 @@ function Uitgaven({
     uitgavenApi
       .uitgave(openUitgave)
       .then((r) => !weg && setSelectie(r.uitgave))
-      .catch(() => !weg && toast('Deze uitgave bestaat niet meer.', { fout: true }));
+      .catch(() => !weg && toast('Dit bonnetje bestaat niet meer.', { fout: true }));
     return () => {
       weg = true;
     };
   }, [openUitgave, toast]);
 
-  const uitgaven = useMemo(() => (data && data.sleutel === sleutel ? data.uitgaven : null), [data, sleutel]);
+  const resultaat = data && data.sleutel === sleutel ? data.res : null;
   const fout = laadFout && laadFout.sleutel === sleutel ? laadFout.fout : null;
+  const uitgaven = resultaat?.uitgaven ?? null;
 
-  /** Een (nieuwe of gewijzigde) uitgave in de lijst zetten, of eruit als hij buiten de periode valt. */
-  const verwerk = useCallback(
-    (u: Uitgave) => {
-      setData((d) => {
-        if (!d) return d;
-        const [van, tot] = d.sleutel.split('|');
-        const hoortErbij = !u.datum || (u.datum >= van && u.datum <= tot);
-        const rest = d.uitgaven.filter((x) => x.id !== u.id);
-        return { ...d, uitgaven: (hoortErbij ? [...rest, u] : rest).sort(sorteer) };
-      });
-    },
-    []
-  );
+  /** Een nieuwe of gewijzigde upload in de lijst zetten (en in het open paneel). */
+  const verwerk = useCallback((u: Uitgave) => {
+    setData((d) => {
+      if (!d) return d;
+      const bestond = d.res.uitgaven.some((x) => x.id === u.id);
+      const lijst = [...d.res.uitgaven.filter((x) => x.id !== u.id), u].sort(sorteer);
+      return { ...d, res: { ...d.res, uitgaven: lijst, totaal: d.res.totaal + (bestond ? 0 : 1) } };
+    });
+    setSelectie((s) => (s && s.id === u.id ? u : s));
+  }, []);
 
   // ---------- uploads ----------
   const { items, voegToe, wis } = useUploads({
     onUitgave: verwerk,
     onAlles: (nieuw, fouten) => {
       laadLeveranciers();
+      setTeller((t) => t + 1); // thumbnails ophalen
       if (nieuw.length === 1 && !fouten) {
-        setControleren(false);
-        setSelectie(nieuw[0]);
-        if (nieuw[0].datum && (nieuw[0].datum < periode.van || nieuw[0].datum > periode.tot)) {
-          toast(`Datum ${korteDatumNL(nieuw[0].datum)} valt buiten ${periodeLabel(periode)}.`);
-        }
+        const u = nieuw[0];
+        toast(`Geüpload: ${uploadNaam(u)}`, { actie: { label: 'Openen', onClick: () => setSelectie(u) } });
       } else if (nieuw.length > 1) {
-        toast(`${nieuw.length} bonnetjes toegevoegd${fouten ? `, ${fouten} mislukt` : ''}. Klik op ‘Controleren’.`);
+        toast(`${nieuw.length} bestanden geüpload${fouten ? `, ${fouten} mislukt` : ''}.`);
       }
     }
   });
   const onBestanden = useCallback((f: File[]) => void voegToe(f), [voegToe]);
+  const bezigMetUitlezen = useMemo(
+    () => new Set(items.filter((i) => i.fase === 'uitlezen' && i.uitgaveId).map((i) => i.uitgaveId as string)),
+    [items]
+  );
 
-  // ---------- filteren ----------
-  const zichtbaar = useMemo(() => (uitgaven ? filterUitgaven(uitgaven, filters) : []), [uitgaven, filters]);
-  const t = useMemo(() => totalen(zichtbaar.filter((u) => u.datum)), [zichtbaar]);
-  const concepten = useMemo(() => (uitgaven ?? []).filter((u) => u.status === 'concept'), [uitgaven]);
+  // ---------- groepen per maand ----------
   const groepen = useMemo(() => {
     const m = new Map<string, Uitgave[]>();
-    for (const u of zichtbaar) {
+    for (const u of uitgaven ?? []) {
       const k = maandSleutel(u.datum);
       m.set(k, [...(m.get(k) ?? []), u]);
     }
     return [...m.entries()];
-  }, [zichtbaar]);
-  const leveranciersInLijst = useMemo(
-    () => [...new Set((uitgaven ?? []).map((u) => u.leverancier.trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'nl')),
-    [uitgaven]
-  );
-  const heeftFilter = Boolean(filters.zoek || filters.categorie || filters.leverancier || filters.status || filters.betaaldVia);
+  }, [uitgaven]);
 
-  // Sneltoetsen: / zoeken, n handmatig, Esc filters wissen.
+  // ---------- sneltoetsen: / zoeken, n uploaden, Esc menu dicht ----------
   useEffect(() => {
     function toets(e: KeyboardEvent) {
-      if (e.metaKey || e.ctrlKey || e.altKey || typtIn(e.target) || selectie || exportOpen) return;
+      if (e.key === 'Escape' && meerOpen) {
+        setMeerOpen(false);
+        return;
+      }
+      if (e.metaKey || e.ctrlKey || e.altKey || typtIn(e.target) || selectie || exportOpen || tab !== 'overzicht') return;
       if (e.key === '/') {
         e.preventDefault();
         zoekRef.current?.focus();
+      } else if (e.key === 'n') {
+        e.preventDefault();
+        kiezerRef.current?.click();
       }
     }
     document.addEventListener('keydown', toets);
     return () => document.removeEventListener('keydown', toets);
-  }, [selectie, exportOpen]);
+  }, [selectie, exportOpen, meerOpen, tab]);
 
-  async function handmatig() {
-    try {
-      const { uitgave } = await uitgavenApi.maak({ datum: vandaag });
-      verwerk(uitgave);
-      setControleren(false);
-      setSelectie(uitgave);
-    } catch (e) {
-      toast(e instanceof Error ? e.message : 'Aanmaken mislukt.', { fout: true });
+  useEffect(() => {
+    if (!meerOpen) return;
+    function buiten(e: MouseEvent) {
+      if (meerRef.current && !meerRef.current.contains(e.target as Node)) setMeerOpen(false);
     }
-  }
-
-  function volgendConcept(naId: string): Uitgave | null {
-    return concepten.find((u) => u.id !== naId) ?? null;
-  }
+    document.addEventListener('mousedown', buiten);
+    return () => document.removeEventListener('mousedown', buiten);
+  }, [meerOpen]);
 
   const sluit = useCallback(() => {
     setSelectie(null);
-    setControleren(false);
-    if (openUitgave) router.replace('/uitgaven', { scroll: false });
+    if (openUitgave) router.replace(PAD, { scroll: false });
   }, [openUitgave, router]);
 
-  function kiesSoort(soort: PeriodeSoort) {
-    if (soort === 'eigen') setPeriode((p) => ({ ...p, soort: 'eigen' }));
-    else setPeriode(periodeRond(soort, periode.soort === 'eigen' ? vandaag : periode.van <= vandaag && vandaag <= periode.tot ? vandaag : periode.van));
+  function wisFilters() {
+    setZoekInvoer('');
+    setZoek('');
+    setJaar(null);
+    setMaand(null);
+    setSoort('');
+    setDoor('');
   }
 
-  const exportParams = {
-    van: periode.van,
-    tot: periode.tot,
-    zoek: filters.zoek,
-    categorie: filters.categorie,
-    leverancier: filters.leverancier,
-    status: filters.status,
-    betaaldVia: filters.betaaldVia
-  };
+  const huidigJaar = Number(vandaag.slice(0, 4));
+  const jaren = Array.from({ length: 6 }, (_, i) => huidigJaar - i);
+  const anderen = leden.filter((l) => l.id !== mijnId);
 
   return (
     <div className="ug">
-      <ModuleKop label="Bonnetjes & betaalde facturen" titel="Uitgaven">
-        <button type="button" className="db-knop" onClick={() => setExportOpen(true)}>
-          <UgIcoon naam="download" grootte={15} /> Exporteren
-        </button>
-      </ModuleKop>
-
-      <div className="ug-tabs" role="tablist" aria-label="Weergave">
-        <button type="button" role="tab" aria-selected={tab === 'overzicht'} className={`ug-tab${tab === 'overzicht' ? ' is-aan' : ''}`} onClick={() => setTab('overzicht')}>
-          Overzicht
-          {concepten.length > 0 && <span className="ug-tab-teller">{concepten.length}</span>}
-        </button>
-        <button type="button" role="tab" aria-selected={tab === 'btw'} className={`ug-tab${tab === 'btw' ? ' is-aan' : ''}`} onClick={() => setTab('btw')}>
-          Btw & cijfers
-        </button>
-      </div>
+      <BoekhoudingKop titel="Bonnetjes & inkoopfacturen">
+        <div className="ug-meer" ref={meerRef}>
+          <button
+            type="button"
+            className="db-knop"
+            aria-haspopup="menu"
+            aria-expanded={meerOpen}
+            onClick={() => setMeerOpen((o) => !o)}
+          >
+            Meer <span aria-hidden="true">▾</span>
+          </button>
+          {meerOpen && (
+            <div className="ug-meer-menu" role="menu">
+              <button
+                type="button"
+                role="menuitem"
+                className="ug-meer-item"
+                onClick={() => {
+                  setMeerOpen(false);
+                  setTab('btw');
+                }}
+              >
+                Btw-overzicht per kwartaal
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                className="ug-meer-item"
+                onClick={() => {
+                  setMeerOpen(false);
+                  setExportOpen(true);
+                }}
+              >
+                Exporteren voor de boekhouder
+              </button>
+            </div>
+          )}
+        </div>
+      </BoekhoudingKop>
 
       {tab === 'btw' ? (
         <div className="ug-inhoud">
+          <div>
+            <button type="button" className="ag-link-knop" onClick={() => setTab('overzicht')}>
+              <span aria-hidden="true">←</span> Terug naar bonnetjes
+            </button>
+          </div>
           <BtwOverzicht vandaag={vandaag} versie={teller} />
         </div>
       ) : (
         <div className="ug-inhoud">
-          <Toevoegen items={items} onBestanden={onBestanden} onWis={wis} onHandmatig={handmatig} nadruk={toevoegen} />
+          <Toevoegen items={items} onBestanden={onBestanden} onWis={wis} nadruk={toevoegen} kiezer={kiezerRef} />
 
-          {concepten.length > 0 && (
-            <div className="ug-controle">
-              <span>
-                <span className="ug-ai-stip" aria-hidden="true" />
-                <strong>{concepten.length}</strong> {concepten.length === 1 ? 'uitgave' : 'uitgaven'} te controleren
-              </span>
-              <button
-                type="button"
-                className="db-knop db-knop-primair"
-                onClick={() => {
-                  setControleren(true);
-                  setSelectie(concepten[0]);
+          {/* ---------- zoeken ---------- */}
+          <div className="ug-zoekblok">
+            <label className="ug-zoek ug-zoek-groot">
+              <UgIcoon naam="zoek" grootte={18} />
+              <span className="sr-only">Zoeken</span>
+              <input
+                ref={zoekRef}
+                type="search"
+                enterKeyHint="search"
+                placeholder="Zoek op leverancier, omschrijving, bedrag of bestandsnaam…"
+                value={zoekInvoer}
+                onChange={(e) => setZoekInvoer(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') {
+                    e.preventDefault();
+                    setZoekInvoer('');
+                    setZoek('');
+                    (e.target as HTMLInputElement).blur();
+                  }
                 }}
-              >
-                Controleren
-              </button>
-            </div>
-          )}
+              />
+              <kbd className="ug-zoek-toets" aria-hidden="true">
+                /
+              </kbd>
+            </label>
 
-          {/* ---------- periode & filters ---------- */}
-          <div className="ug-balk">
-            <div className="ug-periode">
-              <div className="ag-segment" role="group" aria-label="Periode">
-                {(
-                  [
-                    ['maand', 'Maand'],
-                    ['kwartaal', 'Kwartaal'],
-                    ['jaar', 'Jaar'],
-                    ['eigen', 'Eigen']
-                  ] as const
-                ).map(([s, l]) => (
-                  <button key={s} type="button" className={periode.soort === s ? 'is-aan' : ''} aria-pressed={periode.soort === s} onClick={() => kiesSoort(s)}>
-                    {l}
+            <div className="ug-filterrij">
+              <div className="ug-chips" role="group" aria-label="Periode">
+                <button type="button" className={`ug-chip${!jaar ? ' is-aan' : ''}`} aria-pressed={!jaar} onClick={() => {
+                    setJaar(null);
+                    setMaand(null);
+                  }}>
+                  Alles
+                </button>
+                {jaren.map((j) => (
+                  <button
+                    key={j}
+                    type="button"
+                    className={`ug-chip${jaar === j ? ' is-aan' : ''}`}
+                    aria-pressed={jaar === j}
+                    onClick={() => {
+                      setJaar(jaar === j ? null : j);
+                      setMaand(null);
+                    }}
+                  >
+                    {j}
                   </button>
                 ))}
               </div>
-              {periode.soort === 'eigen' ? (
-                <span className="ug-eigen">
-                  <input
-                    className="ag-veld"
-                    type="date"
-                    value={periode.van}
-                    aria-label="Van"
-                    onChange={(e) => isDatum(e.target.value) && setPeriode((p) => ({ ...p, van: e.target.value, tot: p.tot < e.target.value ? e.target.value : p.tot }))}
-                  />
-                  <span>t/m</span>
-                  <input
-                    className="ag-veld"
-                    type="date"
-                    value={periode.tot}
-                    min={periode.van}
-                    aria-label="Tot en met"
-                    onChange={(e) => isDatum(e.target.value) && e.target.value >= periode.van && setPeriode((p) => ({ ...p, tot: e.target.value }))}
-                  />
-                </span>
-              ) : (
-                <span className="ug-schuif">
-                  <button type="button" className="ag-icoonknop" aria-label="Vorige periode" onClick={() => setPeriode((p) => schuifPeriode(p, -1))}>
-                    <UgIcoon naam="links" />
+              <div className="ug-chips" role="group" aria-label="Soort">
+                {[{ id: '' as const, meervoud: 'Alle soorten' }, ...SOORTEN.filter((s) => s.id !== 'overig')].map((s) => (
+                  <button
+                    key={s.id || 'alles'}
+                    type="button"
+                    className={`ug-chip${soort === s.id ? ' is-aan' : ''}`}
+                    aria-pressed={soort === s.id}
+                    onClick={() => setSoort(s.id)}
+                  >
+                    {s.meervoud}
                   </button>
-                  <span className="ug-periode-label">{periodeLabel(periode)}</span>
-                  <button type="button" className="ag-icoonknop" aria-label="Volgende periode" onClick={() => setPeriode((p) => schuifPeriode(p, 1))}>
-                    <UgIcoon naam="rechts" />
+                ))}
+              </div>
+              {anderen.length > 0 && (
+                <div className="ug-chips" role="group" aria-label="Geüpload door">
+                  <button type="button" className={`ug-chip${!door ? ' is-aan' : ''}`} aria-pressed={!door} onClick={() => setDoor('')}>
+                    Iedereen
                   </button>
-                </span>
+                  <button type="button" className={`ug-chip${door === mijnId ? ' is-aan' : ''}`} aria-pressed={door === mijnId} onClick={() => setDoor(mijnId)}>
+                    Ik
+                  </button>
+                  {anderen.map((l) => (
+                    <button
+                      key={l.id}
+                      type="button"
+                      className={`ug-chip ug-chip-persoon${door === l.id ? ' is-aan' : ''}`}
+                      aria-pressed={door === l.id}
+                      onClick={() => setDoor(l.id)}
+                    >
+                      <Persoon id={l.id} compact />
+                      {l.voornaam || l.naam}
+                    </button>
+                  ))}
+                </div>
               )}
+              <div className="ug-weergave" role="group" aria-label="Weergave">
+                <button type="button" className={weergave === 'galerij' ? 'is-aan' : ''} aria-pressed={weergave === 'galerij'} title="Galerij" onClick={() => kiesWeergave('galerij')}>
+                  <UgIcoon naam="raster" grootte={16} />
+                  <span className="sr-only">Galerij</span>
+                </button>
+                <button type="button" className={weergave === 'lijst' ? 'is-aan' : ''} aria-pressed={weergave === 'lijst'} title="Lijst" onClick={() => kiesWeergave('lijst')}>
+                  <UgIcoon naam="lijst" grootte={16} />
+                  <span className="sr-only">Lijst</span>
+                </button>
+              </div>
             </div>
 
-            <div className="ug-filters">
-              <label className="ug-zoek">
-                <UgIcoon naam="zoek" grootte={16} />
-                <span className="sr-only">Zoeken</span>
-                <input
-                  ref={zoekRef}
-                  type="search"
-                  placeholder="Zoek leverancier, omschrijving, bedrag…"
-                  value={filters.zoek ?? ''}
-                  onChange={(e) => setFilters((f) => ({ ...f, zoek: e.target.value }))}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Escape') {
-                      e.preventDefault();
-                      setFilters((f) => ({ ...f, zoek: '' }));
-                      (e.target as HTMLInputElement).blur();
-                    }
-                  }}
-                />
-              </label>
-              <select className="ag-veld ug-filter" aria-label="Categorie" value={filters.categorie ?? ''} onChange={(e) => setFilters((f) => ({ ...f, categorie: e.target.value }))}>
-                <option value="">Alle categorieën</option>
-                {CATEGORIEEN.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.label}
-                  </option>
-                ))}
-                <option value="geen">Zonder categorie</option>
-              </select>
-              <select className="ag-veld ug-filter" aria-label="Leverancier" value={filters.leverancier ?? ''} onChange={(e) => setFilters((f) => ({ ...f, leverancier: e.target.value }))}>
-                <option value="">Alle leveranciers</option>
-                {leveranciersInLijst.map((l) => (
-                  <option key={l} value={l}>
-                    {l}
-                  </option>
-                ))}
-              </select>
-              <select className="ag-veld ug-filter" aria-label="Status" value={filters.status ?? ''} onChange={(e) => setFilters((f) => ({ ...f, status: e.target.value }))}>
-                <option value="">Alle statussen</option>
-                {STATUSSEN.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.id === 'concept' ? 'Concept (te controleren)' : s.label}
-                  </option>
-                ))}
-              </select>
-              <select className="ag-veld ug-filter" aria-label="Betaald via" value={filters.betaaldVia ?? ''} onChange={(e) => setFilters((f) => ({ ...f, betaaldVia: e.target.value }))}>
-                <option value="">Alle betaalwijzen</option>
-                {BETAALWIJZEN.map((b) => (
-                  <option key={b.id} value={b.id}>
-                    {b.label}
-                  </option>
-                ))}
-              </select>
-              {heeftFilter && (
-                <button type="button" className="ag-link-knop" onClick={() => setFilters({})}>
-                  Wissen
+            {jaar && (
+              <div className="ug-chips ug-maanden" role="group" aria-label={`Maand in ${jaar}`}>
+                <button type="button" className={`ug-chip${!maand ? ' is-aan' : ''}`} aria-pressed={!maand} onClick={() => setMaand(null)}>
+                  Heel {jaar}
                 </button>
-              )}
-            </div>
+                {Array.from({ length: 12 }, (_, i) => i + 1)
+                  .filter((m) => jaar < huidigJaar || m <= Number(vandaag.slice(5, 7)))
+                  .map((m) => (
+                    <button
+                      key={m}
+                      type="button"
+                      className={`ug-chip${maand === m ? ' is-aan' : ''}`}
+                      aria-pressed={maand === m}
+                      onClick={() => setMaand(maand === m ? null : m)}
+                    >
+                      {maandNaam(m).slice(0, 3)}
+                    </button>
+                  ))}
+              </div>
+            )}
           </div>
 
-          {/* ---------- totalen ---------- */}
-          <dl className="ug-totalen">
-            <div>
-              <dt>Incl. btw</dt>
-              <dd>{euro(t.incl)}</dd>
-            </div>
-            <div>
-              <dt>Btw</dt>
-              <dd>{euro(t.btw)}</dd>
-            </div>
-            <div>
-              <dt>Excl. btw</dt>
-              <dd>{euro(t.excl)}</dd>
-            </div>
-            <div>
-              <dt>Uitgaven</dt>
-              <dd>{t.aantal}</dd>
-            </div>
-          </dl>
-          {(t.andereValuta > 0 || t.zonderBedrag > 0) && (
-            <p className="ag-uitleg ug-totalen-noot">
-              {[
-                t.andereValuta ? `${t.andereValuta} in andere valuta niet meegeteld` : '',
-                t.zonderBedrag ? `${t.zonderBedrag} nog zonder bedrag` : ''
-              ]
-                .filter(Boolean)
-                .join(' · ')}
-            </p>
-          )}
+          {/* ---------- resultaten ---------- */}
+          <p className="ug-telling" aria-live="polite">
+            {fout
+              ? ''
+              : !resultaat
+                ? 'Zoeken…'
+                : `${resultaat.totaal} ${resultaat.totaal === 1 ? 'bestand' : 'bestanden'}${
+                    resultaat.totaal > resultaat.uitgaven.length ? ` · de nieuwste ${resultaat.uitgaven.length} staan hieronder, verfijn je zoekopdracht` : ''
+                  }`}
+            {heeftFilter && (
+              <button type="button" className="ag-link-knop ug-wis" onClick={wisFilters}>
+                Filters wissen
+              </button>
+            )}
+          </p>
 
-          {/* ---------- lijst ---------- */}
           {fout ? (
             <div className="db-melding db-melding-fout" role="alert">
-              <p className="db-melding-titel">{fout instanceof UitgavenApiFout && fout.nietIngericht ? 'Uitgaven nog niet ingericht' : 'Laden mislukt'}</p>
+              <p className="db-melding-titel">
+                {fout instanceof UitgavenApiFout && fout.nietIngericht ? 'Bonnetjes nog niet ingericht' : 'Laden mislukt'}
+              </p>
               <p className="db-melding-tekst">{fout.message}</p>
               <div className="db-melding-actie">
                 <button type="button" className="db-knop" onClick={() => setTeller((x) => x + 1)}>
@@ -425,127 +478,228 @@ function Uitgaven({
               </div>
             </div>
           ) : !uitgaven ? (
-            <div className="ug-lijst" aria-busy="true">
-              {[0, 1, 2, 3].map((i) => (
-                <div key={i} className="db-skelet" style={{ height: 44, marginBottom: 8, width: `${100 - i * 6}%` }} />
-              ))}
-            </div>
-          ) : zichtbaar.length === 0 ? (
+            weergave === 'galerij' ? (
+              <div className="ug-galerij" aria-busy="true">
+                {Array.from({ length: 8 }, (_, i) => (
+                  <div key={i} className="db-skelet ug-kaart-skelet" />
+                ))}
+              </div>
+            ) : (
+              <div aria-busy="true">
+                {[0, 1, 2, 3].map((i) => (
+                  <div key={i} className="db-skelet" style={{ height: 44, marginBottom: 8, width: `${100 - i * 6}%` }} />
+                ))}
+              </div>
+            )
+          ) : uitgaven.length === 0 ? (
             <div className="db-melding ug-leeg">
-              <p className="db-melding-titel">{heeftFilter ? 'Niets gevonden met deze filters' : `Nog geen uitgaven in ${periodeLabel(periode)}`}</p>
+              <p className="db-melding-titel">{heeftFilter ? 'Niets gevonden' : 'Nog niets geüpload'}</p>
               <p className="db-melding-tekst">
-                {heeftFilter ? 'Pas de filters aan of wis ze.' : 'Sleep een bonnetje hierboven, of maak met je telefoon een foto.'}
+                {heeftFilter
+                  ? 'Probeer een ander woord of bedrag, of wis de filters.'
+                  : 'Sleep een bonnetje of inkoopfactuur hierboven, of maak met je telefoon een foto.'}
               </p>
+              {heeftFilter && (
+                <div className="db-melding-actie">
+                  <button type="button" className="db-knop" onClick={wisFilters}>
+                    Filters wissen
+                  </button>
+                </div>
+              )}
             </div>
           ) : (
-            <div className="ug-lijst">
-              {groepen.map(([maand, lijst]) => {
-                const mt = totalen(lijst);
-                return (
-                  <section key={maand} className="ug-groep" aria-label={maandLabel(maand)}>
-                    <h2 className="ag-groep-kop">
-                      {maandLabel(maand)}
-                      <span className="ag-groep-aantal">
-                        {lijst.length} · {euro(mt.incl)}
-                      </span>
-                    </h2>
-                    <ul className="ug-rijen">
+            <div className="ug-resultaten">
+              {groepen.map(([maandK, lijst]) => (
+                <section key={maandK} className="ug-groep" aria-label={maandLabel(maandK)}>
+                  <h2 className="ag-groep-kop">
+                    {maandK === 'zonder-datum' ? 'Nog zonder datum' : maandLabel(maandK)}
+                    <span className="ag-groep-aantal">{lijst.length}</span>
+                  </h2>
+                  {weergave === 'galerij' ? (
+                    <ul className="ug-galerij">
                       {lijst.map((u) => (
                         <li key={u.id}>
-                          <button
-                            type="button"
-                            className={`ug-rij${u.status === 'concept' ? ' is-concept' : ''}${selectie?.id === u.id ? ' is-open' : ''}`}
-                            onClick={() => {
-                              setControleren(false);
-                              setSelectie(u);
-                            }}
-                          >
-                            <span className="ug-rij-datum">{u.datum ? korteDatumNL(u.datum).replace(/ \d{4}$/, '') : '—'}</span>
-                            <span className="ug-rij-hoofd">
-                              <span className="ug-rij-titel">
-                                {u.leverancier || <em className="ug-onbekend">Leverancier onbekend</em>}
-                                {u.bestanden.length === 0 && <span className="ag-chip ag-chip-mini">Geen bon</span>}
-                              </span>
-                              <span className="ug-rij-meta">
-                                {[u.omschrijving, categorieLabel(u.categorie), betaalLabel(u.betaaldVia), u.klantNaam].filter(Boolean).join(' · ') || ' '}
-                              </span>
-                            </span>
-                            {u.status === 'concept' && (
-                              <span className="ug-rij-status" title={u.aiStatus === 'mislukt' ? u.aiMelding : 'Nog controleren'}>
-                                <span className="ug-ai-stip" aria-hidden="true" />
-                                Controleren
-                              </span>
-                            )}
-                            <span className="ug-rij-bedrag">
-                              {euro(u.totaal, u.valuta)}
-                              {u.btwBedrag ? <span className="ug-rij-btw">btw {euro(u.btwBedrag, u.valuta)}</span> : null}
-                            </span>
-                          </button>
+                          <Kaartje
+                            u={u}
+                            voorbeeld={resultaat?.voorbeelden[u.id]}
+                            uitlezen={bezigMetUitlezen.has(u.id)}
+                            open={selectie?.id === u.id}
+                            onOpen={() => setSelectie(u)}
+                          />
                         </li>
                       ))}
                     </ul>
-                  </section>
-                );
-              })}
+                  ) : (
+                    <ul className="ug-lrijen">
+                      {lijst.map((u) => (
+                        <li key={u.id}>
+                          <Rij u={u} uitlezen={bezigMetUitlezen.has(u.id)} open={selectie?.id === u.id} onOpen={() => setSelectie(u)} />
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </section>
+              ))}
             </div>
           )}
+          <p className="ug-sneltoetsen" aria-hidden="true">
+            <kbd>n</kbd> uploaden · <kbd>/</kbd> zoeken · <kbd>Esc</kbd> sluiten
+          </p>
         </div>
       )}
 
       {selectie && (
         <UitgavePaneel
-          key={selectie.id}
+          // Na het uitlezen opnieuw opbouwen, zodat de ingevulde velden zichtbaar worden.
+          key={`${selectie.id}:${selectie.aiStatus}`}
           uitgave={selectie}
           leveranciers={leveranciers}
-          aantalTeControleren={controleren ? concepten.filter((u) => u.id !== selectie.id).length : 0}
+          uitlezen={bezigMetUitlezen.has(selectie.id)}
           onSluit={sluit}
           onBijgewerkt={verwerk}
-          onOpgeslagen={(u, volgende) => {
+          onOpgeslagen={(u) => {
             verwerk(u);
             laadLeveranciers();
-            const n = volgende ? volgendConcept(u.id) : null;
-            if (n) setSelectie(n);
-            else sluit();
+            sluit();
           }}
           onVerwijderd={(id) => {
-            setData((d) => (d ? { ...d, uitgaven: d.uitgaven.filter((x) => x.id !== id) } : d));
+            setData((d) =>
+              d ? { ...d, res: { ...d.res, uitgaven: d.res.uitgaven.filter((x) => x.id !== id), totaal: Math.max(0, d.res.totaal - 1) } } : d
+            );
             sluit();
           }}
         />
       )}
 
-      {exportOpen && <ExportDialoog periode={periode} params={exportParams} aantal={zichtbaar.filter((u) => u.datum).length} heeftFilter={heeftFilter} onSluit={() => setExportOpen(false)} />}
+      {exportOpen && <ExportDialoog vandaag={vandaag} onSluit={() => setExportOpen(false)} />}
     </div>
   );
 }
 
-function ExportDialoog({
-  periode,
-  params,
-  aantal,
-  heeftFilter,
-  onSluit
+// ---------------------------------------------------------------------------------
+// Een upload in de galerij en in de lijst
+// ---------------------------------------------------------------------------------
+function meta(u: Uitgave): string {
+  return [u.datum ? korteDatumNL(u.datum) : `geüpload ${korteDatumNL(u.aangemaakt.slice(0, 10))}`, soortLabel(u.soort)].filter(Boolean).join(' · ');
+}
+
+function Kaartje({
+  u,
+  voorbeeld,
+  uitlezen,
+  open,
+  onOpen
 }: {
-  periode: Periode;
-  params: Record<string, string | undefined>;
-  aantal: number;
-  heeftFilter: boolean;
-  onSluit: () => void;
+  u: Uitgave;
+  voorbeeld?: string;
+  uitlezen: boolean;
+  open: boolean;
+  onOpen: () => void;
 }) {
-  const [bezig, setBezig] = useState(false);
+  const pdf = u.bestanden[0]?.type === 'application/pdf';
+  return (
+    <button type="button" className={`ug-kaart${open ? ' is-open' : ''}`} onClick={onOpen} aria-label={`${uploadNaam(u)}, ${meta(u)}`}>
+      <span className="ug-kaart-beeld">
+        {voorbeeld ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={voorbeeld} alt="" loading="lazy" decoding="async" />
+        ) : (
+          <span className="ug-kaart-icoon">
+            <UgIcoon naam={pdf ? 'pdf' : u.bestanden.length ? 'beeld' : 'bon'} grootte={30} />
+            {pdf && <span className="ug-kaart-type">PDF</span>}
+          </span>
+        )}
+        {uitlezen && (
+          <span className="ug-kaart-bezig">
+            <span className="ug-ai-stip" aria-hidden="true" /> Wordt uitgelezen…
+          </span>
+        )}
+      </span>
+      <span className="ug-kaart-tekst">
+        <span className="ug-kaart-titel">{uploadNaam(u)}</span>
+        <span className="ug-kaart-meta">{meta(u)}</span>
+      </span>
+      <span className="ug-kaart-voet">
+        <span className="ug-kaart-bedrag">{u.totaal === null ? '' : euro(u.totaal, u.valuta)}</span>
+        <Persoon id={u.aangemaaktDoor} compact voorvoegsel="geüpload door" />
+      </span>
+    </button>
+  );
+}
+
+function Rij({ u, uitlezen, open, onOpen }: { u: Uitgave; uitlezen: boolean; open: boolean; onOpen: () => void }) {
+  return (
+    <button type="button" className={`ug-lrij${open ? ' is-open' : ''}`} onClick={onOpen}>
+      <span className="ug-lrij-datum">{u.datum ? korteDatumNL(u.datum) : '—'}</span>
+      <span className="ug-lrij-hoofd">
+        <span className="ug-lrij-titel">
+          <UgIcoon naam={u.bestanden[0]?.type === 'application/pdf' ? 'pdf' : 'beeld'} grootte={14} />
+          {uploadNaam(u)}
+        </span>
+        <span className="ug-lrij-omschrijving">{uitlezen ? 'Wordt uitgelezen…' : u.omschrijving || u.factuurnummer || ''}</span>
+      </span>
+      <span className="ug-lrij-soort">{soortLabel(u.soort)}</span>
+      <span className="ug-lrij-bedrag">{u.totaal === null ? '—' : euro(u.totaal, u.valuta)}</span>
+      <span className="ug-lrij-door">
+        <Persoon id={u.aangemaaktDoor} compact voorvoegsel="geüpload door" />
+      </span>
+    </button>
+  );
+}
+
+// ---------------------------------------------------------------------------------
+// Export voor de boekhouder (onder "Meer")
+// ---------------------------------------------------------------------------------
+function ExportDialoog({ vandaag, onSluit }: { vandaag: string; onSluit: () => void }) {
+  const [periode, setPeriode] = useState<Periode>(() => periodeRond('kwartaal', vandaag));
+  const [bezig, setBezig] = useState<'' | 'csv' | 'zip'>('');
   const [fout, setFout] = useState('');
   const [delen, setDelen] = useState<{ naam: string; url: string; aantal: number }[] | null>(null);
+  const dialoog = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    const vorige = document.activeElement as HTMLElement | null;
+    dialoog.current?.querySelector<HTMLElement>('button')?.focus();
     function toets(e: KeyboardEvent) {
       if (e.key === 'Escape') onSluit();
     }
     document.addEventListener('keydown', toets);
-    return () => document.removeEventListener('keydown', toets);
+    return () => {
+      document.removeEventListener('keydown', toets);
+      if (vorige && document.contains(vorige)) vorige.focus({ preventScroll: true });
+    };
   }, [onSluit]);
 
+  const params = { van: periode.van, tot: periode.tot };
+
+  function kies(soort: 'maand' | 'kwartaal' | 'jaar') {
+    setPeriode(periodeRond(soort, periode.van <= vandaag && vandaag <= periode.tot ? vandaag : periode.van));
+    setDelen(null);
+    setFout('');
+  }
+
+  async function csv() {
+    setBezig('csv');
+    setFout('');
+    try {
+      const res = await fetch(`/api/uitgaven/export?formaat=csv&van=${params.van}&tot=${params.tot}`, { cache: 'no-store' });
+      if (!res.ok) {
+        const d = await res.json().catch(() => null);
+        throw new Error((d && d.error) || 'Exporteren mislukt.');
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      downloadLink(url, `uitgaven_${params.van}_${params.tot}.csv`);
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (e) {
+      setFout(e instanceof Error ? e.message : 'Exporteren mislukt.');
+    } finally {
+      setBezig('');
+    }
+  }
+
   async function zip() {
-    setBezig(true);
+    setBezig('zip');
     setFout('');
     try {
       const r = await uitgavenApi.zipExport(params);
@@ -555,14 +709,14 @@ function ExportDialoog({
     } catch (e) {
       setFout(e instanceof Error ? e.message : 'Exporteren mislukt.');
     } finally {
-      setBezig(false);
+      setBezig('');
     }
   }
 
   return (
     <>
       <div className="ag-paneel-achter" onClick={onSluit} aria-hidden="true" />
-      <div className="ug-dialoog" role="dialog" aria-modal="true" aria-label="Exporteren voor de boekhouder">
+      <div className="ug-dialoog" role="dialog" aria-modal="true" aria-label="Exporteren voor de boekhouder" ref={dialoog}>
         <header className="ug-dialoog-kop">
           <p className="db-label">Export voor de boekhouder</p>
           <button type="button" className="ag-icoonknop" aria-label="Sluiten" onClick={onSluit}>
@@ -570,25 +724,46 @@ function ExportDialoog({
           </button>
         </header>
         <div className="ug-dialoog-inhoud">
-          <p className="ug-dialoog-titel">{periodeLabel(periode)}</p>
+          <div className="ug-periode">
+            <div className="ag-segment" role="group" aria-label="Periode">
+              {(
+                [
+                  ['maand', 'Maand'],
+                  ['kwartaal', 'Kwartaal'],
+                  ['jaar', 'Jaar']
+                ] as const
+              ).map(([s, l]) => (
+                <button key={s} type="button" className={periode.soort === s ? 'is-aan' : ''} aria-pressed={periode.soort === s} onClick={() => kies(s)}>
+                  {l}
+                </button>
+              ))}
+            </div>
+            <span className="ug-schuif">
+              <button type="button" className="ag-icoonknop" aria-label="Vorige periode" onClick={() => {
+                  setPeriode((p) => schuifPeriode(p, -1));
+                  setDelen(null);
+                }}>
+                <UgIcoon naam="links" />
+              </button>
+              <span className="ug-periode-label">{periodeLabel(periode)}</span>
+              <button type="button" className="ag-icoonknop" aria-label="Volgende periode" onClick={() => {
+                  setPeriode((p) => schuifPeriode(p, 1));
+                  setDelen(null);
+                }}>
+                <UgIcoon naam="rechts" />
+              </button>
+            </span>
+          </div>
           <p className="ag-uitleg ug-dialoog-uitleg">
-            {aantal} uitgave{aantal === 1 ? '' : 'n'}
-            {heeftFilter ? ' (met de huidige filters)' : ''}. Uitgaven zonder datum gaan niet mee. De CSV opent in Excel
-            (puntkomma, Nederlandse bedragen); de ZIP bevat alle bonnetjes als <code>JJJJ-MM-DD_leverancier_bedrag</code> plus
-            de CSV.
+            Alle uploads met een datum in deze periode. De CSV opent in Excel (puntkomma, Nederlandse bedragen); de ZIP bevat alle
+            bestanden als <code>JJJJ-MM-DD_leverancier_bedrag</code> plus de CSV. Uploads zonder datum gaan niet mee.
           </p>
           <div className="ug-dialoog-knoppen">
-            {aantal > 0 ? (
-              <a className="db-knop" href={csvExportUrl(params)} download>
-                <UgIcoon naam="download" grootte={15} /> CSV downloaden
-              </a>
-            ) : (
-              <button type="button" className="db-knop" disabled>
-                <UgIcoon naam="download" grootte={15} /> CSV downloaden
-              </button>
-            )}
-            <button type="button" className="db-knop db-knop-primair" disabled={bezig || aantal === 0} onClick={zip}>
-              <UgIcoon naam="download" grootte={15} /> {bezig ? 'ZIP maken…' : 'ZIP met bonnetjes'}
+            <button type="button" className="db-knop" disabled={!!bezig} onClick={csv}>
+              <UgIcoon naam="download" grootte={15} /> {bezig === 'csv' ? 'CSV maken…' : 'CSV downloaden'}
+            </button>
+            <button type="button" className="db-knop db-knop-primair" disabled={!!bezig} onClick={zip}>
+              <UgIcoon naam="download" grootte={15} /> {bezig === 'zip' ? 'ZIP maken…' : 'ZIP met bestanden'}
             </button>
           </div>
           {delen && delen.length > 1 && (

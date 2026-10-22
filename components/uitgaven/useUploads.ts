@@ -9,9 +9,10 @@ export type UploadItem = { sleutel: number; naam: string; fase: UploadFase; fout
 const TEGELIJK = 2;
 
 /**
- * Wachtrij voor bonnetjes: elk bestand wordt een eigen concept-uitgave en wordt uitgelezen.
+ * Wachtrij voor bonnetjes: elk bestand wordt een eigen upload en wordt uitgelezen.
  * Twee tegelijk, zodat tien foto's niet tien keer tegelijk Claude aanroepen.
- * `onUitgave` krijgt elke nieuwe (uitgelezen) uitgave; `onAlles` de hele batch na afloop.
+ * `onUitgave` krijgt elke nieuwe uitgave direct na het uploaden én nog eens na het uitlezen;
+ * `onAlles` de hele batch na afloop.
  */
 export function useUploads({
   onUitgave,
@@ -52,7 +53,14 @@ export function useUploads({
           continue;
         }
         try {
-          const u = await uploadBonnetje(f, { onFase: (fase) => zet(it.sleutel, { fase }) });
+          const u = await uploadBonnetje(f, {
+            onFase: (fase) => zet(it.sleutel, { fase }),
+            // Meteen tonen ("Wordt uitgelezen…"); na het uitlezen volgt de bijgewerkte versie.
+            onAangemeld: (nieuw) => {
+              zet(it.sleutel, { uitgaveId: nieuw.id });
+              callbacks.current.onUitgave?.(nieuw);
+            }
+          });
           resultaten.push(u);
           zet(it.sleutel, { fase: 'klaar', uitgaveId: u.id });
           callbacks.current.onUitgave?.(u);

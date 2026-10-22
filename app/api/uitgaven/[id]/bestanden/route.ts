@@ -1,7 +1,7 @@
 import { dbFout, fout, isUuid, json, leesJson, uitgavenRoute } from '@/lib/uitgaven/api';
 import { MAX_BESTAND_BYTES, schoon, typeUitNaam } from '@/lib/uitgaven/model';
 import { grootte, isPadVan, verwijder } from '@/lib/uitgaven/opslag';
-import { moetUitgave } from '@/lib/uitgaven/repo';
+import { heeftSoortKolom, kolomOntbreekt, moetUitgave } from '@/lib/uitgaven/repo';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -13,7 +13,7 @@ type Ctx = { params: Promise<{ id: string }> };
 // nieuwe upload), dan ontstaat hier het concept.
 //
 // POST /api/uitgaven/[id]/bestanden  { pad, naam } → { uitgave }
-export const POST = uitgavenRoute(async (request, ctx: Ctx, sb) => {
+export const POST = uitgavenRoute(async (request, ctx: Ctx, sb, lid) => {
   const { id } = await ctx.params;
   if (!isUuid(id)) return fout(404, 'Deze uitgave bestaat niet (meer).');
   const b = await leesJson(request);
@@ -30,7 +30,15 @@ export const POST = uitgavenRoute(async (request, ctx: Ctx, sb) => {
   }
 
   // Concept aanmaken als het nog niet bestaat (twee gelijktijdige aanmeldingen: de tweede doet niets).
-  const nieuw = await sb.from('expenses').upsert({ id, source: 'upload' }, { onConflict: 'id', ignoreDuplicates: true });
+  // Soort alvast uit het bestand (PDF = inkoopfactuur, foto = bonnetje); aan te passen in het paneel.
+  const basis: Record<string, unknown> = { id, source: 'upload', created_by: lid.userId };
+  const soort = type === 'application/pdf' ? 'inkoopfactuur' : 'bonnetje';
+  let nieuw = await sb
+    .from('expenses')
+    .upsert(heeftSoortKolom() ? { ...basis, soort } : basis, { onConflict: 'id', ignoreDuplicates: true });
+  if (nieuw.error && kolomOntbreekt(nieuw.error)) {
+    nieuw = await sb.from('expenses').upsert(basis, { onConflict: 'id', ignoreDuplicates: true });
+  }
   if (nieuw.error) throw dbFout(nieuw.error);
 
   const { error } = await sb.from('expense_files').insert({

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type RefObject } from 'react';
 import { typtIn } from '@/lib/agenda/client';
 import { FASE_TEKST, type UploadItem } from './useUploads';
 import { UgIcoon } from './Iconen';
@@ -8,23 +8,23 @@ import { UgIcoon } from './Iconen';
 const ACCEPT = 'image/*,application/pdf,.heic,.heif,.pdf';
 
 /**
- * Grote dropzone bovenaan: slepen, kiezen, foto maken (mobiel) of plakken (⌘V).
- * Elk bestand wordt een eigen concept-uitgave.
+ * Brede dropzone bovenaan: slepen (overal op de pagina), kiezen, foto maken (mobiel) of
+ * plakken (⌘V). Elk bestand wordt een eigen upload. `kiezer` is van de ouder, zodat de
+ * sneltoets n de bestandskiezer kan openen.
  */
 export function Toevoegen({
   items,
   onBestanden,
   onWis,
-  onHandmatig,
-  nadruk
+  nadruk,
+  kiezer
 }: {
   items: UploadItem[];
   onBestanden: (f: File[]) => void;
   onWis: (sleutel: number) => void;
-  onHandmatig: () => void;
   nadruk: boolean;
+  kiezer: RefObject<HTMLInputElement | null>;
 }) {
-  const kiezer = useRef<HTMLInputElement>(null);
   const camera = useRef<HTMLInputElement>(null);
   const [sleep, setSleep] = useState(false);
   const diepte = useRef(0);
@@ -93,25 +93,27 @@ export function Toevoegen({
   }
 
   return (
-    <section className={`ug-drop${sleep ? ' is-sleep' : ''}${nadruk ? ' is-nadruk' : ''}`} aria-label="Bonnetjes toevoegen">
+    <section className={`ug-drop${sleep ? ' is-sleep' : ''}${nadruk ? ' is-nadruk' : ''}`} aria-label="Uploaden">
       <div className="ug-drop-inhoud">
         <UgIcoon naam="bon" grootte={28} className="ug-drop-icoon" />
         <div className="ug-drop-tekst">
-          <p className="ug-drop-titel">{sleep ? 'Laat los om toe te voegen' : 'Sleep bonnetjes en facturen hierheen'}</p>
+          <p className="ug-drop-titel">{sleep ? 'Laat los om te uploaden' : 'Sleep bonnetjes of inkoopfacturen hierheen'}</p>
           <p className="ug-drop-sub">
-            Foto’s of PDF’s, meerdere tegelijk. Of plak een screenshot met <kbd>⌘</kbd> <kbd>V</kbd>. Claude leest ze
-            meteen uit; jij controleert.
+            Foto’s of PDF’s, meerdere tegelijk, of plak een screenshot met <kbd>⌘</kbd> <kbd>V</kbd>. Leverancier, datum
+            en bedrag worden vanzelf uitgelezen, zodat je alles later snel terugvindt.
           </p>
         </div>
         <div className="ug-drop-knoppen">
-          <button type="button" className="db-knop db-knop-primair ug-knop-groot" onClick={() => kiezer.current?.click()}>
-            <UgIcoon naam="plus" grootte={16} /> Bonnetje toevoegen
+          <button
+            type="button"
+            className="db-knop db-knop-primair ug-knop-groot"
+            title="Bestanden kiezen (n)"
+            onClick={() => kiezer.current?.click()}
+          >
+            <UgIcoon naam="plus" grootte={16} /> Kies bestanden
           </button>
           <button type="button" className="db-knop ug-knop-groot ug-alleen-mobiel" onClick={() => camera.current?.click()}>
             <UgIcoon naam="camera" grootte={16} /> Foto maken
-          </button>
-          <button type="button" className="ag-link-knop" onClick={onHandmatig}>
-            Zonder bonnetje invoeren
           </button>
         </div>
       </div>

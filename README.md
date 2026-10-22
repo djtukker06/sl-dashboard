@@ -1,7 +1,7 @@
 # Studio Levant — backoffice
 
 Eén backoffice voor Studio Levant: een dashboard voor elke dag, met mail, agenda & taken,
-facturen, uitgaven en social media in dezelfde omgeving. Na het inloggen (Supabase Auth) zie je links
+boekhouding (facturen, bonnetjes en inkoopfacturen) en social media in dezelfde omgeving. Na het inloggen (Supabase Auth) zie je links
 altijd dezelfde navigatierail met het Studio Levant-beeldmerk; een klik op het logo brengt
 je vanuit elke module terug naar het dashboard.
 
@@ -9,11 +9,11 @@ je vanuit elke module terug naar het dashboard.
 
 | Module | Route | Wat |
 |---|---|---|
-| Dashboard | `/` | "Vandaag": begroeting, snelle acties, snelinvoer voor taken, dagplanning, taken, deze week, inbox, facturen, uitgaven en recente social posts |
-| Mail | `/mail` | Inbox van info@studio-levant.nl (Private Email): lezen, beantwoorden, doorsturen, nieuwe mail, mail → taak |
+| Dashboard | `/` | "Vandaag": begroeting, snelle acties, snelinvoer voor taken, dagplanning, taken, deze week, je eigen inbox, facturen, laatste bonnetjes en recente social posts |
+| Mail | `/mail` | Je eigen mailbox (Private Email): lezen, beantwoorden, doorsturen, nieuwe mail, mail → taak |
 | Agenda | `/agenda` | Taken en afspraken in één agenda (week/maand), snelinvoer in gewone taal |
-| Facturen | `/facturen` | De facturentool: facturen, prijsopgaven, klanten en PDF's (ongewijzigd) |
-| Uitgaven | `/uitgaven` | Bonnetjes en betaalde facturen: foto/PDF toevoegen, automatisch uitlezen, btw-indicatie, export voor de boekhouder |
+| Boekhouding | `/boekhouding` | Keuze tussen **Facturen** (`/facturen`: facturen, prijsopgaven, klanten en PDF's, ongewijzigd) en **Bonnetjes & inkoopfacturen** (`/boekhouding/bonnetjes`: foto/PDF uploaden en snel terugvinden) |
+| Account & mail | `/account` | Je profiel (naam, initialen, kleur), je eigen mailbox koppelen, wachtwoord wijzigen |
 | Social | `/social` | De social-media-tool (voorheen lokaal), met dezelfde schermen en werking |
 
 ## Eerste keer inrichten (checklist)
@@ -27,7 +27,8 @@ je vanuit elke module terug naar het dashboard.
 3. **Oude social-posts importeren** met `scripts/importeer-social-projecten.mjs`
    (zie "Social-projecten importeren").
 4. **Omgevingsvariabelen** zetten in `.env.local` en in Vercel (zie "Omgevingsvariabelen"),
-   inclusief `MAIL_USER`/`MAIL_PASSWORD` om de mail te koppelen en `NEXT_PUBLIC_SITE_URL`.
+   inclusief `MAIL_ENCRYPTION_KEY` (eigen mailboxen koppelen via `/account`), eventueel
+   `MAIL_USER`/`MAIL_PASSWORD` (standaard-mailbox van de eigenaar) en `NEXT_PUBLIC_SITE_URL`.
 5. Deployen op Vercel (zie "Deployen op Vercel").
 6. **Compagnon toevoegen** met `scripts/teamlid-toevoegen.mjs` (zie "Team & toegang").
 
@@ -109,7 +110,8 @@ onder **Project Settings → Environment Variables** (Production én Preview):
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | ja | Publieke anon-key (login in de browser) |
 | `SUPABASE_SERVICE_ROLE_KEY` | ja | Geheime service-role key, alleen op de server |
 | `ANTHROPIC_API_KEY` | voor social en uitgaven | Anthropic-key voor het genereren van social posts en het uitlezen van bonnetjes (zonder key: uitgaven handmatig invullen) |
-| `MAIL_USER`, `MAIL_PASSWORD` | voor mail | Mailbox van de eigenaar voor `/mail` (zie "Mail koppelen"). Alleen te gebruiken door het account met dat adres of de eigenaar; andere teamleden zien "niet gekoppeld" |
+| `MAIL_ENCRYPTION_KEY` | voor eigen mailboxen | 32 bytes, base64 (`openssl rand -base64 32`). Versleutelt de mailbox-wachtwoorden die teamleden via `/account` koppelen (AES-256-GCM). Geheim; niet wijzigen zonder dat iedereen opnieuw koppelt (zie "Mail per gebruiker") |
+| `MAIL_USER`, `MAIL_PASSWORD` | nee | Standaard-mailbox van de eigenaar (zie "Mail koppelen"). Alleen voor het account met dat adres of de eigenaar, en alleen zolang die geen eigen mailbox heeft gekoppeld |
 | `MAIL_IMAP_HOST`, `MAIL_IMAP_PORT`, `MAIL_SMTP_HOST`, `MAIL_SMTP_PORT` | nee | Standaard `mail.privateemail.com`, 993 en 465 |
 | `MAIL_FROM_NAME`, `MAIL_HANDTEKENING` | nee | Afzendernaam (standaard "Studio Levant") en handtekening (`\n` = nieuwe regel) |
 | `CHROME_PATH` | nee, alleen lokaal | Eigen Chrome/Chromium voor social-exports tijdens `npm run dev` |
@@ -210,8 +212,8 @@ De scripts lezen de sleutels alleen uit de procesomgeving (`--env-file`), lezen 
 
 `app/(app)/page.tsx`: kop met dag, weeknummer en begroeting; snelle acties (Taak, Nieuwe
 factuur, Nieuwe prijsopgave, + Bonnetje, Nieuwe post, Nieuwe mail); snelinvoer voor taken;
-widgets Vandaag, Taken, Deze week, Inbox, Facturen, Uitgaven (deze maand, te controleren,
-laatste 3) en Social. Elke widget laadt los (eigen laad-, leeg- en foutstaat), zodat één
+widgets Vandaag, Taken, Deze week, Inbox (je eigen mailbox), Facturen (met wie ze maakte),
+Laatste bonnetjes (de vier nieuwste uploads van het team, met uploader) en Social. Elke widget laadt los (eigen laad-, leeg- en foutstaat), zodat één
 trage of nog niet ingerichte bron de rest niet blokkeert. De facturen-widget is alleen-lezen
 en rekent met dezelfde regels als het facturenoverzicht (omzet excl. btw per jaar; open =
 aanbetaling zonder restfactuur).
@@ -227,14 +229,35 @@ aanbetaling zonder restfactuur).
   wordt het een afspraak. Alle datums in Europe/Amsterdam-tijd.
 - Tests: `node scripts/test-snelinvoer.mjs` (ook zomer-/wintertijd rond 25 okt 2026).
 
-## Uitgaven
+## Boekhouding
 
-Bonnetjes en betaalde facturen op `/uitgaven`, met een widget en de knop **+ Bonnetje** op het
-dashboard en **Als uitgave** bij bijlagen in mail.
+De tab **Boekhouding** in de rail (`/boekhouding`) is het keuzescherm met twee tegels, en
+daaronder staat op elk scherm de subnavigatie **Overzicht · Facturen · Bonnetjes &
+inkoopfacturen**. De tab is ook actief op `/facturen/…` en (via een redirect) `/uitgaven`.
 
-- **Toevoegen.** Sleep foto's/PDF's op de pagina, kies ze met **Bonnetje toevoegen**, maak op
-  de telefoon een **Foto maken** (camera), of plak een screenshot met `⌘V`. Meerdere tegelijk
-  kan; elk bestand wordt een eigen concept. Foto's worden in de browser verkleind (max.
+- **Facturen** (`/facturen/…`): de facturentool, inhoudelijk ongewijzigd (zie "Facturen").
+  Alleen de kop is nu die van Boekhouding. Op het keuzescherm: omzet en aantal facturen van
+  dit jaar, open aanbetalingen, de laatste drie facturen (met wie ze maakte) en de knoppen
+  *Nieuwe factuur* en *Nieuwe prijsopgave*.
+- **Bonnetjes & inkoopfacturen** (`/boekhouding/bonnetjes`, voorheen `/uitgaven`): uploaden
+  en terugvinden, zie hieronder. Op het keuzescherm: *Bonnetje uploaden* en de laatste vier
+  uploads met wie ze uploadde.
+
+Alles in Boekhouding is gedeeld met het hele team: wat de één maakt of uploadt, ziet de ander
+meteen (na verversen; de pagina ververst ook vanzelf als je terugkomt).
+
+### Bonnetjes & inkoopfacturen
+
+Uploaden en makkelijk terugvinden staat voorop; het is geen boekhoudpakket. Leverancier,
+datum en bedrag worden automatisch uitgelezen om het zoeken makkelijk te maken, maar alle
+velden zijn optioneel. Op het dashboard: de knop **+ Bonnetje** en de kaart *Laatste
+bonnetjes*; in mail: **Bij bonnetjes** naast een PDF- of fotobijlage.
+
+- **Uploaden.** Sleep foto's/PDF's op de pagina, kies ze met **Kies bestanden** (sneltoets
+  `n`), maak op de telefoon een **Foto maken** (camera), of plak een screenshot met `⌘V`.
+  Meerdere tegelijk kan; elk bestand wordt een eigen upload en verschijnt meteen (met
+  "Wordt uitgelezen…"). Een PDF krijgt de soort *inkoopfactuur*, een foto *bonnetje* (aan te
+  passen). Foto's worden in de browser verkleind (max.
   2400 px, JPEG). Uploads gaan via een signed upload-URL direct naar de privé-bucket
   `uitgaven` (buiten de 4,5 MB-limiet van Vercel om; max. 25 MB per bestand).
 - **Automatisch uitlezen** (`lib/uitgaven/claude.ts`, model `claude-sonnet-5-5`, gestructureerde
@@ -244,19 +267,24 @@ dashboard en **Als uitgave** bij bijlagen in mail.
   aanpast. Bij een bekende leverancier gaat de laatst gebruikte categorie/betaalwijze voor.
   Zonder `ANTHROPIC_API_KEY`, bij HEIC-foto's (die de API niet leest) of bij een fout blijft
   het een concept dat je zelf invult.
-- **Controleren.** Concepten staan bovenaan met "Controleren"; **Klopt, volgende** zet een
-  concept op *verwerkt* en opent het volgende. Bewerken gaat in het zijpaneel (`⌘ Enter` =
-  opslaan, `Esc` = sluiten); bestanden bekijk je daar (afbeelding of PDF via een signed URL van
-  5 minuten). Verwijderen vraagt om bevestiging en haalt ook de bestanden uit de opslag.
-- **Overzicht.** Periode maand/kwartaal/jaar/eigen, zoeken (`/`), filters op categorie,
-  leverancier, status en betaalwijze, totalen incl./excl. btw, gegroepeerd per maand.
-  Uitgaven in een andere valuta dan EUR tellen niet mee in de totalen.
-- **Btw & cijfers.** Per kwartaal de voorbelasting (btw op uitgaven, verlegd telt als 0)
+- **Terugvinden.** Eén groot zoekveld (`/`) zoekt in het hele archief: leverancier,
+  omschrijving, notitie, factuurnummer en bestandsnaam; een bedrag (`12,50`, `12.5`, `€12`)
+  vindt ook het totaalbedrag. Filters als chips: periode (alles, een jaar, daarna een maand),
+  soort (bonnetjes/inkoopfacturen) en geüpload door (iedereen, ik, een teamlid). Weergave als
+  **galerij** (thumbnails per maand, signed URL's van 10 minuten) of **lijst**; de keuze wordt
+  per browser onthouden. Max. 200 resultaten per zoekopdracht, nieuwste eerst.
+- **Bekijken.** Klik op een upload: groot voorbeeld (foto of PDF via een signed URL van 5
+  minuten), downloaden, een pagina toevoegen, verwijderen (met bevestiging; haalt ook de
+  bestanden uit de opslag) en "Geüpload door … · datum". **Gegevens (optioneel)** is
+  ingeklapt: soort, leverancier, omschrijving, datum, factuurnummer, bedrag en btw, klant en
+  notitie (`⌘ Enter` = opslaan, `Esc` = sluiten). De database-kolommen `status`, `category` en
+  `payment_method` blijven bestaan maar staan niet meer in de schermen.
+- **Meer ▾ → Btw-overzicht per kwartaal** (`?tab=btw`). Per kwartaal de voorbelasting (btw op uitgaven, verlegd telt als 0)
   tegenover de btw op verstuurde facturen (alleen gelezen uit `invoices`: `vat_amount` per
   factuurdatum; aanbetaling en restfactuur zijn elk een eigen factuur, verlegd = 0; omzet =
   `revenue_subtotal` zoals het facturenoverzicht), met een **indicatie** te betalen/terug te
   vragen, en uitgaven per categorie. Geen fiscaal advies.
-- **Export voor de boekhouder** (knop *Exporteren*, voor de gekozen periode en filters):
+- **Meer ▾ → Exporteren voor de boekhouder** (per maand, kwartaal of jaar):
   CSV (puntkomma, Nederlandse decimalen, opent in Excel) en een ZIP met alle bonnetjes als
   `JJJJ-MM-DD_leverancier_bedrag.ext` plus de CSV. De ZIP gaat via de bucket
   `uitgaven-export` en een signed URL (5 min); boven ±45 MB in delen.
@@ -265,11 +293,47 @@ dashboard en **Als uitgave** bij bijlagen in mail.
   Tests zonder database/netwerk: `node scripts/test-uitgaven.mjs`; één echte Claude-aanroep
   met een gegenereerd testbonnetje: `ANTHROPIC_API_KEY=… node scripts/test-uitgaven.mjs --claude`.
 
+## Mail per gebruiker (Account & mail)
+
+Mail is **persoonlijk**: elk teamlid ziet in Mail en in de inbox op het dashboard alleen zijn
+eigen mailbox. Welke mailbox de app voor je gebruikt (`lib/mail/config.ts`):
+
+1. **Je eigen mailbox**, gekoppeld via **Account & mail** (`/account`, ook in het accountmenu
+   onder je avatar). Vul e-mailadres, wachtwoord, afzendernaam en eventueel een handtekening
+   in (servers en poorten staan onder *Geavanceerd*; standaard Private Email). **Verbinding
+   testen en opslaan** logt eerst echt in met IMAP en SMTP; pas als dat lukt wordt het
+   wachtwoord opgeslagen. *Ontkoppelen* verwijdert het record (en het wachtwoord).
+2. Anders, voor de eigenaar of het account met hetzelfde adres als `MAIL_USER`: de
+   standaard-mailbox uit de omgevingsvariabelen (zie hieronder).
+3. Anders: "niet gekoppeld", met een link naar `/account`.
+
+**Zo is het beveiligd.**
+- Het wachtwoord staat versleuteld in `user_mailboxes.wachtwoord_enc` (migratie 0021):
+  AES-256-GCM met de server-sleutel `MAIL_ENCRYPTION_KEY`, een nieuwe willekeurige IV per keer
+  en het user-id als AAD (een gekopieerde ciphertext werkt niet bij een ander account). Het
+  wachtwoord komt nooit terug naar de browser: het veld is alleen-schrijven ("•••••••• (opgeslagen)";
+  leeg laten = behouden).
+- De tabel heeft RLS aan en géén policies, en `anon`/`authenticated` hebben er geen rechten op:
+  alleen de server leest hem (service-role, altijd met het eigen user-id).
+- Servers worden eerst opgezocht; interne adressen (loopback, privé-netwerk, link-local,
+  cloud-metadata) worden geweigerd en de test verbindt met het gecontroleerde adres. Alleen
+  poorten 993/143 (IMAP, 143 alleen met STARTTLS) en 465/587 (SMTP). Max. 5 pogingen per 10
+  minuten per gebruiker.
+- De korte mailcache in de browser (badge, dashboard) heeft een sleutel per gebruiker en
+  wordt geleegd bij uitloggen.
+
+**Sleutel instellen** (eenmalig, eigenaar): `openssl rand -base64 32`, en de uitkomst als
+`MAIL_ENCRYPTION_KEY` in Vercel (Production en Preview) en in `.env.local`; daarna opnieuw
+deployen. Zonder sleutel staat koppelen uit (de pagina zegt dat). Verander je de sleutel,
+dan zijn de opgeslagen wachtwoorden onleesbaar: iedereen ziet dan op `/account` "vul het
+opnieuw in". (`sleutel_versie` is er voor een latere rotatie.)
+
 ## Mail koppelen (Namecheap Private Email)
 
-Mail is **persoonlijk**: elk teamlid ziet alleen zijn eigen mailbox. De mailbox hieronder
-(env) is die van de eigenaar en is alleen bruikbaar voor het account met hetzelfde adres
-als `MAIL_USER` of de eigenaar van het team; een ander teamlid ziet "niet gekoppeld".
+De standaard-mailbox hieronder (env) is die van de eigenaar en is alleen bruikbaar voor het
+account met hetzelfde adres als `MAIL_USER` of de eigenaar van het team, en alleen zolang
+die geen eigen mailbox heeft gekoppeld. Andere teamleden koppelen hun eigen mailbox via
+`/account` (zie hierboven).
 
 De inbox van studio-levant.nl staat op `/mail` en als widget op het dashboard; de rail toont
 het aantal ongelezen mails. Lezen, zoeken, markeren, archiveren, verwijderen (naar de
@@ -289,8 +353,9 @@ voor vandaag.
 | `MAIL_FROM_NAME` | bv. `Studio Levant` |
 | `MAIL_HANDTEKENING` | optioneel, bv. `Met vriendelijke groet,\nDaniel\nStudio Levant` |
 
-Zonder `MAIL_USER`/`MAIL_PASSWORD` tonen `/mail` en het dashboard een nette uitleg; er
-komt geen foutmelding. Het wachtwoord blijft op de server.
+Zonder `MAIL_USER`/`MAIL_PASSWORD` (en zonder eigen mailbox) tonen `/mail` en het dashboard
+een nette uitleg met een link naar `/account`; er komt geen foutmelding. Het wachtwoord
+blijft op de server.
 
 **Hoe het werkt.**
 - Elke API-route opent één IMAP-sessie en logt daarna uit (geen open verbindingen; past bij
@@ -348,8 +413,12 @@ Oude adressen blijven werken via tijdelijke redirects in `next.config.ts`: `/nie
 | `/api/agenda`, `/api/taken…`, `/api/afspraken…` | Agenda-API (503 `tabel_ontbreekt` vóór de SQL) |
 | `/mail` | Mail (`?map=`, `?uid=`, `?nieuw=1`) |
 | `/api/mail/…` | Mail-API (503 `niet_gekoppeld` zonder mail-variabelen) |
-| `/uitgaven` | Uitgaven (`?uitgave=<id>` opent het paneel, `?toevoegen=1`, `?tab=btw`) |
-| `/api/uitgaven/…` | Uitgaven-API (503 `tabel_ontbreekt`/`opslag_ontbreekt` vóór de SQL) |
+| `/boekhouding` | Boekhouding: keuze tussen Facturen en Bonnetjes & inkoopfacturen |
+| `/boekhouding/bonnetjes` | Bonnetjes & inkoopfacturen (`?uitgave=<id>` opent het paneel, `?toevoegen=1`, `?tab=btw`) |
+| `/uitgaven` | Oud adres: tijdelijke redirect naar `/boekhouding/bonnetjes` (query gaat mee) |
+| `/api/uitgaven/…` | Bonnetjes-API, o.a. `GET ?q=&jaar=&maand=&soort=&door=` (503 `tabel_ontbreekt`/`opslag_ontbreekt` vóór de SQL) |
+| `/account` | Account & mail |
+| `/api/account/profiel`, `/api/account/mailbox` | Eigen profiel wijzigen; eigen mailbox ophalen/koppelen/ontkoppelen (nooit het wachtwoord terug) |
 | `/social` | Social-media-tool (`#p=<id>` opent een project, `#nieuw` een nieuwe post) |
 | `/api/social/…`, `/social-files/…` | Social-API (spiegelt de oude Express-API) en de bestanden die slides laden |
 
@@ -373,6 +442,7 @@ node scripts/rooktest-shell.mjs http://localhost:3107 # alle pagina's -> /login,
 node scripts/test-snelinvoer.mjs                      # snelinvoer agenda (incl. zomer-/wintertijd)
 node scripts/test-uitgaven.mjs                        # uitgaven: bedragen, btw, CSV, uitlezen (nagebootst)
 node scripts/test-team.mjs                            # herkomst (CSRF), basis-URL voor mails, teambeheer-scripts
+node scripts/test-account.mjs                         # mailkluis (AES-GCM), SSRF-controle, profiel/mailbox-invoer, zoeken
 node scripts/test-brand-guard-parity.mjs              # social-port gelijk aan het origineel
 node scripts/genereer-sql-editor.mjs --controleer     # SQL-bestanden actueel
 node scripts/teamlid-toevoegen.mjs --help             # teambeheer (niet uitvoeren zonder reden)
@@ -450,7 +520,7 @@ git push -u origin dashboard
 - **Mail:** de link in een taak die met "Taak maken" uit een mail is gemaakt werkt niet meer
   zodra die mail naar een andere map is verplaatst (het uid verandert dan).
 - **Agenda:** geen herhalende afspraken (bewust, voor nu).
-- **Uitgaven:** HEIC-foto's worden opgeslagen maar niet automatisch uitgelezen en in de
+- **Bonnetjes:** HEIC-foto's worden opgeslagen maar niet automatisch uitgelezen en in de
   meeste browsers niet als voorbeeld getoond (Safari/iPhone levert bij "Foto maken" gewoon
   JPEG). Bedragen in andere valuta worden niet omgerekend. Het btw-overzicht is een indicatie.
 - **Social op de telefoon** is net als het origineel niet geoptimaliseerd voor kleine schermen.

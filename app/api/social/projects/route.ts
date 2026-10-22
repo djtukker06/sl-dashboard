@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { isFormat } from "@/lib/social/formats";
 import { readBody, requireUser, route } from "@/lib/social/http";
 import { newProjectId } from "@/lib/social/ids";
-import { listProjects, saveProject, type Project } from "@/lib/social/repo";
+import { listProjects, markeerMaker, saveProject, type Project } from "@/lib/social/repo";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -15,7 +15,7 @@ export const GET = route(async () => {
 
 // server.js:141-158
 export const POST = route(async (request: Request) => {
-  await requireUser();
+  const gebruiker = await requireUser();
   const body = await readBody(request);
   const now = new Date().toISOString();
   const p: Project = {
@@ -31,5 +31,7 @@ export const POST = route(async (request: Request) => {
     createdAt: now,
     updatedAt: now,
   };
-  return NextResponse.json(await saveProject(p));
+  const opgeslagen = await saveProject(p);
+  await markeerMaker(p.id, gebruiker.id);
+  return NextResponse.json(opgeslagen);
 });

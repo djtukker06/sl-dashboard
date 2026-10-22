@@ -13,7 +13,7 @@ export type FactuurSnapshot = {
   omzet: number;
   aantal: number;
   openAanbetalingen: number;
-  laatste: { id: string; nummer: string; klant: string; totaal: number; datum: string }[];
+  laatste: { id: string; nummer: string; klant: string; totaal: number; datum: string; door: string | null }[];
 };
 
 type Rij = {
@@ -26,6 +26,7 @@ type Rij = {
   revenue_subtotal: number | null;
   deposit_percentage?: number | null;
   remainder_of_invoice_id?: string | null;
+  created_by?: string | null;
 };
 
 export function huidigJaarNL(nu = new Date()): number {
@@ -57,7 +58,8 @@ export async function factuurSnapshot(
         nummer: f.invoice_number,
         klant: f.client_company_name || '—',
         totaal: Number(f.total || 0),
-        datum: f.issued_at || ''
+        datum: f.issued_at || '',
+        door: f.created_by ?? null
       }))
     }
   };

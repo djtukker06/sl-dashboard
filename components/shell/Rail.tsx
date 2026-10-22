@@ -13,7 +13,7 @@ function alsStijl(css: string): CSSProperties | undefined {
 // als railHtml() in lib/shell/rail.ts (die de social-module gebruikt).
 export function Rail({ account }: { account: RailAccount }) {
   return (
-    <nav className="sl-rail" aria-label="Hoofdmenu">
+    <nav className="sl-rail" aria-label="Hoofdmenu" data-gebruiker={account.id}>
       {/* Het logo brengt je altijd terug naar het dashboard. */}
       <Link className="sl-rail-logo" href="/" title="Studio Levant — Dashboard" aria-label="Naar het dashboard">
         {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -31,6 +31,9 @@ export function Rail({ account }: { account: RailAccount }) {
           <div className="sl-account-pop">
             <p className="sl-account-naam">{account.naam}</p>
             <p className="sl-account-mail">{account.email}</p>
+            <a className="sl-account-link" href="/account">
+              Account &amp; mail
+            </a>
             <a className="sl-account-link" href="/nieuw-wachtwoord">
               Wachtwoord wijzigen
             </a>

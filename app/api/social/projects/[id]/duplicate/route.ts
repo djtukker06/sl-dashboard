@@ -5,6 +5,7 @@ import {
   assetPath,
   getProject,
   listAssetObjects,
+  markeerMaker,
   readAllSlideRows,
   saveProject,
   writeSlides,
@@ -18,7 +19,7 @@ type Ctx = { params: Promise<{ id: string }> };
 
 // server.js:198-207: kopie met alle slides en beeldmateriaal, zonder versies.
 export const POST = route(async (_request: Request, { params }: Ctx) => {
-  await requireUser();
+  const gebruiker = await requireUser();
   const { id } = await params;
   const src = await getProject(id);
   const now = new Date().toISOString();
@@ -26,6 +27,7 @@ export const POST = route(async (_request: Request, { params }: Ctx) => {
   delete p.versionCount;
 
   await saveProject(p);
+  await markeerMaker(p.id, gebruiker.id);
   await writeSlides(p.id, await readAllSlideRows(src.id));
   const storage = db().storage.from(BUCKET);
   for (const o of await listAssetObjects(src.id)) {

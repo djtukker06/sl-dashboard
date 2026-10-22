@@ -3,18 +3,18 @@
 import { useEffect, useRef, useState } from 'react';
 import { useToast } from '@/components/agenda/Toast';
 import { KlantKiezer } from '@/components/agenda/KlantKiezer';
+import { Persoon } from '@/components/team/Persoon';
 import { bestandUrl, euro, uitgavenApi, UitgavenApiFout, uploadBonnetje } from '@/lib/uitgaven/client';
 import {
-  BETAALWIJZEN,
   BTW_TARIEVEN,
-  CATEGORIEEN,
+  SOORTEN,
   bedragNL,
   btwUitTotaal,
-  categorieLabel,
   isBtwTarief,
   korteDatumNL,
   leesBedrag,
   opCenten,
+  soortLabel,
   type AiVeld,
   type Leverancier,
   type Uitgave,
@@ -23,58 +23,55 @@ import {
 } from '@/lib/uitgaven/model';
 import { LeverancierVeld } from './LeverancierVeld';
 import { UgIcoon } from './Iconen';
+import { uploadNaam } from './RecenteBonnetjes';
+
+// Paneel rechts bij één upload: groot voorbeeld, downloaden en verwijderen. De gegevens
+// (leverancier, datum, bedrag, …) zijn optioneel en staan ingeklapt: ze helpen bij het
+// zoeken en de export, maar je hoeft niets in te vullen. Door Claude ingevulde velden
+// krijgen een stip.
 
 type Form = {
+  soort: string;
   datum: string;
   leverancier: string;
   omschrijving: string;
-  categorie: string;
   totaal: string;
   btwBedrag: string;
   btwTarief: string;
-  valuta: string;
   factuurnummer: string;
-  betaaldVia: string;
-  projectNotitie: string;
   notitie: string;
 };
 
 function naarForm(u: Uitgave): Form {
   return {
+    soort: u.soort ?? '',
     datum: u.datum ?? '',
     leverancier: u.leverancier,
     omschrijving: u.omschrijving,
-    categorie: u.categorie ?? '',
     totaal: u.totaal === null ? '' : bedragNL(u.totaal),
     btwBedrag: u.btwBedrag === null ? '' : bedragNL(u.btwBedrag),
     btwTarief: u.btwTarief ?? '',
-    valuta: u.valuta,
     factuurnummer: u.factuurnummer,
-    betaaldVia: u.betaaldVia ?? '',
-    projectNotitie: u.projectNotitie,
     notitie: u.notitie
   };
 }
 
-/** Form-veld ↔ AI-veld (zelfde naam, behalve betaaldVia). */
 const AI_VAN: Partial<Record<keyof Form, AiVeld>> = {
   datum: 'datum',
   leverancier: 'leverancier',
   omschrijving: 'omschrijving',
-  categorie: 'categorie',
   totaal: 'totaal',
   btwBedrag: 'btwBedrag',
   btwTarief: 'btwTarief',
-  valuta: 'valuta',
-  factuurnummer: 'factuurnummer',
-  betaaldVia: 'betaaldVia'
+  factuurnummer: 'factuurnummer'
 };
 
-/** Paneel rechts om een uitgave te controleren en te bewerken (zelfde vorm als het agenda-paneel). */
+const GEGEVENS_OPEN = 'sl-bonnetjes-gegevens';
+
 export function UitgavePaneel({
   uitgave,
   leveranciers,
-  aantalTeControleren,
+  uitlezen,
   onSluit,
   onOpgeslagen,
   onBijgewerkt,
@@ -82,16 +79,17 @@ export function UitgavePaneel({
 }: {
   uitgave: Uitgave;
   leveranciers: Leverancier[];
-  /** Andere concepten na deze (voor "Opslaan en volgende"). */
-  aantalTeControleren: number;
+  /** Het automatisch uitlezen loopt nog (net geüpload). */
+  uitlezen: boolean;
   onSluit: () => void;
-  onOpgeslagen: (u: Uitgave, volgende: boolean) => void;
+  onOpgeslagen: (u: Uitgave) => void;
   /** Bestanden of uitlezen veranderd, zonder dat het formulier is opgeslagen. */
   onBijgewerkt: (u: Uitgave) => void;
   onVerwijderd: (id: string) => void;
 }) {
   const toast = useToast();
-  const [f, setF] = useState<Form>(() => naarForm(uitgave));
+  const [begin, setBegin] = useState<Form>(() => naarForm(uitgave));
+  const [f, setF] = useState<Form>(begin);
   const [ai, setAi] = useState<Set<AiVeld>>(() => new Set(uitgave.aiVelden));
   const [klant, setKlant] = useState(uitgave.klantId ? { id: uitgave.klantId, naam: uitgave.klantNaam ?? 'Klant' } : null);
   const [bestanden, setBestanden] = useState<UitgaveBestand[]>(uitgave.bestanden);
@@ -101,17 +99,41 @@ export function UitgavePaneel({
   const [fout, setFout] = useState('');
   const [zeker, setZeker] = useState(false);
   const [weg, setWeg] = useState<string | null>(null);
+  const [gegevensOpen, setGegevensOpen] = useState(false);
   const btwAuto = useRef(false);
   const bestandKiezer = useRef<HTMLInputElement>(null);
-  const isConcept = uitgave.status === 'concept';
+  const sluitKnop = useRef<HTMLButtonElement>(null);
 
-  // Esc sluit; focus terug naar waar je was.
+  const gewijzigd =
+    (Object.keys(f) as (keyof Form)[]).some((k) => f[k] !== begin[k]) || (klant?.id ?? null) !== uitgave.klantId;
+
+  // De keuze "gegevens open/dicht" onthouden (per browser).
+  useEffect(() => {
+    try {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      if (localStorage.getItem(GEGEVENS_OPEN) === '1') setGegevensOpen(true);
+    } catch {
+      /* geen opslag */
+    }
+  }, []);
+
+  function vraagSluiten() {
+    if (gewijzigd && !window.confirm('Wijzigingen weggooien?')) return;
+    onSluit();
+  }
+  const vraagSluitenRef = useRef(vraagSluiten);
+  useEffect(() => {
+    vraagSluitenRef.current = vraagSluiten;
+  });
+
+  // Esc sluit; focus naar het paneel en daarna terug naar waar je was.
   useEffect(() => {
     const vorige = document.activeElement as HTMLElement | null;
+    sluitKnop.current?.focus({ preventScroll: true });
     function toets(e: KeyboardEvent) {
       if (e.key === 'Escape' && !e.defaultPrevented) {
         e.preventDefault();
-        onSluit();
+        vraagSluitenRef.current();
       }
     }
     document.addEventListener('keydown', toets);
@@ -119,7 +141,7 @@ export function UitgavePaneel({
       document.removeEventListener('keydown', toets);
       if (vorige && document.contains(vorige)) vorige.focus({ preventScroll: true });
     };
-  }, [onSluit]);
+  }, []);
 
   function zet<K extends keyof Form>(veld: K, waarde: Form[K]) {
     setF((x) => ({ ...x, [veld]: waarde }));
@@ -134,8 +156,8 @@ export function UitgavePaneel({
   }
 
   /** Btw uit totaal en tarief, als het btw-veld leeg is of eerder automatisch berekend. */
-  function berekenBtw(totaal = f.totaal, tarief = f.btwTarief, forceer = false) {
-    if (!forceer && f.btwBedrag && !btwAuto.current) return;
+  function berekenBtw(totaal = f.totaal, tarief = f.btwTarief) {
+    if (f.btwBedrag && !btwAuto.current) return;
     const t = leesBedrag(totaal);
     if (t === null || !isBtwTarief(tarief)) return;
     const b = btwUitTotaal(t, tarief);
@@ -144,61 +166,43 @@ export function UitgavePaneel({
     zet('btwBedrag', bedragNL(b));
   }
 
-  function kiesLeverancier(l: Leverancier) {
-    // Laatst gebruikte categorie en betaalwijze van deze leverancier voorstellen.
-    setF((x) => ({
-      ...x,
-      categorie: x.categorie || l.categorie || '',
-      betaaldVia: x.betaaldVia || l.betaaldVia || ''
-    }));
-  }
-
-  const bekende = leveranciers.find((l) => l.naam.toLowerCase() === f.leverancier.trim().toLowerCase());
-  const anderVoorstel = bekende?.categorie && f.categorie && bekende.categorie !== f.categorie ? bekende.categorie : null;
-
-  function invoer(status?: 'concept' | 'verwerkt'): UitgaveInvoer | null {
+  function invoer(): UitgaveInvoer | null {
     const totaal = f.totaal.trim() ? leesBedrag(f.totaal) : null;
     const btw = f.btwBedrag.trim() ? leesBedrag(f.btwBedrag) : null;
     if (f.totaal.trim() && totaal === null) {
+      setGegevensOpen(true);
       setFout('Het bedrag is ongeldig. Gebruik bijv. 12,50.');
       return null;
     }
     if (f.btwBedrag.trim() && btw === null) {
+      setGegevensOpen(true);
       setFout('Het btw-bedrag is ongeldig. Gebruik bijv. 2,17.');
       return null;
     }
-    if (status === 'verwerkt' && (!f.datum || totaal === null)) {
-      setFout('Vul eerst een datum en een bedrag in.');
-      return null;
-    }
     return {
+      soort: f.soort || null,
       datum: f.datum || null,
       leverancier: f.leverancier,
       omschrijving: f.omschrijving,
-      categorie: f.categorie || null,
       totaal,
       btwBedrag: btw,
       btwTarief: f.btwTarief || null,
-      valuta: f.valuta || 'EUR',
       factuurnummer: f.factuurnummer,
-      betaaldVia: f.betaaldVia || null,
       klantId: klant?.id ?? null,
-      projectNotitie: f.projectNotitie,
       notitie: f.notitie,
-      aiVelden: [...ai],
-      ...(status ? { status } : {})
+      aiVelden: [...ai]
     };
   }
 
-  async function opslaan(status?: 'concept' | 'verwerkt', volgende = false) {
+  async function opslaan() {
     setFout('');
-    const b = invoer(status);
+    const b = invoer();
     if (!b) return;
     setBezig('opslaan');
     try {
       const { uitgave: u } = await uitgavenApi.wijzig(uitgave.id, b);
-      toast(status === 'verwerkt' && isConcept ? 'Uitgave gecontroleerd en verwerkt' : 'Uitgave opgeslagen');
-      onOpgeslagen(u, volgende);
+      toast('Opgeslagen');
+      onOpgeslagen(u);
     } catch (e) {
       setFout(e instanceof Error ? e.message : 'Opslaan mislukt.');
     } finally {
@@ -210,7 +214,7 @@ export function UitgavePaneel({
     setBezig('verwijderen');
     try {
       await uitgavenApi.verwijder(uitgave.id);
-      toast('Uitgave verwijderd');
+      toast('Verwijderd');
       onVerwijderd(uitgave.id);
     } catch (e) {
       setFout(e instanceof Error ? e.message : 'Verwijderen mislukt.');
@@ -226,19 +230,24 @@ export function UitgavePaneel({
       const n = naarForm(u);
       const nieuw = new Set(ai);
       const y = { ...f };
+      const b = { ...begin };
       let aantal = 0;
       for (const veld of Object.keys(AI_VAN) as (keyof Form)[]) {
         const a = AI_VAN[veld]!;
         if (!f[veld] && n[veld] && u.aiVelden.includes(a)) {
           y[veld] = n[veld];
+          // Al opgeslagen door het uitlezen: telt niet als wijziging.
+          b[veld] = n[veld];
           nieuw.add(a);
           aantal++;
         }
       }
       setF(y);
+      setBegin(b);
+      onBijgewerkt({ ...u, aiStatus: uitgave.aiStatus });
       setAi(nieuw);
       setAiMelding(u.aiStatus === 'mislukt' ? u.aiMelding : '');
-      onBijgewerkt(u);
+      if (aantal) setGegevensOpen(true);
       if (u.aiStatus === 'klaar') toast(aantal ? `${aantal} veld${aantal === 1 ? '' : 'en'} ingevuld` : 'Niets nieuws gevonden');
     } catch (e) {
       setFout(e instanceof Error ? e.message : 'Uitlezen mislukt.');
@@ -259,7 +268,7 @@ export function UitgavePaneel({
       if (laatste) {
         setBestanden(laatste.bestanden);
         setActiefBestand(laatste.bestanden.length - 1);
-        onBijgewerkt(laatste);
+        onBijgewerkt({ ...laatste, aiStatus: uitgave.aiStatus });
       }
     } catch (err) {
       setFout(err instanceof Error ? err.message : 'Toevoegen mislukt.');
@@ -275,11 +284,20 @@ export function UitgavePaneel({
       setBestanden(u.bestanden);
       setActiefBestand(0);
       setWeg(null);
-      onBijgewerkt(u);
+      onBijgewerkt({ ...u, aiStatus: uitgave.aiStatus });
     } catch (err) {
       setFout(err instanceof Error ? err.message : 'Verwijderen mislukt.');
     } finally {
       setBezig('');
+    }
+  }
+
+  function wisselGegevens(open: boolean) {
+    setGegevensOpen(open);
+    try {
+      localStorage.setItem(GEGEVENS_OPEN, open ? '1' : '0');
+    } catch {
+      /* niet bewaren */
     }
   }
 
@@ -288,37 +306,42 @@ export function UitgavePaneel({
   const excl = totaalGetal === null ? null : opCenten(totaalGetal - btwGetal);
   const huidig = bestanden[Math.min(actiefBestand, bestanden.length - 1)];
   const isAi = (v: AiVeld) => (ai.has(v) ? ' is-ai' : '');
-  const aiTitel = 'Automatisch ingevuld — controleer even';
+  const aiTitel = 'Automatisch ingevuld';
+  const samenvatting = [f.leverancier.trim(), f.datum ? korteDatumNL(f.datum) : '', totaalGetal !== null ? euro(totaalGetal) : '']
+    .filter(Boolean)
+    .join(' · ');
 
   return (
     <>
-      <div className="ag-paneel-achter" onClick={onSluit} aria-hidden="true" />
-      <aside className="ag-paneel ug-paneel" role="dialog" aria-label="Uitgave bewerken">
+      <div className="ag-paneel-achter" onClick={vraagSluiten} aria-hidden="true" />
+      <aside className="ag-paneel ug-paneel" role="dialog" aria-modal="true" aria-labelledby="ug-paneel-titel">
         <form
           className="ag-paneel-form"
           onSubmit={(e) => {
             e.preventDefault();
-            void opslaan(isConcept ? 'verwerkt' : undefined, isConcept && aantalTeControleren > 0);
+            void opslaan();
           }}
           onKeyDown={(e) => {
             if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
               e.preventDefault();
-              void opslaan(isConcept ? 'verwerkt' : undefined, isConcept && aantalTeControleren > 0);
+              void opslaan();
             }
           }}
         >
           <header className="ag-paneel-kop">
-            <p className="db-label">
-              {isConcept ? 'Uitgave · te controleren' : 'Uitgave · verwerkt'}
-              {uitgave.bronInfo && <span className="ug-bron"> · {uitgave.bronInfo}</span>}
-            </p>
-            <button type="button" className="ag-icoonknop" aria-label="Sluiten (Esc)" title="Sluiten (Esc)" onClick={onSluit}>
+            <div className="ug-paneel-kop">
+              <p className="db-label">{soortLabel(f.soort || uitgave.soort) || 'Upload'}</p>
+              <h2 id="ug-paneel-titel" className="ug-paneel-titel">
+                {uploadNaam({ leverancier: f.leverancier.trim(), bestanden })}
+              </h2>
+            </div>
+            <button ref={sluitKnop} type="button" className="ag-icoonknop" aria-label="Sluiten (Esc)" title="Sluiten (Esc)" onClick={vraagSluiten}>
               <UgIcoon naam="kruis" />
             </button>
           </header>
 
           <div className="ag-paneel-inhoud">
-            {/* ---------- bestanden ---------- */}
+            {/* ---------- voorbeeld en bestanden ---------- */}
             <div className="ug-bestanden">
               {huidig ? (
                 <div className="ug-voorbeeld">
@@ -327,19 +350,19 @@ export function UitgavePaneel({
                   ) : huidig.type === 'image/heic' || huidig.type === 'image/heif' ? (
                     <div className="ug-voorbeeld-leeg">
                       <UgIcoon naam="beeld" grootte={26} />
-                      <span>HEIC-foto: open of download om te bekijken</span>
+                      <span>HEIC-foto: download om te bekijken</span>
                     </div>
                   ) : (
                     <a href={bestandUrl(uitgave.id, huidig.id)} target="_blank" rel="noopener noreferrer" title="Groot openen">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img key={huidig.id} src={bestandUrl(uitgave.id, huidig.id)} alt={`Bonnetje ${huidig.naam}`} />
+                      <img key={huidig.id} src={bestandUrl(uitgave.id, huidig.id)} alt={`Voorbeeld van ${huidig.naam}`} />
                     </a>
                   )}
                 </div>
               ) : (
                 <div className="ug-voorbeeld ug-voorbeeld-leeg">
                   <UgIcoon naam="bon" grootte={26} />
-                  <span>Nog geen bonnetje of factuur</span>
+                  <span>Geen bestand</span>
                 </div>
               )}
               <div className="ug-bestand-balk">
@@ -363,221 +386,190 @@ export function UitgavePaneel({
                         <a className="ug-mini-knop" href={bestandUrl(uitgave.id, b.id, true)} title="Downloaden" aria-label={`${b.naam} downloaden`}>
                           <UgIcoon naam="download" grootte={14} />
                         </a>
-                        <button type="button" className="ug-mini-knop" title="Bestand verwijderen" aria-label={`${b.naam} verwijderen`} onClick={() => setWeg(b.id)}>
-                          <UgIcoon naam="kruis" grootte={14} />
-                        </button>
+                        {bestanden.length > 1 && (
+                          <button type="button" className="ug-mini-knop" title="Bestand verwijderen" aria-label={`${b.naam} verwijderen`} onClick={() => setWeg(b.id)}>
+                            <UgIcoon naam="kruis" grootte={14} />
+                          </button>
+                        )}
                       </>
                     )}
                   </span>
                 ))}
-                <button type="button" className="ag-link-knop" disabled={!!bezig} onClick={() => bestandKiezer.current?.click()}>
-                  {bezig === 'bestand' ? 'Bezig…' : '+ Bestand'}
+                <button type="button" className="ag-link-knop" disabled={!!bezig} onClick={() => bestandKiezer.current?.click()} title="Bv. een tweede pagina">
+                  {bezig === 'bestand' ? 'Bezig…' : '+ Pagina'}
                 </button>
-                {bestanden.length > 0 && (
-                  <button type="button" className="ag-link-knop ug-uitlees-knop" disabled={!!bezig} onClick={opnieuwUitlezen} title="Vult alleen lege velden">
-                    <UgIcoon naam="vonk" grootte={14} /> {bezig === 'uitlezen' ? 'Uitlezen…' : 'Opnieuw uitlezen'}
-                  </button>
-                )}
                 <input ref={bestandKiezer} type="file" accept="image/*,application/pdf,.heic,.heif" multiple hidden onChange={bestandToevoegen} />
               </div>
             </div>
 
-            {aiMelding ? (
-              <p className="ug-melding">{aiMelding}</p>
-            ) : ai.size > 0 ? (
-              <p className="ug-ai-uitleg">
-                <span className="ug-ai-stip" aria-hidden="true" /> Velden met een stip zijn automatisch ingevuld. Controleer ze even.
+            <div className="ug-paneel-info">
+              <p className="ug-door">
+                Geüpload {uitgave.aangemaaktDoor ? 'door ' : ''}
+                <Persoon id={uitgave.aangemaaktDoor} />
+                {` · ${korteDatumNL(uitgave.aangemaakt.slice(0, 10))}`}
+                {uitgave.bronInfo && <span className="ug-bron"> · {uitgave.bronInfo}</span>}
               </p>
+              {huidig && (
+                <a className="db-knop" href={bestandUrl(uitgave.id, huidig.id, true)}>
+                  <UgIcoon naam="download" grootte={15} /> Downloaden
+                </a>
+              )}
+            </div>
+
+            {uitlezen ? (
+              <p className="ug-ai-uitleg" role="status">
+                <span className="ug-ai-stip" aria-hidden="true" /> Wordt automatisch uitgelezen…
+              </p>
+            ) : aiMelding ? (
+              <p className="ug-melding">{aiMelding}</p>
             ) : null}
 
-            {/* ---------- velden ---------- */}
-            <label className={`ag-label${isAi('leverancier')}`} title={ai.has('leverancier') ? aiTitel : undefined}>
-              Leverancier
-              <LeverancierVeld
-                waarde={f.leverancier}
-                leveranciers={leveranciers}
-                onChange={(v) => zet('leverancier', v)}
-                onKies={kiesLeverancier}
-                className="ag-veld ug-veld-groot"
-              />
-            </label>
-
-            <label className={`ag-label${isAi('omschrijving')}`} title={ai.has('omschrijving') ? aiTitel : undefined}>
-              Waarvoor
-              <input
-                className="ag-veld"
-                value={f.omschrijving}
-                maxLength={500}
-                placeholder="Bijv. Adobe Creative Cloud, treinkaartje Utrecht"
-                onChange={(e) => zet('omschrijving', e.target.value)}
-              />
-            </label>
-
-            <div className="ag-velden-2">
-              <label className={`ag-label${isAi('datum')}`} title={ai.has('datum') ? aiTitel : undefined}>
-                Datum
-                <input className="ag-veld" type="date" value={f.datum} onChange={(e) => zet('datum', e.target.value)} />
-              </label>
-              <label className={`ag-label${isAi('categorie')}`} title={ai.has('categorie') ? aiTitel : undefined}>
-                Categorie
-                <select className="ag-veld" value={f.categorie} onChange={(e) => zet('categorie', e.target.value)}>
-                  <option value="">Kies…</option>
-                  {CATEGORIEEN.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
-            {anderVoorstel && (
-              <p className="ag-uitleg">
-                Bij {bekende!.naam} gebruikte je eerder ‘{categorieLabel(anderVoorstel)}’.{' '}
-                <button type="button" className="ag-link-knop" onClick={() => zet('categorie', anderVoorstel)}>
-                  Overnemen
-                </button>
-              </p>
-            )}
-
-            <div className="ag-velden-2">
-              <label className={`ag-label${isAi('totaal')}`} title={ai.has('totaal') ? aiTitel : undefined}>
-                Bedrag incl. btw
-                <span className="ug-bedrag">
-                  <span className="ug-bedrag-valuta">{f.valuta === 'EUR' ? '€' : f.valuta}</span>
-                  <input
-                    className="ag-veld"
-                    inputMode="decimal"
-                    value={f.totaal}
-                    placeholder="0,00"
-                    onChange={(e) => zet('totaal', e.target.value)}
-                    onBlur={() => {
-                      const n = leesBedrag(f.totaal);
-                      if (n !== null) zet('totaal', bedragNL(n));
-                      berekenBtw();
-                    }}
-                  />
-                </span>
-              </label>
-              <label className={`ag-label${isAi('btwTarief')}`} title={ai.has('btwTarief') ? aiTitel : undefined}>
-                Btw-tarief
-                <select
-                  className="ag-veld"
-                  value={f.btwTarief}
-                  onChange={(e) => {
-                    zet('btwTarief', e.target.value);
-                    berekenBtw(f.totaal, e.target.value);
-                  }}
-                >
-                  <option value="">Kies…</option>
-                  {BTW_TARIEVEN.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
-
-            <div className="ag-velden-2">
-              <label className={`ag-label${isAi('btwBedrag')}`} title={ai.has('btwBedrag') ? aiTitel : undefined}>
-                Btw-bedrag
-                <span className="ug-bedrag">
-                  <span className="ug-bedrag-valuta">{f.valuta === 'EUR' ? '€' : f.valuta}</span>
-                  <input
-                    className="ag-veld"
-                    inputMode="decimal"
-                    value={f.btwBedrag}
-                    placeholder="0,00"
-                    onChange={(e) => {
-                      btwAuto.current = false;
-                      zet('btwBedrag', e.target.value);
-                    }}
-                    onBlur={() => {
-                      const n = leesBedrag(f.btwBedrag);
-                      if (n !== null) zet('btwBedrag', bedragNL(n));
-                    }}
-                  />
-                </span>
-              </label>
-              <div className="ag-label">
-                Excl. btw
-                <div className="ug-excl">
-                  <span>{excl === null ? '—' : euro(excl, f.valuta)}</span>
-                  {isBtwTarief(f.btwTarief) && totaalGetal !== null && (
-                    <button type="button" className="ag-link-knop" onClick={() => berekenBtw(f.totaal, f.btwTarief, true)}>
-                      Btw berekenen
-                    </button>
-                  )}
+            {/* ---------- gegevens (optioneel) ---------- */}
+            <details className="ug-gegevens" open={gegevensOpen} onToggle={(e) => wisselGegevens((e.target as HTMLDetailsElement).open)}>
+              <summary>
+                <span className="ug-gegevens-titel">Gegevens (optioneel)</span>
+                {!gegevensOpen && samenvatting && <span className="ug-gegevens-kort">{samenvatting}</span>}
+              </summary>
+              <fieldset className="ug-gegevens-velden" disabled={uitlezen}>
+                {ai.size > 0 && (
+                  <p className="ug-ai-uitleg">
+                    <span className="ug-ai-stip" aria-hidden="true" /> Velden met een stip zijn automatisch ingevuld.
+                  </p>
+                )}
+                <div className="ag-label" role="group" aria-label="Soort">
+                  <span className="ug-label-tekst">Soort</span>
+                  <div className="ag-segment ug-segment-wrap">
+                    {SOORTEN.map((s) => (
+                      <button
+                        key={s.id}
+                        type="button"
+                        aria-pressed={f.soort === s.id}
+                        className={f.soort === s.id ? 'is-aan' : ''}
+                        onClick={() => zet('soort', f.soort === s.id ? '' : s.id)}
+                      >
+                        {s.label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
-              </div>
-            </div>
 
-            <div className="ag-label" role="group" aria-label="Betaald via">
-              <span className={`ug-label-tekst${isAi('betaaldVia')}`} title={ai.has('betaaldVia') ? aiTitel : undefined}>
-                Betaald via
-              </span>
-              <div className="ag-segment ug-segment-wrap">
-                {BETAALWIJZEN.map((b) => (
-                  <button
-                    key={b.id}
-                    type="button"
-                    aria-pressed={f.betaaldVia === b.id}
-                    className={f.betaaldVia === b.id ? 'is-aan' : ''}
-                    onClick={() => zet('betaaldVia', f.betaaldVia === b.id ? '' : b.id)}
-                  >
-                    {b.label}
+                <label className={`ag-label${isAi('leverancier')}`} title={ai.has('leverancier') ? aiTitel : undefined}>
+                  Leverancier
+                  <LeverancierVeld
+                    waarde={f.leverancier}
+                    leveranciers={leveranciers}
+                    onChange={(v) => zet('leverancier', v)}
+                    onKies={() => {}}
+                    className="ag-veld"
+                  />
+                </label>
+
+                <label className={`ag-label${isAi('omschrijving')}`} title={ai.has('omschrijving') ? aiTitel : undefined}>
+                  Omschrijving
+                  <input
+                    className="ag-veld"
+                    value={f.omschrijving}
+                    maxLength={500}
+                    placeholder="Bijv. Adobe Creative Cloud, treinkaartje Utrecht"
+                    onChange={(e) => zet('omschrijving', e.target.value)}
+                  />
+                </label>
+
+                <div className="ag-velden-2">
+                  <label className={`ag-label${isAi('datum')}`} title={ai.has('datum') ? aiTitel : undefined}>
+                    Datum
+                    <input className="ag-veld" type="date" value={f.datum} onChange={(e) => zet('datum', e.target.value)} />
+                  </label>
+                  <label className={`ag-label${isAi('factuurnummer')}`} title={ai.has('factuurnummer') ? aiTitel : undefined}>
+                    Factuurnummer
+                    <input className="ag-veld" value={f.factuurnummer} maxLength={100} onChange={(e) => zet('factuurnummer', e.target.value)} />
+                  </label>
+                </div>
+
+                <div className="ag-velden-2">
+                  <label className={`ag-label${isAi('totaal')}`} title={ai.has('totaal') ? aiTitel : undefined}>
+                    Bedrag incl. btw
+                    <span className="ug-bedrag">
+                      <span className="ug-bedrag-valuta">{uitgave.valuta === 'EUR' ? '€' : uitgave.valuta}</span>
+                      <input
+                        className="ag-veld"
+                        inputMode="decimal"
+                        value={f.totaal}
+                        placeholder="0,00"
+                        onChange={(e) => zet('totaal', e.target.value)}
+                        onBlur={() => {
+                          const n = leesBedrag(f.totaal);
+                          if (n !== null) zet('totaal', bedragNL(n));
+                          berekenBtw();
+                        }}
+                      />
+                    </span>
+                  </label>
+                  <label className={`ag-label${isAi('btwTarief')}`} title={ai.has('btwTarief') ? aiTitel : undefined}>
+                    Btw-tarief
+                    <select
+                      className="ag-veld"
+                      value={f.btwTarief}
+                      onChange={(e) => {
+                        zet('btwTarief', e.target.value);
+                        berekenBtw(f.totaal, e.target.value);
+                      }}
+                    >
+                      <option value="">—</option>
+                      {BTW_TARIEVEN.map((t) => (
+                        <option key={t.id} value={t.id}>
+                          {t.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+
+                <div className="ag-velden-2">
+                  <label className={`ag-label${isAi('btwBedrag')}`} title={ai.has('btwBedrag') ? aiTitel : undefined}>
+                    Btw-bedrag
+                    <span className="ug-bedrag">
+                      <span className="ug-bedrag-valuta">{uitgave.valuta === 'EUR' ? '€' : uitgave.valuta}</span>
+                      <input
+                        className="ag-veld"
+                        inputMode="decimal"
+                        value={f.btwBedrag}
+                        placeholder="0,00"
+                        onChange={(e) => {
+                          btwAuto.current = false;
+                          zet('btwBedrag', e.target.value);
+                        }}
+                        onBlur={() => {
+                          const n = leesBedrag(f.btwBedrag);
+                          if (n !== null) zet('btwBedrag', bedragNL(n));
+                        }}
+                      />
+                    </span>
+                  </label>
+                  <div className="ag-label">
+                    Excl. btw
+                    <div className="ug-excl">
+                      <span>{excl === null ? '—' : euro(excl, uitgave.valuta)}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="ag-label">
+                  Klant (optioneel)
+                  <KlantKiezer waarde={klant} onChange={setKlant} />
+                </div>
+                <label className="ag-label">
+                  Notitie
+                  <textarea className="ag-veld" rows={3} value={f.notitie} maxLength={10000} onChange={(e) => zet('notitie', e.target.value)} />
+                </label>
+
+                {bestanden.length > 0 && (
+                  <button type="button" className="ag-link-knop ug-uitlees-knop" disabled={!!bezig} onClick={opnieuwUitlezen} title="Vult alleen lege velden">
+                    <UgIcoon naam="vonk" grootte={14} /> {bezig === 'uitlezen' ? 'Uitlezen…' : 'Opnieuw automatisch uitlezen'}
                   </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="ag-velden-2">
-              <label className={`ag-label${isAi('factuurnummer')}`} title={ai.has('factuurnummer') ? aiTitel : undefined}>
-                Factuurnummer
-                <input className="ag-veld" value={f.factuurnummer} maxLength={100} onChange={(e) => zet('factuurnummer', e.target.value)} />
-              </label>
-              <label className={`ag-label${isAi('valuta')}`} title={ai.has('valuta') ? aiTitel : undefined}>
-                Valuta
-                <input
-                  className="ag-veld"
-                  value={f.valuta}
-                  maxLength={3}
-                  autoCapitalize="characters"
-                  onChange={(e) => zet('valuta', e.target.value.toUpperCase().replace(/[^A-Z]/g, ''))}
-                />
-              </label>
-            </div>
-            {f.valuta && f.valuta !== 'EUR' && (
-              <p className="ag-uitleg">Andere valuta telt niet mee in de totalen en de btw. Vul liever het bedrag in euro’s in dat van je rekening ging.</p>
-            )}
-
-            <div className="ag-label">
-              Klant (optioneel)
-              <KlantKiezer waarde={klant} onChange={setKlant} />
-            </div>
-            <label className="ag-label">
-              Project (optioneel)
-              <input
-                className="ag-veld"
-                value={f.projectNotitie}
-                maxLength={300}
-                placeholder="Bijv. huisstijl Jansen"
-                onChange={(e) => zet('projectNotitie', e.target.value)}
-              />
-            </label>
-            <label className="ag-label">
-              Notitie
-              <textarea className="ag-veld" rows={3} value={f.notitie} maxLength={10000} onChange={(e) => zet('notitie', e.target.value)} />
-            </label>
-
-            {!isConcept && (
-              <p className="ag-uitleg">
-                Verwerkt{uitgave.gewijzigd ? ` · laatst gewijzigd ${korteDatumNL(uitgave.gewijzigd.slice(0, 10))}` : ''}.{' '}
-                <button type="button" className="ag-link-knop" disabled={!!bezig} onClick={() => opslaan('concept')}>
-                  Terug naar concept
-                </button>
-              </p>
-            )}
+                )}
+              </fieldset>
+            </details>
 
             {fout && (
               <p className="ag-fout" role="alert">
@@ -589,7 +581,7 @@ export function UitgavePaneel({
           <footer className="ag-paneel-voet">
             {zeker ? (
               <span className="ag-zeker">
-                <span>Uitgave en bestanden verwijderen?</span>
+                <span>Bestand(en) definitief verwijderen?</span>
                 <button type="button" className="db-knop ag-knop-gevaar" disabled={!!bezig} onClick={verwijder}>
                   Ja, verwijderen
                 </button>
@@ -603,19 +595,11 @@ export function UitgavePaneel({
                   Verwijderen
                 </button>
                 <span className="ag-paneel-acties">
-                  {isConcept && (
-                    <button type="button" className="db-knop" disabled={!!bezig} onClick={() => opslaan('concept')} title="Opslaan, nog niet verwerkt">
-                      Bewaar concept
-                    </button>
-                  )}
-                  <button type="submit" className="db-knop db-knop-primair" disabled={!!bezig} title="⌘ Enter">
-                    {bezig === 'opslaan'
-                      ? 'Bezig…'
-                      : isConcept
-                        ? aantalTeControleren > 0
-                          ? 'Klopt, volgende'
-                          : 'Klopt, verwerken'
-                        : 'Opslaan'}
+                  <button type="button" className="db-knop" onClick={vraagSluiten}>
+                    Sluiten
+                  </button>
+                  <button type="submit" className="db-knop db-knop-primair" disabled={!!bezig || uitlezen || !gewijzigd} title="⌘ Enter">
+                    {bezig === 'opslaan' ? 'Bezig…' : 'Opslaan'}
                   </button>
                 </span>
               </>

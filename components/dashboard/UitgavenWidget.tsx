@@ -1,34 +1,27 @@
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
-import { tabelOntbreekt } from '@/lib/db/ontbreekt';
-import { vandaag as vandaagNL } from '@/lib/agenda/datum';
-import { categorieLabel, korteDatumNL, periodeRond, totalen } from '@/lib/uitgaven/model';
-import { KOLOMMEN, naarUitgave, type UitgaveRij } from '@/lib/uitgaven/repo';
-import { formatEuro } from '@/lib/format';
+import { UitgavenFout } from '@/lib/uitgaven/api';
+import { laatsteUitgaven } from '@/lib/uitgaven/repo';
+import type { Uitgave } from '@/lib/uitgaven/model';
 import { BonnetjeKnop } from '@/components/uitgaven/BonnetjeKnop';
+import { RecenteBonnetjes } from '@/components/uitgaven/RecenteBonnetjes';
 import { Kaart, KaartMelding } from './Kaart';
 import { OpnieuwKnop } from './OpnieuwKnop';
 
-// Uitgaven-snapshot: totaal deze maand, aantal concepten om te controleren en de laatste 3.
-// Leest met de gebruikerscliënt (RLS), ná de sessiecheck van de dashboardpagina.
+// "Laatste bonnetjes": de vier nieuwste uploads van het hele team, met wie ze uploadde.
+// Leest met de gebruikerscliënt (RLS), ná de teamlidcontrole van de dashboardpagina.
 export async function UitgavenWidget() {
   const sb = await createClient();
-  const maand = periodeRond('maand', vandaagNL());
-  const [deze, concept, laatste] = await Promise.all([
-    sb.from('expenses').select('total_amount,vat_amount,currency').gte('expense_date', maand.van).lte('expense_date', maand.tot).limit(3000),
-    sb.from('expenses').select('id', { count: 'exact', head: true }).eq('status', 'concept'),
-    sb.from('expenses').select(KOLOMMEN).order('created_at', { ascending: false }).limit(3)
-  ]);
-  const fout = deze.error || concept.error || laatste.error;
-
-  if (fout) {
-    const nietIngericht = tabelOntbreekt(fout);
-    if (!nietIngericht) console.error('[uitgaven] widget', fout.message);
+  let recent: Uitgave[];
+  try {
+    recent = await laatsteUitgaven(sb, 4);
+  } catch (e) {
+    const nietIngericht = e instanceof UitgavenFout && e.code === 'tabel_ontbreekt';
     return (
-      <Kaart label="Uitgaven" href="/uitgaven" className="db-smal db-uitgaven">
+      <Kaart label="Laatste bonnetjes" href="/boekhouding/bonnetjes" className="db-smal db-uitgaven">
         <KaartMelding
           toon={nietIngericht ? 'setup' : 'fout'}
-          titel={nietIngericht ? 'Uitgaven nog niet ingericht' : 'Uitgaven nu niet bereikbaar'}
+          titel={nietIngericht ? 'Bonnetjes nog niet ingericht' : 'Bonnetjes nu niet bereikbaar'}
           actie={<OpnieuwKnop />}
         >
           {nietIngericht
@@ -39,66 +32,21 @@ export async function UitgavenWidget() {
     );
   }
 
-  const t = totalen(
-    ((deze.data ?? []) as { total_amount: number | string | null; vat_amount: number | string | null; currency: string }[]).map((r) => ({
-      totaal: r.total_amount === null ? null : Number(r.total_amount),
-      btwBedrag: r.vat_amount === null ? null : Number(r.vat_amount),
-      valuta: r.currency
-    }))
-  );
-  const aantalConcept = concept.count ?? 0;
-  const recent = ((laatste.data ?? []) as unknown as UitgaveRij[]).map(naarUitgave);
-  const maandNaam = new Intl.DateTimeFormat('nl-NL', { month: 'long', timeZone: 'UTC' }).format(new Date(`${maand.van}T12:00:00Z`));
-
   return (
-    <Kaart label="Uitgaven" href="/uitgaven" className="db-smal db-uitgaven">
-      <div className="db-omzet">
-        <p className="db-omzet-bedrag">
-          <span className="db-euro">€</span>
-          {formatEuro(t.incl)}
-        </p>
-        <p className="db-sub">Uitgaven {maandNaam} · incl. btw</p>
-      </div>
-      <dl className="db-cijfers">
-        <div>
-          <dt>Btw deze maand</dt>
-          <dd>{formatEuro(t.btw)}</dd>
-        </div>
-        <div>
-          <dt>Te controleren</dt>
-          <dd>
-            {aantalConcept ? (
-              <Link className="ug-widget-concept" href="/uitgaven">
-                {aantalConcept}
-              </Link>
-            ) : (
-              0
-            )}
-          </dd>
-        </div>
-      </dl>
+    <Kaart label="Laatste bonnetjes" href="/boekhouding/bonnetjes" className="db-smal db-uitgaven">
       {recent.length === 0 ? (
-        <KaartMelding titel="Nog geen uitgaven" actie={<BonnetjeKnop className="db-knop" />}>
-          Maak een foto van een bonnetje of sleep een factuur in Uitgaven.
+        <KaartMelding titel="Nog geen bonnetjes" actie={<BonnetjeKnop className="db-knop" label="Bonnetje uploaden" />}>
+          Maak een foto van een bonnetje of upload een inkoopfactuur (PDF).
         </KaartMelding>
       ) : (
-        <ul className="db-lijst">
-          {recent.map((u) => (
-            <li key={u.id}>
-              <Link className="db-rij" href={`/uitgaven?uitgave=${u.id}`}>
-                <span className="db-rij-hoofd">
-                  <span className="db-rij-titel">{u.leverancier || 'Leverancier onbekend'}</span>
-                  <span className="db-rij-meta">
-                    {[u.datum ? korteDatumNL(u.datum) : 'zonder datum', categorieLabel(u.categorie), u.status === 'concept' ? 'controleren' : '']
-                      .filter(Boolean)
-                      .join(' · ')}
-                  </span>
-                </span>
-                <span className="db-rij-bedrag">{u.totaal === null ? '—' : `€ ${formatEuro(u.totaal)}`}</span>
-              </Link>
-            </li>
-          ))}
-        </ul>
+        <>
+          <RecenteBonnetjes uitgaven={recent} />
+          <p className="ug-widget-voet">
+            <Link className="db-kaart-link" href="/boekhouding/bonnetjes">
+              Zoeken in alle bonnetjes <span aria-hidden="true">→</span>
+            </Link>
+          </p>
+        </>
       )}
     </Kaart>
   );

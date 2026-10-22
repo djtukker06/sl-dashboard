@@ -36,6 +36,14 @@ export const BETAALWIJZEN = [
 ] as const;
 export type Betaalwijze = (typeof BETAALWIJZEN)[number]['id'];
 
+/** Wat voor document het is (alleen om te filteren; optioneel). */
+export const SOORTEN = [
+  { id: 'bonnetje', label: 'Bonnetje', meervoud: 'Bonnetjes' },
+  { id: 'inkoopfactuur', label: 'Inkoopfactuur', meervoud: 'Inkoopfacturen' },
+  { id: 'overig', label: 'Overig', meervoud: 'Overig' }
+] as const;
+export type Soort = (typeof SOORTEN)[number]['id'];
+
 export const STATUSSEN = [
   { id: 'concept', label: 'Te controleren' },
   { id: 'verwerkt', label: 'Verwerkt' }
@@ -64,12 +72,14 @@ export const MAX_BESTAND_BYTES = 25 * 1024 * 1024;
 export const isCategorie = (v: unknown): v is Categorie => CATEGORIEEN.some((c) => c.id === v);
 export const isBtwTarief = (v: unknown): v is BtwTarief => BTW_TARIEVEN.some((c) => c.id === v);
 export const isBetaalwijze = (v: unknown): v is Betaalwijze => BETAALWIJZEN.some((c) => c.id === v);
+export const isSoort = (v: unknown): v is Soort => SOORTEN.some((c) => c.id === v);
 export const isStatus = (v: unknown): v is Status => STATUSSEN.some((c) => c.id === v);
 export const isBestandsType = (v: unknown): v is BestandsType => (TOEGESTANE_TYPES as readonly string[]).includes(String(v));
 
 export const categorieLabel = (id: string | null | undefined) => CATEGORIEEN.find((c) => c.id === id)?.label ?? '';
 export const tariefLabel = (id: string | null | undefined) => BTW_TARIEVEN.find((c) => c.id === id)?.label ?? '';
 export const betaalLabel = (id: string | null | undefined) => BETAALWIJZEN.find((c) => c.id === id)?.label ?? '';
+export const soortLabel = (id: string | null | undefined) => SOORTEN.find((c) => c.id === id)?.label ?? '';
 
 // ---------- vormen (API ↔ client) ----------
 
@@ -103,6 +113,10 @@ export interface Uitgave {
   bron: 'upload' | 'mail' | 'handmatig';
   bronInfo: string;
   bestanden: UitgaveBestand[];
+  /** Bonnetje / inkoopfactuur (null = onbekend; zie afgeleideSoort). */
+  soort: Soort | null;
+  /** Wie het uploadde (auth user-id), of null. */
+  aangemaaktDoor: string | null;
   aangemaakt: string;
   gewijzigd: string;
 }
@@ -123,6 +137,7 @@ export interface UitgaveInvoer {
   projectNotitie?: string;
   notitie?: string;
   status?: string;
+  soort?: string | null;
   aiVelden?: string[];
 }
 
@@ -629,4 +644,51 @@ export function vindLeverancier(naam: string, bekend: Leverancier[]): Leverancie
     }) ??
     null
   );
+}
+
+// ---------- soort en zoeken (Bonnetjes & inkoopfacturen) ----------
+
+/** Soort als die niet is ingevuld: een PDF is meestal een inkoopfactuur, een foto een bonnetje. */
+export function afgeleideSoort(bestanden: Pick<UitgaveBestand, 'type'>[]): Soort | null {
+  if (!bestanden.length) return null;
+  return bestanden.some((b) => b.type === 'application/pdf') ? 'inkoopfactuur' : 'bonnetje';
+}
+
+export function maandNaam(m: number): string {
+  return MAANDEN[m - 1] ?? '';
+}
+
+export interface ZoekWoord {
+  /** Tekst zonder tekens die in een PostgREST-filter iets betekenen (leeg = alleen bedrag). */
+  tekst: string;
+  /** Als het woord een bedrag is ("12,50", "€12", "12.5"): het bedrag. */
+  bedrag: number | null;
+}
+
+/**
+ * Zoekopdracht → losse woorden (alle woorden moeten ergens voorkomen). Een woord dat op
+ * een bedrag lijkt, zoekt ook op het totaalbedrag. Maximaal 6 woorden van 60 tekens.
+ */
+export function zoekWoorden(q: unknown): ZoekWoord[] {
+  if (typeof q !== 'string') return [];
+  const uit: ZoekWoord[] = [];
+  for (const ruw of q.trim().split(/\s+/).slice(0, 6)) {
+    const woord = ruw.slice(0, 60);
+    const bedrag = /^[€$]?-?\d[\d.,]*$|^-?\d[\d.,]*€$/.test(woord) ? leesBedrag(woord) : null;
+    const tekst = woord.replace(/[,()"'\\*%_:;]/g, '').trim();
+    if (!tekst && bedrag === null) continue;
+    uit.push({ tekst: tekst.length >= 1 ? tekst : '', bedrag });
+  }
+  return uit;
+}
+
+/** Jaar (+ maand) → periode [van, tot]; null zonder jaar. */
+export function periodeVan(jaar: number | null, maand: number | null): { van: string; tot: string } | null {
+  if (!jaar || !Number.isInteger(jaar) || jaar < 2000 || jaar > 2100) return null;
+  if (maand && Number.isInteger(maand) && maand >= 1 && maand <= 12) {
+    const mm = String(maand).padStart(2, '0');
+    const laatste = new Date(Date.UTC(jaar, maand, 0)).getUTCDate();
+    return { van: `${jaar}-${mm}-01`, tot: `${jaar}-${mm}-${String(laatste).padStart(2, '0')}` };
+  }
+  return { van: `${jaar}-01-01`, tot: `${jaar}-12-31` };
 }

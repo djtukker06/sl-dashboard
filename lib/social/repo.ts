@@ -120,6 +120,15 @@ export async function saveProject(p: Project): Promise<Project> {
   return p;
 }
 
+/**
+ * "Aangemaakt door" op een nieuw project (de service-role zet geen auth.uid()). Best effort:
+ * vóór migratie 0021 bestaat de kolom nog niet, en dan gebeurt er niets.
+ */
+export async function markeerMaker(pid: string, userId: string): Promise<void> {
+  const { error } = await db().from("social_projects").update({ created_by: userId }).eq("id", pid).is("created_by", null);
+  if (error && error.code !== "42703" && error.code !== "PGRST204") console.error("[social] maker vastleggen", error.message);
+}
+
 /** server.js:131-139: lijst zonder verwijderde projecten, nieuwste eerst. */
 export async function listProjects() {
   const { data, error } = await db()

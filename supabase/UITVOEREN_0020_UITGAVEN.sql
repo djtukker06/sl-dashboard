@@ -444,6 +444,20 @@ begin
       alter table public.expenses
         add column if not exists soort text check (soort in ('bonnetje', 'inkoopfactuur', 'overig'))
     $sql$;
+    -- Bestaande uploads een soort geven (PDF = inkoopfactuur, foto = bonnetje), zodat het
+    -- filter "Bonnetjes / Inkoopfacturen" ook de oude uploads vindt. Alleen lege waarden.
+    if to_regclass('public.expense_files') is not null then
+      execute $sql$
+        update public.expenses e
+        set soort = case
+          when exists (select 1 from public.expense_files f where f.expense_id = e.id and f.mime_type = 'application/pdf')
+            then 'inkoopfactuur'
+          else 'bonnetje'
+        end
+        where e.soort is null
+          and exists (select 1 from public.expense_files f where f.expense_id = e.id)
+      $sql$;
+    end if;
   end if;
 end
 $$;

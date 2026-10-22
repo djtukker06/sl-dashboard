@@ -11,8 +11,7 @@ export class MailFout extends Error {
   }
 }
 
-export const NIET_GEKOPPELD =
-  'Mail is nog niet gekoppeld. Zet MAIL_USER en MAIL_PASSWORD in de omgevingsvariabelen (zie README).';
+export const NIET_GEKOPPELD = 'Je mailbox is nog niet gekoppeld. Koppel hem via Account & mail (/account).';
 
 /**
  * Zet een fout van imapflow/nodemailer/het netwerk om naar een MailFout. Alleen de code en
@@ -40,7 +39,7 @@ export function naarMailFout(e: unknown, context: 'imap' | 'smtp' = 'imap'): Mai
     return new MailFout(
       502,
       'inloggen_mislukt',
-      'Inloggen bij de mailserver mislukt. Controleer MAIL_USER en MAIL_PASSWORD.'
+      'Inloggen bij de mailserver mislukt. Controleer het e-mailadres en wachtwoord (Account & mail).'
     );
   }
 

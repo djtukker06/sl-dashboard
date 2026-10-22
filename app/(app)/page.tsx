@@ -73,12 +73,12 @@ export default async function DashboardPage() {
           <SocialWidget lid={lid} />
         </Suspense>
 
-        {/* Facturen en uitgaven onder elkaar naast de posts. */}
+        {/* Facturen en de laatste bonnetjes onder elkaar naast de posts. */}
         <div className="db-smal db-stapel">
           <Suspense fallback={<KaartSkelet label="Facturen" className="db-facturen" />}>
             <FacturenWidget />
           </Suspense>
-          <Suspense fallback={<KaartSkelet label="Uitgaven" className="db-uitgaven" />}>
+          <Suspense fallback={<KaartSkelet label="Laatste bonnetjes" className="db-uitgaven" />}>
             <UitgavenWidget />
           </Suspense>
         </div>

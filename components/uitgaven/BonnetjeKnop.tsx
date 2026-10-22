@@ -5,11 +5,11 @@ import { useRouter } from 'next/navigation';
 import { uploadBonnetje, type UploadFase } from '@/lib/uitgaven/client';
 
 /**
- * "Bonnetje toevoegen" op het dashboard: opent direct de bestandskiezer (op een telefoon
- * ook de camera), uploadt en leest uit, en opent daarna de uitgave om te controleren.
- * Meerdere bestanden: daarna naar /uitgaven, waar ze als concept klaarstaan.
+ * "Bonnetje uploaden" (dashboard, /boekhouding): opent direct de bestandskiezer (op een
+ * telefoon ook de camera), uploadt en leest uit, en opent daarna het bonnetje in
+ * Bonnetjes & inkoopfacturen. Meerdere bestanden: daarna naar de lijst.
  */
-export function BonnetjeKnop({ className = 'db-knop' }: { className?: string }) {
+export function BonnetjeKnop({ className = 'db-knop', label = '+ Bonnetje' }: { className?: string; label?: string }) {
   const router = useRouter();
   const kiezer = useRef<HTMLInputElement>(null);
   const [fase, setFase] = useState<UploadFase | null>(null);
@@ -26,23 +26,23 @@ export function BonnetjeKnop({ className = 'db-knop' }: { className?: string }) 
         const u = await uploadBonnetje(f, { onFase: setFase });
         ids.push(u.id);
       }
-      router.push(ids.length === 1 ? `/uitgaven?uitgave=${ids[0]}` : '/uitgaven');
+      router.push(ids.length === 1 ? `/boekhouding/bonnetjes?uitgave=${ids[0]}` : '/boekhouding/bonnetjes');
     } catch (err) {
-      setFout(err instanceof Error ? err.message : 'Toevoegen mislukt.');
+      setFout(err instanceof Error ? err.message : 'Uploaden mislukt.');
       setFase(null);
-      if (ids.length) router.push('/uitgaven');
+      if (ids.length) router.push('/boekhouding/bonnetjes');
     }
   }
 
   const tekst =
-    fase === 'uploaden' || fase === 'voorbereiden' ? 'Uploaden…' : fase === 'uitlezen' ? 'Uitlezen…' : fase === 'klaar' ? 'Openen…' : '+ Bonnetje';
+    fase === 'uploaden' || fase === 'voorbereiden' ? 'Uploaden…' : fase === 'uitlezen' ? 'Uitlezen…' : fase === 'klaar' ? 'Openen…' : label;
   return (
     <>
       <button
         type="button"
         className={className}
         disabled={fase !== null}
-        title={fout || 'Bonnetje of betaalde factuur toevoegen'}
+        title={fout || 'Bonnetje of inkoopfactuur uploaden (foto of PDF)'}
         aria-describedby={fout ? 'bonnetje-fout' : undefined}
         onClick={() => kiezer.current?.click()}
       >

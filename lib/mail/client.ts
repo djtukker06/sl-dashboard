@@ -120,9 +120,23 @@ export async function downloadBijlage(url: string, naam: string): Promise<void> 
 
 const CACHE_MS = 60_000;
 
+/**
+ * Cache-sleutel per gebruiker (data-gebruiker op de rail): wie na een ander teamlid op
+ * dezelfde computer inlogt, ziet nooit diens mail uit de cache. Uitloggen leegt alle
+ * "sl-"-sleutels (public/shell/shell.js).
+ */
+function perGebruiker(sleutel: string): string {
+  try {
+    const id = document.querySelector('.sl-rail[data-gebruiker]')?.getAttribute('data-gebruiker');
+    return id ? `${sleutel}:${id}` : sleutel;
+  } catch {
+    return sleutel;
+  }
+}
+
 export function leesCache<T>(sleutel: string, maxLeeftijd = CACHE_MS): T | null {
   try {
-    const ruw = sessionStorage.getItem(sleutel);
+    const ruw = sessionStorage.getItem(perGebruiker(sleutel));
     if (!ruw) return null;
     const { t, v } = JSON.parse(ruw) as { t: number; v: T };
     return Date.now() - t < maxLeeftijd ? v : null;
@@ -133,7 +147,7 @@ export function leesCache<T>(sleutel: string, maxLeeftijd = CACHE_MS): T | null 
 
 export function schrijfCache(sleutel: string, v: unknown) {
   try {
-    sessionStorage.setItem(sleutel, JSON.stringify({ t: Date.now(), v }));
+    sessionStorage.setItem(perGebruiker(sleutel), JSON.stringify({ t: Date.now(), v }));
   } catch {
     /* privémodus of vol: geen cache */
   }

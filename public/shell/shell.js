@@ -22,7 +22,19 @@
   // ---- mail-badge: aantal ongelezen in de inbox op het Mail-item van de rail.
   // /api/mail/status opent een IMAP-verbinding; daarom 60 s cache in sessionStorage
   // (gedeeld met de mailpagina en de dashboard-widget, die "sl-mail-ongelezen" sturen).
-  const MAIL_CACHE = "sl-mail-status";
+  // Per gebruiker (data-gebruiker op de rail): wie op dezelfde computer inlogt als een
+  // ander teamlid, ziet nooit diens aantal. Bij uitloggen wordt de cache geleegd.
+  const gebruiker = document.querySelector(".sl-rail[data-gebruiker]")?.getAttribute("data-gebruiker") || "";
+  const MAIL_CACHE = gebruiker ? `sl-mail-status:${gebruiker}` : "sl-mail-status";
+  document.addEventListener("submit", (e) => {
+    const form = e.target;
+    if (!(form instanceof HTMLFormElement) || !/\/auth\/uitloggen$/.test(form.getAttribute("action") || "")) return;
+    try {
+      for (const k of Object.keys(sessionStorage)) if (k.startsWith("sl-")) sessionStorage.removeItem(k);
+    } catch {
+      /* geen opslag */
+    }
+  });
   const MAIL_MS = 60_000;
   const leesStatus = () => {
     try {

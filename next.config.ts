@@ -48,7 +48,11 @@ const nextConfig: NextConfig = {
       { source: '/', has: [{ type: 'query', key: 'jaar' }], destination: '/facturen', permanent: false },
       { source: '/nieuwe-factuur', destination: '/facturen/nieuwe-factuur', permanent: false },
       { source: '/klanten/:path*', destination: '/facturen/klanten/:path*', permanent: false },
-      { source: '/prijsopgaven/:path*', destination: '/facturen/prijsopgaven/:path*', permanent: false }
+      { source: '/prijsopgaven/:path*', destination: '/facturen/prijsopgaven/:path*', permanent: false },
+      // Uitgaven is sinds de tab Boekhouding "Bonnetjes & inkoopfacturen" (?uitgave=, ?toevoegen=1
+      // en ?tab=btw gaan vanzelf mee).
+      { source: '/uitgaven', destination: '/boekhouding/bonnetjes', permanent: false },
+      { source: '/uitgaven/:path*', destination: '/boekhouding/bonnetjes', permanent: false }
     ];
   }
 };

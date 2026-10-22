@@ -12,6 +12,8 @@ export async function metImap<T>(cfg: MailConfig | null, fn: (client: ImapFlow) 
     host: cfg.imapHost,
     port: cfg.imapPort,
     secure: cfg.imapPort === 993,
+    // Poort 143: STARTTLS verplicht, zodat het wachtwoord nooit onversleuteld over de lijn gaat.
+    ...(cfg.imapPort === 993 ? {} : { doSTARTTLS: true }),
     auth: { user: cfg.user, pass: cfg.password },
     logger: false,
     disableAutoIdle: true,

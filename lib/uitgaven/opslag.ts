@@ -78,6 +78,20 @@ export async function bekijkUrl(pad: string, opties: { download?: string; second
   return data.signedUrl;
 }
 
+/** Signed URL's voor meerdere bestanden in één aanroep (thumbnails in de galerij). */
+export async function bekijkUrls(paden: string[], seconden = 600): Promise<Map<string, string>> {
+  const uit = new Map<string, string>();
+  if (!paden.length) return uit;
+  const { data, error } = await opslag().from(BUCKET).createSignedUrls(paden, seconden);
+  if (error) {
+    // Thumbnails zijn een extraatje: zonder blijft de lijst gewoon werken.
+    console.error('[uitgaven] voorbeelden', error.message);
+    return uit;
+  }
+  for (const r of data ?? []) if (r.path && r.signedUrl && !r.error) uit.set(r.path, r.signedUrl);
+  return uit;
+}
+
 /** Verwijdert bestanden (best effort per batch; fouten gaan naar de log). */
 export async function verwijder(paden: string[]): Promise<void> {
   for (let i = 0; i < paden.length; i += 100) {

@@ -1,0 +1,112 @@
+/* ==========================================================
+   Studio Levant — Account & mail (ac-). Tokens: public/shell/shell.css.
+   Velden en knoppen: agenda.css (ag-) en app.css (db-).
+   ========================================================== */
+
+.ac { min-height: 100vh; background: var(--sl-bg); color: var(--sl-text); font-family: var(--sl-font); }
+.ac-inhoud { display: grid; gap: 20px; padding: 24px 40px 56px; max-width: 860px; }
+.ac-blok {
+  display: grid;
+  gap: 18px;
+  padding: 22px 24px 24px;
+  border: 1px solid var(--sl-line);
+  border-radius: 6px;
+  background: var(--sl-panel);
+  scroll-margin-top: 24px;
+}
+.ac-blok-kop { display: grid; gap: 6px; }
+.ac-blok-titel { margin: 0; font-size: 17px; font-weight: 700; letter-spacing: -0.01em; }
+.ac-blok-uitleg { margin: 0; font-size: 13px; line-height: 1.55; color: var(--sl-muted); max-width: 62ch; }
+.ac-acties { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; }
+.ac-acties form { margin: 0; }
+.ac-ok { margin: 0; font-size: 13px; color: var(--sl-sand); }
+
+/* ---------- profiel ---------- */
+.ac-profiel { display: grid; gap: 16px; }
+.ac-voorbeeld { display: flex; align-items: center; gap: 14px; }
+.ac-avatar {
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: var(--sl-avatar-kleur, var(--sl-sand));
+  color: #232323;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  transition: background-color .2s var(--sl-ease);
+}
+.ac-voorbeeld-tekst { display: grid; gap: 3px; min-width: 0; }
+.ac-voorbeeld-tekst strong { font-size: 15px; font-weight: 700; }
+.ac-voorbeeld-tekst span { font-size: 12.5px; color: var(--sl-muted); overflow: hidden; text-overflow: ellipsis; }
+.ac-velden { display: grid; grid-template-columns: minmax(0, 1fr) 110px; gap: 12px; }
+.ac-kleuren { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 0; padding: 0; border: 0; min-width: 0; }
+.ac-kleuren:disabled { opacity: .5; }
+.ac-legend {
+  float: left;
+  margin-right: 6px;
+  padding: 0;
+  font-family: var(--sl-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--sl-muted);
+}
+.ac-kleur { position: relative; display: inline-grid; cursor: pointer; }
+.ac-kleur input { position: absolute; inset: 0; opacity: 0; margin: 0; cursor: pointer; }
+.ac-kleur-stip {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .25);
+  transition: transform .15s var(--sl-ease), box-shadow .15s var(--sl-ease);
+}
+.ac-kleur:hover .ac-kleur-stip { transform: scale(1.08); }
+.ac-kleur input:checked + .ac-kleur-stip { box-shadow: 0 0 0 2px var(--sl-panel), 0 0 0 4px var(--sl-sand); }
+.ac-kleur input:focus-visible + .ac-kleur-stip { box-shadow: 0 0 0 2px var(--sl-panel), 0 0 0 4px var(--sl-sand), 0 0 0 6px rgba(227, 222, 219, .25); }
+
+/* ---------- mailbox ---------- */
+.ac-status {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--sl-line);
+  border-radius: 4px;
+  background: var(--sl-bg);
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+.ac-status strong { font-weight: 700; word-break: break-all; }
+.ac-status-stip { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--sl-faint); transform: translateY(-1px); }
+.ac-status.is-eigen .ac-status-stip { background: #a9b38f; }
+.ac-status.is-standaard .ac-status-stip { background: var(--sl-sand); }
+.ac-waarschuwing {
+  margin: 0;
+  padding: 10px 14px;
+  border: 1px solid color-mix(in srgb, var(--sl-danger) 50%, transparent);
+  border-radius: 4px;
+  font-size: 13px;
+  color: var(--sl-danger);
+}
+.ac-mailform { display: grid; gap: 14px; }
+.ac-geavanceerd { border-top: 1px solid var(--sl-line-soft); padding-top: 12px; }
+.ac-geavanceerd > summary {
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--sl-muted);
+  list-style-position: inside;
+}
+.ac-geavanceerd > summary:hover { color: var(--sl-text); }
+.ac-geavanceerd[open] > summary { margin-bottom: 10px; }
+.ac-geavanceerd .ag-velden-2 { margin-top: 10px; }
+
+@media (max-width: 720px) {
+  .ac-inhoud { padding: 16px 16px 40px; gap: 16px; }
+  .ac-blok { padding: 18px 16px 20px; }
+  .ac-velden { grid-template-columns: minmax(0, 1fr) 90px; }
+}
+@media (max-width: 560px) {
+  .ac-mailform .ag-velden-2 { grid-template-columns: minmax(0, 1fr); }
+}

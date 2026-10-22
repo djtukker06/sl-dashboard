@@ -17,7 +17,14 @@
 //    - /login, /wachtwoord-vergeten en /geen-toegang laden, met het echte logo en zonder rail;
 //    - logo, shell.css en shell.js zijn openbaar; de social-frontend (app.js/app.css) niet;
 //    - beveiligingskoppen (X-Frame-Options, Referrer-Policy, nosniff) staan op elk antwoord;
-//    - uitloggen weigert een ander domein (403) en werkt vanaf het eigen domein (303).
+//    - uitloggen weigert een ander domein (403) en werkt vanaf het eigen domein (303);
+//    - /uitgaven (met query) stuurt door naar /boekhouding/bonnetjes.
+// 4. Statisch, Boekhouding en Account & mail (stap 2):
+//    - één module "boekhouding" (actief op /boekhouding, /facturen en /uitgaven), geen losse
+//      facturen/uitgaven meer; beide rails linken naar /account;
+//    - de facturenschermen, -componenten en lib/invoice zijn ongewijzigd t.o.v. stap 1;
+//    - mailbox-wachtwoorden: AES-256-GCM met AAD, nooit in client-code of in de status-respons,
+//      user_mailboxes alleen met het eigen user-id.
 //
 // Gebruik:  node scripts/rooktest-shell.mjs [http://localhost:3107]
 //           node scripts/rooktest-shell.mjs --alleen-statisch
@@ -53,7 +60,7 @@ console.log("Rail: React en HTML gelijk");
   const reactKlassen = klassen(react, /className="([^"]+)"/g);
   const verschil = [...htmlKlassen].filter((k) => !reactKlassen.has(k)).concat([...reactKlassen].filter((k) => !htmlKlassen.has(k)));
   check(verschil.length === 0, "zelfde classes", verschil.join(", "));
-  for (const href of ["/", "/nieuw-wachtwoord", "/auth/uitloggen"]) {
+  for (const href of ["/", "/account", "/nieuw-wachtwoord", "/auth/uitloggen"]) {
     check(html.includes(`"${href}"`) && react.includes(`"${href}"`), `link ${href} in beide rails`);
   }
   check(/railItems\(\)/.test(html) && /railItems\(\)/.test(react), "beide rails lezen railItems() uit lib/modules.ts");
@@ -137,6 +144,53 @@ function bestandenIn(map, filter) {
   for (const k of ["X-Frame-Options", "Referrer-Policy", "X-Content-Type-Options", "Permissions-Policy"]) {
     check(headers.includes(`'${k}'`), `next.config.ts zet ${k}`);
   }
+}
+
+// ---------------------------------------------------------------------------------
+// 4. Boekhouding en Account & mail (statisch)
+// ---------------------------------------------------------------------------------
+console.log("Boekhouding en Account & mail");
+{
+  const modules = lees("lib/modules.ts");
+  check(/id: 'boekhouding'/.test(modules) && /href: '\/boekhouding'/.test(modules), "module boekhouding met href /boekhouding");
+  check(/paden: \['\/boekhouding', '\/facturen', '\/uitgaven'\]/.test(modules), "boekhouding is actief op /facturen en /uitgaven");
+  check(!/id: '(facturen|uitgaven)'/.test(modules), "geen losse modules facturen/uitgaven meer");
+  check(/paden \?\? \[m\.href\]/.test(modules), "moduleVoorPad kijkt naar paden");
+  check(!fs.existsSync(path.join(ROOT, "app/(app)/uitgaven")), "app/(app)/uitgaven bestaat niet meer");
+  check(fs.existsSync(path.join(ROOT, "app/(app)/boekhouding/page.tsx")) && fs.existsSync(path.join(ROOT, "app/(app)/boekhouding/bonnetjes/page.tsx")), "/boekhouding en /boekhouding/bonnetjes bestaan");
+  check(/source: '\/uitgaven', destination: '\/boekhouding\/bonnetjes'/.test(lees("next.config.ts")), "next.config.ts: /uitgaven → /boekhouding/bonnetjes");
+  check(/BoekhoudingKop/.test(lees("app/(app)/facturen/layout.tsx")), "facturen-layout toont de Boekhouding-kop met subnavigatie");
+
+  // Facturen inhoudelijk ongewijzigd t.o.v. stap 1 (alleen de layout mag anders).
+  const { spawnSync } = await import("node:child_process");
+  const diff = spawnSync(
+    "git",
+    ["diff", "--name-only", "4765da6", "--", "components/InvoiceForm.tsx", "components/InvoicesTable.tsx", "components/QuotesTable.tsx", "lib/invoice", "app/(app)/facturen", ":(exclude)app/(app)/facturen/layout.tsx"],
+    { cwd: ROOT, encoding: "utf8" }
+  );
+  if (diff.status === 0) check(diff.stdout.trim() === "", "facturenschermen, -componenten en lib/invoice ongewijzigd", diff.stdout.trim().replace(/\n/g, ", "));
+  else console.log("  (git niet beschikbaar: facturen-diff overgeslagen)");
+
+  const kern = lees("lib/mail/kluis-kern.ts");
+  check(/'aes-256-gcm'/.test(kern) && /setAAD\(/.test(kern) && /randomBytes\(12\)/.test(kern), "kluis: AES-256-GCM, AAD en een nieuwe IV per keer");
+  check(/^import 'server-only';/m.test(lees("lib/mail/kluis.ts")), "lib/mail/kluis.ts is server-only");
+  check(/process\.env\.MAIL_ENCRYPTION_KEY/.test(lees("lib/mail/kluis.ts")), "kluis-sleutel komt uit MAIL_ENCRYPTION_KEY");
+  check(!/\bwachtwoord(_enc)?\s*:/.test(lees("lib/account/mailbox.ts")), "mailboxstatus bevat geen wachtwoord");
+
+  const clientBestanden = [...bestandenIn("app", (n) => /\.tsx?$/.test(n)), ...bestandenIn("lib", (n) => /\.tsx?$/.test(n)), ...bestandenIn("components", (n) => /\.tsx?$/.test(n))].filter((f) =>
+    /^['"]use client['"]/m.test(lees(f))
+  );
+  const lek = clientBestanden.filter((f) => /wachtwoord_enc|process\.env\.MAIL_ENCRYPTION_KEY|mail\/kluis|SERVICE_ROLE_KEY|supabase\/service-role/.test(lees(f)));
+  check(lek.length === 0, "geen client-code met wachtwoord_enc, kluis of sleutels", lek.join(", "));
+  const mailboxCode = [...bestandenIn("app", (n) => /\.tsx?$/.test(n)), ...bestandenIn("lib", (n) => /\.tsx?$/.test(n))].filter((f) => /from\('user_mailboxes'\)/.test(lees(f)));
+  check(mailboxCode.length > 0, "user_mailboxes wordt gebruikt");
+  for (const f of mailboxCode) {
+    const src = lees(f);
+    const aantal = (src.match(/from\('user_mailboxes'\)/g) || []).length;
+    const eigen = (src.match(/(eq\('user_id', lid\.userId\)|user_id: lid\.userId)/g) || []).length;
+    check(eigen >= aantal, `${f}: user_mailboxes alleen met het eigen user-id`);
+  }
+  check(/doSTARTTLS/.test(lees("lib/mail/imap.ts")) && /isPubliekAdres/.test(lees("lib/mail/koppelen.ts")), "IMAP zonder TLS geweigerd; koppelen alleen naar openbare adressen");
 }
 
 if (ALLEEN_STATISCH) eindig();
@@ -252,6 +306,17 @@ for (const url of ["/login", "/geen-toegang", "/api/taken"]) {
   const res = await vraag("/geen-toegang");
   const tekst = res.status === 200 ? await res.text() : "";
   check(/Geen toegang/.test(tekst) && /href="\/login"/.test(tekst), "/geen-toegang toont uitleg en link naar /login");
+}
+
+console.log("Oude adressen");
+for (const [van, naar] of [
+  ["/uitgaven", "/boekhouding/bonnetjes"],
+  ["/uitgaven?toevoegen=1", "/boekhouding/bonnetjes?toevoegen=1"],
+  ["/uitgaven?uitgave=00000000-0000-0000-0000-000000000000", "/boekhouding/bonnetjes?uitgave=00000000-0000-0000-0000-000000000000"],
+]) {
+  const res = await vraag(van);
+  const loc = new URL(res.headers.get("location") || "/", BASIS);
+  check(res.status === 307 && loc.pathname + loc.search === naar, `${van} -> ${naar}`, `status ${res.status} ${res.headers.get("location") || ""}`);
 }
 
 console.log("Uitloggen");

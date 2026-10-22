@@ -8,8 +8,10 @@ import './app.css';
 import './agenda.css';
 import './mail.css';
 import './uitgaven.css';
+import './boekhouding.css';
+import './account.css';
 
-// Gedeelde shell voor alle ingelogde React-pagina's (dashboard, mail, agenda, uitgaven, facturen).
+// Gedeelde shell voor alle ingelogde React-pagina's (dashboard, mail, agenda, boekhouding, account).
 // De social-module (statisch HTML) krijgt dezelfde rail via app/social/route.ts.
 // Login, wachtwoordherstel en /geen-toegang staan buiten deze route-group en dus zonder rail.
 //
@@ -22,7 +24,7 @@ export default async function AppLayout({ children }: Readonly<{ children: React
   return (
     <div className="sl-shell" data-gebruiker={lid.userId}>
       <Rail
-        account={{ email: lid.email, naam: lid.profiel.naam, initialen: lid.profiel.initialen, kleur: lid.profiel.kleur }}
+        account={{ id: lid.userId, email: lid.email, naam: lid.profiel.naam, initialen: lid.profiel.initialen, kleur: lid.profiel.kleur }}
       />
       <main className="sl-main">
         {lid.overgang && (

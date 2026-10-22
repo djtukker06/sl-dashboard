@@ -24,6 +24,8 @@ export function railItems(): RailItem[] {
 
 /** Wat de rail van de ingelogde gebruiker toont (uit het profiel, lib/auth/team.ts). */
 export interface RailAccount {
+  /** Auth user-id: alleen als sleutel voor de cache per gebruiker (data-gebruiker). */
+  id: string;
   email: string;
   naam: string;
   initialen: string;
@@ -50,7 +52,7 @@ export function railHtml(actief: string, acc: RailAccount): string {
     .join('');
   const stijl = avatarStijl(acc.kleur);
   return (
-    `<nav class="sl-rail" aria-label="Hoofdmenu">` +
+    `<nav class="sl-rail" aria-label="Hoofdmenu" data-gebruiker="${esc(acc.id)}">` +
     `<a class="sl-rail-logo" href="/" title="Studio Levant — Dashboard" aria-label="Naar het dashboard">` +
     `<img src="${LOGO_SRC}" alt="" width="36" height="37"></a>` +
     `<ul class="sl-rail-nav">${items}</ul>` +
@@ -61,6 +63,7 @@ export function railHtml(actief: string, acc: RailAccount): string {
     `<div class="sl-account-pop">` +
     `<p class="sl-account-naam">${esc(acc.naam)}</p>` +
     `<p class="sl-account-mail">${esc(acc.email)}</p>` +
+    `<a class="sl-account-link" href="/account">Account &amp; mail</a>` +
     `<a class="sl-account-link" href="/nieuw-wachtwoord">Wachtwoord wijzigen</a>` +
     `<form method="post" action="/auth/uitloggen"><button type="submit" class="sl-account-link">Uitloggen</button></form>` +
     `</div></details></div></nav>`

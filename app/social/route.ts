@@ -40,6 +40,7 @@ export async function GET(request: Request) {
   const { lid } = s;
 
   const rail = railHtml('social', {
+    id: lid.userId,
     email: lid.email,
     naam: lid.profiel.naam,
     initialen: lid.profiel.initialen,

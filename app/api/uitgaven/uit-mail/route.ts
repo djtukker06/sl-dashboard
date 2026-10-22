@@ -8,7 +8,7 @@ import { controleerMap, parseUid } from '@/lib/mail/mappen';
 import { dbFout, fout, json, leesJson, uitgavenRoute } from '@/lib/uitgaven/api';
 import { isBestandsType, MAX_BESTAND_BYTES, schoon, snuffelType, typeUitNaam } from '@/lib/uitgaven/model';
 import { nieuwPad, upload, verwijder } from '@/lib/uitgaven/opslag';
-import { moetUitgave } from '@/lib/uitgaven/repo';
+import { heeftSoortKolom, kolomOntbreekt, moetUitgave } from '@/lib/uitgaven/repo';
 import { leesUitgaveUit } from '@/lib/uitgaven/uitlezen';
 
 export const runtime = 'nodejs';
@@ -51,9 +51,15 @@ export const POST = uitgavenRoute(async (request, _ctx, sb, lid) => {
 
   const onderwerp = schoon(b.onderwerp, 300);
   const bron = cfg?.user ? ` (${cfg.user})` : '';
-  const nieuw = await sb
-    .from('expenses')
-    .insert({ id, source: 'mail', source_ref: (onderwerp ? `Mail${bron}: ${onderwerp}` : `Mail${bron}`).slice(0, 500) });
+  const basis: Record<string, unknown> = {
+    id,
+    source: 'mail',
+    created_by: lid.userId,
+    source_ref: (onderwerp ? `Mail${bron}: ${onderwerp}` : `Mail${bron}`).slice(0, 500)
+  };
+  const soort = type === 'application/pdf' ? 'inkoopfactuur' : 'bonnetje';
+  let nieuw = await sb.from('expenses').insert(heeftSoortKolom() ? { ...basis, soort } : basis);
+  if (nieuw.error && kolomOntbreekt(nieuw.error)) nieuw = await sb.from('expenses').insert(basis);
   if (nieuw.error) {
     await verwijder([pad]);
     throw dbFout(nieuw.error);

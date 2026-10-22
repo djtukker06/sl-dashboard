@@ -126,7 +126,6 @@ export function BtwOverzicht({ vandaag, versie }: { vandaag: string; versie: num
                   <span className="ug-kwartaal-voet">
                     {k.aantalFacturen} factu{k.aantalFacturen === 1 ? 'ur' : 'ren'}
                     {k.aantalVerlegd ? ` (${k.aantalVerlegd} verlegd)` : ''} · {k.aantalUitgaven} uitgave{k.aantalUitgaven === 1 ? '' : 'n'}
-                    {k.voorbelastingConcept > 0 && <> · {euro(k.voorbelastingConcept)} btw nog in concept</>}
                     {k.andereValuta > 0 && <> · {k.andereValuta} in andere valuta niet meegeteld</>}
                   </span>
                 </button>

@@ -11,7 +11,7 @@ import type { IcoonNaam } from '@/lib/shell/iconen';
 //   4. Eventueel een migratie supabase/migrations/00NN_<module>.sql (idempotent, met RLS),
 //      opgenomen in scripts/genereer-sql-editor.mjs, en het API-pad in de 401-lijst van proxy.ts.
 // Voorbeelden van complete modules: agenda (tabellen + API + paneel), mail (externe koppeling)
-// en uitgaven (tabellen + Storage-uploads + Claude + export; zie README "Uitgaven").
+// en boekhouding (facturen + bonnetjes: Storage-uploads + Claude + export; zie README).
 // Zet `actief: false` om een module tijdelijk uit de navigatie te halen.
 
 export type Module = {
@@ -22,6 +22,8 @@ export type Module = {
   kort: string;
   beschrijving: string;
   href: string;
+  /** Extra paden die bij deze module horen (actieve staat in de rail); standaard alleen href. */
+  paden?: string[];
   icoon: IcoonNaam;
   actief: boolean;
   /**
@@ -47,7 +49,7 @@ export const MODULES: Module[] = [
     id: 'mail',
     naam: 'Mail',
     kort: 'Mail',
-    beschrijving: 'Inbox van info@studio-levant.nl',
+    beschrijving: 'Je eigen mailbox (te koppelen via Account & mail)',
     href: '/mail',
     icoon: 'mail',
     actief: true
@@ -62,26 +64,19 @@ export const MODULES: Module[] = [
     actief: true
   },
   {
-    id: 'facturen',
-    naam: 'Facturen',
-    kort: 'Facturen',
-    beschrijving: 'Facturen, prijsopgaven en klanten',
-    href: '/facturen',
+    // Eén tab voor de administratie: facturen (/facturen/**, ongewijzigd) en bonnetjes &
+    // inkoopfacturen (/boekhouding/bonnetjes; /uitgaven stuurt daarheen door).
+    id: 'boekhouding',
+    naam: 'Boekhouding',
+    kort: 'Boekhouding',
+    beschrijving: 'Facturen, prijsopgaven en klanten · bonnetjes en inkoopfacturen',
+    href: '/boekhouding',
+    paden: ['/boekhouding', '/facturen', '/uitgaven'],
     icoon: 'factuur',
-    actief: true,
-    snelactie: { label: 'Nieuwe factuur', href: '/facturen/nieuwe-factuur' }
-  },
-  {
-    id: 'uitgaven',
-    naam: 'Uitgaven',
-    kort: 'Uitgaven',
-    beschrijving: 'Bonnetjes en betaalde facturen, btw en export voor de boekhouder',
-    href: '/uitgaven',
-    icoon: 'uitgaven',
     actief: true,
     // Op het dashboard is dit een knop die direct de bestandskiezer opent
     // (components/uitgaven/BonnetjeKnop.tsx); deze link is de terugval.
-    snelactie: { label: 'Bonnetje toevoegen', href: '/uitgaven?toevoegen=1' }
+    snelactie: { label: 'Bonnetje uploaden', href: '/boekhouding/bonnetjes?toevoegen=1' }
   },
   {
     id: 'social',
@@ -104,6 +99,7 @@ export function actieveModules(): Module[] {
 /** Welke module hoort bij dit pad (voor de actieve staat in de rail). */
 export function moduleVoorPad(pad: string): string {
   if (pad === '/' || pad === '') return 'dashboard';
-  const hit = actieveModules().find((m) => m.href !== '/' && (pad === m.href || pad.startsWith(m.href + '/')));
+  const hoort = (basis: string) => basis !== '/' && (pad === basis || pad.startsWith(basis + '/'));
+  const hit = actieveModules().find((m) => (m.paden ?? [m.href]).some(hoort) || hoort(m.href));
   return hit ? hit.id : '';
 }

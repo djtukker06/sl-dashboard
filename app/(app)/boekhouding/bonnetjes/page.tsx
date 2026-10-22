@@ -5,19 +5,20 @@ import { isUuid } from '@/lib/uitgaven/api';
 import { UitgavenApp } from '@/components/uitgaven/UitgavenApp';
 
 export const dynamic = 'force-dynamic';
-export const metadata: Metadata = { title: 'Uitgaven · Studio Levant' };
+export const metadata: Metadata = { title: 'Bonnetjes & inkoopfacturen · Studio Levant' };
 
-// Uitgaven: bonnetjes en betaalde facturen. De pagina controleert zelf de sessie; de
-// gegevens laadt de client via /api/uitgaven/** (die elk ook zelf de sessie controleren).
-//   ?uitgave=<id>   opent direct het bewerkpaneel (bv. vanaf het dashboard of na mail)
-//   ?toevoegen=1    zet de nadruk op "Bonnetje toevoegen" (snelle actie op het dashboard)
-//   ?tab=btw        opent "Btw & cijfers"
-export default async function UitgavenPage({
+// Bonnetjes & inkoopfacturen: uploaden en snel terugvinden (voorheen /uitgaven, dat hierheen
+// doorstuurt). De pagina controleert zelf het lidmaatschap; de gegevens laadt de client via
+// /api/uitgaven/** (die elk ook zelf controleren).
+//   ?uitgave=<id>   opent direct dat bonnetje (bv. vanaf het dashboard of na mail)
+//   ?toevoegen=1    zet de nadruk op uploaden (snelle actie op het dashboard)
+//   ?tab=btw        opent het btw-overzicht per kwartaal
+export default async function BonnetjesPage({
   searchParams
 }: {
   searchParams: Promise<{ uitgave?: string; toevoegen?: string; tab?: string }>;
 }) {
-  await vereisTeamlidPagina('/uitgaven');
+  await vereisTeamlidPagina('/boekhouding/bonnetjes');
 
   const sp = await searchParams;
   return (

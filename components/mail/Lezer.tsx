@@ -137,13 +137,13 @@ export function Lezer({
     setBewaart(deel);
     try {
       const { uitgave } = await uitgavenApi.uitMail({ map, uid, deel, onderwerp });
-      const wat = uitgave.leverancier ? `${uitgave.leverancier}${uitgave.totaal !== null ? ` · € ${uitgave.totaal.toLocaleString('nl-NL', { minimumFractionDigits: 2 })}` : ''}` : 'Concept';
-      toast(`Opgeslagen als uitgave: ${wat}`, {
-        actie: { label: 'Controleren', onClick: () => router.push(`/uitgaven?uitgave=${uitgave.id}`) },
+      const wat = uitgave.leverancier ? `${uitgave.leverancier}${uitgave.totaal !== null ? ` · € ${uitgave.totaal.toLocaleString('nl-NL', { minimumFractionDigits: 2 })}` : ''}` : 'bijlage';
+      toast(`Bewaard bij Bonnetjes & inkoopfacturen: ${wat}`, {
+        actie: { label: 'Openen', onClick: () => router.push(`/boekhouding/bonnetjes?uitgave=${uitgave.id}`) },
         duur: 8000
       });
     } catch (err) {
-      toast(err instanceof Error ? err.message : 'Opslaan als uitgave is mislukt.', { fout: true });
+      toast(err instanceof Error ? err.message : 'Bewaren bij de bonnetjes is mislukt.', { fout: true });
     } finally {
       setBewaart(null);
     }
@@ -267,12 +267,12 @@ export function Lezer({
                   <button
                     type="button"
                     className="ml-bijlage-uitgave"
-                    title="Opslaan als uitgave (bonnetje of betaalde factuur) en automatisch uitlezen"
+                    title="Bewaren bij Bonnetjes & inkoopfacturen (wordt automatisch uitgelezen)"
                     aria-busy={bewaart === x.deel || undefined}
                     disabled={bewaart !== null}
                     onClick={() => alsUitgave(b.map, b.uid, x.deel, b.onderwerp)}
                   >
-                    {bewaart === x.deel ? 'Bezig…' : 'Als uitgave'}
+                    {bewaart === x.deel ? 'Bezig…' : 'Bij bonnetjes'}
                   </button>
                 )}
               </li>

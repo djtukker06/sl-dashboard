@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server';
 import { factuurSnapshot } from '@/lib/dashboard/facturen';
 import { korteDatum } from '@/lib/dashboard/tijd';
 import { formatEuro } from '@/lib/format';
+import { Persoon } from '@/components/team/Persoon';
 import { Kaart, KaartMelding } from './Kaart';
 import { OpnieuwKnop } from './OpnieuwKnop';
 
@@ -68,7 +69,10 @@ export async function FacturenWidget() {
                     {r.datum ? ` · ${korteDatum(r.datum)}` : ''}
                   </span>
                 </span>
-                <span className="db-rij-bedrag">€ {formatEuro(r.totaal)}</span>
+                <span className="ug-recent-rechts">
+                  <span className="db-rij-bedrag">€ {formatEuro(r.totaal)}</span>
+                  <Persoon id={r.door} compact voorvoegsel="gemaakt door" />
+                </span>
               </Link>
             </li>
           ))}

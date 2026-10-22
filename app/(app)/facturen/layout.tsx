@@ -1,19 +1,18 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { ModuleKop } from '@/components/shell/ModuleKop';
+import { BoekhoudingKop } from '@/components/boekhouding/BoekhoudingKop';
 
 export const metadata: Metadata = {
   title: 'Factuur overzicht Studio Levant'
 };
 
-// Facturen wordt alleen ingebed in de gedeelde shell: dezelfde 96px-kop als de andere
-// modules (op één lijn met het rail-logo). De schermen zelf blijven ongewijzigd; de eigen
-// tekst-wordmark wordt binnen de shell verborgen (zie app.css), het rail-logo gaat naar '/'.
+// Facturen hoort bij de tab Boekhouding: dezelfde 96px-kop als de andere modules (label
+// "Boekhouding") met de subnavigatie Overzicht · Facturen · Bonnetjes. De schermen zelf
+// blijven ongewijzigd; de eigen tekst-wordmark wordt binnen de shell verborgen (zie app.css).
 export default function FacturenLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <>
-      <ModuleKop
-        label="Administratie"
+      <BoekhoudingKop
         titel={
           <Link href="/facturen" className="sl-kop-link">
             Facturen

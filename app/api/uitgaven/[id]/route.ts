@@ -1,7 +1,15 @@
 import { dbFout, fout, isUuid, json, leesJson, uitgavenRoute } from '@/lib/uitgaven/api';
 import type { UitgaveInvoer } from '@/lib/uitgaven/model';
 import { verwijder } from '@/lib/uitgaven/opslag';
-import { bestandenVan, KOLOMMEN, moetUitgave, naarUitgave, parseInvoer, type UitgaveRij } from '@/lib/uitgaven/repo';
+import {
+  bestandenVan,
+  metKolommen,
+  moetUitgave,
+  naarUitgave,
+  parseInvoer,
+  zonderSoortAlsNodig,
+  type UitgaveRij
+} from '@/lib/uitgaven/repo';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -34,7 +42,15 @@ export const PATCH = uitgavenRoute(async (request, ctx: Ctx, sb) => {
   // Wie zelf iets invult, vervangt de melding van het uitlezen.
   const kolommen = { ...p.waarde, ...(uitgave.aiStatus === 'mislukt' ? { ai_message: '' } : {}) };
 
-  const { data, error } = await sb.from('expenses').update(kolommen).eq('id', id).select(KOLOMMEN).maybeSingle();
+  const { data, error } = await metKolommen((k, metSoort) =>
+    sb
+      .from('expenses')
+      // Alleen "soort" gewijzigd vóór migratie 0021: dan blijft er niets over; raak dan alleen updated_at aan.
+      .update({ updated_at: new Date().toISOString(), ...zonderSoortAlsNodig(kolommen, metSoort) })
+      .eq('id', id)
+      .select(k)
+      .maybeSingle()
+  );
   if (error) throw dbFout(error);
   if (!data) return fout(404, 'Deze uitgave bestaat niet (meer).');
   return json({ uitgave: naarUitgave(data as unknown as UitgaveRij) });

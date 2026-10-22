@@ -4,8 +4,8 @@ import { isBestandsType, MAX_BESTAND_BYTES, type BestandsType, type Leverancier,
 import type { BtwOverzicht } from './btw';
 
 // Browser-kant van uitgaven: fetch-hulpjes, verkleinen van foto's en de upload-flow
-// (signed upload-URL → Storage → aanmelden → uitlezen). Gebruikt door /uitgaven, de
-// "Bonnetje toevoegen"-knop op het dashboard en "Opslaan als uitgave" in mail.
+// (signed upload-URL → Storage → aanmelden → uitlezen). Gebruikt door
+// /boekhouding/bonnetjes, de "Bonnetje uploaden"-knop op het dashboard en "Opslaan als uitgave" in mail.
 
 export class UitgavenApiFout extends Error {
   status: number;
@@ -33,7 +33,8 @@ async function api<T>(url: string, init?: RequestInit): Promise<T> {
       headers: init?.body ? { 'Content-Type': 'application/json' } : undefined,
       cache: 'no-store'
     });
-  } catch {
+  } catch (e) {
+    if ((e as Error)?.name === 'AbortError') throw e;
     throw new UitgavenApiFout(0, 'Geen verbinding. Controleer je internet en probeer het opnieuw.');
   }
   if (res.status === 401) {
@@ -52,8 +53,19 @@ const qs = (o: Record<string, string | undefined>) =>
     .map(([k, v]) => `${k}=${encodeURIComponent(v!)}`)
     .join('&');
 
+export interface ZoekResultaat {
+  uitgaven: Uitgave[];
+  /** Signed URL (10 min) van de eerste foto per uitgave-id. */
+  voorbeelden: Record<string, string>;
+  /** Aantal treffers in totaal (de lijst toont er max. 200). */
+  totaal: number;
+  vandaag: string;
+}
+
 export const uitgavenApi = {
   lijst: (van: string, tot: string) => api<{ uitgaven: Uitgave[]; vandaag: string }>(`/api/uitgaven?${qs({ van, tot })}`),
+  zoek: (params: { q?: string; jaar?: string; maand?: string; soort?: string; door?: string }, signal?: AbortSignal) =>
+    api<ZoekResultaat>(`/api/uitgaven?${qs(params)}`, { signal }),
   uitgave: (id: string) => api<{ uitgave: Uitgave }>(`/api/uitgaven/${id}`),
   maak: (b: UitgaveInvoer) => api<{ uitgave: Uitgave }>('/api/uitgaven', { method: 'POST', body: body(b) }),
   wijzig: (id: string, b: UitgaveInvoer) => api<{ uitgave: Uitgave }>(`/api/uitgaven/${id}`, { method: 'PATCH', body: body(b) }),
@@ -133,7 +145,13 @@ export type UploadFase = 'voorbereiden' | 'uploaden' | 'uitlezen' | 'klaar' | 'f
  */
 export async function uploadBonnetje(
   f: File,
-  opties: { uitgaveId?: string; uitlezen?: boolean; onFase?: (fase: UploadFase) => void } = {}
+  opties: {
+    uitgaveId?: string;
+    uitlezen?: boolean;
+    onFase?: (fase: UploadFase) => void;
+    /** Direct na het aanmelden (vóór het uitlezen): de uitgave staat er al. */
+    onAangemeld?: (u: Uitgave) => void;
+  } = {}
 ): Promise<Uitgave> {
   opties.onFase?.('voorbereiden');
   const { blob, type, naam } = await bereidVoor(f);
@@ -154,6 +172,7 @@ export async function uploadBonnetje(
     method: 'POST',
     body: body({ pad: doel.pad, naam })
   });
+  opties.onAangemeld?.(uitgave);
   if (opties.uitlezen === false || (opties.uitgaveId && !opties.uitlezen)) {
     opties.onFase?.('klaar');
     return uitgave;
@@ -170,12 +189,7 @@ export async function uploadBonnetje(
   }
 }
 
-/** Euro-bedrag voor de weergave: "€ 1.234,50". */
-export function euro(n: number | null | undefined, valuta = 'EUR'): string {
-  if (n === null || n === undefined) return '—';
-  const s = n.toLocaleString('nl-NL', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  return valuta === 'EUR' ? `€ ${s}` : `${valuta} ${s}`;
-}
+export { euro } from './format';
 
 /** Signed URL's openen/downloaden zonder de pagina te verlaten. */
 export function downloadLink(href: string, naam?: string) {
