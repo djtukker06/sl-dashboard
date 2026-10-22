@@ -1,7 +1,8 @@
 'use client';
 
 import { Fragment, useState } from 'react';
-import { adresNaam, bijlageUrl, grootteTekst, initialen, volleDatum, type MailApiFout } from '@/lib/mail/client';
+import { adresNaam, bijlageUrl, downloadBijlage, grootteTekst, initialen, MailApiFout, volleDatum } from '@/lib/mail/client';
+import { useToast } from '@/components/agenda/Toast';
 import type { Adres, Bericht, MapRol } from '@/lib/mail/types';
 import { Icoon, type MailIcoonNaam } from './Iconen';
 import { VeiligeMailFrame } from './VeiligeMailFrame';
@@ -119,6 +120,23 @@ export function Lezer({
 }) {
   // Per bericht opnieuw geblokkeerd: de sleutel van de component is map+uid (zie MailApp).
   const [beelden, setBeelden] = useState(false);
+  const [downloadt, setDownloadt] = useState<string | null>(null);
+  const toast = useToast();
+
+  async function download(e: React.MouseEvent<HTMLAnchorElement>, map: string, uid: number, deel: string, naam: string) {
+    // Gewone klik via fetch (fout als melding); met modifier-toetsen de browser laten doen.
+    if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
+    e.preventDefault();
+    if (downloadt) return;
+    setDownloadt(deel);
+    try {
+      await downloadBijlage(bijlageUrl(map, uid, deel), naam);
+    } catch (err) {
+      toast(err instanceof MailApiFout ? err.message : 'Downloaden van de bijlage is mislukt.', { fout: true });
+    } finally {
+      setDownloadt(null);
+    }
+  }
 
   if (!bericht) {
     return (
@@ -206,7 +224,14 @@ export function Lezer({
           <ul className="ml-bijlagen" aria-label="Bijlagen">
             {b.bijlagen.map((x) => (
               <li key={x.deel}>
-                <a className="ml-bijlage" href={bijlageUrl(b.map, b.uid, x.deel)} download={x.naam} title={`${x.naam} downloaden`}>
+                <a
+                  className="ml-bijlage"
+                  href={bijlageUrl(b.map, b.uid, x.deel)}
+                  download={x.naam}
+                  title={`${x.naam} downloaden`}
+                  aria-busy={downloadt === x.deel || undefined}
+                  onClick={(e) => download(e, b.map, b.uid, x.deel, x.naam)}
+                >
                   <Icoon naam={x.type.startsWith('image/') ? 'beeld' : 'bestand'} grootte={16} />
                   <span className="ml-bijlage-naam">{x.naam}</span>
                   <span className="ml-bijlage-grootte">{grootteTekst(x.grootte)}</span>

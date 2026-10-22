@@ -29,7 +29,7 @@ export default async function NieuwePrijsopgavePage() {
   return (
     <div className="wrap">
       <div className="topbar">
-        <Link href="/facturen" className="wordmark">
+        <Link href="/" className="wordmark">
           Studio <span>Levant</span>
         </Link>
         <nav>

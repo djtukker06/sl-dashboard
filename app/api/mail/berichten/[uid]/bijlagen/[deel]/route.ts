@@ -33,7 +33,13 @@ export const GET = mailRoute(async (request: Request, ctx: Ctx) => {
   });
 
   if (b.inhoud.length > MAX_DIRECT) {
-    return NextResponse.redirect(await signedDownload(b.naam, b.inhoud), { status: 302, headers: { 'Cache-Control': 'private, no-store' } });
+    const signed = await signedDownload(b.naam, b.inhoud);
+    // De lezer downloadt via fetch (header X-SL-Download): dan de URL als JSON teruggeven,
+    // zodat een cross-origin redirect niet nodig is. Een gewone link krijgt een redirect.
+    if (request.headers.get('x-sl-download') === 'fetch') {
+      return NextResponse.json({ url: signed }, { headers: { 'X-SL-Signed': '1', 'Cache-Control': 'private, no-store' } });
+    }
+    return NextResponse.redirect(signed, { status: 302, headers: { 'Cache-Control': 'private, no-store' } });
   }
   const type = !b.type || RISICO.test(b.type) ? 'application/octet-stream' : b.type;
   return new Response(new Uint8Array(b.inhoud), {

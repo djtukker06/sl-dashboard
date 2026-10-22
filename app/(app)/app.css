@@ -39,6 +39,14 @@
   white-space: nowrap;
 }
 .sl-kop-acties { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.sl-kop-link { color: inherit; text-decoration: none; transition: color 160ms var(--sl-ease); }
+.sl-kop-link:hover { color: var(--sl-sand); }
+.sl-kop-link:focus-visible { outline: 2px solid var(--sl-focus); outline-offset: 3px; border-radius: 2px; }
+
+/* Facturen binnen de shell: de eigen tekst-wordmark is dubbel naast het rail-logo en de
+   modulekop; verbergen en de topbar-navigatie rechts laten staan. Inhoud blijft gelijk. */
+.sl-main .topbar .wordmark { display: none; }
+.sl-main .topbar { justify-content: flex-end; }
 
 /* ---------- knoppen (zelfde vorm als .btn in social) ---------- */
 .db-knop {

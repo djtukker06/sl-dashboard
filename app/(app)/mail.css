@@ -429,6 +429,7 @@
   transition: border-color .15s var(--sl-ease), background-color .15s var(--sl-ease);
 }
 a.ml-bijlage:hover { border-color: var(--sl-sand); background: var(--sl-raise); }
+a.ml-bijlage[aria-busy="true"] { opacity: 0.6; cursor: progress; }
 .ml-bijlage-naam { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ml-bijlage-grootte { flex: 0 0 auto; font-family: var(--sl-mono); font-size: 10.5px; color: var(--sl-muted); }
 .ml-bijlage-dl { color: var(--sl-muted); }

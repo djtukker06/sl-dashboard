@@ -10,6 +10,53 @@ const MAX_PER = 100;
 /** Groter dan dit: alleen het begin van de bron ophalen (tekst staat vrijwel altijd vooraan). */
 const MAX_BRON = 12 * 1024 * 1024;
 const BRON_BEGIN = 3 * 1024 * 1024;
+/**
+ * Bovengrens voor html + tekst in de JSON-respons van één bericht. Vercel weigert responsen
+ * boven 4,5 MB (FUNCTION_PAYLOAD_TOO_LARGE); dit laat ruimte voor JSON-escaping en de rest.
+ */
+const MAX_INHOUD = 3.5 * 1024 * 1024;
+/** Ingebedde data:-afbeeldingen groter dan dit gaan als eerste weg als de grens bereikt is. */
+const GROOT_DATA_URI = 100 * 1024;
+/** Platte tekst naast HTML dient alleen nog als citaat bij beantwoorden: dan hooguit dit. */
+const MAX_TEKST_NAAST_HTML = 256 * 1024;
+
+const bytes = (s: string) => Buffer.byteLength(s, 'utf8');
+
+/** Kapt af op een tekengrens in bytes (en in HTML vóór een half afgebroken tag). */
+function kapAf(s: string, maxBytes: number, isHtml: boolean): string {
+  if (maxBytes <= 0) return '';
+  if (bytes(s) <= maxBytes) return s;
+  // Ruwe schatting in tekens; daarna inkorten tot het in bytes past.
+  let uit = s.slice(0, maxBytes);
+  while (bytes(uit) > maxBytes) uit = uit.slice(0, Math.floor(uit.length * 0.9));
+  if (isHtml) {
+    const lt = uit.lastIndexOf('<');
+    if (lt > uit.lastIndexOf('>')) uit = uit.slice(0, lt);
+  }
+  return uit;
+}
+
+/**
+ * Houdt de berichtinhoud onder MAX_INHOUD: eerst grote data:-afbeeldingen weg, dan alle
+ * data:-afbeeldingen, dan de platte tekst (als er HTML is) inkorten, en pas daarna afkappen.
+ * Een <img> zonder src wordt in het leesvenster verborgen (VeiligeMailFrame).
+ */
+export function begrensInhoud(html: string | null, tekst: string): { html: string | null; tekst: string; ingekort: boolean } {
+  const past = () => (html ? bytes(html) : 0) + bytes(tekst) <= MAX_INHOUD;
+  if (past()) return { html, tekst, ingekort: false };
+
+  // sanitize-html schrijft attributen met dubbele aanhalingstekens; een " in een waarde wordt
+  // &quot;, dus src="data:…" is altijd één aaneengesloten attribuut.
+  const zonderDataUris = (h: string, drempel: number) =>
+    h.replace(/\ssrc="data:[^"]*"/g, (m) => (m.length > drempel ? '' : m));
+
+  if (html) html = zonderDataUris(html, GROOT_DATA_URI);
+  if (!past() && html) html = zonderDataUris(html, 0);
+  if (!past() && html && bytes(tekst) > MAX_TEKST_NAAST_HTML) tekst = kapAf(tekst, MAX_TEKST_NAAST_HTML, false);
+  if (!past() && html) html = kapAf(html, MAX_INHOUD - bytes(tekst), true);
+  if (!past()) tekst = kapAf(tekst, MAX_INHOUD - (html ? bytes(html) : 0), false);
+  return { html, tekst, ingekort: true };
+}
 
 function adres(a: MessageAddressObject | undefined): Adres | null {
   if (!a || !a.address) return a?.name ? { naam: a.name, adres: '' } : null;
@@ -155,14 +202,15 @@ export async function haalBericht(client: ImapFlow, map: string, uid: number): P
     if (!metBron || !metBron.source) throw new MailFout(404, 'niet_gevonden', 'Dit bericht bestaat niet meer.');
 
     const mail = await simpleParser(metBron.source, {
-      skipImageLinks: true,
       skipTextToHtml: true,
-      // cid:-afbeeldingen tot 1 MB worden data:-URI's (rest blijft weg).
+      // cid:-afbeeldingen worden data:-URI's, met een totaalbudget van 1 MB voor alle
+      // ingebedde beelden samen. Wat daarboven valt blijft cid: en haalt de sanitizer weg.
       maxInlinedImagesSize: 1024 * 1024
     });
 
     const vlaggen = kop.flags ?? new Set<string>();
     const saneer = mail.html ? saneerMailHtml(mail.html) : null;
+    const inhoud = begrensInhoud(saneer ? saneer.html : null, (mail.text ?? '').replace(/\r\n/g, '\n').trim());
     const van = adresLijst(mail.from)[0] ?? adres(kop.envelope?.from?.[0]);
 
     return {
@@ -177,11 +225,11 @@ export async function haalBericht(client: ImapFlow, map: string, uid: number): P
       datum: isoDatum(mail.date) ?? isoDatum(kop.envelope?.date),
       gelezen: vlaggen.has('\\Seen'),
       gemarkeerd: vlaggen.has('\\Flagged'),
-      html: saneer ? saneer.html : null,
-      tekst: (mail.text ?? '').replace(/\r\n/g, '\n').trim(),
+      html: inhoud.html,
+      tekst: inhoud.tekst,
       bijlagen: bijlagenUitStructuur(kop.bodyStructure),
       externeBeelden: saneer ? saneer.externeBeelden : 0,
-      ingekort: groot
+      ingekort: groot || inhoud.ingekort
     };
   } finally {
     lock.release();

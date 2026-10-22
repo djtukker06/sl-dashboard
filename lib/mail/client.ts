@@ -68,6 +68,54 @@ export const mailApi = {
 export const bijlageUrl = (map: string, uid: number, deel: string) =>
   `/api/mail/berichten/${uid}/bijlagen/${encodeURIComponent(deel)}?${q({ map })}`;
 
+/** Header waarmee de lezer laat weten dat hij via fetch downloadt (zie bijlagen-route). */
+export const DOWNLOAD_HEADER = 'X-SL-Download';
+export const SIGNED_HEADER = 'X-SL-Signed';
+
+function klikDownload(href: string, naam?: string) {
+  const a = document.createElement('a');
+  a.href = href;
+  if (naam) a.download = naam;
+  a.rel = 'noopener';
+  a.style.display = 'none';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
+
+/**
+ * Bijlage downloaden via fetch, zodat een fout (te groot, bericht verplaatst, opslag ontbreekt)
+ * als Nederlandse melding getoond kan worden in plaats van "Download mislukt" in de browser.
+ * Grote bijlagen komen terug als signed URL (Supabase Storage), die openen we direct.
+ */
+export async function downloadBijlage(url: string, naam: string): Promise<void> {
+  let res: Response;
+  try {
+    res = await fetch(url, { headers: { [DOWNLOAD_HEADER]: 'fetch' }, cache: 'no-store' });
+  } catch {
+    throw new MailApiFout(0, 'Geen verbinding. Controleer je internet en probeer het opnieuw.');
+  }
+  if (res.status === 401) {
+    const terug = window.location.pathname + window.location.search;
+    window.location.href = `/login?next=${encodeURIComponent(terug)}`;
+    throw new MailApiFout(401, 'Je bent uitgelogd.');
+  }
+  if (!res.ok) {
+    const data = await res.json().catch(() => null);
+    throw new MailApiFout(res.status, (data && data.error) || 'Downloaden van de bijlage is mislukt.', data?.code);
+  }
+  if (res.headers.get(SIGNED_HEADER) === '1') {
+    const data = (await res.json().catch(() => null)) as { url?: string } | null;
+    if (!data?.url) throw new MailApiFout(500, 'Downloaden van de bijlage is mislukt.');
+    klikDownload(data.url);
+    return;
+  }
+  const blob = await res.blob();
+  const objectUrl = URL.createObjectURL(blob);
+  klikDownload(objectUrl, naam);
+  window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+}
+
 // ---------- korte cache (60 s) voor badge en dashboard-widget ----------
 
 const CACHE_MS = 60_000;

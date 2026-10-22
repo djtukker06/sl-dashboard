@@ -16,7 +16,7 @@ export default async function NieuweFactuurPage() {
   return (
     <div className="wrap">
       <div className="topbar">
-        <Link href="/facturen" className="wordmark">
+        <Link href="/" className="wordmark">
           Studio <span>Levant</span>
         </Link>
         <nav>

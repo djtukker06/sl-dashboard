@@ -7,7 +7,8 @@ import sanitizeHtml from 'sanitize-html';
 //   - <style> en inline styles blijven, anders vallen opgemaakte mails uit elkaar;
 //   - externe afbeeldingen (src/background met http(s)) worden data-extern-src /
 //     data-extern-background, zodat er niets geladen wordt tot de gebruiker op "Tonen" klikt;
-//   - cid:-afbeeldingen zijn door mailparser al data:-URI's geworden.
+//   - cid:-afbeeldingen zijn door mailparser data:-URI's geworden (totaalbudget 1 MB); wat
+//     daarboven viel is nog cid: en verdwijnt hier, omdat img alleen data/http(s) toestaat.
 
 const TAGS = [
   'a', 'abbr', 'address', 'area', 'article', 'aside', 'b', 'bdi', 'bdo', 'big', 'blockquote', 'br', 'caption',

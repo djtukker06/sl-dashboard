@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { adresNaam, leesCache, lijstDatum, mailApi, MailApiFout, meldOngelezen, schrijfCache } from '@/lib/mail/client';
 import type { MailOverzicht } from '@/lib/mail/types';
 import { Kaart, KaartMelding } from './Kaart';
@@ -10,16 +10,28 @@ const CACHE = 'sl-mail-overzicht';
 
 // Inbox op het dashboard. Een client-component, zodat de IMAP-verbinding de eerste
 // weergave van het dashboard niet vertraagt. 60 s cache in sessionStorage: terug naar het
-// dashboard is meteen gevuld.
+// dashboard is meteen gevuld. Daarna ververst de widget net als de rail-badge: bij terugkeren
+// naar het tabblad en elke 2 minuten (alleen als het tabblad zichtbaar is), en zodra iets
+// anders op de pagina een ander aantal ongelezen meldt.
+const VERS_MS = 60_000;
+const INTERVAL_MS = 120_000;
+
 export function InboxWidget() {
   const [data, setData] = useState<MailOverzicht | null>(null);
   const [fout, setFout] = useState<MailApiFout | null>(null);
   const [bezig, setBezig] = useState(false);
+  const geladenOp = useRef(0);
+  const bezigRef = useRef(false);
+  const ongelezenRef = useRef<number | null>(null);
 
   const laad = useCallback(async () => {
+    if (bezigRef.current) return;
+    bezigRef.current = true;
     setBezig(true);
     try {
       const res = await mailApi.overzicht();
+      geladenOp.current = Date.now();
+      ongelezenRef.current = res.geconfigureerd ? res.ongelezen : null;
       setData(res);
       setFout(null);
       schrijfCache(CACHE, res);
@@ -27,6 +39,7 @@ export function InboxWidget() {
     } catch (e) {
       setFout(e instanceof MailApiFout ? e : new MailApiFout(0, 'Inbox laden mislukt.'));
     } finally {
+      bezigRef.current = false;
       setBezig(false);
     }
   }, []);
@@ -34,9 +47,34 @@ export function InboxWidget() {
   useEffect(() => {
     const cache = leesCache<MailOverzicht>(CACHE);
     // Uit de cache tonen gebeurt na het mounten (sessionStorage bestaat niet op de server).
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (cache) setData(cache);
-    else laad();
+    if (cache) {
+      // De cache is hooguit 60 s oud; als "net geladen" rekenen voorkomt een dubbele fetch.
+      geladenOp.current = Date.now();
+      ongelezenRef.current = cache.geconfigureerd ? cache.ongelezen : null;
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setData(cache);
+    } else laad();
+  }, [laad]);
+
+  // Verversen: bij terugkeren naar het tabblad, elke 2 min als het zichtbaar is, en bij
+  // een afwijkend aantal ongelezen dat een ander deel van deze pagina meldt.
+  useEffect(() => {
+    const alsVerouderd = () => {
+      if (document.visibilityState !== 'visible') return;
+      if (Date.now() - geladenOp.current >= VERS_MS) void laad();
+    };
+    const opMelding = (e: Event) => {
+      const aantal = Number((e as CustomEvent).detail) || 0;
+      if (ongelezenRef.current !== null && aantal !== ongelezenRef.current) void laad();
+    };
+    document.addEventListener('visibilitychange', alsVerouderd);
+    window.addEventListener('sl-mail-ongelezen', opMelding);
+    const timer = window.setInterval(alsVerouderd, INTERVAL_MS);
+    return () => {
+      document.removeEventListener('visibilitychange', alsVerouderd);
+      window.removeEventListener('sl-mail-ongelezen', opMelding);
+      window.clearInterval(timer);
+    };
   }, [laad]);
 
   const ongelezen = data?.ongelezen ?? 0;
