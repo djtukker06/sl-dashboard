@@ -21,6 +21,23 @@ const nextConfig: NextConfig = {
     // /social leest de social-HTML via fs in en zet de gedeelde rail erin (app/social/route.ts).
     '/social': ['./assets/social-app/index.html']
   },
+  // Beveiligingskoppen voor elk antwoord (pagina's, API's en bestanden):
+  //   - niet in een frame van een ander domein (clickjacking); eigen iframes (social-slides) mogen;
+  //   - Referer alleen binnen de eigen site: signed URL's en ?-parameters lekken niet naar buiten;
+  //   - geen MIME-sniffing; camera alleen voor de eigen site (bonnetje fotograferen), de rest uit.
+  async headers() {
+    return [
+      {
+        source: '/:path*',
+        headers: [
+          { key: 'X-Frame-Options', value: 'SAMEORIGIN' },
+          { key: 'Referrer-Policy', value: 'same-origin' },
+          { key: 'X-Content-Type-Options', value: 'nosniff' },
+          { key: 'Permissions-Policy', value: 'camera=(self), microphone=(), geolocation=(), payment=()' }
+        ]
+      }
+    ];
+  },
   // De facturenschermen staan sinds het dashboard onder /facturen. Oude bookmarks
   // blijven werken via deze tijdelijke redirects (de query, bv. ?jaar=, gaat mee).
   async redirects() {

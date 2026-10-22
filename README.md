@@ -20,12 +20,16 @@ je vanuit elke module terug naar het dashboard.
 
 1. **SQL uitvoeren** in Supabase: `supabase/UITVOEREN_IN_SQL_EDITOR.sql` (zie hieronder).
    Tot dan tonen social, de agenda en uitgaven een nette melding "nog niet ingericht".
-   Al eerder uitgevoerd (0014–0019)? Dan alleen `supabase/UITVOEREN_0020_UITGAVEN.sql`.
-2. **Oude social-posts importeren** met `scripts/importeer-social-projecten.mjs`
+   Al eerder uitgevoerd (0014–0019)? Dan `supabase/UITVOEREN_0020_UITGAVEN.sql`.
+   Al eerder uitgevoerd (0014–0020)? Dan alleen `supabase/UITVOEREN_0021_TEAM.sql`.
+2. **Supabase-instellingen voor teamtoegang** (zie "Team & toegang"): aanmelden en anonieme
+   sign-ins UIT, "Confirm email" AAN, Redirect URLs strak, uitnodigingsmail aanpassen.
+3. **Oude social-posts importeren** met `scripts/importeer-social-projecten.mjs`
    (zie "Social-projecten importeren").
-3. **Omgevingsvariabelen** zetten in `.env.local` en in Vercel (zie "Omgevingsvariabelen"),
-   inclusief `MAIL_USER`/`MAIL_PASSWORD` om de mail te koppelen.
-4. Deployen op Vercel (zie "Deployen op Vercel").
+4. **Omgevingsvariabelen** zetten in `.env.local` en in Vercel (zie "Omgevingsvariabelen"),
+   inclusief `MAIL_USER`/`MAIL_PASSWORD` om de mail te koppelen en `NEXT_PUBLIC_SITE_URL`.
+5. Deployen op Vercel (zie "Deployen op Vercel").
+6. **Compagnon toevoegen** met `scripts/teamlid-toevoegen.mjs` (zie "Team & toegang").
 
 ## Lokaal draaien
 
@@ -33,16 +37,18 @@ je vanuit elke module terug naar het dashboard.
 2. `npm install`
 3. Kopieer `.env.local.example` naar `.env.local` en vul de waarden in (zie "Omgevingsvariabelen").
 4. Draai de database-SQL (zie "Database inrichten").
-5. Maak in het Supabase-dashboard (Authentication → Users → Add user) een inlogaccount aan
-   voor jezelf — er is geen publieke registratie. Zet eventueel bij de gebruiker in
-   *User Metadata* `{"naam": "Daniel"}`; die naam gebruikt het dashboard voor de begroeting.
+5. Er is geen registratie in de app. Accounts komen er alleen "aan de achterkant" bij, met
+   `scripts/teamlid-toevoegen.mjs` (zie "Team & toegang"). Na migratie 0021 komt alleen een
+   **actief teamlid** binnen; de naam in de begroeting komt uit zijn profiel.
 6. `npm run dev` en ga naar `http://localhost:3000`.
 
 ## Database inrichten: één SQL-bestand
 
 Alles wat de nieuwe modules nodig hebben staat in **`supabase/UITVOEREN_IN_SQL_EDITOR.sql`**:
-de migraties 0014–0020 achter elkaar, in één transactie. Wie 0014–0019 al heeft uitgevoerd,
-draait alleen **`supabase/UITVOEREN_0020_UITGAVEN.sql`** (uitgaven; zelfde opzet met controletabel).
+de migraties 0014–0021 achter elkaar, in één transactie. Wie 0014–0019 al heeft uitgevoerd,
+draait **`supabase/UITVOEREN_0020_UITGAVEN.sql`** (uitgaven + team); wie 0014–0020 al heeft,
+alleen **`supabase/UITVOEREN_0021_TEAM.sql`**. Elk bestand eindigt met 0021, zodat opnieuw
+uitvoeren nooit de oude open policies terugzet.
 
 | Migratie | Inhoud |
 |---|---|
@@ -53,14 +59,18 @@ draait alleen **`supabase/UITVOEREN_0020_UITGAVEN.sql`** (uitgaven; zelfde opzet
 | `0018_agenda_taken.sql` | tabellen `tasks` en `calendar_events` (RLS, `updated_at`-trigger) |
 | `0019_mail_opslag.sql` | privé-bucket `mail-tmp` voor grote mailbijlagen |
 | `0020_uitgaven.sql` | tabellen `expenses` en `expense_files` (RLS, `updated_at`-trigger), privé-buckets `uitgaven` (25 MB, jpeg/png/webp/heic/pdf) en `uitgaven-export` (50 MB, ZIP) |
+| `0021_team_en_taken.sql` | `team_members` (allowlist) + `profiles`, `is_teamlid()` in **alle** policies (ook facturen en Storage), `create_invoice`/`update_invoice` alleen nog voor de service-role, `projects`, `task_assignees`, `task_subtasks`, `event_attendees`, `user_mailboxes`; zaait het lidmaatschap van de huidige gebruiker(s) |
 
 **Uitvoeren:** Supabase-dashboard → je project → **SQL Editor** → *New query* → plak het hele
 bestand → **Run**. Onderaan verschijnt een controletabel; elke regel moet `ok` tonen.
 
 - Het bestand is **veilig om nogmaals uit te voeren** (`if not exists`, `drop policy if exists`,
   `on conflict do nothing`): bestaande posts, taken en een aangepaste huisstijl blijven staan.
-  Getest door het twee keer achter elkaar uit te voeren op een lege lokale Postgres.
-- De facturen-tabellen (0001–0013) worden niet aangeraakt.
+  0014–0020 zijn getest door ze twee keer achter elkaar uit te voeren op een lege lokale
+  Postgres; 0021 is zo geschreven (alles met `if not exists`/`drop … if exists`, zaaien
+  alleen als `team_members` leeg is) maar nog niet tegen een database gedraaid.
+- Van de facturen-tabellen (0001–0013) veranderen alleen de toegangsregels (0021): lezen
+  alleen voor teamleden, en "aangemaakt door" wordt leeg als een oud-teamlid wordt verwijderd.
 - Het bestand wordt gegenereerd uit `supabase/migrations/` met
   `node scripts/genereer-sql-editor.mjs` (controle: `--controleer`). Pas het niet met de hand
   aan; pas de migratie aan en genereer opnieuw.
@@ -95,10 +105,11 @@ onder **Project Settings → Environment Variables** (Production én Preview):
 | Variabele | Verplicht | Waarvoor |
 |---|---|---|
 | `NEXT_PUBLIC_SUPABASE_URL` | ja | URL van het Supabase-project |
+| `NEXT_PUBLIC_SITE_URL` | aanbevolen | Publieke adres van de backoffice (bv. `https://backoffice.studio-levant.nl`). Basis voor links in herstel- en uitnodigingsmails; zonder deze waarde alleen de Vercel-productie-URL of localhost |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | ja | Publieke anon-key (login in de browser) |
 | `SUPABASE_SERVICE_ROLE_KEY` | ja | Geheime service-role key, alleen op de server |
 | `ANTHROPIC_API_KEY` | voor social en uitgaven | Anthropic-key voor het genereren van social posts en het uitlezen van bonnetjes (zonder key: uitgaven handmatig invullen) |
-| `MAIL_USER`, `MAIL_PASSWORD` | voor mail | Mailbox voor `/mail` (zie "Mail koppelen") |
+| `MAIL_USER`, `MAIL_PASSWORD` | voor mail | Mailbox van de eigenaar voor `/mail` (zie "Mail koppelen"). Alleen te gebruiken door het account met dat adres of de eigenaar; andere teamleden zien "niet gekoppeld" |
 | `MAIL_IMAP_HOST`, `MAIL_IMAP_PORT`, `MAIL_SMTP_HOST`, `MAIL_SMTP_PORT` | nee | Standaard `mail.privateemail.com`, 993 en 465 |
 | `MAIL_FROM_NAME`, `MAIL_HANDTEKENING` | nee | Afzendernaam (standaard "Studio Levant") en handtekening (`\n` = nieuwe regel) |
 | `CHROME_PATH` | nee, alleen lokaal | Eigen Chrome/Chromium voor social-exports tijdens `npm run dev` |
@@ -106,6 +117,74 @@ onder **Project Settings → Environment Variables** (Production én Preview):
 Na het wijzigen van een variabele in Vercel: opnieuw deployen (Deployments → … → Redeploy),
 anders gebruikt de site nog de oude waarden. De API-key kan niet in de social-tool zelf
 worden ingevuld; de instellingen-dialoog laat alleen zien of er een key op de server staat.
+
+## Team & toegang
+
+De backoffice is van en voor het team. **Alleen actieve teamleden** zien iets: facturen,
+klanten, bonnetjes, social, agenda — alles. Er is geen registratie in de app; accounts
+komen er alleen bij via een script met de service-role key ("aan de achterkant").
+
+**Hoe het werkt**
+
+- `team_members` (migratie 0021) is de allowlist; `is_teamlid()` staat in **elke** policy
+  (tabellen en Storage). Een account dat niet (meer) actief lid is, ziet via de database
+  niets, ook niet met de anon key en een geldige sessie. De anonieme rol (alleen de anon
+  key) heeft in `public` helemaal geen rechten meer.
+- In de app gaat alles langs één helper, `lib/auth/team.ts`: `vereisTeamlidPagina()` voor
+  pagina's, `teamlidRoute()`/`controleerRoute()` voor API's (401 zonder sessie, 403 zonder
+  lidmaatschap, 403 bij een wijzigend verzoek van een ander domein) en `vereisTeamlid()` voor
+  server actions. De service-role client (`createServiceRoleClient(bewijs)`) vraagt het bewijs
+  van die controle: code die hem zonder controle gebruikt, compileert niet.
+- `proxy.ts` logt een ingelogd account zonder lidmaatschap direct uit en stuurt het naar
+  `/geen-toegang` (API's: JSON 403). Ook inloggen en `/auth/callback` controleren het lidmaatschap.
+- Gedeelde bedrijfsdata (facturen, prijsopgaven, klanten, bonnetjes, social, projecten) ziet
+  iedereen in het team. Taken en afspraken ook (voor de teamweergave in de agenda), maar
+  **wijzigen** kan alleen de maker of een toegewezene/deelnemer (RLS). Mail is persoonlijk:
+  ieder ziet alleen zijn eigen mailbox. Wachtwoorden van gekoppelde mailboxen staan
+  versleuteld in `user_mailboxes` (geen policies; alleen de server leest ze).
+- **Overgangsmodus:** zolang 0021 niet is uitgevoerd, werkt de app zoals voorheen (elk
+  ingelogd account) en toont de shell een rode banner. Voer 0021 dus zo snel mogelijk uit.
+
+**Supabase-instellingen (eenmalig, in het dashboard)**
+
+1. *Authentication → Sign In / Providers → Email*: **"Allow new users to sign up" UIT**,
+   **"Confirm email" AAN**. *Anonymous sign-ins*: **UIT**. (Uitnodigen werkt ook met
+   aanmelden uit: dat gaat via de service-role.)
+2. *Authentication → URL Configuration*: **Site URL** = het productiedomein (bv.
+   `https://backoffice.studio-levant.nl`). **Redirect URLs**: alleen
+   `https://backoffice.studio-levant.nl/**` en `http://localhost:3000/**` — geen
+   `*.vercel.app`-wildcard.
+3. *Authentication → Emails → "Invite user"*: zet de link op
+   `{{ .SiteURL }}/auth/callback?token_hash={{ .TokenHash }}&type=invite&next=/nieuw-wachtwoord`
+   (en "Reset password" op `{{ .SiteURL }}/auth/callback?token_hash={{ .TokenHash }}&type=recovery&next=/nieuw-wachtwoord`
+   als die nog de standaardlink gebruikt). Zo opent de link de sessie op de server en kiest
+   het nieuwe lid meteen een wachtwoord.
+
+**Teamlid toevoegen** (de compagnon, of iemand opnieuw toegang geven):
+
+```bash
+node --env-file=.env.local scripts/teamlid-toevoegen.mjs --email mark@studio-levant.nl --naam "Mark" --dry-run
+node --env-file=.env.local scripts/teamlid-toevoegen.mjs --email mark@studio-levant.nl --naam "Mark"
+```
+
+Nodigt het account uit (als het nog niet bestaat; anders wordt een blokkade opgeheven) en
+zet profiel (naam, initialen, kleur) en een actief lidmaatschap. Opties: `--initialen`,
+`--kleur #rrggbb`, `--rol lid|eigenaar`, `--site https://…`, `--help`.
+
+**Teamlid de toegang ontnemen:**
+
+```bash
+node --env-file=.env.local scripts/teamlid-verwijderen.mjs --email mark@studio-levant.nl            # deactiveren
+node --env-file=.env.local scripts/teamlid-verwijderen.mjs --email mark@studio-levant.nl --definitief --ja
+```
+
+Deactiveren zet het lidmaatschap uit (database en app sluiten hem direct buiten), blokkeert
+het account (ook verversen van de sessie lukt niet meer) en ontkoppelt zijn mailbox.
+`--definitief --ja` verwijdert daarna ook het account; "aangemaakt door" wordt dan leeg.
+De laatste actieve eigenaar kan niet worden gedeactiveerd.
+
+De scripts lezen de sleutels alleen uit de procesomgeving (`--env-file`), lezen zelf geen
+`.env`-bestanden en printen nooit een sleutel.
 
 ## De shell: één geheel
 
@@ -188,6 +267,10 @@ dashboard en **Als uitgave** bij bijlagen in mail.
 
 ## Mail koppelen (Namecheap Private Email)
 
+Mail is **persoonlijk**: elk teamlid ziet alleen zijn eigen mailbox. De mailbox hieronder
+(env) is die van de eigenaar en is alleen bruikbaar voor het account met hetzelfde adres
+als `MAIL_USER` of de eigenaar van het team; een ander teamlid ziet "niet gekoppeld".
+
 De inbox van studio-levant.nl staat op `/mail` en als widget op het dashboard; de rail toont
 het aantal ongelezen mails. Lezen, zoeken, markeren, archiveren, verwijderen (naar de
 prullenbak, nooit definitief), bijlagen downloaden, beantwoorden (met juiste threading),
@@ -257,9 +340,10 @@ Oude adressen blijven werken via tijdelijke redirects in `next.config.ts`: `/nie
 |---|---|
 | `/` | Dashboard "Vandaag" |
 | `/login`, `/wachtwoord-vergeten` | Openbaar; na inloggen terug naar waar je was (`?next=`) |
+| `/geen-toegang` | Openbaar, zonder data: voor een account zonder (actief) teamlidmaatschap |
 | `/nieuw-wachtwoord`, `/auth/callback`, `POST /auth/uitloggen` | Wachtwoord instellen, inlog-callback, uitloggen |
 | `/facturen…` | Facturen, prijsopgaven, klanten |
-| `/api/invoices…`, `/api/quotes…`, `/api/clients/search` | Facturen-API (ongewijzigd) |
+| `/api/invoices…`, `/api/quotes…`, `/api/clients/search` | Facturen-API (inhoudelijk ongewijzigd; nu met teamlid- en herkomstcontrole) |
 | `/agenda` | Agenda & taken (`?dag=`, `?weergave=maand`, `?taak=`, `?afspraak=`) |
 | `/api/agenda`, `/api/taken…`, `/api/afspraken…` | Agenda-API (503 `tabel_ontbreekt` vóór de SQL) |
 | `/mail` | Mail (`?map=`, `?uid=`, `?nieuw=1`) |
@@ -269,23 +353,29 @@ Oude adressen blijven werken via tijdelijke redirects in `next.config.ts`: `/nie
 | `/social` | Social-media-tool (`#p=<id>` opent een project, `#nieuw` een nieuwe post) |
 | `/api/social/…`, `/social-files/…` | Social-API (spiegelt de oude Express-API) en de bestanden die slides laden |
 
-**Beveiliging.** Alles behalve `/login`, `/wachtwoord-vergeten`, `/auth/*`, de logo's en de
-shell-bestanden zit achter de login. `proxy.ts` stuurt niet-ingelogde bezoekers naar
-`/login` (de API's van social, agenda, mail en uitgaven krijgen een echte 401), en **elke** pagina en
-API-route controleert daarnaast zelf de sessie. Nieuwe tabellen hebben RLS. Mail-HTML wordt
-op de server gesaneerd en in een gesandboxte iframe zonder scripts getoond.
+**Beveiliging.** Alles behalve `/login`, `/wachtwoord-vergeten`, `/geen-toegang`, `/auth/*`,
+de logo's en de shell-bestanden zit achter de login én het teamlidmaatschap (zie "Team &
+toegang"). `proxy.ts` stuurt niet-ingelogde bezoekers naar `/login` (alle API's en
+`/social-files` krijgen een JSON-401) en niet-teamleden naar `/geen-toegang`; **elke** pagina,
+server action en API-route controleert daarnaast zelf (`lib/auth/team.ts`). Wijzigende
+API-verzoeken van een ander domein worden geweigerd. Elke tabel heeft RLS met `is_teamlid()`.
+Mail-HTML wordt op de server gesaneerd en in een gesandboxte iframe zonder scripts getoond.
+Elk antwoord krijgt `X-Frame-Options: SAMEORIGIN`, `Referrer-Policy: same-origin`,
+`X-Content-Type-Options: nosniff` en een strikte `Permissions-Policy` (`next.config.ts`).
 
 ## Controleren
 
 ```bash
 npx tsc --noEmit && npm run lint && npm run build
-node scripts/rooktest-shell.mjs --alleen-statisch     # React-rail en social-rail gelijk
+node scripts/rooktest-shell.mjs --alleen-statisch     # rails gelijk + teamtoegang overal (statisch)
 npx next start -p 3107 &                              # (na de build)
-node scripts/rooktest-shell.mjs http://localhost:3107 # alle pagina's -> /login, alle API's weigeren
+node scripts/rooktest-shell.mjs http://localhost:3107 # alle pagina's -> /login, alle API's JSON-401, koppen
 node scripts/test-snelinvoer.mjs                      # snelinvoer agenda (incl. zomer-/wintertijd)
 node scripts/test-uitgaven.mjs                        # uitgaven: bedragen, btw, CSV, uitlezen (nagebootst)
+node scripts/test-team.mjs                            # herkomst (CSRF), basis-URL voor mails, teambeheer-scripts
 node scripts/test-brand-guard-parity.mjs              # social-port gelijk aan het origineel
-node scripts/genereer-sql-editor.mjs --controleer     # SQL-bestand actueel
+node scripts/genereer-sql-editor.mjs --controleer     # SQL-bestanden actueel
+node scripts/teamlid-toevoegen.mjs --help             # teambeheer (niet uitvoeren zonder reden)
 node --experimental-strip-types scripts/rooktest-render.mjs   # social-renderer (lokale Chrome nodig)
 ```
 
@@ -295,9 +385,11 @@ node --experimental-strip-types scripts/rooktest-render.mjs   # social-renderer 
    `actief: true`, eventueel een `snelactie`). De rail (ook in social) en de snelle acties op
    het dashboard nemen hem automatisch over. Een nieuw icoon voeg je toe in `lib/shell/iconen.ts`.
 2. Maak de pagina's in `app/(app)/<module>/`; dan staan ze vanzelf in de shell.
-3. Eventueel API-routes in `app/api/<module>/`. Begin elke route met een sessiecheck, zoals de
-   bestaande routes, en geef zonder sessie een 401 (zet het pad ook in de 401-lijst in `proxy.ts`).
-4. Eventueel een migratie `supabase/migrations/00NN_<module>.sql` met RLS aan, idempotent
+3. Eventueel API-routes in `app/api/<module>/`. Wikkel elke route in `teamlidRoute()` uit
+   `lib/auth/team.ts` (of begin met `controleerRoute()`); begin elke pagina met
+   `vereisTeamlidPagina()`. De proxy geeft alle `/api/…` zonder sessie al een JSON-401.
+4. Eventueel een migratie `supabase/migrations/00NN_<module>.sql` met RLS aan en policies op
+   `(select public.is_teamlid())` (nooit `auth.uid() is not null`), idempotent
    geschreven. Voeg hem toe aan `MIGRATIES` in `scripts/genereer-sql-editor.mjs` en genereer
    `UITVOEREN_IN_SQL_EDITOR.sql` opnieuw.
 

@@ -273,3 +273,50 @@
 @media (prefers-reduced-motion: reduce) {
   .db-skelet { animation: none; }
 }
+
+/* ---------- teamleden: avatar + naam (components/team/Persoon.tsx) ---------- */
+.sl-persoon {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 12.5px;
+  color: var(--sl-muted);
+  vertical-align: middle;
+}
+.sl-persoon-avatar {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--sl-avatar-kleur, var(--sl-panel));
+  color: var(--sl-avatar-tekst, var(--sl-text));
+  font-family: var(--sl-font);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  line-height: 1;
+}
+.sl-persoon-naam { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ---------- banner: teambeveiliging nog niet actief (migratie 0021) ---------- */
+.sl-overgang {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  margin: 0;
+  padding: 10px 40px;
+  border-bottom: 1px solid var(--sl-line);
+  background: rgba(217, 140, 122, 0.12);
+  color: var(--sl-text);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.sl-overgang strong { font-weight: 700; }
+.sl-overgang code { font-family: var(--sl-mono); font-size: 12px; color: var(--sl-sand); }
+@media (max-width: 760px) {
+  .sl-overgang { padding: 10px 16px; }
+}

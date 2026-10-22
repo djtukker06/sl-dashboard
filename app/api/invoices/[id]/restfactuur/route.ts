@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { revalidatePath } from 'next/cache';
-import { createClient } from '@/lib/supabase/server';
+import { controleerRoute, isUuid } from '@/lib/auth/team';
 import { createServiceRoleClient } from '@/lib/supabase/service-role';
 import { maakFactuurAan } from '@/lib/invoice/aanmaken';
 import { standaardNaam } from '@/lib/invoice/formulier';
@@ -25,17 +25,19 @@ const opCenten = (bedrag: number) => Math.round((bedrag + Number.EPSILON) * 100)
 // Elke regel krijgt het deel dat nog niet gefactureerd is (volledige prijs min wat er op
 // de aanbetaling stond), zodat aanbetaling + restfactuur samen precies de opdracht zijn.
 export async function POST(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) {
-    return NextResponse.json({ error: 'Niet ingelogd.' }, { status: 401 });
-  }
+  // Sessie + teamlidmaatschap (401/403) en bij wijzigen de herkomst (lib/auth/team.ts).
+  const toegang = await controleerRoute(request);
+  if ('antwoord' in toegang) return toegang.antwoord;
+  const lid = toegang.lid;
 
   const { id } = await params;
-  const service = createServiceRoleClient();
+  if (!isUuid(id)) {
+    return NextResponse.json({ error: 'Niet gevonden.' }, { status: 404 });
+  }
+  const service = createServiceRoleClient(lid.bewijs);
 
   const { data: aanbetaling } = await service
     .from('invoices')
@@ -111,6 +113,15 @@ export async function POST(
   if (!resultaat.ok) {
     return NextResponse.json({ error: resultaat.fout }, { status: 500 });
   }
+
+  // "Aangemaakt door": create_invoice draait via de service-role, waar auth.uid() leeg is.
+  // Alleen deze kolom; de factuur zelf blijft precies zoals create_invoice hem vastlegde.
+  const { error: makerFout } = await service
+    .from('invoices')
+    .update({ created_by: lid.userId })
+    .eq('id', resultaat.id)
+    .is('created_by', null);
+  if (makerFout) console.error('[facturen] maker vastleggen mislukt', makerFout.code ?? '', makerFout.message);
 
   revalidatePath('/facturen');
   revalidatePath(`/facturen/klanten/${aanbetaling.client_id}`);

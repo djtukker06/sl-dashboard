@@ -1,9 +1,10 @@
+import { metTeamlid, type Teamlid } from '@/lib/auth/team';
 import { HttpError } from '@/lib/social/http';
 import { listProjects } from '@/lib/social/repo';
 import { getFormat } from '@/lib/social/formats';
 
 // Recente social-posts voor het dashboard. listProjects() gebruikt de service-role
-// client: ALLEEN aanroepen nadat de sessie is gecontroleerd (de dashboardpagina doet dat).
+// client: daarom vraagt deze functie het (gecontroleerde) teamlid van de pagina.
 
 export type RecentePost = {
   id: string;
@@ -17,10 +18,11 @@ export type RecentePost = {
 };
 
 export async function recentePosts(
+  lid: Teamlid,
   max = 4
 ): Promise<{ ok: true; posts: RecentePost[]; totaal: number } | { ok: false; reden: 'niet-ingericht' | 'fout' }> {
   try {
-    const lijst = await listProjects();
+    const lijst = await metTeamlid(lid, () => listProjects());
     return {
       ok: true,
       totaal: lijst.length,

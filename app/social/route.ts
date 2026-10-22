@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { huidigTeamlid } from '@/lib/auth/team';
 import { railHtml } from '@/lib/shell/rail';
 
 export const runtime = 'nodejs';
@@ -23,17 +23,28 @@ async function leesHtml() {
 }
 
 export async function GET(request: Request) {
-  const supabase = await createClient();
-  const {
-    data: { user }
-  } = await supabase.auth.getUser();
-  if (!user) {
+  // Sessie + teamlidmaatschap (lib/auth/team.ts), net als elke pagina in de shell.
+  const s = await huidigTeamlid();
+  if (s.soort === 'anoniem') {
     const url = new URL('/login', request.url);
     url.searchParams.set('next', '/social');
     return NextResponse.redirect(url);
   }
+  if (s.soort === 'geen_toegang') return NextResponse.redirect(new URL('/geen-toegang', request.url));
+  if (s.soort === 'storing') {
+    return new Response('De toegangscontrole is tijdelijk niet beschikbaar. Probeer het zo opnieuw.', {
+      status: 503,
+      headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' }
+    });
+  }
+  const { lid } = s;
 
-  const rail = railHtml('social', user.email ?? '', user.user_metadata);
+  const rail = railHtml('social', {
+    email: lid.email,
+    naam: lid.profiel.naam,
+    initialen: lid.profiel.initialen,
+    kleur: lid.profiel.kleur
+  });
   // Functies als vervanging: dan worden $-tekens in bv. een e-mailadres niet als patroon gelezen.
   const html = (await leesHtml())
     .replace('</head>', () => '<link rel="stylesheet" href="/shell/shell.css">\n</head>')

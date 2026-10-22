@@ -22,30 +22,17 @@ export function railItems(): RailItem[] {
   }));
 }
 
-const GENERIEK = new Set(['info', 'hallo', 'hello', 'contact', 'admin', 'mail', 'studio', 'office', 'team']);
+/** Wat de rail van de ingelogde gebruiker toont (uit het profiel, lib/auth/team.ts). */
+export interface RailAccount {
+  email: string;
+  naam: string;
+  initialen: string;
+  kleur: string;
+}
 
-/** Naam voor de begroeting en initialen: user_metadata.naam/name, anders het deel vóór de @. */
-export function accountGegevens(email: string | undefined | null, metadata?: Record<string, unknown> | null) {
-  const meta = metadata || {};
-  const uitMeta = [meta.naam, meta.name, meta.full_name].find((v) => typeof v === 'string' && v.trim()) as
-    | string
-    | undefined;
-  const lokaal = String(email || '').split('@')[0] || '';
-  const voornaam = uitMeta
-    ? uitMeta.trim().split(/\s+/)[0]
-    : GENERIEK.has(lokaal.toLowerCase()) || !lokaal
-      ? ''
-      : lokaal.charAt(0).toUpperCase() + lokaal.slice(1).split(/[._-]/)[0];
-  const initialen = uitMeta
-    ? uitMeta
-        .trim()
-        .split(/\s+/)
-        .map((w) => w[0])
-        .slice(0, 2)
-        .join('')
-        .toUpperCase()
-    : (lokaal.charAt(0) || 'S').toUpperCase();
-  return { email: String(email || ''), voornaam, initialen };
+/** Kleur van de avatar als CSS-variabelen (alleen een geldige #rrggbb-kleur). */
+export function avatarStijl(kleur: string): string {
+  return /^#[0-9a-f]{6}$/i.test(kleur) ? `--sl-avatar-kleur:${kleur.toLowerCase()};--sl-avatar-tekst:#232323` : '';
 }
 
 function esc(s: string) {
@@ -53,8 +40,7 @@ function esc(s: string) {
 }
 
 /** De rail als HTML. Moet exact dezelfde structuur en classes hebben als Rail.tsx. */
-export function railHtml(actief: string, email: string, metadata?: Record<string, unknown> | null): string {
-  const acc = accountGegevens(email, metadata);
+export function railHtml(actief: string, acc: RailAccount): string {
   const items = railItems()
     .map(
       (it) =>
@@ -62,15 +48,18 @@ export function railHtml(actief: string, email: string, metadata?: Record<string
         `${it.icoon}<span class="sl-rail-label">${esc(it.label)}</span></a></li>`
     )
     .join('');
+  const stijl = avatarStijl(acc.kleur);
   return (
     `<nav class="sl-rail" aria-label="Hoofdmenu">` +
     `<a class="sl-rail-logo" href="/" title="Studio Levant — Dashboard" aria-label="Naar het dashboard">` +
     `<img src="${LOGO_SRC}" alt="" width="36" height="37"></a>` +
     `<ul class="sl-rail-nav">${items}</ul>` +
     `<div class="sl-rail-foot"><details class="sl-account">` +
-    `<summary class="sl-account-knop" title="${esc(acc.email)}" aria-label="Account">` +
-    `<span class="sl-avatar">${esc(acc.initialen)}</span><span class="sl-account-label">Account</span></summary>` +
+    `<summary class="sl-account-knop" title="${esc(acc.naam)} · ${esc(acc.email)}" aria-label="Account">` +
+    `<span class="sl-avatar"${stijl ? ` style="${esc(stijl)}"` : ''}>${esc(acc.initialen)}</span>` +
+    `<span class="sl-account-label">Account</span></summary>` +
     `<div class="sl-account-pop">` +
+    `<p class="sl-account-naam">${esc(acc.naam)}</p>` +
     `<p class="sl-account-mail">${esc(acc.email)}</p>` +
     `<a class="sl-account-link" href="/nieuw-wachtwoord">Wachtwoord wijzigen</a>` +
     `<form method="post" action="/auth/uitloggen"><button type="submit" class="sl-account-link">Uitloggen</button></form>` +

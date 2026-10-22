@@ -4,12 +4,19 @@
 // 1. Statisch: de React-rail (components/shell/Rail.tsx + RailNav.tsx) en de HTML-rail
 //    voor social (railHtml in lib/shell/rail.ts) gebruiken dezelfde items, classes, links
 //    en logo.
-// 2. Tegen een draaiende server (`npm run build && npx next start -p 3107`):
+// 2. Statisch: de teamtoegang (lib/auth/team.ts) zit overal vóór:
+//    - elke API-route gebruikt de helper of een wrapper die hem aanroept;
+//    - elke pagina in app/(app) begint met vereisTeamlidPagina();
+//    - createServiceRoleClient() krijgt altijd een bewijs; nergens signUp( of getClaims;
+//    - migratie 0021 maakt geen open policy ("auth.uid() is not null") en elk SQL-Editor-
+//      bestand eindigt met 0021; de proxy-matcher heeft geen algemene .png/.jpg-uitzondering.
+// 3. Tegen een draaiende server (`npm run build && npx next start -p 3107`):
 //    - elke pagina (automatisch gevonden in app/) stuurt zonder sessie door naar /login;
-//    - elke API-route en elk social-bestand weigert (401, of voor de ongewijzigde
-//      facturen-API: de redirect naar /login zoals voorheen) — voor elke geëxporteerde methode;
-//    - /login en /wachtwoord-vergeten laden, met het echte logo;
+//    - elke API-route en elk social-bestand weigert met een JSON-401 — voor elke
+//      geëxporteerde methode, ook paden die op .png eindigen;
+//    - /login, /wachtwoord-vergeten en /geen-toegang laden, met het echte logo en zonder rail;
 //    - logo, shell.css en shell.js zijn openbaar; de social-frontend (app.js/app.css) niet;
+//    - beveiligingskoppen (X-Frame-Options, Referrer-Policy, nosniff) staan op elk antwoord;
 //    - uitloggen weigert een ander domein (403) en werkt vanaf het eigen domein (303).
 //
 // Gebruik:  node scripts/rooktest-shell.mjs [http://localhost:3107]
@@ -56,10 +63,86 @@ console.log("Rail: React en HTML gelijk");
   check(/<Rail\b/.test(lees("app/(app)/layout.tsx")), "app/(app)/layout.tsx rendert <Rail>");
 }
 
+// ---------------------------------------------------------------------------------
+// 2. Teamtoegang (statisch)
+// ---------------------------------------------------------------------------------
+console.log("Teamtoegang: overal de centrale controle");
+function bestandenIn(map, filter) {
+  const uit = [];
+  (function loop(dir) {
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+      const p = path.join(dir, e.name);
+      if (e.isDirectory()) loop(p);
+      else if (filter(e.name)) uit.push(path.relative(ROOT, p));
+    }
+  })(path.join(ROOT, map));
+  return uit;
+}
+{
+  const WRAPPERS = /\b(teamlidRoute|controleerRoute|metSessie|mailRoute|uitgavenRoute|route)\(/;
+  for (const f of bestandenIn("app/api", (n) => n === "route.ts")) {
+    check(WRAPPERS.test(lees(f)), `${f} gebruikt de teamlidcontrole`);
+  }
+  for (const f of bestandenIn("app/social-files", (n) => n === "route.ts")) {
+    check(/\broute\(/.test(lees(f)), `${f} gebruikt route() (teamlidcontrole)`);
+  }
+  for (const f of bestandenIn("app/(app)", (n) => n === "page.tsx")) {
+    check(/vereisTeamlidPagina\(/.test(lees(f)), `${f} begint met vereisTeamlidPagina()`);
+  }
+  check(/vereisTeamlidPagina\(/.test(lees("app/(app)/layout.tsx")), "app/(app)/layout.tsx controleert het lidmaatschap");
+  check(/huidigTeamlid\(/.test(lees("app/social/route.ts")), "/social controleert het lidmaatschap");
+  for (const f of ["app/actions/invoices.ts", "app/actions/quotes.ts", "app/actions/clients.ts"]) {
+    check(/vereisTeamlid\(/.test(lees(f)), `${f} controleert het lidmaatschap`);
+  }
+  check(/controleerLid\(/.test(lees("app/actions/login.ts")), "inloggen controleert het lidmaatschap");
+  check(/controleerLid\(/.test(lees("app/auth/callback/route.ts")), "/auth/callback controleert het lidmaatschap");
+  check(/veiligVervolg\(/.test(lees("app/auth/callback/route.ts")), "/auth/callback gebruikt veiligVervolg");
+  check(!/x-forwarded-host|h\.get\('host'\)/.test(lees("app/actions/wachtwoord.ts")), "herstellink niet uit de Host-kop");
+
+  const code = [...bestandenIn("app", (n) => /\.tsx?$/.test(n)), ...bestandenIn("lib", (n) => /\.tsx?$/.test(n)), ...bestandenIn("components", (n) => /\.tsx?$/.test(n)), "proxy.ts"];
+  const zonderBewijs = [];
+  const signUp = [];
+  const claims = [];
+  for (const f of code) {
+    const src = lees(f);
+    if (/createServiceRoleClient\(\s*\)/.test(src)) zonderBewijs.push(f);
+    if (/\bsignUp\(/.test(src)) signUp.push(f);
+    if (/\bgetClaims\(/.test(src)) claims.push(f);
+  }
+  check(zonderBewijs.length === 0, "createServiceRoleClient() altijd met bewijs", zonderBewijs.join(", "));
+  check(signUp.length === 0, "nergens signUp( (geen registratie in de app)", signUp.join(", "));
+  check(claims.length === 0, "nergens alleen getClaims() als toegangscontrole", claims.join(", "));
+  check(/^import 'server-only';/m.test(lees("lib/supabase/service-role.ts")), "service-role.ts is server-only");
+  check(/^import 'server-only';/m.test(lees("lib/auth/team.ts")), "lib/auth/team.ts is server-only");
+  check(/createServiceRoleClient\(bewijs: TeamlidBewijs\)/.test(lees("lib/supabase/service-role.ts")), "service-role vraagt een TeamlidBewijs");
+  check(fs.existsSync(path.join(ROOT, "app/geen-toegang/page.tsx")), "app/geen-toegang/page.tsx bestaat (buiten de shell)");
+
+  const proxy = lees("proxy.ts");
+  check(/'\/geen-toegang'/.test(proxy), "proxy kent /geen-toegang");
+  check(/controleerLid\(/.test(proxy) && /signOut\(/.test(proxy), "proxy logt niet-teamleden uit");
+  check(!/svg\|png\|jpg/.test(proxy), "proxy-matcher zonder algemene beeld-uitzondering");
+
+  const m21 = lees("supabase/migrations/0021_team_en_taken.sql").replace(/--[^\n]*/g, ""); // zonder commentaar
+  check(!/auth\.uid\(\)\)?\s+is not null/i.test(m21), "0021 maakt geen policy 'auth.uid() is not null'");
+  check(/create or replace function public\.is_teamlid\(\)/.test(m21), "0021 definieert is_teamlid()");
+  check(/revoke all on function %s from public, anon, authenticated/.test(m21), "0021 sluit create_invoice/update_invoice af");
+  check(/revoke all on all tables in schema public from anon/.test(m21), "0021 ontneemt anon alle rechten");
+  for (const f of ["UITVOEREN_IN_SQL_EDITOR.sql", "UITVOEREN_0020_UITGAVEN.sql", "UITVOEREN_0021_TEAM.sql"]) {
+    const sql = lees(`supabase/${f}`);
+    const laatste = [...sql.matchAll(/^-- (\d{4}_[\w]+\.sql)$/gm)].pop()?.[1];
+    check(laatste === "0021_team_en_taken.sql", `${f} eindigt met 0021`, laatste || "geen");
+  }
+
+  const headers = lees("next.config.ts");
+  for (const k of ["X-Frame-Options", "Referrer-Policy", "X-Content-Type-Options", "Permissions-Policy"]) {
+    check(headers.includes(`'${k}'`), `next.config.ts zet ${k}`);
+  }
+}
+
 if (ALLEEN_STATISCH) eindig();
 
 // ---------------------------------------------------------------------------------
-// 2. Routes zoeken in app/
+// 3. Routes zoeken in app/
 // ---------------------------------------------------------------------------------
 const DUMMY = {
   id: "00000000-0000-0000-0000-000000000000",
@@ -92,7 +175,7 @@ function routesIn(map) {
   });
 }
 const alles = routesIn("app");
-const PUBLIEK = new Set(["/login", "/wachtwoord-vergeten", "/auth/callback", "/auth/uitloggen"]);
+const PUBLIEK = new Set(["/login", "/wachtwoord-vergeten", "/auth/callback", "/auth/uitloggen", "/geen-toegang"]);
 
 async function vraag(url, init = {}) {
   return fetch(BASIS + url, { redirect: "manual", ...init });
@@ -116,8 +199,7 @@ for (const r of alles.filter((r) => (r.pagina || r.url === "/social") && !PUBLIE
   check(res.status >= 300 && res.status < 400, "/social/index.html stuurt door", `status ${res.status}`);
 }
 
-console.log("API's en bestanden zonder sessie -> geweigerd");
-let viaRedirect = [];
+console.log("API's en bestanden zonder sessie -> JSON-401");
 for (const r of alles.filter((r) => !r.pagina && !PUBLIEK.has(r.url) && r.url !== "/social")) {
   for (const m of r.methoden) {
     const init = { method: m, headers: { origin: BASIS } };
@@ -126,20 +208,23 @@ for (const r of alles.filter((r) => !r.pagina && !PUBLIEK.has(r.url) && r.url !=
       init.body = "{}";
     }
     const res = await vraag(r.url, init);
-    const ok = res.status === 401 || naarLogin(res);
-    if (ok && res.status !== 401) viaRedirect.push(`${m} ${r.url}`);
-    check(ok, `${m} ${r.url}`, `status ${res.status}`);
-    // Ook als het bestand een afbeelding lijkt (buiten de proxy-matcher) moet de route zelf weigeren.
+    const type = res.headers.get("content-type") || "";
+    check(res.status === 401 && type.includes("application/json"), `${m} ${r.url}`, `status ${res.status} ${type}`);
   }
 }
-for (const url of ["/social-files/brand/logo-licht.png", "/social-files/projects/x/assets/foto.png"]) {
+// Paden die op een afbeelding eindigen gaan ook door de proxy (en de route weigert zelf).
+for (const url of ["/social-files/brand/logo-licht.png", "/social-files/projects/x/assets/foto.png", "/api/taken/x.png", "/api/invoices/x.jpg/pdf"]) {
   const res = await vraag(url);
-  check(res.status === 401 || naarLogin(res), `GET ${url} (buiten proxy-matcher)`, `status ${res.status}`);
+  check(res.status === 401, `GET ${url} (eindigt op een beeldextensie)`, `status ${res.status}`);
 }
-if (viaRedirect.length) console.log(`  (via redirect naar /login, zoals de facturen-API altijd deed: ${viaRedirect.length} aanroepen)`);
+{
+  // Een POST van een ander domein zonder sessie: ook 401 (eerst de sessie, dan de herkomst).
+  const res = await vraag("/api/taken", { method: "POST", headers: { origin: "https://evil.example", "content-type": "text/plain" }, body: "{}" });
+  check(res.status === 401, "cross-site POST zonder sessie -> 401", `status ${res.status}`);
+}
 
 console.log("Openbare pagina's en bestanden");
-for (const url of ["/login", "/wachtwoord-vergeten"]) {
+for (const url of ["/login", "/wachtwoord-vergeten", "/geen-toegang"]) {
   const res = await vraag(url);
   const tekst = res.status === 200 ? await res.text() : "";
   check(res.status === 200, `${url} laadt`, `status ${res.status}`);
@@ -154,6 +239,19 @@ for (const url of ["/brand/beeldmerk-licht.png", "/brand/banner-licht.png", "/sh
 for (const url of ["/social/app.js", "/social/app.css"]) {
   const res = await vraag(url);
   check(naarLogin(res), `${url} achter login`, `status ${res.status}`);
+}
+
+console.log("Beveiligingskoppen");
+for (const url of ["/login", "/geen-toegang", "/api/taken"]) {
+  const res = await vraag(url);
+  check(res.headers.get("x-frame-options") === "SAMEORIGIN", `${url}: X-Frame-Options`, res.headers.get("x-frame-options") || "ontbreekt");
+  check(res.headers.get("referrer-policy") === "same-origin", `${url}: Referrer-Policy`, res.headers.get("referrer-policy") || "ontbreekt");
+  check(res.headers.get("x-content-type-options") === "nosniff", `${url}: nosniff`);
+}
+{
+  const res = await vraag("/geen-toegang");
+  const tekst = res.status === 200 ? await res.text() : "";
+  check(/Geen toegang/.test(tekst) && /href="\/login"/.test(tekst), "/geen-toegang toont uitleg en link naar /login");
 }
 
 console.log("Uitloggen");

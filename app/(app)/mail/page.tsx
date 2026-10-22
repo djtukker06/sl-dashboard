@@ -1,7 +1,6 @@
 import type { Metadata } from 'next';
-import { redirect } from 'next/navigation';
-import { createClient } from '@/lib/supabase/server';
-import { mailConfig } from '@/lib/mail/config';
+import { vereisTeamlidPagina } from '@/lib/auth/team';
+import { magEnvMailbox, mailConfigVoor } from '@/lib/mail/config';
 import { ModuleKop } from '@/components/shell/ModuleKop';
 import { NietGekoppeld } from '@/components/mail/NietGekoppeld';
 import { MailApp } from '@/components/mail/MailApp';
@@ -18,18 +17,15 @@ export default async function MailPage({
 }: {
   searchParams: Promise<{ map?: string; uid?: string; nieuw?: string; aan?: string }>;
 }) {
-  const supabase = await createClient();
-  const {
-    data: { user }
-  } = await supabase.auth.getUser();
-  if (!user) redirect('/login?next=/mail');
+  const lid = await vereisTeamlidPagina('/mail');
 
-  const cfg = mailConfig();
+  // Alleen de eigen mailbox van dit teamlid.
+  const cfg = await mailConfigVoor(lid);
   if (!cfg) {
     return (
       <>
         <ModuleKop label="Inbox" titel="Mail" />
-        <NietGekoppeld />
+        <NietGekoppeld reden={magEnvMailbox(lid) ? 'instellen' : 'eigen'} />
       </>
     );
   }

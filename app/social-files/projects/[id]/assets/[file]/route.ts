@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 type Ctx = { params: Promise<{ id: string; file: string }> };
 
 // Beeldmateriaal uit de privé-bucket "social-assets" (<id>/<bestand>). Let op: paden op
-// .png/.jpg/... vallen buiten de matcher van proxy.ts, dus deze route checkt zelf de sessie.
+// route() controleert zelf sessie + teamlidmaatschap (ook als de proxy is overgeslagen).
 export const GET = route(async (_request: Request, { params }: Ctx) => {
   await requireUser();
   const { id, file } = await params;
@@ -19,7 +19,7 @@ export const GET = route(async (_request: Request, { params }: Ctx) => {
   return new Response(new Uint8Array(bytes), {
     headers: {
       "Content-Type": mediaType(file),
-      "Cache-Control": "private, max-age=300",
+      "Cache-Control": "private, max-age=60",
       "X-Content-Type-Options": "nosniff",
     },
   });

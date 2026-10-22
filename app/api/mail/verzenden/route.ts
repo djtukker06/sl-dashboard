@@ -66,7 +66,7 @@ async function leesVerzoek(request: Request): Promise<{ g: Gegevens; bijlagen: U
 // Verstuurt via SMTP, zet een kopie in Verzonden (IMAP APPEND) en markeert bij een antwoord
 // het origineel als beantwoord. Antwoorden krijgen In-Reply-To/References (threading).
 export const POST = mailRoute(
-  async (request: Request) => {
+  async (request: Request, _ctx: unknown, mail) => {
     const { g, bijlagen } = await leesVerzoek(request);
 
     const aan = parseAdressen(g.aan, 'Aan');
@@ -81,7 +81,7 @@ export const POST = mailRoute(
     const modus = orig?.modus === 'antwoord' || orig?.modus === 'doorsturen' ? orig.modus : null;
     const gewensteDelen = Array.isArray(g.origineleBijlagen) ? g.origineleBijlagen.map(String).slice(0, 30) : [];
 
-    const resultaat = await metImap(async (c) => {
+    const resultaat = await metImap(mail.cfg, async (c) => {
       let inReplyTo: string | null = null;
       let references: string[] = [];
       let origMap: string | null = null;
@@ -118,7 +118,7 @@ export const POST = mailRoute(
         }
       }
 
-      const { raw, envelope } = await bouwBericht({
+      const { raw, envelope } = await bouwBericht(mail.cfg, {
         aan,
         cc,
         bcc,
@@ -129,7 +129,7 @@ export const POST = mailRoute(
         bijlagen: alleBijlagen
       });
 
-      await verstuur(raw, envelope);
+      await verstuur(mail.cfg, raw, envelope);
 
       // Vanaf hier is het bericht verstuurd: fouten maken het verzoek niet meer "mislukt".
       let bewaard = true;
@@ -160,6 +160,5 @@ export const POST = mailRoute(
       ok: true,
       waarschuwing: resultaat.bewaard ? undefined : 'Verzonden, maar er kon geen kopie in Verzonden worden bewaard.'
     });
-  },
-  { muterend: true }
+  }
 );

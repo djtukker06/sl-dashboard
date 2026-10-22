@@ -3,12 +3,15 @@ import { notFound } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import { ClientEditForm, type KlantRecord } from '@/components/ClientEditForm';
 import { formatDatumNL, formatEuro } from '@/lib/format';
+import { vereisTeamlidPagina } from '@/lib/auth/team';
 
 export default async function KlantDetailPage({
   params
 }: {
   params: Promise<{ clientId: string }>;
 }) {
+  // Sessie + teamlidmaatschap (lib/auth/team.ts); verder ongewijzigd.
+  await vereisTeamlidPagina();
   const { clientId } = await params;
   const supabase = await createClient();
 

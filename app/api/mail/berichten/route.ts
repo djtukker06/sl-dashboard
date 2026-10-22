@@ -13,12 +13,12 @@ function geheel(v: string | null, standaard: number, min: number, max: number) {
 
 // GET /api/mail/berichten?map=INBOX&pagina=1&per=40&zoek=
 //   → { map, pagina, per, totaal, meer, berichten: [envelop] } (nieuwste eerst)
-export const GET = mailRoute(async (request: Request) => {
+export const GET = mailRoute(async (request: Request, _ctx: unknown, mail) => {
   const sp = new URL(request.url).searchParams;
   const pagina = geheel(sp.get('pagina'), 1, 1, 10_000);
   const per = geheel(sp.get('per'), 40, 1, 100);
   const zoek = (sp.get('zoek') || '').trim();
-  const res = await metImap(async (c) => {
+  const res = await metImap(mail.cfg, async (c) => {
     const map = await controleerMap(c, sp.get('map'));
     return berichtenPagina(c, map.pad, { pagina, per, zoek });
   });

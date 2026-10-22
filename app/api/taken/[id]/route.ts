@@ -7,8 +7,8 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 // GET /api/taken/[id] → { task }
-export async function GET(_request: Request, ctx: { params: Promise<{ id: string }> }) {
-  const s = await metSessie();
+export async function GET(request: Request, ctx: { params: Promise<{ id: string }> }) {
+  const s = await metSessie(request);
   if ('antwoord' in s) return s.antwoord;
 
   const { id } = await ctx.params;
@@ -25,7 +25,7 @@ export async function GET(_request: Request, ctx: { params: Promise<{ id: string
 
 // PATCH /api/taken/[id]  (alle velden optioneel, plus afgerond: boolean) → { task }
 export async function PATCH(request: Request, ctx: { params: Promise<{ id: string }> }) {
-  const s = await metSessie();
+  const s = await metSessie(request);
   if ('antwoord' in s) return s.antwoord;
 
   const { id } = await ctx.params;
@@ -51,8 +51,8 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
 }
 
 // DELETE /api/taken/[id] → { ok: true }
-export async function DELETE(_request: Request, ctx: { params: Promise<{ id: string }> }) {
-  const s = await metSessie();
+export async function DELETE(request: Request, ctx: { params: Promise<{ id: string }> }) {
+  const s = await metSessie(request);
   if ('antwoord' in s) return s.antwoord;
 
   const { id } = await ctx.params;

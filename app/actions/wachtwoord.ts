@@ -3,6 +3,8 @@
 import { headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
+import { controleerLid } from '@/lib/auth/lidcheck';
+import { siteUrl } from '@/lib/auth/site';
 
 const MIN_LENGTE = 8;
 
@@ -15,15 +17,15 @@ export async function vraagHerstelAan(formData: FormData) {
     redirect(`/wachtwoord-vergeten?error=${encodeURIComponent('Vul je e-mailadres in.')}`);
   }
 
+  // Basis-URL uit een vaste instelling of een vaste lijst, nooit uit de Host-kop (lib/auth/site.ts).
   const h = await headers();
-  const origin =
-    h.get('origin') ||
-    `${h.get('x-forwarded-proto') || 'http'}://${h.get('x-forwarded-host') || h.get('host')}`;
+  const basis = siteUrl(h.get('origin'));
 
   const supabase = await createClient();
-  const { error } = await supabase.auth.resetPasswordForEmail(email, {
-    redirectTo: `${origin}/auth/callback?next=/nieuw-wachtwoord`
-  });
+  const { error } = await supabase.auth.resetPasswordForEmail(
+    email,
+    basis ? { redirectTo: `${basis}/auth/callback?next=/nieuw-wachtwoord` } : undefined
+  );
 
   if (error && error.status === 429) {
     redirect(
@@ -52,6 +54,13 @@ export async function zetNieuwWachtwoord(formData: FormData) {
   } = await supabase.auth.getUser();
   if (!user) {
     redirect(`/login?error=${encodeURIComponent('Je sessie is verlopen. Vraag een nieuwe herstelmail aan.')}`);
+  }
+
+  // Alleen teamleden (migratie 0021); anders direct uitloggen.
+  const lid = await controleerLid(supabase);
+  if (lid === 'geen' || lid === 'storing') {
+    await supabase.auth.signOut();
+    redirect('/geen-toegang');
   }
 
   const { error } = await supabase.auth.updateUser({ password: wachtwoord });

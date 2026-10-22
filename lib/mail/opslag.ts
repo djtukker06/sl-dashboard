@@ -1,3 +1,5 @@
+import { randomBytes } from 'node:crypto';
+import type { Teamlid } from '@/lib/auth/team';
 import { createServiceRoleClient } from '@/lib/supabase/service-role';
 import { bucketOntbreekt } from '@/lib/db/ontbreekt';
 import { MailFout } from './fout';
@@ -5,18 +7,26 @@ import { MailFout } from './fout';
 // Grote bijlagen (> 4 MB) passen niet in een Vercel-respons (max. 4,5 MB). Die gaan eerst
 // naar de privé-bucket "mail-tmp" (migratie 0019) en de browser downloadt ze via een
 // signed URL van 60 seconden. Oude bestanden (> 15 min) worden bij elke upload opgeruimd.
-// Alleen aanroepen ná de sessiecheck in de route.
+// Alleen aanroepen ná de teamlidcontrole in de route (het bewijs zit in `lid`).
+// Pad: <user-id>/<ts>-<willekeurig>/<bestand> — per gebruiker gescheiden en op te ruimen.
 
 export const BUCKET = 'mail-tmp';
 const MAX_LEEFTIJD_MS = 15 * 60 * 1000;
 
-async function ruimOp() {
+async function ruimOp(lid: Teamlid) {
   try {
-    const storage = createServiceRoleClient().storage.from(BUCKET);
-    const { data, error } = await storage.list('', { limit: 1000 });
-    if (error) return;
+    const storage = createServiceRoleClient(lid.bewijs).storage.from(BUCKET);
     const grens = Date.now() - MAX_LEEFTIJD_MS;
-    const oud = (data ?? []).filter((o) => Number(o.name.split('-')[0]) < grens).map((o) => o.name);
+    const verlopen = (lijst: { name: string }[] | null, prefix: string) =>
+      (lijst ?? [])
+        .filter((o) => /^\d{13}-/.test(o.name) && Number(o.name.split('-')[0]) < grens)
+        .map((o) => `${prefix}${o.name}`);
+    const [eigen, wortel] = await Promise.all([
+      storage.list(lid.userId, { limit: 1000 }),
+      // Bestanden van vóór de indeling per gebruiker (<ts>-<rnd>/ direct in de bucket).
+      storage.list('', { limit: 1000 })
+    ]);
+    const oud = [...verlopen(eigen.error ? null : eigen.data, `${lid.userId}/`), ...verlopen(wortel.error ? null : wortel.data, '')];
     // Elke map (<ts>-<rnd>/) bevat precies één bestand; list() geeft mappen terug als prefix.
     for (const map of oud) {
       const { data: inhoud } = await storage.list(map, { limit: 10 });
@@ -28,11 +38,11 @@ async function ruimOp() {
   }
 }
 
-export async function signedDownload(naam: string, inhoud: Buffer): Promise<string> {
-  const storage = createServiceRoleClient().storage.from(BUCKET);
-  await ruimOp();
+export async function signedDownload(lid: Teamlid, naam: string, inhoud: Buffer): Promise<string> {
+  const storage = createServiceRoleClient(lid.bewijs).storage.from(BUCKET);
+  await ruimOp(lid);
   const veiligeNaam = naam.replace(/[^\w.\- ]+/g, '_').slice(0, 120) || 'bijlage';
-  const pad = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}/${veiligeNaam}`;
+  const pad = `${lid.userId}/${Date.now()}-${randomBytes(8).toString('hex')}/${veiligeNaam}`;
   const { error: upErr } = await storage.upload(pad, inhoud, { contentType: 'application/octet-stream', upsert: false });
   if (upErr) {
     console.error('[mail] upload mail-tmp', upErr.message);

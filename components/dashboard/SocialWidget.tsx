@@ -1,3 +1,4 @@
+import type { Teamlid } from '@/lib/auth/team';
 import { recentePosts } from '@/lib/dashboard/social';
 import { relatief } from '@/lib/dashboard/tijd';
 import { Kaart, KaartMelding } from './Kaart';
@@ -9,8 +10,8 @@ const THUMB_MAX_W = 150;
 // Laatste posts uit de social-module, met de eerste slide als miniatuur (zelfde
 // sandbox als de thumbnails in social zelf: geen scripts). Een klik opent het project
 // via de bestaande deep-link /social#p=<id>.
-export async function SocialWidget() {
-  const res = await recentePosts(4);
+export async function SocialWidget({ lid }: { lid: Teamlid }) {
+  const res = await recentePosts(lid, 4);
 
   if (!res.ok) {
     return (

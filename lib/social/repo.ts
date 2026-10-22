@@ -1,7 +1,8 @@
 // Data-access voor de social media-module. Vervangt de bestandsfuncties uit
 // Social-media-tool/server.js (readProject, writeProject, readSlides, snapshot,
 // writeSlide, refreshChrome) door Supabase-tabellen uit migratie 0014.
-// Alle functies gebruiken de service-role client: ALLEEN aanroepen ná requireUser().
+// Alle functies gebruiken de service-role client: ALLEEN aanroepen binnen route() of
+// metTeamlid() (lib/auth/team.ts), dus ná de teamlidcontrole.
 
 import { bucketOntbreekt, tabelOntbreekt } from "@/lib/db/ontbreekt";
 import { applyChrome, stripChrome } from "./brand-guard";

@@ -1,7 +1,7 @@
 import { createTransport } from 'nodemailer';
 import MailComposer from 'nodemailer/lib/mail-composer';
 import addressparser from 'nodemailer/lib/addressparser';
-import { mailConfig } from './config';
+import type { MailConfig } from './config';
 import { MailFout, naarMailFout, NIET_GEKOPPELD } from './fout';
 import type { Adres } from './types';
 
@@ -50,8 +50,10 @@ export interface UitgaandBericht {
 const naarAdres = (a: Adres) => (a.naam ? { name: a.naam, address: a.adres } : a.adres);
 
 /** Bouwt de ruwe MIME van het bericht. */
-export async function bouwBericht(b: UitgaandBericht): Promise<{ raw: Buffer; envelope: { from: string; to: string[] }; messageId: string }> {
-  const cfg = mailConfig();
+export async function bouwBericht(
+  cfg: MailConfig | null,
+  b: UitgaandBericht
+): Promise<{ raw: Buffer; envelope: { from: string; to: string[] }; messageId: string }> {
   if (!cfg) throw new MailFout(503, 'niet_gekoppeld', NIET_GEKOPPELD);
   if (!b.aan.length && !b.cc.length && !b.bcc.length) throw new MailFout(400, 'ongeldig', 'Vul minstens één ontvanger in.');
   if (b.aan.length + b.cc.length + b.bcc.length > MAX_ONTVANGERS) {
@@ -83,8 +85,11 @@ export async function bouwBericht(b: UitgaandBericht): Promise<{ raw: Buffer; en
 }
 
 /** Verstuurt een opgebouwd bericht via SMTP. */
-export async function verstuur(raw: Buffer, envelope: { from: string; to: string[] }): Promise<void> {
-  const cfg = mailConfig();
+export async function verstuur(
+  cfg: MailConfig | null,
+  raw: Buffer,
+  envelope: { from: string; to: string[] }
+): Promise<void> {
   if (!cfg) throw new MailFout(503, 'niet_gekoppeld', NIET_GEKOPPELD);
   const transport = createTransport({
     host: cfg.smtpHost,

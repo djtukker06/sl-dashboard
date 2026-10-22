@@ -1,20 +1,22 @@
 import { NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { controleerRoute, isUuid } from '@/lib/auth/team';
 import { createServiceRoleClient } from '@/lib/supabase/service-role';
 import { pdfHeaders, veiligeBestandsnaam } from '@/lib/invoice/bestandsnaam';
 
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) {
-    return NextResponse.json({ error: 'Niet ingelogd.' }, { status: 401 });
-  }
+  // Sessie + teamlidmaatschap (401/403) en bij wijzigen de herkomst (lib/auth/team.ts).
+  const toegang = await controleerRoute(request);
+  if ('antwoord' in toegang) return toegang.antwoord;
+  const lid = toegang.lid;
 
   const { id } = await params;
-  const service = createServiceRoleClient();
+  if (!isUuid(id)) {
+    return NextResponse.json({ error: 'Niet gevonden.' }, { status: 404 });
+  }
+  const service = createServiceRoleClient(lid.bewijs);
 
   // Bewust alle kolommen: draait de deploy even voor op de migratie die "name" toevoegt,
   // dan blijft de PDF gewoon werken (met de factuurnummer-terugval) in plaats van te falen

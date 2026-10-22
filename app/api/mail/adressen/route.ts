@@ -1,6 +1,5 @@
 import type { ImapFlow } from 'imapflow';
 import { mailRoute, json } from '@/lib/mail/api';
-import { mailConfig } from '@/lib/mail/config';
 import { metImap } from '@/lib/mail/imap';
 import { mapVoorRol } from '@/lib/mail/mappen';
 import type { Adres } from '@/lib/mail/types';
@@ -34,9 +33,9 @@ async function recenteAdressen(c: ImapFlow, map: string, velden: ('from' | 'to' 
 // GET /api/mail/adressen → { adressen: [{ naam, adres }] }
 // Adressuggesties voor het opstelscherm: recente afzenders (inbox) en ontvangers (verzonden),
 // meest recent en vaakst gebruikt eerst. Wordt pas opgehaald als je een mail opstelt.
-export const GET = mailRoute(async () => {
-  const eigen = mailConfig()?.user.toLowerCase() ?? '';
-  const lijst = await metImap(async (c) => {
+export const GET = mailRoute(async (_request: Request, _ctx: unknown, mail) => {
+  const eigen = mail.cfg?.user.toLowerCase() ?? '';
+  const lijst = await metImap(mail.cfg, async (c) => {
     const inbox = await recenteAdressen(c, 'INBOX', ['from']);
     const verzondenPad = await mapVoorRol(c, 'verzonden');
     const verzonden = verzondenPad ? await recenteAdressen(c, verzondenPad, ['to', 'cc']) : [];

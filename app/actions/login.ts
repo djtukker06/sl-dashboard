@@ -2,6 +2,7 @@
 
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
+import { controleerLid } from '@/lib/auth/lidcheck';
 import { veiligVervolg } from '@/lib/vervolg';
 
 export async function signIn(formData: FormData) {
@@ -13,9 +14,21 @@ export async function signIn(formData: FormData) {
   const supabase = await createClient();
   const { error } = await supabase.auth.signInWithPassword({ email, password });
 
+  const terug = vervolg !== '/' ? `&next=${encodeURIComponent(vervolg)}` : '';
   if (error) {
-    const terug = vervolg !== '/' ? `&next=${encodeURIComponent(vervolg)}` : '';
     redirect(`/login?error=${encodeURIComponent('Inloggen mislukt. Controleer e-mailadres en wachtwoord.')}${terug}`);
+  }
+
+  // Alleen actieve teamleden komen erin (migratie 0021). Een geldig account zonder
+  // lidmaatschap wordt meteen weer uitgelogd.
+  const lid = await controleerLid(supabase);
+  if (lid === 'geen' || lid === 'storing') {
+    await supabase.auth.signOut();
+    const melding =
+      lid === 'geen'
+        ? 'Dit account heeft geen toegang tot de backoffice.'
+        : 'Inloggen lukt nu even niet. Probeer het zo opnieuw.';
+    redirect(`/login?error=${encodeURIComponent(melding)}${terug}`);
   }
 
   redirect(vervolg);

@@ -1,7 +1,8 @@
 import Script from 'next/script';
-import { redirect } from 'next/navigation';
-import { createClient } from '@/lib/supabase/server';
+import { vereisTeamlidPagina } from '@/lib/auth/team';
+import { teamProfielen } from '@/lib/team/profielen';
 import { Rail } from '@/components/shell/Rail';
+import { TeamProvider } from '@/components/team/TeamProvider';
 import '../../public/shell/shell.css';
 import './app.css';
 import './agenda.css';
@@ -10,19 +11,32 @@ import './uitgaven.css';
 
 // Gedeelde shell voor alle ingelogde React-pagina's (dashboard, mail, agenda, uitgaven, facturen).
 // De social-module (statisch HTML) krijgt dezelfde rail via app/social/route.ts.
-// Login en wachtwoordherstel staan buiten deze route-group en dus zonder rail.
+// Login, wachtwoordherstel en /geen-toegang staan buiten deze route-group en dus zonder rail.
+//
+// Toegang: sessie + actief teamlid (lib/auth/team.ts). Een layout rendert bij navigatie niet
+// altijd opnieuw, dus elke pagina controleert daarnaast zelf (vereisTeamlidPagina).
 export default async function AppLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  const supabase = await createClient();
-  const {
-    data: { user }
-  } = await supabase.auth.getUser();
-  // De proxy stuurt niet-ingelogde bezoekers al door; dit is de tweede linie.
-  if (!user) redirect('/login');
+  const lid = await vereisTeamlidPagina();
+  const leden = await teamProfielen(lid);
 
   return (
-    <div className="sl-shell">
-      <Rail email={user.email ?? ''} metadata={user.user_metadata} />
-      <main className="sl-main">{children}</main>
+    <div className="sl-shell" data-gebruiker={lid.userId}>
+      <Rail
+        account={{ email: lid.email, naam: lid.profiel.naam, initialen: lid.profiel.initialen, kleur: lid.profiel.kleur }}
+      />
+      <main className="sl-main">
+        {lid.overgang && (
+          <p className="sl-overgang" role="status">
+            <strong>Teambeveiliging nog niet actief.</strong>
+            <span>
+              Voer in Supabase <code>supabase/UITVOEREN_0021_TEAM.sql</code> uit en zet daarna aanmelden uit (zie README).
+            </span>
+          </p>
+        )}
+        <TeamProvider mijnId={lid.userId} leden={leden}>
+          {children}
+        </TeamProvider>
+      </main>
       <Script src="/shell/shell.js" strategy="afterInteractive" />
     </div>
   );

@@ -1,15 +1,13 @@
 import { Suspense } from 'react';
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { redirect } from 'next/navigation';
-import { createClient } from '@/lib/supabase/server';
-import { accountGegevens } from '@/lib/shell/rail';
+import { vereisTeamlidPagina } from '@/lib/auth/team';
 import { dagLabel, groet, isoWeek } from '@/lib/dashboard/tijd';
 import { ModuleKop } from '@/components/shell/ModuleKop';
 import { Kaart, KaartSkelet } from '@/components/dashboard/Kaart';
 import { InboxWidget } from '@/components/dashboard/InboxWidget';
 import { NietGekoppeld } from '@/components/mail/NietGekoppeld';
-import { mailGeconfigureerd } from '@/lib/mail/config';
+import { magEnvMailbox, mailConfigVoor } from '@/lib/mail/config';
 import { FacturenWidget } from '@/components/dashboard/FacturenWidget';
 import { SocialWidget } from '@/components/dashboard/SocialWidget';
 import { PlanningSkelet, PlanningWidgets } from '@/components/dashboard/PlanningWidgets';
@@ -23,16 +21,14 @@ export const metadata: Metadata = { title: 'Dashboard · Studio Levant' };
 // Dashboard "Vandaag": het startpunt van de backoffice. Elke widget is een eigen async
 // server-component in <Suspense>, zodat één trage of kapotte bron de rest niet blokkeert.
 export default async function DashboardPage() {
-  const supabase = await createClient();
-  const {
-    data: { user }
-  } = await supabase.auth.getUser();
-  // Elke pagina controleert zelf de sessie (de widgets lezen daarna met de service-role).
-  if (!user) redirect('/login');
+  // Elke pagina controleert zelf sessie + teamlidmaatschap (de social-widget leest daarna
+  // met de service-role, met dit teamlid als bewijs).
+  const lid = await vereisTeamlidPagina('/');
 
   const nu = new Date();
-  const { voornaam } = accountGegevens(user.email, user.user_metadata);
-  const mailGekoppeld = mailGeconfigureerd();
+  const voornaam = lid.profiel.voornaam;
+  // Alleen je eigen mailbox (nooit die van een ander teamlid).
+  const mailGekoppeld = (await mailConfigVoor(lid)) !== null;
 
   return (
     <div className="db">
@@ -69,12 +65,12 @@ export default async function DashboardPage() {
           <InboxWidget />
         ) : (
           <Kaart label="Inbox" href="/mail" linkTekst="Mail" className="db-smal db-inbox">
-            <NietGekoppeld compact />
+            <NietGekoppeld compact reden={magEnvMailbox(lid) ? 'instellen' : 'eigen'} />
           </Kaart>
         )}
 
         <Suspense fallback={<KaartSkelet label="Recente posts" regels={2} className="db-breed" />}>
-          <SocialWidget />
+          <SocialWidget lid={lid} />
         </Suspense>
 
         {/* Facturen en uitgaven onder elkaar naast de posts. */}

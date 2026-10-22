@@ -180,8 +180,8 @@ body.sl-met-rail { grid-template-columns: var(--sl-rail-w) 272px 1fr; }
   height: 32px;
   border-radius: 50%;
   border: 1px solid var(--sl-line);
-  background: var(--sl-panel);
-  color: var(--sl-text);
+  background: var(--sl-avatar-kleur, var(--sl-panel));
+  color: var(--sl-avatar-tekst, var(--sl-text));
   font-family: var(--sl-font);
   font-size: 12px;
   font-weight: 700;
@@ -210,9 +210,20 @@ body.sl-met-rail { grid-template-columns: var(--sl-rail-w) 272px 1fr; }
   animation: sl-pop-in .18s var(--sl-ease);
 }
 .sl-account-pop form { margin: 0; padding: 0; display: block; }
+.sl-account-naam {
+  margin: 0;
+  padding: 10px 12px 2px;
+  font-family: var(--sl-font);
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--sl-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .sl-account-mail {
   margin: 0 0 4px;
-  padding: 10px 12px 12px;
+  padding: 2px 12px 12px;
   border-bottom: 1px solid var(--sl-line);
   font-family: var(--sl-mono);
   font-size: 11px;

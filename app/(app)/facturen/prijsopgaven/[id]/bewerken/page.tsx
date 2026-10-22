@@ -3,12 +3,15 @@ import { notFound } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import { InvoiceForm } from '@/components/InvoiceForm';
 import { beginwaardenVanPrijsopgave, type PrijsopgaveRecord } from '@/lib/invoice/formulier';
+import { vereisTeamlidPagina } from '@/lib/auth/team';
 
 export default async function PrijsopgaveBewerkenPage({
   params
 }: {
   params: Promise<{ id: string }>;
 }) {
+  // Sessie + teamlidmaatschap (lib/auth/team.ts); verder ongewijzigd.
+  await vereisTeamlidPagina();
   const { id } = await params;
   const supabase = await createClient();
 

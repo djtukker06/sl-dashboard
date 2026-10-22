@@ -1,7 +1,7 @@
 import { parseAfspraak } from '@/lib/agenda/invoer';
 import { AFSPRAAK_KOLOMMEN, dbFout, naarAfspraak, type AfspraakDbRij } from '@/lib/agenda/repo';
 import type { AfspraakInvoer } from '@/lib/agenda/types';
-import { fout, foutAntwoord, json, leesBody, metSessie } from '@/lib/agenda/api';
+import { fout, foutAntwoord, json, koppelAanMaker, leesBody, metSessie } from '@/lib/agenda/api';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -9,7 +9,7 @@ export const dynamic = 'force-dynamic';
 // POST /api/afspraken  { titel, datum, start?, eind?, duur?, heleDag?, eindDatum?, locatie?, notitie?, klantId? }
 // Tijden zijn Amsterdamse wandkloktijd; de server rekent ze om naar UTC. → { event }
 export async function POST(request: Request) {
-  const s = await metSessie();
+  const s = await metSessie(request);
   if ('antwoord' in s) return s.antwoord;
 
   const body = await leesBody<AfspraakInvoer>(request);
@@ -20,6 +20,7 @@ export async function POST(request: Request) {
   try {
     const { data, error } = await s.sb.from('calendar_events').insert(p.waarde).select(AFSPRAAK_KOLOMMEN).single();
     if (error) throw dbFout(error);
+    await koppelAanMaker(s.sb, 'afspraak', (data as unknown as AfspraakDbRij).id, s.lid.userId);
     return json({ event: naarAfspraak(data as unknown as AfspraakDbRij) }, 201);
   } catch (e) {
     return foutAntwoord(e);

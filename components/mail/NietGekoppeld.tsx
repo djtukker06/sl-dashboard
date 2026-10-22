@@ -2,9 +2,33 @@ import { MAIL_ENV_VARS } from '@/lib/mail/types';
 
 // Uitleg zolang de mailkoppeling niet is ingesteld: welke omgevingsvariabelen nodig zijn.
 // Bevat alleen namen, nooit waarden.
-export function NietGekoppeld({ compact = false }: { compact?: boolean }) {
+//   reden 'instellen'  de mailbox van de eigenaar (env) is nog niet ingesteld
+//   reden 'eigen'      dit teamlid heeft (nog) geen eigen mailbox; die van de eigenaar is privé
+export function NietGekoppeld({
+  compact = false,
+  reden = 'instellen'
+}: {
+  compact?: boolean;
+  reden?: 'instellen' | 'eigen';
+}) {
   const verplicht = MAIL_ENV_VARS.filter((v) => v.verplicht);
   const optioneel = MAIL_ENV_VARS.filter((v) => !v.verplicht);
+  if (reden === 'eigen') {
+    const tekst =
+      'Mail is persoonlijk: je ziet alleen je eigen mailbox. Je eigen mailbox koppelen kan straks via Account in de rail.';
+    return compact ? (
+      <div className="db-melding db-melding-setup">
+        <p className="db-melding-titel">Je mailbox is nog niet gekoppeld</p>
+        <p className="db-melding-tekst">{tekst}</p>
+      </div>
+    ) : (
+      <div className="ml-setup">
+        <p className="db-label">Nog niet gekoppeld</p>
+        <h2>Je mailbox is nog niet gekoppeld</h2>
+        <p className="ml-setup-tekst">{tekst}</p>
+      </div>
+    );
+  }
   if (compact) {
     return (
       <div className="db-melding db-melding-setup">

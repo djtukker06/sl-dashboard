@@ -2,14 +2,14 @@ import { vandaag as vandaagNL } from '@/lib/agenda/datum';
 import { parseTaak } from '@/lib/agenda/invoer';
 import { dbFout, naarTaak, TAAK_KOLOMMEN, takenVoorFilter, tellingen, type TaakDbRij } from '@/lib/agenda/repo';
 import { TAKEN_FILTERS, type TaakInvoer, type TakenFilter } from '@/lib/agenda/types';
-import { fout, foutAntwoord, json, leesBody, metSessie } from '@/lib/agenda/api';
+import { fout, foutAntwoord, json, koppelAanMaker, leesBody, metSessie } from '@/lib/agenda/api';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 // GET /api/taken?filter=vandaag|telaat|gepland|ooit|afgerond → { tasks, tellingen }
 export async function GET(request: Request) {
-  const s = await metSessie();
+  const s = await metSessie(request);
   if ('antwoord' in s) return s.antwoord;
 
   const filter = (new URL(request.url).searchParams.get('filter') || 'vandaag') as TakenFilter;
@@ -26,7 +26,7 @@ export async function GET(request: Request) {
 
 // POST /api/taken  { titel, notitie?, datum?, tijd?, duur?, prioriteit?, klantId? } → { task }
 export async function POST(request: Request) {
-  const s = await metSessie();
+  const s = await metSessie(request);
   if ('antwoord' in s) return s.antwoord;
 
   const body = await leesBody<TaakInvoer>(request);
@@ -37,6 +37,7 @@ export async function POST(request: Request) {
   try {
     const { data, error } = await s.sb.from('tasks').insert(p.waarde).select(TAAK_KOLOMMEN).single();
     if (error) throw dbFout(error);
+    await koppelAanMaker(s.sb, 'taak', (data as unknown as TaakDbRij).id, s.lid.userId);
     return json({ task: naarTaak(data as unknown as TaakDbRij) }, 201);
   } catch (e) {
     return foutAntwoord(e);

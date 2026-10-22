@@ -1,11 +1,17 @@
+import type { CSSProperties } from 'react';
 import Link from 'next/link';
-import { accountGegevens, LOGO_SRC, railItems } from '@/lib/shell/rail';
+import { avatarStijl, LOGO_SRC, railItems, type RailAccount } from '@/lib/shell/rail';
 import { RailNav } from './RailNav';
+
+/** "--a:b;--c:d" → React-stijlobject (zelfde waarden als de HTML-rail). */
+function alsStijl(css: string): CSSProperties | undefined {
+  if (!css) return undefined;
+  return Object.fromEntries(css.split(';').map((d) => d.split(':') as [string, string])) as CSSProperties;
+}
 
 // De navigatierail voor alle React-pagina's binnen app/(app). Zelfde opbouw en classes
 // als railHtml() in lib/shell/rail.ts (die de social-module gebruikt).
-export function Rail({ email, metadata }: { email: string; metadata?: Record<string, unknown> | null }) {
-  const acc = accountGegevens(email, metadata);
+export function Rail({ account }: { account: RailAccount }) {
   return (
     <nav className="sl-rail" aria-label="Hoofdmenu">
       {/* Het logo brengt je altijd terug naar het dashboard. */}
@@ -16,12 +22,15 @@ export function Rail({ email, metadata }: { email: string; metadata?: Record<str
       <RailNav items={railItems()} />
       <div className="sl-rail-foot">
         <details className="sl-account">
-          <summary className="sl-account-knop" title={acc.email} aria-label="Account">
-            <span className="sl-avatar">{acc.initialen}</span>
+          <summary className="sl-account-knop" title={`${account.naam} · ${account.email}`} aria-label="Account">
+            <span className="sl-avatar" style={alsStijl(avatarStijl(account.kleur))}>
+              {account.initialen}
+            </span>
             <span className="sl-account-label">Account</span>
           </summary>
           <div className="sl-account-pop">
-            <p className="sl-account-mail">{acc.email}</p>
+            <p className="sl-account-naam">{account.naam}</p>
+            <p className="sl-account-mail">{account.email}</p>
             <a className="sl-account-link" href="/nieuw-wachtwoord">
               Wachtwoord wijzigen
             </a>

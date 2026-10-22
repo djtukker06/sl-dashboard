@@ -3,12 +3,15 @@ import { notFound } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import { InvoiceForm } from '@/components/InvoiceForm';
 import { beginwaardenVanFactuur, type FactuurRecord } from '@/lib/invoice/formulier';
+import { vereisTeamlidPagina } from '@/lib/auth/team';
 
 export default async function FactuurBewerkenPage({
   params
 }: {
   params: Promise<{ id: string }>;
 }) {
+  // Sessie + teamlidmaatschap (lib/auth/team.ts); verder ongewijzigd.
+  await vereisTeamlidPagina();
   const { id } = await params;
   const supabase = await createClient();
 

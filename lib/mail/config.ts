@@ -1,6 +1,16 @@
+import 'server-only';
+import type { Teamlid } from '@/lib/auth/team';
+
 // Instellingen van de mailkoppeling (Namecheap Private Email). Alleen env-var-namen staan
-// in de code; de waarden komen uit .env.local / Vercel. Zonder MAIL_USER + MAIL_PASSWORD
-// is mail "nog niet gekoppeld" en tonen alle schermen een nette uitleg i.p.v. een fout.
+// in de code; de waarden komen uit .env.local / Vercel. Zonder mailbox is mail "nog niet
+// gekoppeld" en tonen alle schermen een nette uitleg i.p.v. een fout.
+//
+// Mail is PERSOONLIJK: elke gebruiker ziet alleen zijn eigen mailbox (mailConfigVoor(lid)).
+// De mailbox uit de env hieronder is van de eigenaar (Daniel) en is alleen bruikbaar voor:
+//   - het account met hetzelfde adres als MAIL_USER, of
+//   - de eigenaar van het team (rol 'eigenaar' in team_members), of
+//   - de overgangsmodus zolang migratie 0021 niet is uitgevoerd (dan is er één gebruiker).
+// Een eigen mailbox per teamlid (versleuteld in user_mailboxes) volgt via /account.
 //
 //   MAIL_USER, MAIL_PASSWORD                verplicht
 //   MAIL_IMAP_HOST (mail.privateemail.com), MAIL_IMAP_PORT (993, SSL)
@@ -25,7 +35,7 @@ function poort(waarde: string | undefined, standaard: number): number {
   return Number.isInteger(n) && n > 0 && n < 65536 ? n : standaard;
 }
 
-export function mailConfig(): MailConfig | null {
+function envMailConfig(): MailConfig | null {
   const user = process.env.MAIL_USER?.trim();
   const password = process.env.MAIL_PASSWORD;
   if (!user || !password) return null;
@@ -41,11 +51,17 @@ export function mailConfig(): MailConfig | null {
   };
 }
 
-export function mailGeconfigureerd(): boolean {
-  return mailConfig() !== null;
+/** Mag dit teamlid de mailbox uit de env gebruiken? (zie boven) */
+export function magEnvMailbox(lid: Pick<Teamlid, 'email' | 'rol' | 'overgang'>): boolean {
+  const envUser = process.env.MAIL_USER?.trim().toLowerCase();
+  if (!envUser) return false;
+  return lid.overgang || lid.rol === 'eigenaar' || lid.email.trim().toLowerCase() === envUser;
 }
 
-/** Het gekoppelde adres (voor kopteksten); leeg als mail niet gekoppeld is. */
-export function mailAccount(): string {
-  return mailConfig()?.user ?? '';
+/**
+ * De mailbox van dit teamlid, of null ("niet gekoppeld"). Nooit de mailbox van een ander:
+ * de env-mailbox alleen volgens magEnvMailbox().
+ */
+export async function mailConfigVoor(lid: Pick<Teamlid, 'email' | 'rol' | 'overgang'>): Promise<MailConfig | null> {
+  return magEnvMailbox(lid) ? envMailConfig() : null;
 }

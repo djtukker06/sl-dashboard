@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { huidigTeamlid, metTeamlid, teamlidUitContext } from "@/lib/auth/team";
+import { eigenHerkomst, isWijzigend } from "@/lib/auth/herkomst";
 import { createServiceRoleClient } from "@/lib/supabase/service-role";
 import { bucketOntbreekt } from "@/lib/db/ontbreekt";
 import { safe } from "./ids";
@@ -26,30 +27,33 @@ export const httpError = (status: number, message: string) => new HttpError(stat
 
 /** Foutvorm `{ error }` met status, zoals de foutafhandeling in server.js:445-450. */
 export function jsonError(status: number, message: string) {
-  return NextResponse.json({ error: message }, { status });
+  return NextResponse.json({ error: message }, { status, headers: { "Cache-Control": "private, no-store" } });
 }
 
 /**
- * Eerste regel van élke social-route: controleert de Supabase-sessie (net als de
- * facturen-API). Zonder ingelogde gebruiker volgt een 401 `{ error: 'Niet ingelogd.' }`.
- * Pas daarna mag de route de service-role client gebruiken.
- *
- * Gebruikt getClaims(): dat verifieert de JWT (bij asymmetrische signing keys lokaal,
- * zonder netwerkcall; anders valt Supabase zelf terug op de Auth-server). Een slide-
- * thumbnail laadt zo de slide, brand.css en logo's zonder ~5 auth-roundtrips per frame.
- * De proxy (proxy.ts) heeft de sessie op hetzelfde request al ververst.
+ * Eerste regel van élke social-route (naast de controle die `route()` al doet):
+ * sessie + actief teamlidmaatschap (lib/auth/team.ts). Zonder sessie een 401
+ * `{ error: 'Niet ingelogd.' }`, zonder lidmaatschap een 403. Pas daarna mag de route de
+ * service-role client gebruiken. Binnen `route()` komt het teamlid uit de context van het
+ * verzoek (geen tweede controle per bestand).
  */
 export async function requireUser(): Promise<{ id: string; email: string | null }> {
-  const supabase = await createClient();
-  const { data, error } = await supabase.auth.getClaims();
-  const claims = data?.claims;
-  if (error || !claims?.sub) throw new HttpError(401, "Niet ingelogd.");
-  return { id: String(claims.sub), email: typeof claims.email === "string" ? claims.email : null };
+  try {
+    const lid = teamlidUitContext();
+    return { id: lid.userId, email: lid.email || null };
+  } catch {
+    // Buiten route(): zelf controleren.
+  }
+  const s = await huidigTeamlid();
+  if (s.soort === "anoniem") throw new HttpError(401, "Niet ingelogd.");
+  if (s.soort === "geen_toegang") throw new HttpError(403, "Geen toegang.");
+  if (s.soort === "storing") throw new HttpError(503, "De toegangscontrole is tijdelijk niet beschikbaar.");
+  return { id: s.lid.userId, email: s.lid.email || null };
 }
 
-/** Service-role client; alleen aanroepen ná `requireUser()`. */
+/** Service-role client; alleen binnen `route()` (ná de teamlidcontrole) te gebruiken. */
 export function db() {
-  return createServiceRoleClient();
+  return createServiceRoleClient(teamlidUitContext().bewijs);
 }
 
 /** Controleert een project-id uit de URL (server.js:43). */
@@ -71,21 +75,27 @@ export async function readBody(request: Request): Promise<Record<string, unknown
 }
 
 /**
- * Wikkelt een route-handler: HttpErrors worden `{ error }` met de juiste status,
- * onverwachte fouten een 500 (zoals server.js:445-450). Database-details gaan
- * alleen naar de serverlog, niet naar de browser.
+ * Wikkelt een route-handler: eerst sessie + teamlidmaatschap (401/403), bij wijzigende
+ * verzoeken de herkomst (403), daarna de handler met het teamlid in de context van het
+ * verzoek (voor db()). HttpErrors worden `{ error }` met de juiste status, onverwachte
+ * fouten een 500 met een algemene melding; details gaan alleen naar de serverlog.
  */
 export function route<C>(fn: (request: Request, context: C) => Promise<Response>) {
   return async (request: Request, context: C): Promise<Response> => {
+    const s = await huidigTeamlid();
+    if (s.soort === "anoniem") return jsonError(401, "Niet ingelogd.");
+    if (s.soort === "geen_toegang") return jsonError(403, "Geen toegang.");
+    if (s.soort === "storing") return jsonError(503, "De toegangscontrole is tijdelijk niet beschikbaar.");
+    if (isWijzigend(request.method) && !eigenHerkomst(request)) return jsonError(403, "Ongeldige herkomst.");
     try {
-      return await fn(request, context);
+      return await metTeamlid(s.lid, () => fn(request, context));
     } catch (err) {
       if (err instanceof HttpError) {
         if (err.status >= 500) console.error(err);
         return jsonError(err.status, err.message || "Er ging iets mis.");
       }
       console.error(err);
-      return jsonError(500, (err instanceof Error && err.message) || "Er ging iets mis.");
+      return jsonError(500, "Er ging iets mis. Probeer het opnieuw.");
     }
   };
 }

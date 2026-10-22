@@ -1,13 +1,13 @@
 import { NextResponse } from 'next/server';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { createClient } from '@/lib/supabase/server';
+import { controleerRoute, metTeamlid, type Teamlid } from '@/lib/auth/team';
 import { bucketOntbreekt, tabelOntbreekt } from '@/lib/db/ontbreekt';
 
 // Gedeelde stukken voor de uitgaven-API (/api/uitgaven/**). Elke route:
-//   1. controleert zelf de Supabase-sessie (401 zonder sessie);
-//   2. bij wijzigende verzoeken: Origin moet de eigen site zijn (zoals de mail-API);
+//   1. controleert sessie + teamlidmaatschap (lib/auth/team.ts; 401/403);
+//   2. bij wijzigende verzoeken: Origin moet de eigen site zijn (lib/auth/herkomst.ts);
 //   3. gebruikt voor de tabellen de gebruikerscliënt (RLS) en alleen voor Storage de
-//      service-role (lib/uitgaven/opslag.ts), ná die sessiecheck;
+//      service-role (lib/uitgaven/opslag.ts), ná die controle (bewijs in de context);
 //   4. geeft vóór de migratie een 503 met code tabel_ontbreekt / opslag_ontbreekt.
 
 const GEEN_CACHE = { 'Cache-Control': 'private, no-store' } as const;
@@ -48,36 +48,19 @@ export function dbFout(error: unknown): UitgavenFout {
   return new UitgavenFout(500, 'Er ging iets mis bij het opslaan of ophalen van de uitgaven.');
 }
 
-function eigenHerkomst(request: Request): boolean {
-  const origin = request.headers.get('origin');
-  if (!origin) return true; // same-origin GET/HEAD of oudere browsers; cookies zijn SameSite=Lax
-  if (origin === new URL(request.url).origin) return true;
-  const host = request.headers.get('x-forwarded-host') || request.headers.get('host');
-  try {
-    return Boolean(host) && new URL(origin).host === host;
-  } catch {
-    return false;
-  }
-}
-
-type Handler<C> = (request: Request, ctx: C, sb: SupabaseClient) => Promise<Response>;
+type Handler<C> = (request: Request, ctx: C, sb: SupabaseClient, lid: Teamlid) => Promise<Response>;
 
 /**
- * Wikkelt een uitgaven-route: sessiecheck (eerste stap, vóór alles), herkomstcheck bij
- * muterende verzoeken en nette foutafhandeling. De handler krijgt de gebruikerscliënt.
+ * Wikkelt een uitgaven-route: teamlidcontrole (eerste stap, vóór alles), herkomstcheck bij
+ * wijzigende verzoeken en nette foutafhandeling. De handler krijgt de gebruikerscliënt en
+ * het teamlid; de Storage-hulpjes vinden het bewijs in de context van het verzoek.
  */
 export function uitgavenRoute<C>(fn: Handler<C>) {
   return async (request: Request, ctx: C): Promise<Response> => {
-    const sb = await createClient();
-    const {
-      data: { user }
-    } = await sb.auth.getUser();
-    if (!user) return fout(401, 'Niet ingelogd.', 'niet_ingelogd');
-    if (request.method !== 'GET' && request.method !== 'HEAD' && !eigenHerkomst(request)) {
-      return fout(403, 'Ongeldige herkomst.');
-    }
+    const c = await controleerRoute(request);
+    if ('antwoord' in c) return c.antwoord;
     try {
-      return await fn(request, ctx, sb);
+      return await metTeamlid(c.lid, () => fn(request, ctx, c.lid.sb, c.lid));
     } catch (e) {
       if (e instanceof UitgavenFout) return fout(e.status, e.message, e.code);
       console.error('[uitgaven]', e);

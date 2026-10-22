@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto';
+import { bewijsUitContext } from '@/lib/auth/team';
 import { createServiceRoleClient } from '@/lib/supabase/service-role';
 import { bucketOntbreekt } from '@/lib/db/ontbreekt';
 import { OPSLAG_NIET_INGERICHT, UitgavenFout } from './api';
@@ -13,7 +14,8 @@ export const BUCKET = 'uitgaven';
 export const EXPORT_BUCKET = 'uitgaven-export';
 const EXPORT_MAX_LEEFTIJD_MS = 15 * 60 * 1000;
 
-const opslag = () => createServiceRoleClient().storage;
+// Alleen binnen een gecontroleerde route (uitgavenRoute zet het bewijs in de context).
+const opslag = () => createServiceRoleClient(bewijsUitContext()).storage;
 
 /** Pad voor een nieuw bestand van een uitgave. */
 export function nieuwPad(uitgaveId: string, naam: string, type: BestandsType): string {

@@ -1,6 +1,5 @@
 import type { Metadata } from 'next';
-import { redirect } from 'next/navigation';
-import { createClient } from '@/lib/supabase/server';
+import { vereisTeamlidPagina } from '@/lib/auth/team';
 import { isDag, vandaag as vandaagNL } from '@/lib/agenda/datum';
 import { isUuid } from '@/lib/agenda/invoer';
 import { AgendaApp } from '@/components/agenda/AgendaApp';
@@ -18,11 +17,7 @@ export default async function AgendaPage({
 }: {
   searchParams: Promise<{ dag?: string; weergave?: string; taak?: string; afspraak?: string }>;
 }) {
-  const supabase = await createClient();
-  const {
-    data: { user }
-  } = await supabase.auth.getUser();
-  if (!user) redirect('/login?next=/agenda');
+  await vereisTeamlidPagina('/agenda');
 
   const sp = await searchParams;
   const vandaag = vandaagNL();

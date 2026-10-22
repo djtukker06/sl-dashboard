@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { revalidatePath } from 'next/cache';
-import { createClient } from '@/lib/supabase/server';
+import { controleerRoute, isUuid } from '@/lib/auth/team';
 import { createServiceRoleClient } from '@/lib/supabase/service-role';
 import { computeTotals } from '@/lib/invoice/calculations';
 import { parsePrijsopgaveInvoer, type FactuurInvoerBody } from '@/lib/invoice/invoer';
@@ -16,13 +16,15 @@ export async function PUT(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) {
-    return NextResponse.json({ error: 'Niet ingelogd.' }, { status: 401 });
-  }
+  // Sessie + teamlidmaatschap (401/403) en bij wijzigen de herkomst (lib/auth/team.ts).
+  const toegang = await controleerRoute(request);
+  if ('antwoord' in toegang) return toegang.antwoord;
+  const lid = toegang.lid;
 
   const { id } = await params;
+  if (!isUuid(id)) {
+    return NextResponse.json({ error: 'Niet gevonden.' }, { status: 404 });
+  }
   const body: FactuurInvoerBody = await request.json();
 
   const parsed = parsePrijsopgaveInvoer(body);
@@ -31,7 +33,7 @@ export async function PUT(
   }
   const invoer = parsed.invoer;
 
-  const service = createServiceRoleClient();
+  const service = createServiceRoleClient(lid.bewijs);
 
   const { data: bestaand, error: fetchError } = await service
     .from('quotes')

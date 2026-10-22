@@ -7,8 +7,7 @@ export const dynamic = "force-dynamic";
 type Ctx = { params: Promise<{ file: string }> };
 
 // De logo's en banners van de huisstijl (assets/social-brand/). Ze staan bewust niet in
-// public/: paden op .png vallen buiten de matcher van proxy.ts, dus deze route checkt zelf
-// de sessie. Alleen namen uit BRAND_PNGS zijn toegestaan (readBrandPng controleert dat).
+// public/: route() controleert zelf sessie + teamlidmaatschap (naast de proxy). Alleen namen uit BRAND_PNGS zijn toegestaan (readBrandPng controleert dat).
 export const GET = route(async (_request: Request, { params }: Ctx) => {
   await requireUser();
   const { file } = await params;

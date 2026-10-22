@@ -11,11 +11,11 @@ type Ctx = { params: Promise<{ uid: string }> };
 // GET /api/mail/berichten/[uid]?map=INBOX → { bericht }
 // Opgehaald met PEEK: openen zet het bericht níet op gelezen (dat doet de client via /vlaggen).
 // De HTML is gesaneerd en externe afbeeldingen zijn geblokkeerd (data-extern-src).
-export const GET = mailRoute(async (request: Request, ctx: Ctx) => {
+export const GET = mailRoute(async (request: Request, ctx: Ctx, mail) => {
   const { uid: uidRuw } = await ctx.params;
   const uid = parseUid(uidRuw);
   const sp = new URL(request.url).searchParams;
-  const bericht = await metImap(async (c) => {
+  const bericht = await metImap(mail.cfg, async (c) => {
     const map = await controleerMap(c, sp.get('map'));
     return haalBericht(c, map.pad, uid);
   });

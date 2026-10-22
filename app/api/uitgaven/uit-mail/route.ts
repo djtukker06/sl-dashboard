@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { vandaag as vandaagNL } from '@/lib/agenda/datum';
 import { haalBijlage } from '@/lib/mail/berichten';
 import { MailFout } from '@/lib/mail/fout';
+import { mailConfigVoor } from '@/lib/mail/config';
 import { metImap } from '@/lib/mail/imap';
 import { controleerMap, parseUid } from '@/lib/mail/mappen';
 import { dbFout, fout, json, leesJson, uitgavenRoute } from '@/lib/uitgaven/api';
@@ -17,15 +18,18 @@ export const maxDuration = 60;
 // POST /api/uitgaven/uit-mail  { map, uid, deel, onderwerp? } → { uitgave }
 // "Opslaan als uitgave" in de mail-lezer: haalt de bijlage server-side op via IMAP (zoals de
 // download-route), zet hem in de bucket uitgaven, maakt een concept en leest het uit.
-export const POST = uitgavenRoute(async (request, _ctx, sb) => {
+export const POST = uitgavenRoute(async (request, _ctx, sb, lid) => {
   const b = await leesJson(request);
   const deel = typeof b.deel === 'string' ? b.deel : '';
   const mapNaam = typeof b.map === 'string' ? b.map : 'INBOX';
 
   let bijlage: { naam: string; type: string; inhoud: Buffer };
+  let cfg: Awaited<ReturnType<typeof mailConfigVoor>> = null;
   try {
     const uid = parseUid(String(b.uid ?? ''));
-    bijlage = await metImap(async (c) => {
+    // Altijd de eigen mailbox van dit teamlid (nooit die van een ander).
+    cfg = await mailConfigVoor(lid);
+    bijlage = await metImap(cfg, async (c) => {
       const map = await controleerMap(c, mapNaam);
       return haalBijlage(c, map.pad, uid, deel, MAX_BESTAND_BYTES);
     });
@@ -46,7 +50,10 @@ export const POST = uitgavenRoute(async (request, _ctx, sb) => {
   await upload(pad, bijlage.inhoud, type);
 
   const onderwerp = schoon(b.onderwerp, 300);
-  const nieuw = await sb.from('expenses').insert({ id, source: 'mail', source_ref: onderwerp ? `Mail: ${onderwerp}` : 'Mail' });
+  const bron = cfg?.user ? ` (${cfg.user})` : '';
+  const nieuw = await sb
+    .from('expenses')
+    .insert({ id, source: 'mail', source_ref: (onderwerp ? `Mail${bron}: ${onderwerp}` : `Mail${bron}`).slice(0, 500) });
   if (nieuw.error) {
     await verwijder([pad]);
     throw dbFout(nieuw.error);

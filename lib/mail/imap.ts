@@ -1,12 +1,11 @@
 import { ImapFlow } from 'imapflow';
-import { mailConfig } from './config';
+import type { MailConfig } from './config';
 import { MailFout, naarMailFout, NIET_GEKOPPELD } from './fout';
 
 // Eén IMAP-sessie per request: openen, werk doen, altijd netjes uitloggen. Geen IDLE en
 // geen verbindingen die blijven openstaan — dat past bij serverless (Vercel).
 
-export async function metImap<T>(fn: (client: ImapFlow) => Promise<T>): Promise<T> {
-  const cfg = mailConfig();
+export async function metImap<T>(cfg: MailConfig | null, fn: (client: ImapFlow) => Promise<T>): Promise<T> {
   if (!cfg) throw new MailFout(503, 'niet_gekoppeld', NIET_GEKOPPELD);
 
   const client = new ImapFlow({

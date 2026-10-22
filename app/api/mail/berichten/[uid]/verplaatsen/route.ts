@@ -16,13 +16,13 @@ const ROLLEN: Record<string, MapRol> = { prullenbak: 'prullenbak', archief: 'arc
 //   → { naar: '<pad>', uid: <nieuwe uid of null> }
 // "Verwijderen" = naar de prullenbak. Definitief wissen gebeurt hier nooit.
 export const POST = mailRoute(
-  async (request: Request, ctx: Ctx) => {
+  async (request: Request, ctx: Ctx, mail) => {
     const { uid: uidRuw } = await ctx.params;
     const uid = parseUid(uidRuw);
     const sp = new URL(request.url).searchParams;
     const body = await leesJson(request);
 
-    const res = await metImap(async (c) => {
+    const res = await metImap(mail.cfg, async (c) => {
       const bron = await controleerMap(c, sp.get('map'));
       let doel: string | null = null;
       if (typeof body.naarMap === 'string') {
@@ -46,6 +46,5 @@ export const POST = mailRoute(
       }
     });
     return json(res);
-  },
-  { muterend: true }
+  }
 );

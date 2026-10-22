@@ -10,7 +10,7 @@ type Ctx = { params: Promise<{ uid: string }> };
 
 // POST /api/mail/berichten/[uid]/vlaggen?map=INBOX  { gelezen?: boolean, gemarkeerd?: boolean }
 export const POST = mailRoute(
-  async (request: Request, ctx: Ctx) => {
+  async (request: Request, ctx: Ctx, mail) => {
     const { uid: uidRuw } = await ctx.params;
     const uid = parseUid(uidRuw);
     const sp = new URL(request.url).searchParams;
@@ -20,7 +20,7 @@ export const POST = mailRoute(
     if (typeof body.gemarkeerd === 'boolean') wijzig.push(['\\Flagged', body.gemarkeerd]);
     if (!wijzig.length) throw new MailFout(400, 'ongeldig', 'Niets om te wijzigen.');
 
-    await metImap(async (c) => {
+    await metImap(mail.cfg, async (c) => {
       const map = await controleerMap(c, sp.get('map'));
       const lock = await c.getMailboxLock(map.pad);
       try {
@@ -33,6 +33,5 @@ export const POST = mailRoute(
       }
     });
     return json({ ok: true });
-  },
-  { muterend: true }
+  }
 );

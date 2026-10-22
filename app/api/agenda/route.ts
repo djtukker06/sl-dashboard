@@ -8,7 +8,7 @@ export const dynamic = 'force-dynamic';
 // GET /api/agenda?van=YYYY-MM-DD&tot=YYYY-MM-DD → { tasks, events }
 // Taken met een datum in het bereik (open én afgerond) en afspraken die die dagen raken.
 export async function GET(request: Request) {
-  const s = await metSessie();
+  const s = await metSessie(request);
   if ('antwoord' in s) return s.antwoord;
 
   const { searchParams } = new URL(request.url);

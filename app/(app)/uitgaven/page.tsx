@@ -1,6 +1,5 @@
 import type { Metadata } from 'next';
-import { redirect } from 'next/navigation';
-import { createClient } from '@/lib/supabase/server';
+import { vereisTeamlidPagina } from '@/lib/auth/team';
 import { vandaag as vandaagNL } from '@/lib/agenda/datum';
 import { isUuid } from '@/lib/uitgaven/api';
 import { UitgavenApp } from '@/components/uitgaven/UitgavenApp';
@@ -18,11 +17,7 @@ export default async function UitgavenPage({
 }: {
   searchParams: Promise<{ uitgave?: string; toevoegen?: string; tab?: string }>;
 }) {
-  const supabase = await createClient();
-  const {
-    data: { user }
-  } = await supabase.auth.getUser();
-  if (!user) redirect('/login?next=/uitgaven');
+  await vereisTeamlidPagina('/uitgaven');
 
   const sp = await searchParams;
   return (

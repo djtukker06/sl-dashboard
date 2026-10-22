@@ -2,8 +2,11 @@ import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
 import { InvoiceForm } from '@/components/InvoiceForm';
 import { nieuwePrijsopgaveBeginwaarden } from '@/lib/invoice/formulier';
+import { vereisTeamlidPagina } from '@/lib/auth/team';
 
 export default async function NieuwePrijsopgavePage() {
+  // Sessie + teamlidmaatschap (lib/auth/team.ts); verder ongewijzigd.
+  await vereisTeamlidPagina('/facturen/prijsopgaven/nieuw');
   const supabase = await createClient();
 
   // Datum van vandaag in Nederlandse tijd, als YYYY-MM-DD voor de date-input.

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { revalidatePath } from 'next/cache';
-import { createClient } from '@/lib/supabase/server';
+import { controleerRoute } from '@/lib/auth/team';
 import { createServiceRoleClient } from '@/lib/supabase/service-role';
 import { computeTotals } from '@/lib/invoice/calculations';
 import { parsePrijsopgaveInvoer, type FactuurInvoerBody } from '@/lib/invoice/invoer';
@@ -14,11 +14,10 @@ export const maxDuration = 60;
 // Een prijsopgave aanmaken. Anders dan bij een factuur wordt de klant hier bewust níet
 // in de klantenlijst gezet: de gegevens staan alleen op de prijsopgave zelf.
 export async function POST(request: Request) {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) {
-    return NextResponse.json({ error: 'Niet ingelogd.' }, { status: 401 });
-  }
+  // Sessie + teamlidmaatschap (401/403) en bij wijzigen de herkomst (lib/auth/team.ts).
+  const toegang = await controleerRoute(request);
+  if ('antwoord' in toegang) return toegang.antwoord;
+  const lid = toegang.lid;
 
   const body: FactuurInvoerBody = await request.json();
   const parsed = parsePrijsopgaveInvoer(body);
@@ -28,11 +27,11 @@ export async function POST(request: Request) {
   const invoer = parsed.invoer;
 
   const totalen = computeTotals(invoer.regels, bedrijf.btwPercentage, invoer.btwVerlegd);
-  const service = createServiceRoleClient();
+  const service = createServiceRoleClient(lid.bewijs);
 
   const { data: prijsopgave, error } = await service
     .from('quotes')
-    .insert({ ...prijsopgaveKolommen(invoer, totalen), created_by: user.id })
+    .insert({ ...prijsopgaveKolommen(invoer, totalen), created_by: lid.userId })
     .select('id')
     .single();
 

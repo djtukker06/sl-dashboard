@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
-import { createClient } from '@/lib/supabase/server';
+import { isUuid, vereisTeamlid } from '@/lib/auth/team';
 
 export interface KlantGegevens {
   company_name: string;
@@ -19,11 +19,15 @@ export async function updateClient(
   id: string,
   gegevens: KlantGegevens
 ): Promise<KlantActieResultaat> {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) {
-    return { error: 'Niet ingelogd.' };
+  // Sessie + teamlidmaatschap (lib/auth/team.ts); daarna de gebruikerscliënt (RLS).
+  const lid = await vereisTeamlid();
+  if (!lid) {
+    return { error: 'Geen toegang. Log opnieuw in.' };
   }
+  if (!isUuid(id)) {
+    return { error: 'Klant niet gevonden.' };
+  }
+  const supabase = lid.sb;
 
   const bedrijfsnaam = gegevens.company_name.trim();
   if (!bedrijfsnaam) {
@@ -58,11 +62,15 @@ export async function updateClient(
 }
 
 export async function deleteClient(id: string): Promise<KlantActieResultaat> {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) {
-    return { error: 'Niet ingelogd.' };
+  // Sessie + teamlidmaatschap (lib/auth/team.ts); daarna de gebruikerscliënt (RLS).
+  const lid = await vereisTeamlid();
+  if (!lid) {
+    return { error: 'Geen toegang. Log opnieuw in.' };
   }
+  if (!isUuid(id)) {
+    return { error: 'Klant niet gevonden.' };
+  }
+  const supabase = lid.sb;
 
   // Facturen zijn de administratie — een klant met facturen mag nooit zomaar
   // verdwijnen (de database blokkeert dit ook zelf via on delete restrict).

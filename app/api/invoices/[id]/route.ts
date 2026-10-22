@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { revalidatePath } from 'next/cache';
-import { createClient } from '@/lib/supabase/server';
+import { controleerRoute, isUuid } from '@/lib/auth/team';
 import { createServiceRoleClient } from '@/lib/supabase/service-role';
 import { computeTotals } from '@/lib/invoice/calculations';
 import { parseFactuurInvoer, type FactuurInvoerBody } from '@/lib/invoice/invoer';
@@ -17,13 +17,15 @@ export async function PUT(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) {
-    return NextResponse.json({ error: 'Niet ingelogd.' }, { status: 401 });
-  }
+  // Sessie + teamlidmaatschap (401/403) en bij wijzigen de herkomst (lib/auth/team.ts).
+  const toegang = await controleerRoute(request);
+  if ('antwoord' in toegang) return toegang.antwoord;
+  const lid = toegang.lid;
 
   const { id } = await params;
+  if (!isUuid(id)) {
+    return NextResponse.json({ error: 'Niet gevonden.' }, { status: 404 });
+  }
   const body: FactuurInvoerBody = await request.json();
 
   const parsed = parseFactuurInvoer(body);
@@ -32,7 +34,7 @@ export async function PUT(
   }
   const invoer = parsed.invoer;
 
-  const service = createServiceRoleClient();
+  const service = createServiceRoleClient(lid.bewijs);
 
   const { data: bestaand, error: fetchError } = await service
     .from('invoices')
@@ -147,17 +149,19 @@ export async function PUT(
 }
 
 export async function DELETE(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) {
-    return NextResponse.json({ error: 'Niet ingelogd.' }, { status: 401 });
-  }
+  // Sessie + teamlidmaatschap (401/403) en bij wijzigen de herkomst (lib/auth/team.ts).
+  const toegang = await controleerRoute(request);
+  if ('antwoord' in toegang) return toegang.antwoord;
+  const lid = toegang.lid;
 
   const { id } = await params;
-  const service = createServiceRoleClient();
+  if (!isUuid(id)) {
+    return NextResponse.json({ error: 'Niet gevonden.' }, { status: 404 });
+  }
+  const service = createServiceRoleClient(lid.bewijs);
 
   const { data: invoice, error: fetchError } = await service
     .from('invoices')
@@ -179,7 +183,8 @@ export async function DELETE(
   const { error: deleteError } = await service.from('invoices').delete().eq('id', id);
 
   if (deleteError) {
-    return NextResponse.json({ error: deleteError.message }, { status: 500 });
+    console.error('[facturen] verwijderen mislukt', deleteError.code ?? '', deleteError.message);
+    return NextResponse.json({ error: 'Verwijderen is mislukt. Probeer het opnieuw.' }, { status: 500 });
   }
 
   return NextResponse.json({ success: true });

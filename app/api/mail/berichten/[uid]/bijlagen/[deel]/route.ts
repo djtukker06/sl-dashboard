@@ -23,17 +23,17 @@ function contentDisposition(naam: string) {
 }
 
 // GET /api/mail/berichten/[uid]/bijlagen/[deel]?map=INBOX → download (altijd als bijlage)
-export const GET = mailRoute(async (request: Request, ctx: Ctx) => {
+export const GET = mailRoute(async (request: Request, ctx: Ctx, mail) => {
   const { uid: uidRuw, deel } = await ctx.params;
   const uid = parseUid(uidRuw);
   const sp = new URL(request.url).searchParams;
-  const b = await metImap(async (c) => {
+  const b = await metImap(mail.cfg, async (c) => {
     const map = await controleerMap(c, sp.get('map'));
     return haalBijlage(c, map.pad, uid, decodeURIComponent(deel), MAX_BIJLAGE);
   });
 
   if (b.inhoud.length > MAX_DIRECT) {
-    const signed = await signedDownload(b.naam, b.inhoud);
+    const signed = await signedDownload(mail.lid, b.naam, b.inhoud);
     // De lezer downloadt via fetch (header X-SL-Download): dan de URL als JSON teruggeven,
     // zodat een cross-origin redirect niet nodig is. Een gewone link krijgt een redirect.
     if (request.headers.get('x-sl-download') === 'fetch') {

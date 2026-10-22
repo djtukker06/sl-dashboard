@@ -4,12 +4,15 @@ import { InvoicesTable, type InvoiceRow } from '@/components/InvoicesTable';
 import { ClientsList, type ClientRow } from '@/components/ClientsList';
 import { formatEuro } from '@/lib/format';
 import { vandaagNL, volgendFactuurnummer } from '@/lib/invoice/nummer';
+import { vereisTeamlidPagina } from '@/lib/auth/team';
 
 export default async function FacturenOverzichtPage({
   searchParams
 }: {
   searchParams: Promise<{ jaar?: string }>;
 }) {
+  // Sessie + teamlidmaatschap (lib/auth/team.ts); verder ongewijzigd.
+  await vereisTeamlidPagina('/facturen');
   const { jaar } = await searchParams;
   const supabase = await createClient();
 
