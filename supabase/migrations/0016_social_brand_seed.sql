@@ -176,6 +176,8 @@ body {
   --lv-frame-inset: 40px;
   --lv-header-top: 84px;
   --lv-logo-h: 64px;
+  --lv-logo-mark: 48px;
+  --lv-logo-tekst: 30px;
   --lv-footer-bottom: 84px;
   --lv-content-top: 210px;     /* inhoud begint onder het logo */
   --lv-content-bottom: 180px;  /* ruimte boven de voetbalk */
@@ -190,6 +192,8 @@ body[data-format="linkedin-landscape"] {
   --lv-frame-inset: 22px;
   --lv-header-top: 44px;
   --lv-logo-h: 40px;
+  --lv-logo-mark: 30px;
+  --lv-logo-tekst: 20px;
   --lv-footer-bottom: 44px;
   --lv-content-top: 120px;
   --lv-content-bottom: 100px;
@@ -222,6 +226,25 @@ body[data-format="linkedin-landscape"] {
   background: var(--lv-ink);
   -webkit-mask: url("logo-compact-licht.png") center / contain no-repeat;
   mask: url("logo-compact-licht.png") center / contain no-repeat;
+}
+
+/* Kop: beeldmerk + naam, zoals op de post "Dit is Studio Levant".
+   Kleurt mee: zand op donker, donker op licht. */
+.lv-header { align-items: center; gap: 16px; }
+.lv-logo {
+  display: block;
+  width: var(--lv-logo-mark);
+  height: var(--lv-logo-mark);
+  background: var(--lv-ink);
+  -webkit-mask: url("logo-licht.png") center / contain no-repeat;
+  mask: url("logo-licht.png") center / contain no-repeat;
+}
+.lv-logo-tekst {
+  font-size: var(--lv-logo-tekst);
+  line-height: 1;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--lv-ink);
 }
 
 .lv-footer {

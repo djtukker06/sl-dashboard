@@ -1,5 +1,6 @@
-// Letterlijke port van Social-media-tool/lib/brand-guard.js (gedrag byte-identiek,
-// gecontroleerd met scripts/test-brand-guard-parity.mjs).
+// Port van Social-media-tool/lib/brand-guard.js (gedrag byte-identiek, gecontroleerd met
+// scripts/test-brand-guard-parity.mjs). Enige bewuste afwijking: de kop van de vaste
+// elementen is beeldmerk + naam, zoals op de post "Dit is Studio Levant".
 //
 // Bewaakt de huisstijl van slides: vaste elementen (kader, logo, voetbalk)
 // worden door code gezet in plaats van door Claude, zodat ze op elke slide
@@ -27,7 +28,7 @@ function chromeMarkup(index: number, total: number): string {
   return [
     `  ${START}`,
     `  <div class="lv-frame"></div>`,
-    `  <header class="lv-header"><span class="lv-logo-banner" role="img" aria-label="Studio Levant"></span></header>`,
+    `  <header class="lv-header"><span class="lv-logo" role="img" aria-label="Studio Levant"></span><span class="lv-logo-tekst">Studio Levant</span></header>`,
     `  <footer class="lv-footer">${left}${dots}<span class="lv-mono lv-right">${right}</span></footer>`,
     `  ${END}`,
     "",

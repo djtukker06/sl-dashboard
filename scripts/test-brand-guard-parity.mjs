@@ -25,7 +25,12 @@ try {
   process.exit(r.status ?? 1);
 }
 const portFormats = await import(pathToFileURL(path.join(ROOT, "lib", "social", "formats.ts")).href);
-const orig = await import(pathToFileURL(path.join(SRC, "lib", "brand-guard.js")).href);
+const origMod = await import(pathToFileURL(path.join(SRC, "lib", "brand-guard.js")).href);
+// Bewuste afwijking: de vaste kop is in het dashboard beeldmerk + naam i.p.v. de banner.
+const OUDE_KOP = '<span class="lv-logo-banner" role="img" aria-label="Studio Levant"></span>';
+const NIEUWE_KOP = '<span class="lv-logo" role="img" aria-label="Studio Levant"></span><span class="lv-logo-tekst">Studio Levant</span>';
+const metNieuweKop = (fn) => (...a) => fn(...a).split(OUDE_KOP).join(NIEUWE_KOP);
+const orig = { ...origMod, applyChrome: metNieuweKop(origMod.applyChrome) };
 const origFormats = await import(pathToFileURL(path.join(SRC, "lib", "formats.js")).href);
 
 // Verzamel testinvoer: alle slide-bestanden + slides uit versies/*.json.
