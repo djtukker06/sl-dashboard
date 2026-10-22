@@ -49,6 +49,7 @@ export interface TaakRij {
   duration_minutes?: number | null;
   priority?: number;
   client_id?: string | null;
+  project_id?: string | null;
   completed_at?: string | null;
 }
 
@@ -104,6 +105,11 @@ export function parseTaak(
     const k = klantVan(body.klantId);
     if (!k.ok) return k;
     rij.client_id = k.waarde;
+  }
+  if ('projectId' in body) {
+    const pr = klantVan(body.projectId);
+    if (!pr.ok) return { ok: false, fout: 'Ongeldig project.' };
+    rij.project_id = pr.waarde;
   }
   if ('afgerond' in body) {
     if (typeof body.afgerond !== 'boolean') return { ok: false, fout: 'Ongeldige waarde voor afgerond.' };
@@ -222,3 +228,17 @@ export function parseAfspraak(body: AfspraakInvoer, huidig: AfspraakInvoer | nul
   }
   return { ok: true, waarde: rij };
 }
+
+// Taken op naam (personen, subtaken, projecten): zie ./teaminvoer.ts (zonder imports, zodat
+// scripts/test-taken.mjs het direct kan laden).
+export {
+  MAX_PERSONEN,
+  MAX_SUBTAKEN,
+  klantBijProject,
+  parsePersonen,
+  parseProject,
+  parseSubtaakTitel,
+  parseSubtaakWijziging,
+  parseSubtaken,
+  type ProjectRij
+} from './teaminvoer';

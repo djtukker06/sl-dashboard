@@ -13,7 +13,7 @@ const TABS: { id: TakenFilter; label: string }[] = [
 ];
 
 const LEEG: Record<TakenFilter, { titel: string; tekst: string }> = {
-  vandaag: { titel: 'Niets meer voor vandaag', tekst: 'Typ hierboven een taak, of plan iets in voor morgen.' },
+  vandaag: { titel: 'Niets meer voor vandaag', tekst: 'Voeg een taak toe met + Taak (of druk op n), of plan iets in voor morgen.' },
   telaat: { titel: 'Niets achterstallig', tekst: 'Alle taken met een verlopen datum zijn afgerond.' },
   gepland: { titel: 'Nog niets gepland', tekst: 'Taken met een datum na vandaag verschijnen hier, per dag.' },
   ooit: { titel: 'Geen losse ideeën', tekst: 'Taken zonder datum komen hier. Sleep ze naar een dag in de agenda om ze in te plannen.' },
@@ -61,7 +61,9 @@ export function Takenlijst({
   fout,
   onOpnieuw,
   onToggle,
-  onOpen
+  onOpen,
+  onNieuw,
+  teamWeergave = false
 }: {
   filter: TakenFilter;
   onFilter: (f: TakenFilter) => void;
@@ -73,6 +75,9 @@ export function Takenlijst({
   onOpnieuw: () => void;
   onToggle: (t: Taak) => void;
   onOpen: (t: Taak) => void;
+  onNieuw?: () => void;
+  /** Taken van het hele team (of een ander teamlid): toegewezenen altijd tonen. */
+  teamWeergave?: boolean;
 }) {
   const groepen = taken ? groepeer(filter, taken, vandaag) : [];
   return (
@@ -117,6 +122,13 @@ export function Takenlijst({
           <div className="db-melding">
             <p className="db-melding-titel">{LEEG[filter].titel}</p>
             <p className="db-melding-tekst">{LEEG[filter].tekst}</p>
+            {onNieuw && filter !== 'afgerond' && (
+              <div className="db-melding-actie">
+                <button type="button" className="db-knop" onClick={onNieuw}>
+                  + Taak
+                </button>
+              </div>
+            )}
           </div>
         ) : (
           groepen.map((g) => (
@@ -138,6 +150,7 @@ export function Takenlijst({
                     onOpen={onOpen}
                     toonDatum={filter === 'telaat' || filter === 'afgerond' || (filter === 'vandaag' && g.gevaar)}
                     versleepbaar={filter !== 'afgerond'}
+                    toonMij={teamWeergave}
                   />
                 ))}
               </ul>

@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { agendaApi, ApiFout, typtIn, useNu, useSmal } from '@/lib/agenda/client';
 import {
@@ -9,33 +10,43 @@ import {
   korteDag,
   maandagVan,
   MAANDNAMEN,
+  minutenNaarTijd,
   plusDagen,
   plusMaanden,
   weeknummer,
   type Dag
 } from '@/lib/agenda/datum';
-import type { Afspraak, Taak, TakenFilter, Tellingen } from '@/lib/agenda/types';
+import type { Afspraak, Taak, TakenFilter, Tellingen, Wie } from '@/lib/agenda/types';
 import { ModuleKop } from '@/components/shell/ModuleKop';
-import { ItemPaneel, type Selectie } from './ItemPaneel';
+import { TaakKnop } from '@/components/dashboard/TaakKnop';
+import { TakenProvider, useTaakDialoog, useTaakGebeurtenis } from '@/components/taken/TakenProvider';
+import { useTeam } from '@/components/team/TeamProvider';
+import { ItemPaneel, nieuweAfspraak, type Selectie } from './ItemPaneel';
 import { MaandView } from './MaandView';
-import { SnelInvoer, type SnelStandaard } from './SnelInvoer';
 import { Takenlijst } from './Takenlijst';
 import { ToastProvider, useToast } from './Toast';
 import { useAfvinken } from './useAfvinken';
 import { WeekView, type Verplaatsing } from './WeekView';
+import { WieFilter } from './WieFilter';
 
 type Weergave = 'week' | 'maand';
+
+const WIE_SLEUTEL = 'sl-agenda-wie';
 
 export function AgendaApp(props: {
   vandaag: Dag;
   startDag: Dag;
   startWeergave: Weergave;
+  startWie: Wie | null;
+  startProject: string | null;
   openTaak: string | null;
   openAfspraak: string | null;
 }) {
   return (
     <ToastProvider>
-      <Agenda {...props} />
+      <TakenProvider>
+        <Agenda {...props} />
+      </TakenProvider>
     </ToastProvider>
   );
 }
@@ -44,33 +55,82 @@ function Agenda({
   vandaag: vandaagServer,
   startDag,
   startWeergave,
+  startWie,
+  startProject,
   openTaak,
   openAfspraak
 }: {
   vandaag: Dag;
   startDag: Dag;
   startWeergave: Weergave;
+  startWie: Wie | null;
+  startProject: string | null;
   openTaak: string | null;
   openAfspraak: string | null;
 }) {
   const toast = useToast();
   const nu = useNu();
   const smal = useSmal();
+  const { mijnId, overgang, leden } = useTeam();
+  const taakDialoog = useTaakDialoog();
   // "Vandaag" schuift mee als het scherm over middernacht open blijft staan.
   const vandaag = nu ? inAmsterdam(nu).dag : vandaagServer;
 
   const [weergave, setWeergave] = useState<Weergave>(startWeergave);
   const [focus, setFocus] = useState<Dag>(startDag);
   const [filter, setFilter] = useState<TakenFilter>('vandaag');
+  const [wie, setWieState] = useState<Wie>(overgang ? 'ik' : (startWie ?? 'ik'));
+  const [project, setProject] = useState<{ id: string; naam: string } | null>(
+    startProject ? { id: startProject, naam: 'Project' } : null
+  );
   const [teller, setTeller] = useState(0);
   const [bereik, setBereik] = useState<{ sleutel: string; taken: Taak[]; afspraken: Afspraak[] } | null>(null);
   const [bereikFout, setBereikFout] = useState<{ sleutel: string; fout: ApiFout | Error } | null>(null);
-  const [lijst, setLijst] = useState<{ filter: TakenFilter; taken: Taak[]; tellingen: Tellingen } | null>(null);
-  const [lijstFout, setLijstFout] = useState<{ filter: TakenFilter; fout: ApiFout | Error } | null>(null);
+  const [lijst, setLijst] = useState<{ sleutel: string; taken: Taak[]; tellingen: Tellingen } | null>(null);
+  const [lijstFout, setLijstFout] = useState<{ sleutel: string; fout: ApiFout | Error } | null>(null);
   const [selectie, setSelectie] = useState<Selectie | null>(null);
   const [nieuw, setNieuw] = useState<{ dag: Dag; tijd: string | null; x: number; y: number } | null>(null);
   const [mobielTab, setMobielTab] = useState<'taken' | 'agenda'>('agenda');
-  const snelRef = useRef<HTMLInputElement>(null);
+
+  const teamWeergave = !overgang && wie !== 'ik';
+
+  // Laatste keuze "Mijn / Heel team / persoon" onthouden (per gebruiker, in deze browser).
+  useEffect(() => {
+    if (startWie || overgang) return;
+    try {
+      const w = localStorage.getItem(`${WIE_SLEUTEL}:${mijnId}`);
+      if (w === 'team' || (w && leden.some((l) => l.actief && l.id === w && l.id !== mijnId))) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        setWieState(w);
+      }
+    } catch {
+      /* geen opslag: standaard mijn agenda */
+    }
+  }, [startWie, overgang, mijnId, leden]);
+  const setWie = useCallback(
+    (w: Wie) => {
+      setWieState(w);
+      try {
+        localStorage.setItem(`${WIE_SLEUTEL}:${mijnId}`, w);
+      } catch {
+        /* niet bewaren */
+      }
+    },
+    [mijnId]
+  );
+
+  // Projectnaam bij ?project=<id>.
+  useEffect(() => {
+    if (!startProject) return;
+    let weg = false;
+    agendaApi
+      .project(startProject)
+      .then((r) => !weg && setProject({ id: r.project.id, naam: r.project.naam }))
+      .catch(() => !weg && setProject(null));
+    return () => {
+      weg = true;
+    };
+  }, [startProject]);
 
   // ---------- zichtbare dagen ----------
   const dagen = useMemo(() => {
@@ -83,42 +143,45 @@ function Agenda({
   }, [weergave, focus, smal]);
   const van = dagen[0];
   const tot = dagen[dagen.length - 1];
-  const sleutel = `${van}|${tot}`;
+  const sleutel = `${van}|${tot}|${wie}`;
+  const lijstSleutel = `${filter}|${wie}|${project?.id ?? ''}`;
 
   // ---------- data ophalen ----------
   useEffect(() => {
     let weg = false;
+    const s = `${van}|${tot}|${wie}`;
     agendaApi
-      .bereik(van, tot)
+      .bereik(van, tot, wie)
       .then((r) => {
         if (weg) return;
-        setBereik({ sleutel: `${van}|${tot}`, taken: r.tasks, afspraken: r.events });
+        setBereik({ sleutel: s, taken: r.tasks, afspraken: r.events });
         setBereikFout(null);
       })
       .catch((e) => {
-        if (!weg) setBereikFout({ sleutel: `${van}|${tot}`, fout: e });
+        if (!weg) setBereikFout({ sleutel: s, fout: e });
       });
     return () => {
       weg = true;
     };
-  }, [van, tot, teller]);
+  }, [van, tot, wie, teller]);
 
   useEffect(() => {
     let weg = false;
+    const s = `${filter}|${wie}|${project?.id ?? ''}`;
     agendaApi
-      .taken(filter)
+      .taken(filter, { wie, project: project?.id })
       .then((r) => {
         if (weg) return;
-        setLijst({ filter, taken: r.tasks, tellingen: r.tellingen });
+        setLijst({ sleutel: s, taken: r.tasks, tellingen: r.tellingen });
         setLijstFout(null);
       })
       .catch((e) => {
-        if (!weg) setLijstFout({ filter, fout: e });
+        if (!weg) setLijstFout({ sleutel: s, fout: e });
       });
     return () => {
       weg = true;
     };
-  }, [filter, teller]);
+  }, [filter, wie, project?.id, teller]);
 
   // Verversen als je terugkomt naar het tabblad (bv. taak afgevinkt op het dashboard).
   useEffect(() => {
@@ -129,15 +192,11 @@ function Agenda({
     return () => document.removeEventListener('visibilitychange', opFocus);
   }, []);
 
-  // Link vanaf het dashboard: /agenda?taak=<id> opent direct het paneel.
+  // Link vanaf het dashboard: /agenda?taak=<id> opent de taak-popup, ?afspraak=<id> het paneel.
   useEffect(() => {
     let weg = false;
-    if (openTaak) {
-      agendaApi
-        .taak(openTaak)
-        .then((r) => !weg && setSelectie({ soort: 'taak', item: r.task }))
-        .catch(() => !weg && toast('Deze taak bestaat niet meer.', { fout: true }));
-    } else if (openAfspraak) {
+    if (openTaak) taakDialoog.open(openTaak);
+    else if (openAfspraak) {
       agendaApi
         .afspraak(openAfspraak)
         .then((r) => !weg && setSelectie({ soort: 'afspraak', item: r.event }))
@@ -146,17 +205,19 @@ function Agenda({
     return () => {
       weg = true;
     };
-  }, [openTaak, openAfspraak, toast]);
+  }, [openTaak, openAfspraak, toast, taakDialoog]);
 
   // URL bijhouden (verversen of terug-knop houdt je plek), zonder navigatie.
   useEffect(() => {
     const p = new URLSearchParams();
     if (focus !== vandaag) p.set('dag', focus);
     if (weergave === 'maand') p.set('weergave', 'maand');
+    if (wie !== 'ik') p.set('wie', wie);
+    if (project) p.set('project', project.id);
     const qs = p.toString();
     const url = `/agenda${qs ? `?${qs}` : ''}`;
     if (window.location.pathname + window.location.search !== url) window.history.replaceState(null, '', url);
-  }, [focus, weergave, vandaag]);
+  }, [focus, weergave, vandaag, wie, project]);
 
   const herlaad = useCallback(() => setTeller((t) => t + 1), []);
 
@@ -181,15 +242,45 @@ function Agenda({
         }
         return { ...l, tellingen, taken: l.taken.map((x) => (x.id === t.id ? { ...x, ...t } : x)) };
       });
-      setSelectie((s) => (s && s.soort === 'taak' && s.item.id === t.id ? { soort: 'taak', item: { ...s.item, ...t } } : s));
     },
     [lijst, bereik, vandaag]
   );
   const toggle = useAfvinken(pasTaakAan);
 
+  // Taak-popup: na opslaan of verwijderen de lijsten bijwerken en opnieuw ophalen.
+  useTaakGebeurtenis((e) => {
+    if (e.soort === 'gewijzigd') pasTaakAan(e.taak);
+    else if (e.soort === 'verwijderd') {
+      setBereik((b) => (b ? { ...b, taken: b.taken.filter((x) => x.id !== e.id) } : b));
+      setLijst((l) => (l ? { ...l, taken: l.taken.filter((x) => x.id !== e.id) } : l));
+    }
+    herlaad();
+  });
+
   const pasAfspraakAan = useCallback((a: Afspraak) => {
     setBereik((b) => (b ? { ...b, afspraken: b.afspraken.map((x) => (x.id === a.id ? a : x)) } : b));
   }, []);
+
+  const openItem = useCallback(
+    (s: Selectie) => {
+      if (s.soort === 'taak') taakDialoog.open(s.item.id);
+      else setSelectie(s);
+    },
+    [taakDialoog]
+  );
+
+  const nieuweAfspraakOp = useCallback(
+    (dag: Dag, tijd: string | null) => {
+      // Zonder tijd: het eerstvolgende hele uur (vandaag) of 09:00.
+      let start = tijd;
+      if (!start) {
+        const nuMin = nu ? inAmsterdam(nu).minuten : 0;
+        start = dag === vandaag && nuMin < 23 * 60 ? minutenNaarTijd(Math.ceil((nuMin + 1) / 60) * 60) : '09:00';
+      }
+      setSelectie({ soort: 'afspraak', item: nieuweAfspraak(dag, start, mijnId), nieuw: true });
+    },
+    [nu, vandaag, mijnId]
+  );
 
   async function verplaats(v: Verplaatsing) {
     if (v.soort === 'taak') {
@@ -242,15 +333,16 @@ function Agenda({
   }, [weergave, smal]);
   const naarVandaag = useCallback(() => setFocus(vandaag), [vandaag]);
 
-  // Sneltoetsen: n = nieuw, t = vandaag, w/m = weergave, ←/→ = vorige/volgende.
+  // Sneltoetsen: n = nieuwe taak (TakenProvider), a = afspraak, t = vandaag, w/m = weergave,
+  // ←/→ = vorige/volgende.
   useEffect(() => {
     function toets(e: KeyboardEvent) {
       if (e.metaKey || e.ctrlKey || e.altKey || typtIn(e.target) || selectie || nieuw) return;
+      if (document.querySelector('[role="dialog"]')) return;
       const k = e.key.toLowerCase();
-      if (k === 'n') {
+      if (k === 'a') {
         e.preventDefault();
-        setMobielTab('taken');
-        requestAnimationFrame(() => snelRef.current?.focus());
+        nieuweAfspraakOp(dagen.includes(vandaag) ? vandaag : focus, null);
       } else if (k === 't') naarVandaag();
       else if (k === 'w') setWeergave('week');
       else if (k === 'm') setWeergave('maand');
@@ -259,14 +351,14 @@ function Agenda({
     }
     document.addEventListener('keydown', toets);
     return () => document.removeEventListener('keydown', toets);
-  }, [selectie, nieuw, naarVandaag, vorige, volgende]);
+  }, [selectie, nieuw, naarVandaag, vorige, volgende, nieuweAfspraakOp, dagen, vandaag, focus]);
 
   // ---------- afgeleide staat ----------
   const huidigBereik = bereik?.sleutel === sleutel ? bereik : null;
   const toonBereik = huidigBereik ?? bereik; // tijdens laden de vorige week blijven tonen
   const bereikLaadt = !huidigBereik && !(bereikFout?.sleutel === sleutel);
-  const huidigeLijst = lijst?.filter === filter ? lijst : null;
-  const lijstFoutNu = lijstFout?.filter === filter ? lijstFout.fout : null;
+  const huidigeLijst = lijst?.sleutel === lijstSleutel ? lijst : null;
+  const lijstFoutNu = lijstFout?.sleutel === lijstSleutel ? lijstFout.fout : null;
   const nietIngericht =
     (bereikFout?.fout instanceof ApiFout && bereikFout.fout.nietIngericht) ||
     (lijstFoutNu instanceof ApiFout && lijstFoutNu.nietIngericht);
@@ -282,10 +374,6 @@ function Agenda({
     const kort = (m: number) => MAANDNAMEN[m - 1].slice(0, 3);
     return a.j === b.j ? `${kort(a.m)} – ${kort(b.m)} ${b.j}` : `${kort(a.m)} ${a.j} – ${kort(b.m)} ${b.j}`;
   }, [weergave, focus, dagen]);
-
-  const nieuwStandaard: SnelStandaard | undefined = nieuw
-    ? { datum: nieuw.dag, tijd: nieuw.tijd ?? undefined, soort: nieuw.tijd ? 'afspraak' : 'taak' }
-    : undefined;
 
   if (nietIngericht) {
     return (
@@ -313,6 +401,15 @@ function Agenda({
   return (
     <>
       <ModuleKop label={`Planning · week ${weeknummer(vandaag)}`} titel="Agenda & taken">
+        <TaakKnop />
+        <button type="button" className="db-knop" title="Nieuwe afspraak (a)" aria-keyshortcuts="a" onClick={() => nieuweAfspraakOp(dagen.includes(vandaag) ? vandaag : focus, null)}>
+          + Afspraak
+        </button>
+        {!overgang && (
+          <Link className="db-knop" href="/agenda/projecten">
+            Projecten
+          </Link>
+        )}
         <div className="ag-mobiel-tabs" role="tablist" aria-label="Weergave">
           <button type="button" role="tab" aria-selected={mobielTab === 'taken'} onClick={() => setMobielTab('taken')}>
             Taken
@@ -323,16 +420,22 @@ function Agenda({
         </div>
       </ModuleKop>
 
-      <div className={`ag ag-toon-${mobielTab}`}>
+      {!overgang && (
+        <div className="ag-filterbalk">
+          <WieFilter waarde={wie} onChange={setWie} />
+          {project && (
+            <span className="ag-chip tk-chip-project ag-filter-project">
+              Project: {project.naam}
+              <button type="button" className="ag-chip-x" aria-label="Projectfilter weghalen" onClick={() => setProject(null)}>
+                ×
+              </button>
+            </span>
+          )}
+        </div>
+      )}
+
+      <div className={`ag ag-toon-${mobielTab}${teamWeergave ? ' is-team' : ''}`}>
         <section className="ag-links" aria-label="Taken">
-          <SnelInvoer
-            ref={snelRef}
-            id="snelinvoer"
-            vandaag={vandaag}
-            compact
-            placeholder="Nieuwe taak… bijv. ‘Bellen @Jansen vr 14:00’"
-            onKlaar={herlaad}
-          />
           <Takenlijst
             filter={filter}
             onFilter={setFilter}
@@ -343,10 +446,17 @@ function Agenda({
             fout={lijstFoutNu ? lijstFoutNu.message : null}
             onOpnieuw={herlaad}
             onToggle={toggle}
-            onOpen={(t) => setSelectie({ soort: 'taak', item: t })}
+            onOpen={(t) => taakDialoog.open(t.id)}
+            onNieuw={() =>
+              taakDialoog.nieuw({
+                voorWie: wie !== 'ik' && wie !== 'team' ? [wie] : undefined,
+                project: project ? { id: project.id, naam: project.naam, klantId: null, klantNaam: null } : undefined
+              })
+            }
+            teamWeergave={teamWeergave}
           />
           <p className="ag-toetsen" aria-hidden="true">
-            <kbd>n</kbd> nieuw · <kbd>t</kbd> vandaag · <kbd>w</kbd>/<kbd>m</kbd> week/maand · <kbd>←</kbd>
+            <kbd>n</kbd> taak · <kbd>a</kbd> afspraak · <kbd>t</kbd> vandaag · <kbd>w</kbd>/<kbd>m</kbd> week/maand · <kbd>←</kbd>
             <kbd>→</kbd> bladeren
           </p>
         </section>
@@ -402,7 +512,8 @@ function Agenda({
               nu={nu}
               taken={toonBereik?.taken ?? []}
               afspraken={toonBereik?.afspraken ?? []}
-              onOpen={setSelectie}
+              teamWeergave={teamWeergave}
+              onOpen={openItem}
               onToggle={toggle}
               onNieuw={(dag, tijd, x, y) => setNieuw({ dag, tijd, x, y })}
               onVerplaats={(v) => void verplaats(v)}
@@ -414,7 +525,8 @@ function Agenda({
               vandaag={vandaag}
               taken={toonBereik?.taken ?? []}
               afspraken={toonBereik?.afspraken ?? []}
-              onOpen={setSelectie}
+              teamWeergave={teamWeergave}
+              onOpen={openItem}
               onKiesDag={(d) => {
                 setFocus(d);
                 setWeergave('week');
@@ -426,45 +538,37 @@ function Agenda({
       </div>
 
       {nieuw && (
-        <NieuwPopover
+        <NieuwKeuze
           x={nieuw.x}
           y={nieuw.y}
           titel={`${korteDag(nieuw.dag)}${nieuw.tijd ? ` · ${nieuw.tijd}` : ''}`}
           onSluit={() => setNieuw(null)}
-        >
-          <SnelInvoer
-            vandaag={vandaag}
-            standaard={nieuwStandaard}
-            compact
-            autoFocus
-            placeholder={nieuw.tijd ? 'Afspraak of taak, bijv. ‘Call met Eva 1u’' : 'Taak of afspraak voor deze dag'}
-            onKlaar={() => {
-              setNieuw(null);
-              herlaad();
-            }}
-            onAnnuleer={() => setNieuw(null)}
-          />
-        </NieuwPopover>
+          onAfspraak={() => {
+            setNieuw(null);
+            nieuweAfspraakOp(nieuw.dag, nieuw.tijd);
+          }}
+          onTaak={() => {
+            setNieuw(null);
+            taakDialoog.nieuw({ datum: nieuw.dag, tijd: nieuw.tijd, voorWie: wie !== 'ik' && wie !== 'team' ? [wie] : undefined });
+          }}
+        />
       )}
 
-      {selectie && (
+      {selectie && selectie.soort === 'afspraak' && (
         <ItemPaneel
           selectie={selectie}
           onSluit={() => setSelectie(null)}
           onOpgeslagen={(s) => {
             setSelectie(null);
-            if (s.soort === 'taak') pasTaakAan(s.item);
-            else pasAfspraakAan(s.item);
+            if (s.soort === 'afspraak') {
+              if (selectie.nieuw) setBereik((b) => (b ? { ...b, afspraken: [...b.afspraken, s.item] } : b));
+              else pasAfspraakAan(s.item);
+            }
             herlaad();
           }}
           onVerwijderd={(s) => {
             setSelectie(null);
-            if (s.soort === 'taak') {
-              setBereik((b) => (b ? { ...b, taken: b.taken.filter((x) => x.id !== s.item.id) } : b));
-              setLijst((l) => (l ? { ...l, taken: l.taken.filter((x) => x.id !== s.item.id) } : l));
-            } else {
-              setBereik((b) => (b ? { ...b, afspraken: b.afspraken.filter((x) => x.id !== s.item.id) } : b));
-            }
+            setBereik((b) => (b ? { ...b, afspraken: b.afspraken.filter((x) => x.id !== s.item.id) } : b));
             herlaad();
           }}
         />
@@ -482,22 +586,26 @@ function minuten(t: string): number {
   return u * 60 + m;
 }
 
-/** Klein venster bij een klik op een leeg vak in de agenda. */
-function NieuwPopover({
+/** Klein keuzevenster bij een klik op een leeg vak: afspraak of taak op die dag/tijd. */
+function NieuwKeuze({
   x,
   y,
   titel,
   onSluit,
-  children
+  onAfspraak,
+  onTaak
 }: {
   x: number;
   y: number;
   titel: string;
   onSluit: () => void;
-  children: React.ReactNode;
+  onAfspraak: () => void;
+  onTaak: () => void;
 }) {
   const doos = useRef<HTMLDivElement>(null);
   useEffect(() => {
+    const vorige = document.activeElement as HTMLElement | null;
+    doos.current?.querySelector<HTMLButtonElement>('button')?.focus();
     function buiten(e: PointerEvent) {
       if (doos.current && !doos.current.contains(e.target as Node)) onSluit();
     }
@@ -506,18 +614,44 @@ function NieuwPopover({
     return () => {
       clearTimeout(t);
       document.removeEventListener('pointerdown', buiten);
+      if (vorige && document.contains(vorige)) vorige.focus({ preventScroll: true });
     };
   }, [onSluit]);
-  const breedte = 420;
+  const breedte = 280;
   const stijl: React.CSSProperties = {
     left: `clamp(16px, ${x - breedte / 2}px, calc(100vw - ${breedte + 16}px))`,
-    top: `clamp(16px, ${y + 12}px, calc(100vh - 180px))`,
+    top: `clamp(16px, ${y + 12}px, calc(100vh - 160px))`,
     width: `min(${breedte}px, calc(100vw - 32px))`
   };
   return (
-    <div ref={doos} className="ag-popover" style={stijl} role="dialog" aria-label={`Nieuw op ${titel}`}>
+    <div
+      ref={doos}
+      className="ag-popover ag-keuze"
+      style={stijl}
+      role="dialog"
+      aria-label={`Nieuw op ${titel}`}
+      onKeyDown={(e) => {
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          onSluit();
+        } else if (e.key.toLowerCase() === 'a') {
+          e.preventDefault();
+          onAfspraak();
+        } else if (e.key.toLowerCase() === 't') {
+          e.preventDefault();
+          onTaak();
+        }
+      }}
+    >
       <p className="db-label ag-popover-titel">Nieuw · {titel}</p>
-      {children}
+      <button type="button" className="ag-keuze-knop" onClick={onAfspraak}>
+        <span>Afspraak</span>
+        <kbd>a</kbd>
+      </button>
+      <button type="button" className="ag-keuze-knop" onClick={onTaak}>
+        <span>Taak</span>
+        <kbd>t</kbd>
+      </button>
     </div>
   );
 }

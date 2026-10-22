@@ -1,6 +1,7 @@
 import type { Teamlid } from '@/lib/auth/team';
 import { recentePosts } from '@/lib/dashboard/social';
 import { relatief } from '@/lib/dashboard/tijd';
+import { Persoon } from '@/components/team/Persoon';
 import { Kaart, KaartMelding } from './Kaart';
 import { OpnieuwKnop } from './OpnieuwKnop';
 
@@ -86,8 +87,11 @@ export async function SocialWidget({ lid }: { lid: Teamlid }) {
                   )}
                 </span>
                 <span className="db-post-naam">{p.naam}</span>
-                <span className="db-rij-meta">
-                  {p.aantalSlides} {p.aantalSlides === 1 ? 'slide' : 'slides'} · {relatief(p.gewijzigd)}
+                <span className="db-rij-meta db-post-meta">
+                  <span>
+                    {p.aantalSlides} {p.aantalSlides === 1 ? 'slide' : 'slides'} · {relatief(p.gewijzigd)}
+                  </span>
+                  <Persoon id={p.door} compact voorvoegsel="door" />
                 </span>
               </a>
             </li>

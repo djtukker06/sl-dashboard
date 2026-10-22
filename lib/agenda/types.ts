@@ -20,7 +20,47 @@ export interface Taak {
   /** ISO-moment of null. */
   afgerondOp: string | null;
   aangemaakt: string;
+  /** Voor wie de taak is (user-id's). Leeg zolang migratie 0021 niet is uitgevoerd. */
+  toegewezen: string[];
+  /** Voortgang van de subtaken ("2/5"). */
+  subtaken: { totaal: number; klaar: number };
+  projectId: string | null;
+  projectNaam: string | null;
+  /** User-id van de maker (null bij oude taken of een verwijderd account). */
+  aangemaaktDoor: string | null;
+  /** User-id van wie de taak afrondde. */
+  afgerondDoor: string | null;
 }
+
+export interface Subtaak {
+  id: string;
+  titel: string;
+  klaar: boolean;
+  klaarDoor: string | null;
+  volgorde: number;
+}
+
+/** Eén taak met de subtaken zelf (voor de taak-popup). */
+export interface TaakDetail extends Taak {
+  subtakenLijst: Subtaak[];
+}
+
+export type ProjectStatus = 'actief' | 'gearchiveerd';
+
+export interface Project {
+  id: string;
+  naam: string;
+  klantId: string | null;
+  klantNaam: string | null;
+  status: ProjectStatus;
+  notitie: string;
+  /** Aantal open taken in dit project. */
+  openTaken: number;
+  aangemaaktDoor: string | null;
+}
+
+/** Wiens taken/afspraken: 'ik' (standaard), 'team' (iedereen) of één user-id. */
+export type Wie = 'ik' | 'team' | string;
 
 export interface Afspraak {
   id: string;
@@ -33,6 +73,9 @@ export interface Afspraak {
   heleDag: boolean;
   klantId: string | null;
   klantNaam: string | null;
+  /** Wie erbij hoort (user-id's). Leeg zolang migratie 0021 niet is uitgevoerd. */
+  deelnemers: string[];
+  aangemaaktDoor: string | null;
 }
 
 export type TakenFilter = 'vandaag' | 'telaat' | 'gepland' | 'ooit' | 'afgerond';
@@ -43,7 +86,7 @@ export type Tellingen = Record<'vandaag' | 'telaat' | 'gepland' | 'ooit', number
 /** Wat de API stuurt bij een fout. code 'tabel_ontbreekt' = migratie 0018 nog niet uitgevoerd. */
 export interface ApiFout {
   error: string;
-  code?: 'tabel_ontbreekt' | 'niet_ingelogd';
+  code?: 'tabel_ontbreekt' | 'niet_ingelogd' | 'geen_toegang' | 'geen_recht';
 }
 
 /** Body voor POST/PATCH /api/taken. Bij PATCH zijn alle velden optioneel. */
@@ -55,7 +98,25 @@ export interface TaakInvoer {
   duur?: number | null;
   prioriteit?: number;
   klantId?: string | null;
+  projectId?: string | null;
   afgerond?: boolean;
+  /** Voor wie (user-id's, minstens één). Bij PATCH: vervangt de hele set. */
+  voorWie?: string[];
+  /** Alleen bij POST: titels van de subtaken, in volgorde. */
+  subtaken?: string[];
+}
+
+export interface SubtaakInvoer {
+  titel?: string;
+  klaar?: boolean;
+  volgorde?: number;
+}
+
+export interface ProjectInvoer {
+  naam?: string;
+  klantId?: string | null;
+  status?: ProjectStatus;
+  notitie?: string;
 }
 
 /** Body voor POST/PATCH /api/afspraken. Tijden in Amsterdamse tijd. */
@@ -74,4 +135,6 @@ export interface AfspraakInvoer {
   duur?: number | null;
   heleDag?: boolean;
   klantId?: string | null;
+  /** Wie erbij hoort (user-id's). Bij PATCH: vervangt de hele set. */
+  deelnemers?: string[];
 }

@@ -1,33 +1,28 @@
 'use client';
 
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { agendaApi, typtIn, useNu } from '@/lib/agenda/client';
-import { DAGNAMEN_KORT, dagDelen, inAmsterdam, korteDag, plusDagen, weekdagIndex, type Dag } from '@/lib/agenda/datum';
+import { agendaApi, useNu } from '@/lib/agenda/client';
+import { DAGNAMEN_KORT, dagDelen, dagTekst, inAmsterdam, korteDag, plusDagen, weekdagIndex, type Dag } from '@/lib/agenda/datum';
 import { afspraakRaakt, blokkenOpDag, indelen, isBalk, tijdvak } from '@/lib/agenda/weergave';
 import type { Afspraak, Taak } from '@/lib/agenda/types';
-import { SnelInvoer } from '@/components/agenda/SnelInvoer';
-import { Afvinker, TaakRij } from '@/components/agenda/TaakRij';
-import { ToastProvider } from '@/components/agenda/Toast';
+import { Afvinker, TaakRij, Toegewezenen } from '@/components/agenda/TaakRij';
 import { useAfvinken } from '@/components/agenda/useAfvinken';
+import { useTaakDialoog, useTaakGebeurtenis } from '@/components/taken/TakenProvider';
 import { Kaart, KaartMelding } from './Kaart';
 
-export type PlanningData = { taken: Taak[]; afspraken: Afspraak[]; teLaat: Taak[] };
+export type PlanningData = { taken: Taak[]; afspraken: Afspraak[]; teLaat: Taak[]; uitgedeeld: Taak[] };
+
+const VERVERS_MS = 2 * 60_000;
 
 /**
- * Planning op het dashboard: snelinvoer + widgets Vandaag, Deze week en Taken.
- * Krijgt de eerste gegevens van de server (PlanningWidgets) en houdt ze daarna zelf bij,
- * zodat afvinken en toevoegen direct zichtbaar zijn.
+ * Jouw planning op het dashboard: Vandaag, Deze week, Taken en "Uitgedeeld door jou".
+ * Alleen taken voor jou en afspraken waar jij bij hoort. Krijgt de eerste gegevens van de
+ * server (PlanningWidgets) en houdt ze daarna zelf bij; ververst bij terugkomen en elke
+ * 2 minuten (zo verschijnt werk van je compagnon vanzelf). Vereist <DashboardTaken> erboven.
  */
-export function Planning(props: { vandaag: Dag; data: PlanningData | null; fout: 'niet-ingericht' | 'fout' | null }) {
-  return (
-    <ToastProvider>
-      <PlanningInhoud {...props} />
-    </ToastProvider>
-  );
-}
-
-function PlanningInhoud({
+export function Planning({
   vandaag: vandaagServer,
   data: start,
   fout: startFout
@@ -41,13 +36,20 @@ function PlanningInhoud({
   const [data, setData] = useState<PlanningData | null>(start);
   const [fout, setFout] = useState(startFout);
   const [bezig, setBezig] = useState(false);
-  const snelRef = useRef<HTMLInputElement>(null);
+  const { nieuw, open } = useTaakDialoog();
+  const router = useRouter();
+  const laatst = useRef(0);
 
   const ververs = useCallback(async () => {
     setBezig(true);
+    laatst.current = Date.now();
     try {
-      const [bereik, laat] = await Promise.all([agendaApi.bereik(vandaag, plusDagen(vandaag, 6)), agendaApi.taken('telaat')]);
-      setData({ taken: bereik.tasks, afspraken: bereik.events, teLaat: laat.tasks });
+      const [bereik, laat, uit] = await Promise.all([
+        agendaApi.bereik(vandaag, plusDagen(vandaag, 6), 'ik'),
+        agendaApi.taken('telaat', { wie: 'ik' }),
+        agendaApi.uitgedeeld()
+      ]);
+      setData({ taken: bereik.tasks, afspraken: bereik.events, teLaat: laat.tasks, uitgedeeld: uit.tasks });
       setFout(null);
     } catch (e) {
       setFout(e && typeof e === 'object' && 'nietIngericht' in e && (e as { nietIngericht: boolean }).nietIngericht ? 'niet-ingericht' : 'fout');
@@ -56,26 +58,29 @@ function PlanningInhoud({
     }
   }, [vandaag]);
 
-  // Verversen als je terugkomt naar het tabblad (bv. na werken in de agenda).
+  // Verversen als je terugkomt (tabblad of venster) en elke 2 minuten zolang het zichtbaar
+  // is; router.refresh() ververst ook de gedeelde widgets (facturen, bonnetjes, posts).
   useEffect(() => {
-    const opZicht = () => {
-      if (document.visibilityState === 'visible') void ververs();
+    const opnieuw = (forceer = false) => {
+      if (document.visibilityState !== 'visible') return;
+      if (!forceer && Date.now() - laatst.current < 30_000) return;
+      void ververs();
+      router.refresh();
     };
-    document.addEventListener('visibilitychange', opZicht);
-    return () => document.removeEventListener('visibilitychange', opZicht);
-  }, [ververs]);
+    const zicht = () => opnieuw();
+    const focus = () => opnieuw();
+    const timer = setInterval(() => opnieuw(true), VERVERS_MS);
+    document.addEventListener('visibilitychange', zicht);
+    window.addEventListener('focus', focus);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener('visibilitychange', zicht);
+      window.removeEventListener('focus', focus);
+    };
+  }, [ververs, router]);
 
-  // n = nieuwe taak (focus op de snelinvoer).
-  useEffect(() => {
-    function toets(e: KeyboardEvent) {
-      if (e.key.toLowerCase() !== 'n' || e.metaKey || e.ctrlKey || e.altKey || typtIn(e.target)) return;
-      if (!snelRef.current) return;
-      e.preventDefault();
-      snelRef.current.focus();
-    }
-    document.addEventListener('keydown', toets);
-    return () => document.removeEventListener('keydown', toets);
-  }, []);
+  // Taak toegevoegd/gewijzigd/verwijderd in de popup: opnieuw ophalen.
+  useTaakGebeurtenis(() => void ververs());
 
   const pasAan = useCallback((t: Taak) => {
     setData((d) =>
@@ -83,7 +88,8 @@ function PlanningInhoud({
         ? {
             ...d,
             taken: d.taken.map((x) => (x.id === t.id ? { ...x, ...t } : x)),
-            teLaat: d.teLaat.map((x) => (x.id === t.id ? { ...x, ...t } : x))
+            teLaat: d.teLaat.map((x) => (x.id === t.id ? { ...x, ...t } : x)),
+            uitgedeeld: d.uitgedeeld.map((x) => (x.id === t.id ? { ...x, ...t } : x))
           }
         : d
     );
@@ -119,18 +125,19 @@ function PlanningInhoud({
     );
   }
 
-  const d = data ?? { taken: [], afspraken: [], teLaat: [] };
+  const d = data ?? { taken: [], afspraken: [], teLaat: [], uitgedeeld: [] };
+  const opUitgedeeld = d.uitgedeeld.length > 0;
   return (
     <>
-      <section className="db-snel" aria-label="Snel toevoegen">
-        <SnelInvoer ref={snelRef} id="snelinvoer" vandaag={vandaag} onKlaar={() => void ververs()} onNietIngericht={() => setFout('niet-ingericht')} />
-      </section>
-      <VandaagKaart vandaag={vandaag} nu={nu} data={d} onToggle={toggle} snelRef={snelRef} />
-      <Kaart label="Deze week" href={`/agenda?dag=${vandaag}`} linkTekst="Agenda" className="db-smal">
-        <WeekStrip vandaag={vandaag} taken={d.taken} afspraken={d.afspraken} />
-        <Eerstvolgende vandaag={vandaag} nu={nu} afspraken={d.afspraken} />
-      </Kaart>
-      <TakenKaart vandaag={vandaag} nu={nu} data={d} onToggle={toggle} snelRef={snelRef} />
+      <VandaagKaart vandaag={vandaag} nu={nu} data={d} onToggle={toggle} onNieuw={() => nieuw()} onOpen={open} />
+      <div className="db-smal db-stapel">
+        <Kaart label="Deze week" href={`/agenda?dag=${vandaag}`} linkTekst="Agenda" className="db-week-kaart">
+          <WeekStrip vandaag={vandaag} taken={d.taken} afspraken={d.afspraken} />
+          <Eerstvolgende vandaag={vandaag} nu={nu} afspraken={d.afspraken} />
+        </Kaart>
+        {opUitgedeeld && <UitgedeeldKaart vandaag={vandaag} taken={d.uitgedeeld} onOpen={open} />}
+      </div>
+      <TakenKaart vandaag={vandaag} nu={nu} data={d} onToggle={toggle} onNieuw={() => nieuw()} onOpen={open} />
     </>
   );
 }
@@ -144,13 +151,15 @@ function VandaagKaart({
   nu,
   data,
   onToggle,
-  snelRef
+  onNieuw,
+  onOpen
 }: {
   vandaag: Dag;
   nu: number | null;
   data: PlanningData;
   onToggle: (t: Taak) => void;
-  snelRef: React.RefObject<HTMLInputElement | null>;
+  onNieuw: () => void;
+  onOpen: (id: string) => void;
 }) {
   const blokken = blokkenOpDag(vandaag, data.taken, data.afspraken);
   const lanes = indelen(blokken);
@@ -170,12 +179,12 @@ function VandaagKaart({
         <KaartMelding
           titel="Nog niets gepland voor vandaag"
           actie={
-            <button type="button" className="db-knop" onClick={() => snelRef.current?.focus()}>
+            <button type="button" className="db-knop" onClick={onNieuw}>
               + Taak
             </button>
           }
         >
-          Typ hierboven wat er moet gebeuren — bijvoorbeeld ‘Klant bellen 15:00’.
+          Geen afspraken en geen taken voor jou vandaag. Voeg een taak toe met <kbd>n</kbd>.
         </KaartMelding>
       ) : (
         <>
@@ -200,7 +209,16 @@ function VandaagKaart({
                     width: `calc(${100 / lane.kolommen}% - 4px)`
                   };
                   const voorbij = nuMin !== null && b.eind <= nuMin;
-                  const href = b.soort === 'taak' ? `/agenda?taak=${b.id}` : `/agenda?dag=${vandaag}&afspraak=${b.id}`;
+                  const tekst = (
+                    <>
+                      <span className="ag-blok-titel">{b.item.titel}</span>
+                      <span className="ag-blok-tijd">
+                        {b.soort === 'afspraak' ? tijdvak(b.item) : b.item.tijd}
+                        {b.soort === 'afspraak' && b.item.locatie ? ` · ${b.item.locatie}` : ''}
+                        {b.item.klantNaam ? ` · ${b.item.klantNaam}` : ''}
+                      </span>
+                    </>
+                  );
                   return (
                     <div
                       key={`${b.soort}:${b.id}`}
@@ -208,14 +226,15 @@ function VandaagKaart({
                       style={stijl}
                     >
                       {b.soort === 'taak' && <Afvinker taak={b.item} onToggle={onToggle} klein />}
-                      <Link className="ag-blok-tekst" href={href}>
-                        <span className="ag-blok-titel">{b.item.titel}</span>
-                        <span className="ag-blok-tijd">
-                          {b.soort === 'afspraak' ? tijdvak(b.item) : b.item.tijd}
-                          {b.soort === 'afspraak' && b.item.locatie ? ` · ${b.item.locatie}` : ''}
-                          {b.item.klantNaam ? ` · ${b.item.klantNaam}` : ''}
-                        </span>
-                      </Link>
+                      {b.soort === 'taak' ? (
+                        <button type="button" className="ag-blok-tekst" onClick={() => onOpen(b.id)}>
+                          {tekst}
+                        </button>
+                      ) : (
+                        <Link className="ag-blok-tekst" href={`/agenda?dag=${vandaag}&afspraak=${b.id}`}>
+                          {tekst}
+                        </Link>
+                      )}
                     </div>
                   );
                 })}
@@ -241,7 +260,7 @@ function VandaagKaart({
                   </li>
                 ))}
                 {losse.map((t) => (
-                  <TaakRij key={t.id} taak={t} vandaag={vandaag} onToggle={onToggle} href={`/agenda?taak=${t.id}`} toonDatum={false} />
+                  <TaakRij key={t.id} taak={t} vandaag={vandaag} onToggle={onToggle} onOpen={(x) => onOpen(x.id)} toonDatum={false} />
                 ))}
               </ul>
             </div>
@@ -314,13 +333,15 @@ function TakenKaart({
   nu,
   data,
   onToggle,
-  snelRef
+  onNieuw,
+  onOpen
 }: {
   vandaag: Dag;
   nu: number | null;
   data: PlanningData;
   onToggle: (t: Taak) => void;
-  snelRef: React.RefObject<HTMLInputElement | null>;
+  onNieuw: () => void;
+  onOpen: (id: string) => void;
 }) {
   const recent = (t: Taak) => isRecent(t, nu);
   // Afgevinkte taken blijven zichtbaar (doorgestreept) tot de volgende keer laden,
@@ -341,12 +362,12 @@ function TakenKaart({
         <KaartMelding
           titel="Geen open taken"
           actie={
-            <button type="button" className="db-knop" onClick={() => snelRef.current?.focus()}>
+            <button type="button" className="db-knop" onClick={onNieuw}>
               + Taak
             </button>
           }
         >
-          Niets achterstallig en niets gepland voor de komende dagen.
+          Niets achterstallig en niets voor jou gepland in de komende dagen.
         </KaartMelding>
       ) : (
         groepen.map((g) => (
@@ -357,12 +378,42 @@ function TakenKaart({
             </h3>
             <ul className="ag-taken">
               {g.taken.map((t) => (
-                <TaakRij key={t.id} taak={t} vandaag={vandaag} onToggle={onToggle} href={`/agenda?taak=${t.id}`} toonDatum={g.datum} />
+                <TaakRij key={t.id} taak={t} vandaag={vandaag} onToggle={onToggle} onOpen={(x) => onOpen(x.id)} toonDatum={g.datum} />
               ))}
             </ul>
           </section>
         ))
       )}
+    </Kaart>
+  );
+}
+
+// ---------- Uitgedeeld door jou ----------
+
+function UitgedeeldKaart({ vandaag, taken, onOpen }: { vandaag: Dag; taken: Taak[]; onOpen: (id: string) => void }) {
+  const zichtbaar = taken.filter((t) => !t.afgerond).slice(0, 5);
+  if (!zichtbaar.length) return null;
+  return (
+    <Kaart label={`Uitgedeeld door jou · ${taken.filter((t) => !t.afgerond).length}`} href="/agenda?wie=team" linkTekst="Team" className="db-uitgedeeld">
+      <ul className="db-lijst">
+        {zichtbaar.map((t) => {
+          const laat = !!t.datum && t.datum < vandaag;
+          return (
+            <li key={t.id}>
+              <button type="button" className="db-rij db-rij-knop" onClick={() => onOpen(t.id)}>
+                <Toegewezenen ids={t.toegewezen} max={2} />
+                <span className="db-rij-hoofd">
+                  <span className="db-rij-titel">{t.titel}</span>
+                  <span className={`db-rij-meta${laat ? ' is-gevaar' : ''}`}>
+                    {t.datum ? dagTekst(t.datum, vandaag) : 'Geen deadline'}
+                    {t.subtaken.totaal > 0 ? ` · ${t.subtaken.klaar}/${t.subtaken.totaal}` : ''}
+                  </span>
+                </span>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
     </Kaart>
   );
 }

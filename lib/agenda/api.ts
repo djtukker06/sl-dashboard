@@ -1,8 +1,9 @@
 import { NextResponse } from 'next/server';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { controleerRoute, type Teamlid } from '@/lib/auth/team';
-import { tabelOntbreekt } from '@/lib/db/ontbreekt';
-import { AgendaFout } from './repo';
+import { isUuid } from './invoer';
+import { AgendaFout, type AgendaBron } from './repo';
+import type { Wie } from './types';
 
 // Gedeelde stukken voor de agenda-API-routes (/api/agenda, /api/taken, /api/afspraken).
 
@@ -23,29 +24,22 @@ export function fout(status: number, error: string, code?: string) {
  */
 export async function metSessie(
   request: Request
-): Promise<{ sb: SupabaseClient; lid: Teamlid } | { antwoord: NextResponse }> {
+): Promise<{ sb: SupabaseClient; lid: Teamlid; bron: AgendaBron } | { antwoord: NextResponse }> {
   const c = await controleerRoute(request);
   if ('antwoord' in c) return c;
-  return { sb: c.lid.sb, lid: c.lid };
+  return { sb: c.lid.sb, lid: c.lid, bron: bronVan(c.lid) };
 }
 
-/**
- * Brug tot de taken-popup (stap 3): een nieuwe taak/afspraak hoort bij de maker. Zonder
- * migratie 0021 (geen koppeltabel) wordt dit stil overgeslagen.
- */
-export async function koppelAanMaker(
-  sb: SupabaseClient,
-  soort: 'taak' | 'afspraak',
-  id: string,
-  userId: string
-): Promise<void> {
-  const { error } =
-    soort === 'taak'
-      ? await sb.from('task_assignees').insert({ task_id: id, user_id: userId })
-      : await sb.from('event_attendees').insert({ event_id: id, user_id: userId });
-  if (error && !tabelOntbreekt(error) && error.code !== '23505') {
-    console.error('[agenda] koppelen aan maker mislukt', error.code ?? '', error.message);
-  }
+/** De databasebron voor de agenda-repo: gebruikerscliënt (RLS), wie, en of 0021 er is. */
+export function bronVan(lid: Teamlid): AgendaBron {
+  return { sb: lid.sb, userId: lid.userId, team: !lid.overgang };
+}
+
+/** ?wie=ik|team|<user-id> (standaard: ik). Ongeldig → null. */
+export function leesWie(v: string | null): Wie | null {
+  if (!v || v === 'ik') return 'ik';
+  if (v === 'team') return 'team';
+  return isUuid(v) ? v.toLowerCase() : null;
 }
 
 /** Vangt fouten af tot een nette JSON-fout (503 tabel_ontbreekt vóór de migratie). */

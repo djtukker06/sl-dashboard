@@ -7,22 +7,29 @@ import type { TeamProfiel } from '@/lib/team/types';
 // in de shell. Wordt één keer per verzoek geladen in app/(app)/layout.tsx.
 interface TeamContext {
   mijnId: string;
+  /** true zolang migratie 0021 niet is uitgevoerd (geen toewijzing, subtaken of projecten). */
+  overgang: boolean;
   leden: TeamProfiel[];
   perId: Map<string, TeamProfiel>;
 }
 
-const Ctx = createContext<TeamContext>({ mijnId: '', leden: [], perId: new Map() });
+const Ctx = createContext<TeamContext>({ mijnId: '', overgang: false, leden: [], perId: new Map() });
 
 export function TeamProvider({
   mijnId,
+  overgang = false,
   leden,
   children
 }: {
   mijnId: string;
+  overgang?: boolean;
   leden: TeamProfiel[];
   children: React.ReactNode;
 }) {
-  const waarde = useMemo(() => ({ mijnId, leden, perId: new Map(leden.map((l) => [l.id, l])) }), [mijnId, leden]);
+  const waarde = useMemo(
+    () => ({ mijnId, overgang, leden, perId: new Map(leden.map((l) => [l.id, l])) }),
+    [mijnId, overgang, leden]
+  );
   return <Ctx.Provider value={waarde}>{children}</Ctx.Provider>;
 }
 

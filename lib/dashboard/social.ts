@@ -15,7 +15,20 @@ export type RecentePost = {
   aantalSlides: number;
   eersteSlide: string | null;
   gewijzigd: string;
+  /** User-id van wie de post maakte (null bij oude posts of vóór migratie 0021). */
+  door: string | null;
 };
+
+/** Wie maakte deze posts? Via de gebruikerscliënt (RLS: teamleden). Best effort. */
+async function makers(lid: Teamlid, ids: string[]): Promise<Map<string, string>> {
+  if (!ids.length || lid.overgang) return new Map();
+  const { data, error } = await lid.sb.from('social_projects').select('id, created_by').in('id', ids);
+  if (error) {
+    if (error.code !== '42703' && error.code !== 'PGRST204') console.error('[dashboard] makers van posts', error.code ?? '', error.message);
+    return new Map();
+  }
+  return new Map((data ?? []).filter((r) => r.created_by).map((r) => [r.id as string, r.created_by as string]));
+}
 
 export async function recentePosts(
   lid: Teamlid,
@@ -23,10 +36,12 @@ export async function recentePosts(
 ): Promise<{ ok: true; posts: RecentePost[]; totaal: number } | { ok: false; reden: 'niet-ingericht' | 'fout' }> {
   try {
     const lijst = await metTeamlid(lid, () => listProjects());
+    const eerste = lijst.slice(0, max);
+    const door = await makers(lid, eerste.map((p) => p.id));
     return {
       ok: true,
       totaal: lijst.length,
-      posts: lijst.slice(0, max).map((p) => {
+      posts: eerste.map((p) => {
         const f = getFormat(p.format);
         return {
           id: p.id,
@@ -36,7 +51,8 @@ export async function recentePosts(
           hoogte: f.h,
           aantalSlides: p.slides.length,
           eersteSlide: p.slides[0] ?? null,
-          gewijzigd: p.updatedAt
+          gewijzigd: p.updatedAt,
+          door: door.get(p.id) ?? null
         };
       })
     };

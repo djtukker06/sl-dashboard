@@ -10,6 +10,7 @@ import './mail.css';
 import './uitgaven.css';
 import './boekhouding.css';
 import './account.css';
+import './taken.css';
 
 // Gedeelde shell voor alle ingelogde React-pagina's (dashboard, mail, agenda, boekhouding, account).
 // De social-module (statisch HTML) krijgt dezelfde rail via app/social/route.ts.
@@ -35,7 +36,7 @@ export default async function AppLayout({ children }: Readonly<{ children: React
             </span>
           </p>
         )}
-        <TeamProvider mijnId={lid.userId} leden={leden}>
+        <TeamProvider mijnId={lid.userId} overgang={lid.overgang} leden={leden}>
           {children}
         </TeamProvider>
       </main>

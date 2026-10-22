@@ -1,7 +1,20 @@
 'use client';
 
 import { useSyncExternalStore } from 'react';
-import type { Afspraak, AfspraakInvoer, Taak, TaakInvoer, TakenFilter, Tellingen } from './types';
+import type {
+  Afspraak,
+  AfspraakInvoer,
+  Project,
+  ProjectInvoer,
+  Subtaak,
+  SubtaakInvoer,
+  Taak,
+  TaakDetail,
+  TaakInvoer,
+  TakenFilter,
+  Tellingen,
+  Wie
+} from './types';
 
 // Browser-kant van de agenda: fetch-hulpjes en kleine hooks. Gebruikt door /agenda en
 // de planning-widgets op het dashboard.
@@ -16,6 +29,10 @@ export class ApiFout extends Error {
   }
   get nietIngericht() {
     return this.code === 'tabel_ontbreekt';
+  }
+  /** Geen recht om dit te wijzigen (niet de maker en niet toegewezen). */
+  get geenRecht() {
+    return this.status === 403;
   }
 }
 
@@ -45,20 +62,42 @@ async function api<T>(url: string, init?: RequestInit): Promise<T> {
 
 const body = (b: unknown) => JSON.stringify(b);
 
+function qs(p: Record<string, string | null | undefined>): string {
+  const u = new URLSearchParams();
+  for (const [k, v] of Object.entries(p)) if (v) u.set(k, v);
+  const t = u.toString();
+  return t ? `?${t}` : '';
+}
+
 export const agendaApi = {
-  bereik: (van: string, tot: string) =>
-    api<{ tasks: Taak[]; events: Afspraak[] }>(`/api/agenda?van=${van}&tot=${tot}`),
-  taken: (filter: TakenFilter) =>
-    api<{ tasks: Taak[]; tellingen: Tellingen; vandaag: string }>(`/api/taken?filter=${filter}`),
-  taak: (id: string) => api<{ task: Taak }>(`/api/taken/${id}`),
+  bereik: (van: string, tot: string, wie: Wie = 'ik') =>
+    api<{ tasks: Taak[]; events: Afspraak[] }>(`/api/agenda${qs({ van, tot, wie })}`),
+  taken: (filter: TakenFilter, opties: { wie?: Wie; project?: string | null } = {}) =>
+    api<{ tasks: Taak[]; tellingen: Tellingen; vandaag: string }>(
+      `/api/taken${qs({ filter, wie: opties.wie ?? 'ik', project: opties.project })}`
+    ),
+  uitgedeeld: () => api<{ tasks: Taak[] }>('/api/taken?filter=uitgedeeld'),
+  taak: (id: string) => api<{ task: TaakDetail }>(`/api/taken/${id}`),
   maakTaak: (b: TaakInvoer) => api<{ task: Taak }>('/api/taken', { method: 'POST', body: body(b) }),
   wijzigTaak: (id: string, b: TaakInvoer) => api<{ task: Taak }>(`/api/taken/${id}`, { method: 'PATCH', body: body(b) }),
   verwijderTaak: (id: string) => api<{ ok: true }>(`/api/taken/${id}`, { method: 'DELETE' }),
+  maakSubtaak: (taakId: string, titel: string) =>
+    api<{ subtaak: Subtaak }>(`/api/taken/${taakId}/subtaken`, { method: 'POST', body: body({ titel }) }),
+  wijzigSubtaak: (taakId: string, id: string, b: SubtaakInvoer) =>
+    api<{ subtaak: Subtaak }>(`/api/taken/${taakId}/subtaken/${id}`, { method: 'PATCH', body: body(b) }),
+  verwijderSubtaak: (taakId: string, id: string) =>
+    api<{ ok: true }>(`/api/taken/${taakId}/subtaken/${id}`, { method: 'DELETE' }),
   afspraak: (id: string) => api<{ event: Afspraak }>(`/api/afspraken/${id}`),
   maakAfspraak: (b: AfspraakInvoer) => api<{ event: Afspraak }>('/api/afspraken', { method: 'POST', body: body(b) }),
   wijzigAfspraak: (id: string, b: AfspraakInvoer) =>
     api<{ event: Afspraak }>(`/api/afspraken/${id}`, { method: 'PATCH', body: body(b) }),
-  verwijderAfspraak: (id: string) => api<{ ok: true }>(`/api/afspraken/${id}`, { method: 'DELETE' })
+  verwijderAfspraak: (id: string) => api<{ ok: true }>(`/api/afspraken/${id}`, { method: 'DELETE' }),
+  project: (id: string) => api<{ project: Project }>(`/api/projecten/${id}`),
+  projecten: (status: 'actief' | 'gearchiveerd' | 'alle' = 'actief') =>
+    api<{ projecten: Project[] }>(`/api/projecten${qs({ status })}`),
+  maakProject: (b: ProjectInvoer) => api<{ project: Project }>('/api/projecten', { method: 'POST', body: body(b) }),
+  wijzigProject: (id: string, b: ProjectInvoer) =>
+    api<{ project: Project }>(`/api/projecten/${id}`, { method: 'PATCH', body: body(b) })
 };
 
 export interface KlantSuggestie {

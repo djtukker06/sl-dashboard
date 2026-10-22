@@ -11,11 +11,13 @@ export const metadata: Metadata = { title: 'Agenda & taken · Studio Levant' };
 // /api/agenda en /api/taken (die elk ook zelf de sessie controleren).
 //   ?dag=YYYY-MM-DD      week/maand rond die dag (vanaf het dashboard "Deze week")
 //   ?weergave=maand      maandweergave
-//   ?taak=<id> / ?afspraak=<id>   opent direct het bewerkpaneel
+//   ?taak=<id>           opent direct de taak-popup; ?afspraak=<id> het afsprakenpaneel
+//   ?wie=team|<user-id>  heel team of één teamlid (standaard: alleen jouw taken/afspraken)
+//   ?project=<id>        takenlijst gefilterd op een project
 export default async function AgendaPage({
   searchParams
 }: {
-  searchParams: Promise<{ dag?: string; weergave?: string; taak?: string; afspraak?: string }>;
+  searchParams: Promise<{ dag?: string; weergave?: string; taak?: string; afspraak?: string; wie?: string; project?: string }>;
 }) {
   await vereisTeamlidPagina('/agenda');
 
@@ -26,6 +28,8 @@ export default async function AgendaPage({
       vandaag={vandaag}
       startDag={isDag(sp.dag) ? sp.dag : vandaag}
       startWeergave={sp.weergave === 'maand' ? 'maand' : 'week'}
+      startWie={sp.wie === 'team' ? 'team' : isUuid(sp.wie) ? sp.wie.toLowerCase() : sp.wie === 'ik' ? 'ik' : null}
+      startProject={isUuid(sp.project) ? sp.project : null}
       openTaak={isUuid(sp.taak) ? sp.taak : null}
       openAfspraak={isUuid(sp.afspraak) ? sp.afspraak : null}
     />

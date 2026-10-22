@@ -1,26 +1,12 @@
 'use client';
 
-import { useRouter } from 'next/navigation';
+import { useTaakDialoog } from '@/components/taken/TakenProvider';
 
-// "+ Taak" in de kop van het dashboard: zet de focus op de snelinvoer (of opent de agenda
-// als die er niet is, bv. zolang de agenda nog niet is ingericht).
-export function TaakKnop() {
-  const router = useRouter();
+// "+ Taak" in de kop van het dashboard en de agenda: opent de taak-popup (sneltoets n).
+export function TaakKnop({ className = 'db-knop db-knop-primair' }: { className?: string }) {
+  const { nieuw } = useTaakDialoog();
   return (
-    <button
-      type="button"
-      className="db-knop db-knop-primair"
-      title="Nieuwe taak (n)"
-      onClick={() => {
-        const veld = document.getElementById('snelinvoer');
-        if (veld instanceof HTMLInputElement) {
-          veld.scrollIntoView({ block: 'center', behavior: 'smooth' });
-          veld.focus({ preventScroll: true });
-        } else {
-          router.push('/agenda');
-        }
-      }}
-    >
+    <button type="button" className={className} title="Nieuwe taak (n)" aria-keyshortcuts="n" onClick={() => nieuw()}>
       + Taak
     </button>
   );

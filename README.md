@@ -9,9 +9,9 @@ je vanuit elke module terug naar het dashboard.
 
 | Module | Route | Wat |
 |---|---|---|
-| Dashboard | `/` | "Vandaag": begroeting, snelle acties, snelinvoer voor taken, dagplanning, taken, deze week, je eigen inbox, facturen, laatste bonnetjes en recente social posts |
+| Dashboard | `/` | Jouw eigen "Vandaag": begroeting, snelle acties, jouw dagplanning, taken en week, wat je uitdeelde, je eigen inbox; gedeeld: facturen, laatste bonnetjes en recente posts (met wie ze maakte) |
 | Mail | `/mail` | Je eigen mailbox (Private Email): lezen, beantwoorden, doorsturen, nieuwe mail, mail → taak |
-| Agenda | `/agenda` | Taken en afspraken in één agenda (week/maand), snelinvoer in gewone taal |
+| Agenda | `/agenda` | Taken op naam (popup: voor wie, deadline, urgentie, klant, project, subtaken) en afspraken in één agenda (week/maand); filter Mijn agenda / Heel team; projecten op `/agenda/projecten` |
 | Boekhouding | `/boekhouding` | Keuze tussen **Facturen** (`/facturen`: facturen, prijsopgaven, klanten en PDF's, ongewijzigd) en **Bonnetjes & inkoopfacturen** (`/boekhouding/bonnetjes`: foto/PDF uploaden en snel terugvinden) |
 | Account & mail | `/account` | Je profiel (naam, initialen, kleur), je eigen mailbox koppelen, wachtwoord wijzigen |
 | Social | `/social` | De social-media-tool (voorheen lokaal), met dezelfde schermen en werking |
@@ -210,10 +210,19 @@ De scripts lezen de sleutels alleen uit de procesomgeving (`--env-file`), lezen 
 
 ## Dashboard
 
-`app/(app)/page.tsx`: kop met dag, weeknummer en begroeting; snelle acties (Taak, Nieuwe
-factuur, Nieuwe prijsopgave, + Bonnetje, Nieuwe post, Nieuwe mail); snelinvoer voor taken;
-widgets Vandaag, Taken, Deze week, Inbox (je eigen mailbox), Facturen (met wie ze maakte),
-Laatste bonnetjes (de vier nieuwste uploads van het team, met uploader) en Social. Elke widget laadt los (eigen laad-, leeg- en foutstaat), zodat één
+`app/(app)/page.tsx`: elk teamlid heeft een eigen dashboard. Kop met dag, weeknummer en
+begroeting met je eigen voornaam; snelle acties (+ Taak opent de taak-popup, sneltoets `n`;
+Nieuwe factuur, Nieuwe prijsopgave, + Bonnetje, Nieuwe post, Nieuwe mail).
+
+- **Alleen van jou:** Vandaag, Deze week en Taken tonen alleen taken die aan jou zijn
+  toegewezen en afspraken waar jij bij hoort; "Uitgedeeld door jou" toont open taken die jij
+  voor anderen maakte; de Inbox is je eigen mailbox.
+- **Gedeeld met het team:** Facturen, Laatste bonnetjes en Recente posts, met een avatar van
+  wie ze maakte/uploadde.
+- Het dashboard ververst als je terugkomt naar het venster en elke 2 minuten, zodat werk van
+  je compagnon vanzelf verschijnt.
+
+Elke widget laadt los (eigen laad-, leeg- en foutstaat), zodat één
 trage of nog niet ingerichte bron de rest niet blokkeert. De facturen-widget is alleen-lezen
 en rekent met dezelfde regels als het facturenoverzicht (omzet excl. btw per jaar; open =
 aanbetaling zonder restfactuur).
@@ -223,11 +232,37 @@ aanbetaling zonder restfactuur).
 - `supabase/migrations/0018_agenda_taken.sql`: tabellen `tasks` en `calendar_events`
   (idempotent, met RLS en `set_updated_at`-trigger). Tot deze migratie is uitgevoerd tonen
   de agenda en de dashboard-widgets een nette melding "nog niet ingericht".
-- Snelinvoer (`lib/agenda/snelinvoer.ts`) herkent o.a. `vandaag`, `morgen`, `vrijdag`,
-  `volgende week di`, `12 nov`, `22-10`, `14:00`, `om 9`, `10:00-11:00`, `1u`, `45 min`,
-  `!`/`!laag` en `@klant`. Begint de tekst met `afspraak` (of staat er een tijdvak in), dan
-  wordt het een afspraak. Alle datums in Europe/Amsterdam-tijd.
-- Tests: `node scripts/test-snelinvoer.mjs` (ook zomer-/wintertijd rond 25 okt 2026).
+- **Taken op naam** (migratie 0021): een taak is voor één of meer teamleden
+  (`task_assignees`), heeft optioneel een klant en/of project (`projects`) en afvinkbare
+  subtaken (`task_subtasks`, max. 50). Een taak voor Daniel staat alleen in Daniels lijsten
+  en op zijn dashboard; een taak voor meerdere mensen bij ieder van hen. Afronden is gedeeld:
+  één persoon rondt hem voor iedereen af ("afgerond door …").
+- **De taak-popup** (`components/taken/TaakDialoog.tsx`), via **+ Taak** of `n` op dashboard,
+  agenda en projecten: omschrijving (+ toelichting), voor wie (standaard jijzelf,
+  "Iedereen"), deadline (datum + optionele tijd/duur, snelknoppen), urgentie (Laag/Normaal/
+  Hoog, `alt+1/2/3`), klant, project ("+ Nieuw project ‘X’" maakt het direct aan; een project
+  bij een klant vult de klant in) en subtaken. `Enter` of `⌘/Ctrl+Enter` slaat op,
+  `⇧⌘Enter` = opslaan en nog een (voor wie/klant/project blijven staan), `Esc` vraagt of
+  wijzigingen weg mogen. Herkent de omschrijving een datum/tijd/urgentie/`@klant` (zoals de
+  oude snelinvoer, `lib/agenda/snelinvoer.ts`), dan kun je die met één klik toepassen. Een
+  bestaande taak opent in dezelfde popup (afronden, subtaken direct afvinken, verwijderen,
+  "aangemaakt door").
+- **Wie mag wat:** iedereen in het team ziet alle taken en afspraken (agenda "Heel team");
+  wijzigen, afvinken en verwijderen kan alleen de maker of iemand voor wie het is (RLS
+  `taak_betrokken`/`afspraak_betrokken`; de API geeft anders 403). Toewijzen kan alleen aan
+  actieve teamleden.
+- **Agenda:** standaard *Mijn agenda*; *Heel team* of één teamlid via de filter (onthouden
+  per browser, ook in de URL `?wie=team|<id>`). In de teamweergave hebben blokken een rand in
+  de kleur van de eerste persoon, met mini-avatars. **+ Afspraak** (of `a`) opent het
+  afsprakenpaneel met "Wie" (deelnemers, standaard jij). Klik op een leeg vak: kies
+  afspraak of taak op die dag/tijd.
+- **Projecten** (`/agenda/projecten`): per klant gegroepeerd met het aantal open taken;
+  aanmaken, hernoemen, klant koppelen, archiveren/terugzetten. Een projectnaam opent de agenda
+  gefilterd op dat project (`/agenda?wie=team&project=<id>`).
+- Zolang 0021 niet is uitgevoerd werkt de agenda zoals voorheen (alle taken van iedereen,
+  zonder toewijzing, subtaken of projecten).
+- Tests: `node scripts/test-taken.mjs` (toewijzing, subtaken, projecten, rechten) en
+  `node scripts/test-snelinvoer.mjs` (herkenning, ook zomer-/wintertijd rond 25 okt 2026).
 
 ## Boekhouding
 
@@ -409,8 +444,10 @@ Oude adressen blijven werken via tijdelijke redirects in `next.config.ts`: `/nie
 | `/nieuw-wachtwoord`, `/auth/callback`, `POST /auth/uitloggen` | Wachtwoord instellen, inlog-callback, uitloggen |
 | `/facturen…` | Facturen, prijsopgaven, klanten |
 | `/api/invoices…`, `/api/quotes…`, `/api/clients/search` | Facturen-API (inhoudelijk ongewijzigd; nu met teamlid- en herkomstcontrole) |
-| `/agenda` | Agenda & taken (`?dag=`, `?weergave=maand`, `?taak=`, `?afspraak=`) |
-| `/api/agenda`, `/api/taken…`, `/api/afspraken…` | Agenda-API (503 `tabel_ontbreekt` vóór de SQL) |
+| `/agenda` | Agenda & taken (`?dag=`, `?weergave=maand`, `?taak=`, `?afspraak=`, `?wie=team\|<id>`, `?project=<id>`) |
+| `/agenda/projecten` | Projecten beheren |
+| `/api/agenda?wie=`, `/api/taken…` (incl. `/[id]/subtaken…`), `/api/afspraken…` | Agenda-API; standaard alleen jouw taken/afspraken, `wie=team` het hele team (503 `tabel_ontbreekt` vóór de SQL, 403 als je iets van een ander wilt wijzigen) |
+| `/api/projecten…`, `/api/team` | Projecten (gedeeld) en de actieve teamleden (alleen naam, initialen, kleur) |
 | `/mail` | Mail (`?map=`, `?uid=`, `?nieuw=1`) |
 | `/api/mail/…` | Mail-API (503 `niet_gekoppeld` zonder mail-variabelen) |
 | `/boekhouding` | Boekhouding: keuze tussen Facturen en Bonnetjes & inkoopfacturen |
@@ -439,7 +476,8 @@ npx tsc --noEmit && npm run lint && npm run build
 node scripts/rooktest-shell.mjs --alleen-statisch     # rails gelijk + teamtoegang overal (statisch)
 npx next start -p 3107 &                              # (na de build)
 node scripts/rooktest-shell.mjs http://localhost:3107 # alle pagina's -> /login, alle API's JSON-401, koppen
-node scripts/test-snelinvoer.mjs                      # snelinvoer agenda (incl. zomer-/wintertijd)
+node scripts/test-snelinvoer.mjs                      # herkenning datum/tijd in de taak-popup (incl. zomer-/wintertijd)
+node scripts/test-taken.mjs                           # taken op naam: toewijzing, subtaken, projecten, rechten
 node scripts/test-uitgaven.mjs                        # uitgaven: bedragen, btw, CSV, uitlezen (nagebootst)
 node scripts/test-team.mjs                            # herkomst (CSRF), basis-URL voor mails, teambeheer-scripts
 node scripts/test-account.mjs                         # mailkluis (AES-GCM), SSRF-controle, profiel/mailbox-invoer, zoeken

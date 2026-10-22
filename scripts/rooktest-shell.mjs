@@ -25,6 +25,13 @@
 //    - de facturenschermen, -componenten en lib/invoice zijn ongewijzigd t.o.v. stap 1;
 //    - mailbox-wachtwoorden: AES-256-GCM met AAD, nooit in client-code of in de status-respons,
 //      user_mailboxes alleen met het eigen user-id.
+// 5. Statisch, taken op naam (stap 3):
+//    - geen snelinvoer-tekstveld meer bovenaan dashboard en agenda; de taak-popup
+//      (TaakDialoog, role=dialog + aria-modal) via TakenProvider op beide plekken;
+//    - nieuwe taak in één transactie (rpc taak_aanmaken); wijzigen/verwijderen van taken,
+//      subtaken en afspraken alleen als maker of toegewezene/deelnemer (403);
+//    - "mijn" lijsten filteren op task_assignees/event_attendees; het dashboard toont
+//      alleen eigen taken; projecten-, team- en subtaken-routes en /agenda/projecten bestaan.
 //
 // Gebruik:  node scripts/rooktest-shell.mjs [http://localhost:3107]
 //           node scripts/rooktest-shell.mjs --alleen-statisch
@@ -193,6 +200,54 @@ console.log("Boekhouding en Account & mail");
   check(/doSTARTTLS/.test(lees("lib/mail/imap.ts")) && /isPubliekAdres/.test(lees("lib/mail/koppelen.ts")), "IMAP zonder TLS geweigerd; koppelen alleen naar openbare adressen");
 }
 
+// ---------------------------------------------------------------------------------
+// 5. Taken op naam (statisch)
+// ---------------------------------------------------------------------------------
+console.log("Taken op naam");
+{
+  const planning = lees("components/dashboard/Planning.tsx");
+  const agenda = lees("components/agenda/AgendaApp.tsx");
+  check(!/<SnelInvoer\b/.test(planning) && !/<SnelInvoer\b/.test(agenda), "geen snelinvoer-tekstveld meer op dashboard en agenda");
+  check(!fs.existsSync(path.join(ROOT, "components/agenda/SnelInvoer.tsx")), "SnelInvoer-component verwijderd (parser + test blijven)");
+  check(fs.existsSync(path.join(ROOT, "lib/agenda/snelinvoer.ts")), "lib/agenda/snelinvoer.ts blijft (slim titelveld in de popup)");
+  check(/<TakenProvider>/.test(agenda), "agenda gebruikt de taak-popup (TakenProvider)");
+  check(/<DashboardTaken>/.test(lees("app/(app)/page.tsx")), "dashboard gebruikt de taak-popup (DashboardTaken)");
+  check(/<TakenProvider>/.test(lees("components/taken/DashboardTaken.tsx")), "DashboardTaken bevat de TakenProvider");
+  check(/useTaakDialoog\(\)/.test(lees("components/dashboard/TaakKnop.tsx")), "+ Taak opent de popup");
+  const dialoog = lees("components/taken/TaakDialoog.tsx");
+  check(/role="dialog"/.test(dialoog) && /aria-modal="true"/.test(dialoog), "taak-popup is een toegankelijke dialog (aria-modal)");
+  check(/e\.key !== 'Tab'/.test(dialoog), "taak-popup houdt de focus binnen het venster");
+  check(/Wijzigingen weggooien\?/.test(dialoog), "taak-popup vraagt bij Esc of wijzigingen weg mogen");
+  check(/Opslaan en nog een/.test(dialoog), "taak-popup heeft 'Opslaan en nog een'");
+  for (const c of ["VoorWieKiezer", "ProjectKiezer", "SubtakenLijst"]) check(fs.existsSync(path.join(ROOT, `components/taken/${c}.tsx`)), `components/taken/${c}.tsx bestaat`);
+
+  const takenPost = lees("app/api/taken/route.ts");
+  check(/rpc\('taak_aanmaken'/.test(takenPost), "nieuwe taak via rpc taak_aanmaken (één transactie)");
+  check(/controleerTeamleden\(/.test(takenPost), "toegewezenen worden gecontroleerd (actieve teamleden)");
+  for (const f of ["app/api/taken/[id]/route.ts", "app/api/taken/[id]/subtaken/route.ts", "app/api/taken/[id]/subtaken/[sid]/route.ts"]) {
+    const src = lees(f);
+    const muterend = (src.match(/export async function (PATCH|DELETE|POST)/g) || []).length;
+    const gecontroleerd = (src.match(/magTaakWijzigen\(/g) || []).length;
+    check(muterend > 0 && gecontroleerd >= muterend, `${f}: wijzigen alleen als maker of toegewezene`);
+  }
+  {
+    const src = lees("app/api/afspraken/[id]/route.ts");
+    check((src.match(/magAfspraakWijzigen\(/g) || []).length >= 2, "afspraken: wijzigen/verwijderen alleen als maker of deelnemer");
+  }
+  const repo = lees("lib/agenda/repo.ts");
+  check(/wie:task_assignees!inner\(user_id\)/.test(repo) && /wie:event_attendees!inner\(user_id\)/.test(repo), "'mijn' lijsten filteren op toewijzing/deelname");
+  check(/agendaBereik\(bron, vandaag, plusDagen\(vandaag, 6\), 'ik'\)/.test(repo) && /takenVoorFilter\(bron, 'telaat', vandaag, \{ wie: 'ik' \}\)/.test(repo), "dashboard toont alleen je eigen taken en afspraken");
+  check(/rpc\('taak_betrokken'/.test(repo) && /rpc\('afspraak_betrokken'/.test(repo), "rechtencontrole gebruikt dezelfde functies als de RLS");
+  check(/bronVan\(lid\)/.test(lees("components/dashboard/PlanningWidgets.tsx")), "dashboardplanning per ingelogd teamlid");
+  for (const f of ["app/api/projecten/route.ts", "app/api/projecten/[id]/route.ts", "app/api/team/route.ts", "app/(app)/agenda/projecten/page.tsx"]) {
+    check(fs.existsSync(path.join(ROOT, f)), `${f} bestaat`);
+  }
+  check(!/email/.test(lees("app/api/team/route.ts").replace(/\/\/[^\n]*/g, "")), "/api/team geeft geen e-mailadressen");
+  const m21 = lees("supabase/migrations/0021_team_en_taken.sql");
+  check(/create policy "betrokkenen wijzigen taken"[\s\S]*?taak_betrokken\(id\)/.test(m21), "0021: taak wijzigen alleen door betrokkenen (RLS)");
+  check(/is_actief_teamlid\(user_id\)/.test(m21), "0021: toewijzen alleen aan actieve teamleden (RLS)");
+}
+
 if (ALLEEN_STATISCH) eindig();
 
 // ---------------------------------------------------------------------------------
@@ -204,6 +259,7 @@ const DUMMY = {
   file: "rooktest.html",
   uid: "1",
   deel: "1",
+  sid: "00000000-0000-0000-0000-000000000000",
 };
 function routesIn(map) {
   const uit = [];
@@ -275,6 +331,16 @@ for (const url of ["/social-files/brand/logo-licht.png", "/social-files/projects
   // Een POST van een ander domein zonder sessie: ook 401 (eerst de sessie, dan de herkomst).
   const res = await vraag("/api/taken", { method: "POST", headers: { origin: "https://evil.example", "content-type": "text/plain" }, body: "{}" });
   check(res.status === 401, "cross-site POST zonder sessie -> 401", `status ${res.status}`);
+}
+
+{
+  // Taken op naam: ook met parameters geen gegevens zonder sessie.
+  for (const url of ["/api/taken?filter=uitgedeeld", "/api/taken?wie=team", "/api/agenda?van=2026-01-01&tot=2026-01-07&wie=team", "/api/projecten?status=alle", "/api/team"]) {
+    const res = await vraag(url);
+    check(res.status === 401, `GET ${url} zonder sessie -> 401`, `status ${res.status}`);
+  }
+  const res = await vraag("/agenda?wie=team&project=00000000-0000-0000-0000-000000000000");
+  check(naarLogin(res), "/agenda?wie=team -> /login", `status ${res.status}`);
 }
 
 console.log("Openbare pagina's en bestanden");
