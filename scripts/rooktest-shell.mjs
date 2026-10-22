@@ -33,11 +33,22 @@
 //    - "mijn" lijsten filteren op task_assignees/event_attendees; het dashboard toont
 //      alleen eigen taken; projecten-, team- en subtaken-routes en /agenda/projecten bestaan.
 //
+// 6. Statisch, afronding (stap 4):
+//    - UITVOEREN_0021_TEAM.sql: één transactie, controle op open policies, policies zonder
+//      teamcheck en openbare buckets; SQL-bestanden actueel t.o.v. de migraties;
+//    - "aangemaakt door"-trigger blokkeert het verwijderen van een account niet;
+//    - de RLS-test op lokale Postgres (scripts/test-rls.mjs) bestaat en PGlite is een
+//      devDependency (geen runtime-dependency);
+//    - README: aanmelden uit in Supabase, teamlid-scripts, rollen, controletabel, test-rls;
+//      .env.local.example: MAIL_ENCRYPTION_KEY met uitleg, nergens een ingevulde waarde.
+// Live (stap 4): /, /boekhouding en /account geven precies 307 naar /login.
+//
 // Gebruik:  node scripts/rooktest-shell.mjs [http://localhost:3107]
 //           node scripts/rooktest-shell.mjs --alleen-statisch
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { spawnSync } from "node:child_process";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const lees = (p) => fs.readFileSync(path.join(ROOT, p), "utf8");
@@ -248,6 +259,40 @@ console.log("Taken op naam");
   check(/is_actief_teamlid\(user_id\)/.test(m21), "0021: toewijzen alleen aan actieve teamleden (RLS)");
 }
 
+// ---------------------------------------------------------------------------------
+// 6. Afronding: SQL-bestand, documentatie en RLS-test (statisch)
+// ---------------------------------------------------------------------------------
+console.log("Afronding (SQL, documentatie, RLS-test)");
+{
+  const team = lees("supabase/UITVOEREN_0021_TEAM.sql");
+  const tx = team.slice(0, team.lastIndexOf("-- Controle:"));
+  check((tx.match(/^begin;$/gm) || []).length === 1 && (tx.match(/^commit;$/gm) || []).length === 1, "UITVOEREN_0021_TEAM.sql: alles in één transactie");
+  for (const regel of ["geen open policies (public)", "geen open policies (storage)", "elke policy vereist teamlid", "storage alleen teamleden", "geen openbare buckets", "user_mailboxes zonder policies", "factuurfuncties dicht voor app-rollen"]) {
+    check(team.includes(`('${regel}'`), `controletabel 0021: '${regel}'`);
+  }
+  for (const f of ["supabase/UITVOEREN_IN_SQL_EDITOR.sql", "supabase/UITVOEREN_0020_UITGAVEN.sql"]) {
+    check(lees(f).includes("('elke policy vereist teamlid'"), `${f}: ook de teamcontrole`);
+  }
+  {
+    const r = spawnSync(process.execPath, [path.join(ROOT, "scripts/genereer-sql-editor.mjs"), "--controleer"], { encoding: "utf8" });
+    check(r.status === 0, "SQL-bestanden actueel (genereer-sql-editor --controleer)", (r.stderr || "").trim());
+  }
+  const m21 = lees("supabase/migrations/0021_team_en_taken.sql");
+  check(/function public\.behoud_created_by\(\)[\s\S]*?not exists \(select 1 from auth\.users/.test(m21), "0021: 'aangemaakt door'-trigger laat 'on delete set null' toe");
+  check(fs.existsSync(path.join(ROOT, "scripts/test-rls.mjs")), "scripts/test-rls.mjs bestaat");
+  const pkg = JSON.parse(lees("package.json"));
+  check(!!pkg.devDependencies?.["@electric-sql/pglite"] && !pkg.dependencies?.["@electric-sql/pglite"], "PGlite alleen als devDependency");
+  const readme = lees("README.md");
+  check(/"Allow new users to sign up" UIT/.test(readme), "README: aanmelden uitzetten in Supabase");
+  check(/teamlid-toevoegen\.mjs/.test(readme) && /teamlid-verwijderen\.mjs/.test(readme), "README: teamlid-scripts");
+  check(/\*\*Rollen\*\*/.test(readme) && /`eigenaar`/.test(readme), "README: rollen uitgelegd");
+  check(/test-rls\.mjs/.test(readme) && /elke policy vraagt om teamlidmaatschap/.test(readme), "README: RLS-test en controletabel");
+  check(/MAIL_ENCRYPTION_KEY/.test(readme) && /Boekhouding/.test(readme) && /\/agenda\/projecten/.test(readme), "README: mailsleutel, Boekhouding en projecten");
+  const env = lees(".env.local.example");
+  check(/^MAIL_ENCRYPTION_KEY=$/m.test(env) && /openssl rand -base64 32/.test(env), ".env.local.example: MAIL_ENCRYPTION_KEY met uitleg");
+  check(!/^[A-Z_]+=\S/m.test(env), ".env.local.example: geen ingevulde waarden");
+}
+
 if (ALLEEN_STATISCH) eindig();
 
 // ---------------------------------------------------------------------------------
@@ -372,6 +417,12 @@ for (const url of ["/login", "/geen-toegang", "/api/taken"]) {
   const res = await vraag("/geen-toegang");
   const tekst = res.status === 200 ? await res.text() : "";
   check(/Geen toegang/.test(tekst) && /href="\/login"/.test(tekst), "/geen-toegang toont uitleg en link naar /login");
+}
+
+console.log("Kernpagina's: precies 307 naar /login");
+for (const url of ["/", "/boekhouding", "/boekhouding/bonnetjes", "/account", "/facturen", "/agenda/projecten"]) {
+  const res = await vraag(url);
+  check(res.status === 307 && naarLogin(res), url, `status ${res.status} ${res.headers.get("location") || ""}`);
 }
 
 console.log("Oude adressen");

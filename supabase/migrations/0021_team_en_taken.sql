@@ -255,17 +255,28 @@ where not exists (select 1 from public.event_attendees a where a.event_id = e.id
        or public.team_eigenaar() is not null)
 on conflict do nothing;
 
--- "Aangemaakt door" kan na het aanmaken niet meer veranderen.
+-- "Aangemaakt door" kan na het aanmaken niet meer veranderen. Eén uitzondering: wordt de
+-- maker zelf verwijderd (auth.users, "on delete set null"), dan mag de waarde leeg worden;
+-- anders blokkeert deze trigger het verwijderen van een (oud-)teamlid.
+-- SECURITY DEFINER: de ingelogde rol mag auth.users zelf niet lezen.
 create or replace function public.behoud_created_by()
 returns trigger
 language plpgsql
-set search_path = public
+security definer
+set search_path = ''
 as $$
 begin
-  new.created_by = old.created_by;
+  if new.created_by is distinct from old.created_by then
+    if new.created_by is null and old.created_by is not null
+       and not exists (select 1 from auth.users u where u.id = old.created_by) then
+      return new;
+    end if;
+    new.created_by := old.created_by;
+  end if;
   return new;
 end;
 $$;
+revoke all on function public.behoud_created_by() from public, anon, authenticated;
 
 drop trigger if exists tasks_behoud_created_by on public.tasks;
 create trigger tasks_behoud_created_by

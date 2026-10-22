@@ -297,17 +297,28 @@ where not exists (select 1 from public.event_attendees a where a.event_id = e.id
        or public.team_eigenaar() is not null)
 on conflict do nothing;
 
--- "Aangemaakt door" kan na het aanmaken niet meer veranderen.
+-- "Aangemaakt door" kan na het aanmaken niet meer veranderen. Eén uitzondering: wordt de
+-- maker zelf verwijderd (auth.users, "on delete set null"), dan mag de waarde leeg worden;
+-- anders blokkeert deze trigger het verwijderen van een (oud-)teamlid.
+-- SECURITY DEFINER: de ingelogde rol mag auth.users zelf niet lezen.
 create or replace function public.behoud_created_by()
 returns trigger
 language plpgsql
-set search_path = public
+security definer
+set search_path = ''
 as $$
 begin
-  new.created_by = old.created_by;
+  if new.created_by is distinct from old.created_by then
+    if new.created_by is null and old.created_by is not null
+       and not exists (select 1 from auth.users u where u.id = old.created_by) then
+      return new;
+    end if;
+    new.created_by := old.created_by;
+  end if;
   return new;
 end;
 $$;
+revoke all on function public.behoud_created_by() from public, anon, authenticated;
 
 drop trigger if exists tasks_behoud_created_by on public.tasks;
 create trigger tasks_behoud_created_by
@@ -748,6 +759,7 @@ from (values
   ('elke taak heeft iemand',  not exists (select 1 from public.tasks t where not exists (select 1 from public.task_assignees a where a.task_id = t.id))),
   ('geen open policies (public)', not exists (select 1 from pg_policies where schemaname = 'public' and (coalesce(qual, '') || ' ' || coalesce(with_check, '')) ~* 'auth\.uid\(\)( AS uid\))? IS NOT NULL')),
   ('geen open policies (storage)', not exists (select 1 from pg_policies where schemaname = 'storage' and (coalesce(qual, '') || ' ' || coalesce(with_check, '')) ~* 'auth\.uid\(\)( AS uid\))? IS NOT NULL')),
+  ('elke policy vereist teamlid', not exists (select 1 from pg_policies where schemaname in ('public', 'storage') and (coalesce(qual, '') || ' ' || coalesce(with_check, '')) !~ '(is_teamlid|taak_betrokken|afspraak_betrokken)\(')),
   ('storage alleen teamleden', not exists (select 1 from pg_policies where schemaname = 'storage' and tablename = 'objects' and (coalesce(qual, '') || coalesce(with_check, '')) ~ '(invoices|social-assets)' and (coalesce(qual, '') || coalesce(with_check, '')) !~ 'is_teamlid')),
   ('factuurfuncties dicht voor app-rollen', not exists (select 1 from pg_proc p where p.pronamespace = 'public'::regnamespace and p.proname in ('create_invoice', 'update_invoice', 'social_restore_latest') and (has_function_privilege('anon', p.oid, 'execute') or has_function_privilege('authenticated', p.oid, 'execute')))),
   ('anon leest geen facturen', not has_table_privilege('anon', 'public.invoices', 'select')),

@@ -64,12 +64,30 @@ uitvoeren nooit de oude open policies terugzet.
 
 **Uitvoeren:** Supabase-dashboard → je project → **SQL Editor** → *New query* → plak het hele
 bestand → **Run**. Onderaan verschijnt een controletabel; elke regel moet `ok` tonen.
+Daaronder staat wie er toegang heeft (`teamlid: Naam <adres> (rol)`): controleer dat lijstje.
+
+De controletabel van 0021 test onder meer:
+
+- alle nieuwe tabellen en `is_teamlid()`/`taak_aanmaken()` bestaan en RLS staat op **elke**
+  tabel in `public` aan;
+- er is minstens één actief teamlid en één eigenaar, en elke taak heeft een toegewezene;
+- **geen enkele policy** (tabellen én Storage) gebruikt nog `auth.uid() is not null`, en
+  elke policy vraagt om teamlidmaatschap (`is_teamlid`, `taak_betrokken` of `afspraak_betrokken`);
+- de Storage-policies voor `invoices` en `social-assets` vragen om teamlidmaatschap en
+  **geen enkele bucket is openbaar**;
+- `create_invoice`, `update_invoice` en `social_restore_latest` zijn niet uit te voeren door
+  `anon`/`authenticated`, `anon` leest geen facturen en `user_mailboxes` heeft geen policies.
+
+Toont een regel `ONTBREEKT`? Dan is er iets mis (bijvoorbeeld een later met de hand
+toegevoegde policy of een bucket die op "public" is gezet). Alles draait in één transactie,
+dus er is dan niets half doorgevoerd aan de migratie zelf; zoek de oorzaak en voer opnieuw uit.
 
 - Het bestand is **veilig om nogmaals uit te voeren** (`if not exists`, `drop policy if exists`,
   `on conflict do nothing`): bestaande posts, taken en een aangepaste huisstijl blijven staan.
-  0014–0020 zijn getest door ze twee keer achter elkaar uit te voeren op een lege lokale
-  Postgres; 0021 is zo geschreven (alles met `if not exists`/`drop … if exists`, zaaien
-  alleen als `team_members` leeg is) maar nog niet tegen een database gedraaid.
+  `node scripts/test-rls.mjs` draait alle migraties op een lokale Postgres in het geheugen
+  (PGlite, met nagebootste `auth`/`storage`-schema's en de Supabase-rollen), voert de drie
+  SQL-bestanden meermaals uit en test daarna per tabel en per bucket wie wat mag (zie
+  "Controleren"). Het echte Supabase-project blijft daarbij onaangeroerd.
 - Van de facturen-tabellen (0001–0013) veranderen alleen de toegangsregels (0021): lezen
   alleen voor teamleden, en "aangemaakt door" wordt leeg als een oud-teamlid wordt verwijderd.
 - Het bestand wordt gegenereerd uit `supabase/migrations/` met
@@ -146,6 +164,18 @@ komen er alleen bij via een script met de service-role key ("aan de achterkant")
   versleuteld in `user_mailboxes` (geen policies; alleen de server leest ze).
 - **Overgangsmodus:** zolang 0021 niet is uitgevoerd, werkt de app zoals voorheen (elk
   ingelogd account) en toont de shell een rode banner. Voer 0021 dus zo snel mogelijk uit.
+
+**Rollen**
+
+| Rol | Wat |
+|---|---|
+| `eigenaar` | Alles wat een lid mag, plus: valt terug op de standaard-mailbox uit de serverinstellingen (`MAIL_USER`/`MAIL_PASSWORD`) zolang hij geen eigen mailbox koppelt. De laatste actieve eigenaar kan niet worden gedeactiveerd. Bij het uitvoeren van 0021 wordt de oudste bestaande gebruiker (Daniel) eigenaar. |
+| `lid` | Ziet en maakt alle gedeelde bedrijfsdata; eigen taken, agenda en mailbox. |
+
+Rechten op data zijn verder gelijk: facturen en prijsopgaven maakt iedereen in het team via
+de app. Teamleden beheren (toevoegen, rol, deactiveren) gaat **alleen** met de scripts
+hieronder; in de app en via de database-API kan niemand zijn eigen lidmaatschap of rol
+veranderen.
 
 **Supabase-instellingen (eenmalig, in het dashboard)**
 
@@ -482,10 +512,30 @@ node scripts/test-uitgaven.mjs                        # uitgaven: bedragen, btw,
 node scripts/test-team.mjs                            # herkomst (CSRF), basis-URL voor mails, teambeheer-scripts
 node scripts/test-account.mjs                         # mailkluis (AES-GCM), SSRF-controle, profiel/mailbox-invoer, zoeken
 node scripts/test-brand-guard-parity.mjs              # social-port gelijk aan het origineel
+node scripts/test-rls.mjs                             # RLS van 0021 op lokale Postgres (PGlite): per tabel/bucket wie wat mag
 node scripts/genereer-sql-editor.mjs --controleer     # SQL-bestanden actueel
 node scripts/teamlid-toevoegen.mjs --help             # teambeheer (niet uitvoeren zonder reden)
 node --experimental-strip-types scripts/rooktest-render.mjs   # social-renderer (lokale Chrome nodig)
 ```
+
+`scripts/test-rls.mjs` (devDependency `@electric-sql/pglite`, geen netwerk, geen Supabase):
+
+- voert 0001–0020 uit met testdata (Daniel, een bevestigde tweede gebruiker, een
+  onbevestigd en een anoniem account), daarna `UITVOEREN_0021_TEAM.sql` twee keer,
+  `UITVOEREN_IN_SQL_EDITOR.sql` en `UITVOEREN_0020_UITGAVEN.sql` opnieuw: elke controleregel
+  `ok`, niets heropend, geen extra leden. Ook het pad "0021 vóór 0020" wordt getest;
+- zaaien: alleen bevestigde, niet-anonieme accounts; de oudste wordt eigenaar; bestaande
+  taken en afspraken gaan naar hun maker of de eigenaar;
+- **niet-teamleden** (ingelogd zonder lidmaatschap, onbevestigd, anoniem, gedeactiveerd, en
+  `anon` zonder sessie): op elke tabel in `public` en in elke bucket niets lezen, invoegen,
+  wijzigen of verwijderen; de RPC's geweigerd. Enige uitzondering: een gedeactiveerd lid ziet
+  zijn eigen (inactieve) regel in `team_members`, voor de melding "geen toegang";
+- **teamleden**: alles lezen behalve `user_mailboxes`; gedeelde data schrijven; facturen
+  alleen lezen; taken/afspraken van een ander niet wijzigen; niet toewijzen aan
+  niet-teamleden; alleen het eigen profiel (niet het e-mailadres), nooit de eigen rol;
+  `uitgaven`, `uitgaven-export` en `mail-tmp` alleen via de service-role; na deactiveren
+  direct niets meer; een account verwijderen laat facturen staan (maker wordt leeg);
+- de controletabel slaat alarm bij een policy zonder teamcheck of een openbare bucket.
 
 ## Een module toevoegen
 

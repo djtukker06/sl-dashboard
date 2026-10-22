@@ -68,6 +68,7 @@ const CONTROLE_TEAM = [
   "  ('elke taak heeft iemand',  not exists (select 1 from public.tasks t where not exists (select 1 from public.task_assignees a where a.task_id = t.id)))",
   `  ('geen open policies (public)', not exists (select 1 from pg_policies where schemaname = 'public' and ${OPEN_POLICY}))`,
   `  ('geen open policies (storage)', not exists (select 1 from pg_policies where schemaname = 'storage' and ${OPEN_POLICY}))`,
+  "  ('elke policy vereist teamlid', not exists (select 1 from pg_policies where schemaname in ('public', 'storage') and (coalesce(qual, '') || ' ' || coalesce(with_check, '')) !~ '(is_teamlid|taak_betrokken|afspraak_betrokken)\\('))",
   "  ('storage alleen teamleden', not exists (select 1 from pg_policies where schemaname = 'storage' and tablename = 'objects' and (coalesce(qual, '') || coalesce(with_check, '')) ~ '(invoices|social-assets)' and (coalesce(qual, '') || coalesce(with_check, '')) !~ 'is_teamlid'))",
   "  ('factuurfuncties dicht voor app-rollen', not exists (select 1 from pg_proc p where p.pronamespace = 'public'::regnamespace and p.proname in ('create_invoice', 'update_invoice', 'social_restore_latest') and (has_function_privilege('anon', p.oid, 'execute') or has_function_privilege('authenticated', p.oid, 'execute'))))",
   "  ('anon leest geen facturen', not has_table_privilege('anon', 'public.invoices', 'select'))",
