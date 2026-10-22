@@ -328,6 +328,13 @@ export async function listAssetObjects(pid: string): Promise<{ name: string; siz
   return out;
 }
 
+/** Verwijdert één object uit de bucket (best effort; fouten worden alleen gelogd). */
+export async function removeAssetObject(pid: string, file: string): Promise<void> {
+  if (!safe(pid) || !safe(file)) return;
+  const { error } = await db().storage.from(BUCKET).remove([assetPath(pid, file)]);
+  if (error) console.error(error);
+}
+
 /** Zoekt één object op (bestaat het, en hoe groot is het). */
 export async function statAsset(pid: string, file: string): Promise<{ size: number } | null> {
   const { data, error } = await db().storage.from(BUCKET).list(pid, { limit: 100, search: file });

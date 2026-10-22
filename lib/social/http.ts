@@ -86,6 +86,31 @@ export function attachment(name: string) {
     : `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(name)}`;
 }
 
+/** Exports ouder dan dit zijn al gedownload (de signed URL leeft 5 minuten). */
+const EXPORT_MAX_AGE_MS = 15 * 60 * 1000;
+
+/**
+ * Ruimt eerdere exports van dit project op (best effort): elke nieuwe export van een
+ * project gooit de oude weg, zodat exports/<id>/ niet blijft groeien.
+ */
+async function removeOldExports(projectId: string) {
+  try {
+    const storage = db().storage.from(BUCKET);
+    const { data, error } = await storage.list(`exports/${projectId}`, { limit: 1000 });
+    if (error) throw error;
+    const cutoff = Date.now() - EXPORT_MAX_AGE_MS;
+    const old = (data ?? [])
+      .filter((o) => o.id !== null && Number(o.name.split("-")[0]) < cutoff)
+      .map((o) => `exports/${projectId}/${o.name}`);
+    if (old.length) {
+      const { error: rmErr } = await storage.remove(old);
+      if (rmErr) throw rmErr;
+    }
+  } catch (err) {
+    console.error(err);
+  }
+}
+
 /**
  * Responses op Vercel mogen maximaal 4,5 MB zijn. Exports gaan daarom eerst naar de
  * privé-bucket (`exports/<id>/<ts>-<naam>`), waarna de browser met een 302 naar een
@@ -98,6 +123,7 @@ export async function redirectToSigned(
   contentType: string,
 ): Promise<Response> {
   const storage = db().storage.from(BUCKET);
+  await removeOldExports(projectId);
   const objectPath = `exports/${projectId}/${Date.now()}-${name}`;
   const { error: upErr } = await storage.upload(objectPath, bytes, { contentType, upsert: true });
   if (upErr) {

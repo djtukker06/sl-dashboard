@@ -64,7 +64,7 @@ const source = {
   brandPng: async (name) => {
     gevraagd.push(`brand ${name}`);
     if (!BRAND_PNGS.includes(name)) return null;
-    return fs.readFile(path.join(root, "public", "social-files", "brand", name)).catch(() => null);
+    return fs.readFile(path.join(root, "assets", "social-brand", name)).catch(() => null);
   },
   asset: async (file) => {
     gevraagd.push(`asset ${file}`);

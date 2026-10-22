@@ -3,7 +3,7 @@
 // staan de slide-bestanden onder /social-files (zie README "Studio Levant Dashboard").
 const API_BASE = "/api/social"; // dashboard:
 const FILES_BASE = "/social-files"; // dashboard:
-const MAX_UPLOAD_BYTES = 5 * 1024 * 1024; // dashboard: Anthropic accepteert afbeeldingen tot 5 MB
+const MAX_UPLOAD_BYTES = 25 * 1024 * 1024; // dashboard: vangnet; grotere beelden dan 5 MB gaan alleen niet mee naar Claude
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 
@@ -378,7 +378,7 @@ async function uploadFiles(files, kind) {
     try {
       const dataUrl = await prepareImage(file);
       const blob = await dataUrlToBlob(dataUrl); // dashboard:
-      if (blob.size > MAX_UPLOAD_BYTES) throw new Error("Afbeelding te groot (max 5 MB)"); // dashboard:
+      if (blob.size > MAX_UPLOAD_BYTES) throw new Error("Afbeelding te groot (max 25 MB)"); // dashboard:
       const assetsUrl = `${API_BASE}/projects/${encodeURIComponent(projectId)}/assets`; // dashboard:
       const target = await api("POST", `${assetsUrl}/upload-url`, { name: file.name, contentType: blob.type }); // dashboard:
       const put = await fetch(target.signedUrl, { method: "PUT", headers: { "Content-Type": blob.type }, body: blob }); // dashboard:
@@ -820,9 +820,35 @@ function exportAs(ext) {
 }
 
 // dashboard: online is er geen Finder; download in plaats daarvan een ZIP met de HTML-bestanden
+// dashboard: eerst openstaande wijzigingen opslaan, dan de ZIP laten klaarzetten. Bij een
+// fout blijft de pagina staan en verschijnt een toast (zoals bij de oude /reveal-call).
 async function openFolder() {
   closeMenus();
-  window.location.href = projectUrl("/source.zip");
+  await saveBrief.flush();
+  await saveCaption.flush();
+  toast("ZIP klaarzetten…");
+  const ctrl = new AbortController();
+  try {
+    const res = await fetch(projectUrl("/source.zip"), { signal: ctrl.signal });
+    const type = res.headers.get("content-type") || "";
+    if (!res.ok) {
+      const data = type.includes("application/json") ? await res.json().catch(() => null) : null;
+      throw new Error((data && data.error) || `Fout ${res.status}`);
+    }
+    if (res.redirected && new URL(res.url).origin !== location.origin) {
+      // De server stuurt door naar een signed URL; die downloadt onder de juiste naam.
+      ctrl.abort(); // de inhoud niet twee keer ophalen
+      download(res.url);
+    } else if (type.includes("application/zip")) {
+      const href = URL.createObjectURL(await res.blob());
+      download(href);
+      setTimeout(() => URL.revokeObjectURL(href), 60_000);
+    } else {
+      throw new Error("Je sessie is verlopen. Log opnieuw in.");
+    }
+  } catch (err) {
+    toast(err.message, true);
+  }
 }
 
 async function duplicateProject() {

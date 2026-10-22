@@ -139,6 +139,14 @@ het beeldmateriaal in de bucket `social-assets`. Het is veilig om opnieuw te dra
 - `vercel.json` geeft de PDF- en exportroutes `memory` 2048 MB (Chromium via
   `@sparticuz/chromium`), en generate/revise `maxDuration` 300. Controleer na de eerste
   build in het Vercel-dashboard (Functions) dat deze instellingen zijn toegepast.
+- Generaties hebben daardoor een limiet van circa 4:45 min (`TIME_LIMIT_MS` in
+  `lib/social/generation.ts`). De lokale tool had geen limiet; een grote carrousel met
+  veel beelden kan erover gaan. Op het **Pro-plan** kan dit omhoog tot 800 seconden: zet
+  dan `maxDuration` op 800 in `vercel.json` én in
+  `app/api/social/projects/[id]/generate/route.ts` en
+  `app/api/social/projects/[id]/slides/[file]/revise/route.ts`, en `TIME_LIMIT_MS` op
+  `785_000` (pas ook de foutmelding aan). Op het Hobby-plan is 300 het maximum; een hogere
+  waarde laat de deploy mislukken.
 
 ## Nieuwe git-remote toevoegen
 

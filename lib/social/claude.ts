@@ -135,6 +135,8 @@ function briefText(project: Project) {
   return lines.join("\n");
 }
 
+const MAX_IMAGE_BASE64 = 5 * 1024 * 1024;
+
 async function mediaBlocks(project: Project): Promise<BetaContentBlockParam[]> {
   const assets = project.assets || [];
   // Parallel downloaden, daarna in de oorspronkelijke volgorde toevoegen.
@@ -143,6 +145,18 @@ async function mediaBlocks(project: Project): Promise<BetaContentBlockParam[]> {
   assets.forEach((a, i) => {
     const bytes = files[i];
     if (!bytes) return; // zoals `if (!fs.existsSync(file)) continue;`
+    // dashboard: de API weigert afbeeldingen boven 5 MB (gemeten als base64) en zou dan de
+    // hele generatie laten mislukken. Zo'n beeld gaat niet mee als afbeelding; beeldmateriaal
+    // blijft wel bruikbaar via zijn pad.
+    if (Math.ceil(bytes.length / 3) * 4 > MAX_IMAGE_BASE64) {
+      if (a.kind !== "inspiratie") {
+        blocks.push({
+          type: "text",
+          text: `Beeldmateriaal om te gebruiken, pad: ../assets/${a.file}${a.note ? ` — ${a.note}` : ""} (te groot om mee te sturen; gebruik het zonder het te zien).`,
+        });
+      }
+      return;
+    }
     if (a.kind === "inspiratie") {
       blocks.push({ type: "text", text: `Inspiratiebeeld${a.note ? ` — ${a.note}` : ""}:` });
     } else {

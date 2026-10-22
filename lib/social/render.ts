@@ -75,6 +75,16 @@ function contentTypeFor(name: string) {
 
 const SAFE = /^[a-z0-9][a-z0-9._-]*$/i;
 
+function isPublicHttps(url: URL) {
+  if (url.protocol !== "https:" || url.port || url.username || url.password) return false;
+  const host = url.hostname.toLowerCase();
+  if (host.startsWith("[") || /^[\d.]+$/.test(host)) return false; // IPv6/IPv4-literals
+  if (host === "localhost" || host.endsWith(".localhost") || host.endsWith(".local") || host.endsWith(".internal")) {
+    return false;
+  }
+  return host.includes(".");
+}
+
 async function serve(req: HTTPRequest, projectId: string, source: RenderSource) {
   const raw = req.url();
   if (raw.startsWith("data:") || raw.startsWith("blob:") || raw === "about:blank") return req.continue();
@@ -88,6 +98,13 @@ async function serve(req: HTTPRequest, projectId: string, source: RenderSource) 
 
   // Google Fonts mag gewoon door (brand.css laadt Manrope en Fragment Mono).
   if (url.protocol === "https:" && (url.hostname === "fonts.googleapis.com" || url.hostname === "fonts.gstatic.com")) {
+    return req.continue();
+  }
+  // Externe afbeeldingen (<img src="https://…">, CSS background-url) in handmatig bewerkte
+  // slides laden ook in de preview-iframe; laat ze dus ook in de export mee laden. Alleen
+  // https en een gewone hostnaam, geen IP-adressen of localhost (geen toegang tot interne
+  // adressen vanaf de server).
+  if (url.origin !== RENDER_ORIGIN && req.resourceType() === "image" && isPublicHttps(url)) {
     return req.continue();
   }
   if (url.origin !== RENDER_ORIGIN) return req.abort();

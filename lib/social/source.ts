@@ -1,12 +1,12 @@
 // RenderSource voor productie: slides en brand.css uit de database, logo's uit de
-// meegebundelde public/social-files/brand/*.png, beeldmateriaal uit Storage.
+// meegebundelde assets/social-brand/*.png (niet publiek), beeldmateriaal uit Storage.
 
 import fs from "node:fs/promises";
 import path from "node:path";
 import { BRAND_PNGS, type RenderSource } from "./render";
 import { downloadAsset, getBrand, readSlideRow } from "./repo";
 
-const BRAND_DIR = path.join(process.cwd(), "public", "social-files", "brand");
+const BRAND_DIR = path.join(process.cwd(), "assets", "social-brand");
 
 export async function readBrandPng(name: string): Promise<Buffer | null> {
   if (!BRAND_PNGS.includes(name)) return null;

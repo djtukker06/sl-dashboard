@@ -10,11 +10,13 @@ const nextConfig: NextConfig = {
   // Geldt voor alle API-routes (ook PUT/restfactuur/prijsopgaven), niet alleen /api/invoices.
   outputFileTracingIncludes: {
     '/api/**': ['./node_modules/@sparticuz/chromium/bin/**/*'],
-    // Social-export rendert de logo's mee (gelezen via fs uit public/), plus Chromium.
+    // Social-export rendert de logo's mee (gelezen via fs uit assets/social-brand/), plus Chromium.
     '/api/social/**': [
-      './public/social-files/brand/**/*',
+      './assets/social-brand/**/*',
       './node_modules/@sparticuz/chromium/bin/**/*'
-    ]
+    ],
+    // De logo's zijn niet publiek: deze route serveert ze pas na een sessiecheck.
+    '/social-files/brand/**': ['./assets/social-brand/**/*']
   },
   // De social-module is een statische frontend (public/social/index.html, app.js, app.css).
   // /social toont die pagina. Rewrites in een array worden ná de public-bestanden en vóór
