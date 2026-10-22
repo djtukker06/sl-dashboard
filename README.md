@@ -56,6 +56,17 @@ tegels per module. De facturentool hierboven werkt precies zoals altijd, alleen 
 `/facturen`. De social-media-tool (voorheen de lokale "Levant Social Studio") draait nu
 online, met dezelfde schermen en werking.
 
+## Agenda & taken (migratie 0018)
+
+- `supabase/migrations/0018_agenda_taken.sql`: tabellen `tasks` en `calendar_events`
+  (idempotent, met RLS en `set_updated_at`-trigger). Tot deze migratie is uitgevoerd tonen
+  de agenda en de dashboard-widgets een nette melding "nog niet ingericht".
+- Snelinvoer (`lib/agenda/snelinvoer.ts`) herkent o.a. `vandaag`, `morgen`, `vrijdag`,
+  `volgende week di`, `12 nov`, `22-10`, `14:00`, `om 9`, `10:00-11:00`, `1u`, `45 min`,
+  `!`/`!laag` en `@klant`. Begint de tekst met `afspraak` (of staat er een tijdvak in), dan
+  wordt het een afspraak. Alle datums in Europe/Amsterdam-tijd.
+- Tests: `node scripts/test-snelinvoer.mjs` (ook zomer-/wintertijd rond 25 okt 2026).
+
 ## Modules en routes
 
 | Route | Inhoud |
@@ -70,6 +81,8 @@ online, met dezelfde schermen en werking.
 | `/social` | Social-media-tool (statische frontend in `public/social/`) |
 | `/api/social/…` | Social-API (spiegelt de oude Express-API: `/api/X` werd `/api/social/X`) |
 | `/social-files/…` | Slides, huisstijl-CSS, logo's en beeldmateriaal die de slides laden |
+| `/agenda` | Agenda & taken: takenlijst, week/maand, snelinvoer (`?dag=`, `?weergave=maand`, `?taak=`, `?afspraak=`) |
+| `/api/agenda`, `/api/taken…`, `/api/afspraken…` | Agenda-API (sessie-check, RLS; 503 `tabel_ontbreekt` vóór migratie 0018) |
 
 Elke pagina en elke API-route zit achter de login: `proxy.ts` stuurt niet-ingelogde
 bezoekers naar `/login`, en elke API-route controleert daarnaast zelf de sessie.

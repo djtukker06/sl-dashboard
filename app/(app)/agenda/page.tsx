@@ -1,24 +1,38 @@
 import type { Metadata } from 'next';
-import { ModuleKop } from '@/components/shell/ModuleKop';
-import { Binnenkort } from '@/components/shell/Binnenkort';
+import { redirect } from 'next/navigation';
+import { createClient } from '@/lib/supabase/server';
+import { isDag, vandaag as vandaagNL } from '@/lib/agenda/datum';
+import { isUuid } from '@/lib/agenda/invoer';
+import { AgendaApp } from '@/components/agenda/AgendaApp';
 
+export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'Agenda & taken · Studio Levant' };
 
-export default function AgendaPage() {
+// Agenda & taken. De pagina zelf controleert de sessie; de gegevens laadt de client via
+// /api/agenda en /api/taken (die elk ook zelf de sessie controleren).
+//   ?dag=YYYY-MM-DD      week/maand rond die dag (vanaf het dashboard "Deze week")
+//   ?weergave=maand      maandweergave
+//   ?taak=<id> / ?afspraak=<id>   opent direct het bewerkpaneel
+export default async function AgendaPage({
+  searchParams
+}: {
+  searchParams: Promise<{ dag?: string; weergave?: string; taak?: string; afspraak?: string }>;
+}) {
+  const supabase = await createClient();
+  const {
+    data: { user }
+  } = await supabase.auth.getUser();
+  if (!user) redirect('/login?next=/agenda');
+
+  const sp = await searchParams;
+  const vandaag = vandaagNL();
   return (
-    <>
-      <ModuleKop label="Planning" titel="Agenda & taken" />
-      <Binnenkort
-        icoon="agenda"
-        titel="Taken en afspraken in één agenda"
-        tekst="Typ een taak zoals je hem zou opschrijven — de datum, tijd en klant worden herkend en de taak staat meteen in je agenda."
-        punten={[
-          'Snel invoeren: “Offerte sturen @Jansen vrijdag 14:00 !”',
-          'Week- en maandweergave',
-          'Afvinken vanaf het dashboard',
-          'Gekoppeld aan je klanten'
-        ]}
-      />
-    </>
+    <AgendaApp
+      vandaag={vandaag}
+      startDag={isDag(sp.dag) ? sp.dag : vandaag}
+      startWeergave={sp.weergave === 'maand' ? 'maand' : 'week'}
+      openTaak={isUuid(sp.taak) ? sp.taak : null}
+      openAfspraak={isUuid(sp.afspraak) ? sp.afspraak : null}
+    />
   );
 }

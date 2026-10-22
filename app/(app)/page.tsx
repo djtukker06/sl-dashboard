@@ -9,6 +9,8 @@ import { ModuleKop } from '@/components/shell/ModuleKop';
 import { Kaart, KaartMelding, KaartSkelet } from '@/components/dashboard/Kaart';
 import { FacturenWidget } from '@/components/dashboard/FacturenWidget';
 import { SocialWidget } from '@/components/dashboard/SocialWidget';
+import { PlanningSkelet, PlanningWidgets } from '@/components/dashboard/PlanningWidgets';
+import { TaakKnop } from '@/components/dashboard/TaakKnop';
 
 export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'Dashboard · Studio Levant' };
@@ -32,8 +34,9 @@ export default async function DashboardPage() {
         label={`${dagLabel(nu)} · week ${isoWeek(nu)}`}
         titel={`${groet(nu)}${voornaam ? `, ${voornaam}` : ''}`}
       >
-        <Link className="db-knop db-knop-primair" href="/facturen/nieuwe-factuur">
-          + Nieuwe factuur
+        <TaakKnop />
+        <Link className="db-knop" href="/facturen/nieuwe-factuur">
+          Nieuwe factuur
         </Link>
         <Link className="db-knop" href="/facturen/prijsopgaven/nieuw">
           Nieuwe prijsopgave
@@ -44,11 +47,10 @@ export default async function DashboardPage() {
       </ModuleKop>
 
       <div className="db-grid">
-        <Kaart label="Vandaag" href="/agenda" linkTekst="Agenda" className="db-breed">
-          <KaartMelding titel="Agenda & taken komen hier">
-            Je afspraken en taken van vandaag verschijnen op deze plek, met een tijdlijn van je dag.
-          </KaartMelding>
-        </Kaart>
+        {/* Snelinvoer (volle breedte), Vandaag, Deze week en Taken. */}
+        <Suspense fallback={<PlanningSkelet />}>
+          <PlanningWidgets />
+        </Suspense>
 
         <Suspense fallback={<KaartSkelet label="Facturen" className="db-smal db-facturen" />}>
           <FacturenWidget />
