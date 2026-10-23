@@ -17,7 +17,8 @@ export const dynamic = 'force-dynamic';
 
 type Ctx = { params: Promise<{ id: string }> };
 
-// GET /api/taken/[id] → { task } (met subtakenLijst). Iedereen in het team mag kijken.
+// GET /api/taken/[id] → { task } (met subtakenLijst). Alleen wie de taak mag zien (RLS 0022:
+// maker, toegewezene, of het team bij een projecttaak); anders 404.
 export async function GET(request: Request, ctx: Ctx) {
   const s = await metSessie(request);
   if ('antwoord' in s) return s.antwoord;
@@ -107,7 +108,12 @@ export async function PATCH(request: Request, ctx: Ctx) {
     if (personen) await zetPersonen(bron, 'taak', id, personen);
 
     const taak = await taakOphalen(bron, id);
-    if (!taak) return fout(404, 'Taak niet gevonden.');
+    if (!taak) {
+      // Je hebt de taak aan een ander gegeven (en hij hoort niet bij een project): opgeslagen,
+      // maar jij mag hem niet meer zien.
+      if (personen && !personen.includes(bron.userId)) return json({ task: null, overgedragen: true });
+      return fout(404, 'Taak niet gevonden.');
+    }
     return json({ task: taak });
   } catch (e) {
     return foutAntwoord(e);

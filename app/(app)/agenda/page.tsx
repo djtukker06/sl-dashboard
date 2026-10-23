@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { redirect } from 'next/navigation';
 import { vereisTeamlidPagina } from '@/lib/auth/team';
 import { isDag, vandaag as vandaagNL } from '@/lib/agenda/datum';
 import { isUuid } from '@/lib/agenda/invoer';
@@ -8,27 +9,40 @@ export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'Agenda & taken · Studio Levant' };
 
 // Agenda & taken. De pagina zelf controleert de sessie; de gegevens laadt de client via
-// /api/agenda en /api/taken (die elk ook zelf de sessie controleren).
+// /api/agenda en /api/taken (die elk ook zelf de sessie controleren). Je ziet hier alleen
+// wat op JOUW naam staat; wat je voor een ander maakte staat onder de tab "Uitgezet".
 //   ?dag=YYYY-MM-DD      week/maand rond die dag (vanaf het dashboard "Deze week")
 //   ?weergave=maand      maandweergave
 //   ?taak=<id>           opent direct de taak-popup; ?afspraak=<id> het afsprakenpaneel
-//   ?wie=team|<user-id>  heel team of één teamlid (standaard: alleen jouw taken/afspraken)
+//   ?lijst=uitgezet      opent de takenlijst op de tab "Uitgezet"
 //   ?project=<id>        takenlijst gefilterd op een project
+// Een oude link met ?wie=team of ?wie=<id> (teamweergave, bestaat niet meer) gaat naar
+// dezelfde pagina zonder die parameter.
 export default async function AgendaPage({
   searchParams
 }: {
-  searchParams: Promise<{ dag?: string; weergave?: string; taak?: string; afspraak?: string; wie?: string; project?: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   await vereisTeamlidPagina('/agenda');
 
-  const sp = await searchParams;
+  const ruw = await searchParams;
+  const sp: Record<string, string | undefined> = {};
+  for (const [k, v] of Object.entries(ruw)) sp[k] = Array.isArray(v) ? v[0] : v;
+
+  if (sp.wie !== undefined) {
+    const p = new URLSearchParams();
+    for (const k of ['dag', 'weergave', 'taak', 'afspraak', 'lijst', 'project']) if (sp[k]) p.set(k, sp[k]!);
+    const qs = p.toString();
+    redirect(`/agenda${qs ? `?${qs}` : ''}`);
+  }
+
   const vandaag = vandaagNL();
   return (
     <AgendaApp
       vandaag={vandaag}
       startDag={isDag(sp.dag) ? sp.dag : vandaag}
       startWeergave={sp.weergave === 'maand' ? 'maand' : 'week'}
-      startWie={sp.wie === 'team' ? 'team' : isUuid(sp.wie) ? sp.wie.toLowerCase() : sp.wie === 'ik' ? 'ik' : null}
+      startFilter={sp.lijst === 'uitgezet' ? 'uitgezet' : 'vandaag'}
       startProject={isUuid(sp.project) ? sp.project : null}
       openTaak={isUuid(sp.taak) ? sp.taak : null}
       openAfspraak={isUuid(sp.afspraak) ? sp.afspraak : null}

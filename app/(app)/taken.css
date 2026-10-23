@@ -1,5 +1,5 @@
-/* Taken op naam: de taak-popup (components/taken), avatars van toegewezenen, de agenda-
-   filter "Mijn agenda | Heel team", projecten en de dashboardkaart "Uitgedeeld door jou".
+/* Taken op naam: de taak-popup (components/taken), avatars van toegewezenen, de tab
+   "Uitgezet" in de takenlijst, projecten en de link "uitgezet bij anderen" op het dashboard.
    Bouwt voort op agenda.css (ag-veld, ag-label, ag-segment, ag-chip) en app.css (db-*). */
 
 /* ---------- popup ---------- */
@@ -238,15 +238,11 @@
   padding: 12px 32px;
   border-bottom: 1px solid var(--sl-line);
 }
-.ag-wie-filter { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
-.ag-wie-personen { display: flex; flex-wrap: wrap; gap: 6px; }
 .ag-filter-project { padding: 4px 4px 4px 10px; font-size: 11px; text-transform: none; }
 
-.ag-blok.is-team { border-left: 3px solid var(--ag-wie, var(--sl-line)); }
-.ag-blok.is-team .ag-wie { position: absolute; right: 4px; bottom: 3px; }
-.ag-blok.is-team .ag-wie .sl-persoon-avatar { width: 16px; height: 16px; font-size: 8px; box-shadow: 0 0 0 1.5px var(--sl-raise); }
-.ag-balk.is-team, .ag-mini-taak.is-team { box-shadow: inset 3px 0 0 var(--ag-wie, transparent); }
-.ag-maand-item.is-team { box-shadow: inset 2px 0 0 var(--ag-wie, transparent); }
+/* Tab "Uitgezet": rechts in de tabbalk, los van jouw eigen lijsten. */
+.ag-tab-uitgezet { margin-left: auto; }
+.ag-groep.is-klaar { opacity: .6; }
 
 .ag-keuze { width: 280px; gap: 6px; }
 .ag-keuze-knop {
@@ -269,7 +265,9 @@
 /* ---------- dashboard ---------- */
 .db-rij-knop { width: 100%; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; justify-content: flex-start; gap: 12px; }
 .db-rij-meta.is-gevaar { color: var(--sl-danger); }
-.db-uitgedeeld .ag-wie { min-width: 28px; }
+.db-uitgezet-link { margin: 4px 0 0; }
+.db-uitgezet-link a { color: var(--sl-muted); text-decoration: none; }
+.db-uitgezet-link a:hover { color: var(--sl-text); }
 .db-tijdlijn button.ag-blok-tekst { border: 0; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; padding: 0; }
 
 /* ---------- projecten ---------- */

@@ -10,42 +10,32 @@ import {
   takenVoorFilter,
   tellingen,
   naarTaak,
-  uitgedeeld,
   type TaakDbRij
 } from '@/lib/agenda/repo';
 import { TAKEN_FILTERS, type TaakInvoer, type TakenFilter } from '@/lib/agenda/types';
-import { fout, foutAntwoord, json, leesBody, leesWie, metSessie } from '@/lib/agenda/api';
+import { fout, foutAntwoord, json, leesBody, metSessie } from '@/lib/agenda/api';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-// GET /api/taken?filter=uitgedeeld → { tasks }  (open taken die jij maakte voor anderen)
-// GET /api/taken?filter=vandaag|telaat|gepland|ooit|afgerond&wie=ik|team|<user-id>&project=<id>&klant=<id>
-//   → { tasks, tellingen, vandaag }. Standaard alleen je eigen taken (wie=ik).
+// GET /api/taken?filter=vandaag|telaat|gepland|ooit|afgerond|uitgezet&project=<id>&klant=<id>
+//   → { tasks, tellingen, vandaag }. Altijd alleen taken op JOUW naam; 'uitgezet' = taken die
+//   jij voor een ander maakte (open + de laatste 14 dagen afgerond). Een parameter om de lijst
+//   van een ander op te vragen bestaat bewust niet (een oude ?wie=… wordt genegeerd).
 export async function GET(request: Request) {
   const s = await metSessie(request);
   if ('antwoord' in s) return s.antwoord;
 
   const sp = new URL(request.url).searchParams;
-  if (sp.get('filter') === 'uitgedeeld') {
-    // Open taken die jij maakte voor anderen (dashboardkaart "Uitgedeeld door jou").
-    try {
-      return json({ tasks: await uitgedeeld(s.bron) });
-    } catch (e) {
-      return foutAntwoord(e);
-    }
-  }
   const filter = (sp.get('filter') || 'vandaag') as TakenFilter;
   if (!TAKEN_FILTERS.includes(filter)) return fout(400, 'Onbekend filter.');
-  const wie = leesWie(sp.get('wie'));
-  if (!wie) return fout(400, 'Ongeldige persoon.');
   const project = sp.get('project');
   const klant = sp.get('klant');
   if ((project && !isUuid(project)) || (klant && !isUuid(klant))) return fout(400, 'Ongeldig filter.');
 
   try {
     const vandaag = vandaagNL();
-    const opties = { wie, projectId: project, klantId: klant };
+    const opties = { projectId: project, klantId: klant };
     const [taken, tel] = await Promise.all([
       takenVoorFilter(s.bron, filter, vandaag, opties),
       tellingen(s.bron, vandaag, opties)

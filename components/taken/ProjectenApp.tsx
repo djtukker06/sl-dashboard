@@ -214,7 +214,7 @@ function Projecten() {
                   ) : (
                     <li key={p.id} className={`pj-rij${p.status === 'gearchiveerd' ? ' is-gearchiveerd' : ''}`}>
                       <span className="pj-naam">
-                        <Link href={`/agenda?wie=team&project=${p.id}`} title="Taken van dit project in de agenda">
+                        <Link href={`/agenda?project=${p.id}`} title="Jouw taken van dit project in de agenda">
                           {p.naam}
                         </Link>
                       </span>

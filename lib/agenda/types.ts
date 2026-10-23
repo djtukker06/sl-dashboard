@@ -59,9 +59,6 @@ export interface Project {
   aangemaaktDoor: string | null;
 }
 
-/** Wiens taken/afspraken: 'ik' (standaard), 'team' (iedereen) of één user-id. */
-export type Wie = 'ik' | 'team' | string;
-
 export interface Afspraak {
   id: string;
   titel: string;
@@ -78,10 +75,15 @@ export interface Afspraak {
   aangemaaktDoor: string | null;
 }
 
-export type TakenFilter = 'vandaag' | 'telaat' | 'gepland' | 'ooit' | 'afgerond';
-export const TAKEN_FILTERS: TakenFilter[] = ['vandaag', 'telaat', 'gepland', 'ooit', 'afgerond'];
+/**
+ * Tabs van de takenlijst. De eerste vijf: taken op JOUW naam. 'uitgezet': taken die jij
+ * voor een ander maakte en waar je zelf niet op staat (om op te volgen).
+ */
+export type TakenFilter = 'vandaag' | 'telaat' | 'gepland' | 'ooit' | 'afgerond' | 'uitgezet';
+export const TAKEN_FILTERS: TakenFilter[] = ['vandaag', 'telaat', 'gepland', 'ooit', 'afgerond', 'uitgezet'];
 
-export type Tellingen = Record<'vandaag' | 'telaat' | 'gepland' | 'ooit', number>;
+/** Aantal open taken per tab ('uitgezet': open taken die je voor een ander maakte). */
+export type Tellingen = Record<'vandaag' | 'telaat' | 'gepland' | 'ooit' | 'uitgezet', number>;
 
 /** Wat de API stuurt bij een fout. code 'tabel_ontbreekt' = migratie 0018 nog niet uitgevoerd. */
 export interface ApiFout {

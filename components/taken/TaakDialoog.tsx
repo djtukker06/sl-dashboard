@@ -409,9 +409,15 @@ function TaakFormulier({
           titelRef.current?.focus();
         } else onSluit();
       } else if (taak) {
-        const { task } = await agendaApi.wijzigTaak(taak.id, invoer());
-        onGebeurtenis({ soort: 'gewijzigd', taak: task });
-        toast('Taak opgeslagen');
+        const { task } = await agendaApi.bewaarTaak(taak.id, invoer());
+        if (task) {
+          onGebeurtenis({ soort: 'gewijzigd', taak: task });
+          toast('Taak opgeslagen');
+        } else {
+          // Aan een ander gegeven: staat niet meer in jouw lijsten (wel onder "Uitgezet" als jij de maker bent).
+          onGebeurtenis({ soort: 'verwijderd', id: taak.id });
+          toast('Taak overgedragen');
+        }
         onSluit();
       }
     } catch (e) {

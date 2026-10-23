@@ -2,9 +2,14 @@
 //   - lib/agenda/teaminvoer.ts: voor wie (teamleden), subtaken, projecten en de regel
 //     "project hoort bij de klant";
 //   - lib/agenda/rechten.ts: wie een taak/afspraak mag wijzigen (zelfde regel als de RLS
-//     van migratie 0021) en de namenlijst in meldingen.
+//     van migratie 0021) en de namenlijst in meldingen;
+//   - lib/agenda/zichtbaarheid.ts: "mijn taak" vs. "uitgezet" en de groepen van de tab
+//     Uitgezet (0022, stap 2);
+//   - bronbewaking: geen teamweergave meer ("Heel team", ?wie=…, WieFilter) en de
+//     lijst-/agenda-API kan niet de taken van een ander opvragen.
 //
 // Gebruik:  node scripts/test-taken.mjs
+import fs from "node:fs";
 import path from "node:path";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -13,10 +18,11 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 // TS laden vereist type-stripping (Node >= 22.6). Zo nodig opnieuw starten met de vlag.
-let inv, rechten;
+let inv, rechten, zicht;
 try {
   inv = await import(pathToFileURL(path.join(ROOT, "lib", "agenda", "teaminvoer.ts")).href);
   rechten = await import(pathToFileURL(path.join(ROOT, "lib", "agenda", "rechten.ts")).href);
+  zicht = await import(pathToFileURL(path.join(ROOT, "lib", "agenda", "zichtbaarheid.ts")).href);
 } catch (e) {
   if (process.execArgv.includes("--experimental-strip-types")) throw e;
   const r = spawnSync(process.execPath, ["--experimental-strip-types", "--no-warnings", fileURLToPath(import.meta.url), ...process.argv.slice(2)], {
@@ -101,6 +107,92 @@ test("namenlijst", () => {
   assert.equal(rechten.namenLijst(["jou"]), "jou");
   assert.equal(rechten.namenLijst(["Daniel", "Mark"]), "Daniel en Mark");
   assert.equal(rechten.namenLijst(["jou", "Mark", "Eva"]), "jou, Mark en Eva");
+});
+
+// ---------- wie ziet welke taak (0022) ----------
+const C = "55555555-5555-4555-8555-555555555555";
+const t2 = (maker, toegewezen, afgerond = false, id = "x") => ({ id, aangemaaktDoor: maker, toegewezen, afgerond });
+test("Daniel maakt voor Bram: niet op Daniels naam, wel uitgezet", () => {
+  const t = t2(A, [B]);
+  assert.equal(zicht.opMijnNaam(t, A), false);
+  assert.equal(zicht.isUitgezet(t, A), true);
+  assert.equal(zicht.opMijnNaam(t, B), true);
+  assert.equal(zicht.isUitgezet(t, B), false);
+});
+test("taak voor twee: bij beiden, niet uitgezet", () => {
+  const t = t2(A, [A, B]);
+  assert.equal(zicht.opMijnNaam(t, A) && zicht.opMijnNaam(t, B), true);
+  assert.equal(zicht.isUitgezet(t, A), false);
+});
+test("taak van een ander voor een derde: niet van mij, niet uitgezet door mij", () => {
+  const t = t2(B, [C]);
+  assert.equal(zicht.opMijnNaam(t, A), false);
+  assert.equal(zicht.isUitgezet(t, A), false);
+});
+test("vóór 0021 (overgang): alles op mijn naam", () => assert.equal(zicht.opMijnNaam(t2(null, []), A, true), true));
+test("Uitgezet: groepen per persoon, klaar onderaan", () => {
+  const g = zicht.groepeerUitgezet([t2(A, [B], true, "1"), t2(A, [B], false, "2"), t2(A, [C, B], false, "3"), t2(A, [B], false, "4")], A);
+  assert.deepEqual(
+    g.map((x) => [x.sleutel, x.klaar, x.taken.map((t) => t.id)]),
+    [
+      [`p:${B}`, false, ["2", "4"]],
+      [`p:${[B, C].sort().join(",")}`, false, ["3"]],
+      ["~klaar", true, ["1"]],
+    ],
+  );
+});
+test("Uitgezet: mijzelf telt niet mee in de groep", () =>
+  assert.deepEqual(zicht.groepeerUitgezet([t2(A, [B, A])], A)[0].personen, [B]));
+
+// ---------- bronbewaking: geen teamweergave ----------
+const bron = (p) => fs.readFileSync(path.join(ROOT, p), "utf8");
+const bestaat = (p) => fs.existsSync(path.join(ROOT, p));
+test("WieFilter en wieKleur zijn weg", () => {
+  assert.equal(bestaat("components/agenda/WieFilter.tsx"), false);
+  assert.equal(bestaat("components/agenda/wieKleur.ts"), false);
+});
+function alleBronnen(map) {
+  const uit = [];
+  for (const e of fs.readdirSync(path.join(ROOT, map), { withFileTypes: true })) {
+    const p = path.join(map, e.name);
+    if (e.isDirectory()) uit.push(...alleBronnen(p));
+    else if (/\.(tsx?|css)$/.test(e.name)) uit.push(p);
+  }
+  return uit;
+}
+test("nergens nog een knop 'Heel team' of een link met ?wie=", () => {
+  const fout = [];
+  for (const p of [...alleBronnen("app"), ...alleBronnen("components")]) {
+    const s = bron(p);
+    if (/>\s*Heel team\s*</.test(s) || /[?&]wie=/.test(s.replace(/\/\/.*$/gm, ""))) fout.push(p);
+  }
+  assert.deepEqual(fout, []);
+});
+test("API agenda/taken leest geen 'wie' en geen ander user-id", () => {
+  for (const p of ["app/api/agenda/route.ts", "app/api/taken/route.ts"]) {
+    const s = bron(p).replace(/\/\/.*$/gm, "");
+    assert.doesNotMatch(s, /get\(['"]wie['"]\)|leesWie/, p);
+  }
+  assert.doesNotMatch(bron("lib/agenda/api.ts"), /leesWie/);
+});
+test("repo: persoonVoor heeft geen persoon-parameter meer (altijd jijzelf)", () =>
+  assert.match(bron("lib/agenda/repo.ts"), /export function persoonVoor\(bron: AgendaBron\): string \| null \{\s*return bron\.team \? bron\.userId : null;/));
+test("dashboard: geen taakrijen van anderen, alleen het aantal uitgezet", () => {
+  const s = bron("components/dashboard/Planning.tsx");
+  assert.doesNotMatch(s, /Uitgedeeld|uitgedeeld/);
+  assert.match(s, /\/agenda\?lijst=uitgezet/);
+});
+test("Uitgezet filtert in SQL (anti-join), niet achteraf in JS", () => {
+  const s = bron("lib/agenda/repo.ts");
+  assert.match(s, /\.eq\('mij\.user_id', bron\.userId\)\s*\.is\('mij', null\)/);
+  assert.doesNotMatch(s, /export async function uitgedeeld/);
+});
+test("0022: leesregels op taken/afspraken, geen 'teamleden lezen taken' meer", () => {
+  const s = bron("supabase/migrations/0022_team_crm.sql");
+  for (const p of ["betrokkenen lezen taken", "betrokkenen lezen toewijzingen", "betrokkenen lezen subtaken", "betrokkenen lezen afspraken", "betrokkenen lezen deelnemers"]) {
+    assert.match(s, new RegExp(`create policy "${p}"`));
+  }
+  assert.match(s, /drop policy if exists "teamleden lezen taken" on public\.tasks/);
 });
 
 console.log(`test-taken: ${goed} geslaagd${process.exitCode ? ", met fouten" : ""}`);

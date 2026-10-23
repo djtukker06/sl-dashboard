@@ -49,6 +49,11 @@
 //      rate limit en versleuteling; één koppelcomponent op welkom, /mail, dashboard en /account;
 //    - migratie 0022: alleen kolom + grant voor welkom_klaar_op (idempotent).
 // Live: /welkom zonder sessie -> 307 naar /login.
+// 8. Statisch, team van twee — stap 2 (wie ziet welke taak):
+//    - geen teamweergave meer (WieFilter, "Heel team", ?wie=); de API kent geen wie-parameter;
+//    - tab "Uitgezet" (anti-join in SQL), dashboard alleen met het aantal uitgezet;
+//    - 0022: leesregels op taken/toewijzingen/subtaken/afspraken/deelnemers, met teamcheck.
+// Live: /agenda?wie=team zonder sessie -> /login; /api/taken?filter=uitgezet -> 401.
 //
 // Gebruik:  node scripts/rooktest-shell.mjs [http://localhost:3107]
 //           node scripts/rooktest-shell.mjs --alleen-statisch
@@ -254,7 +259,7 @@ console.log("Taken op naam");
   }
   const repo = lees("lib/agenda/repo.ts");
   check(/wie:task_assignees!inner\(user_id\)/.test(repo) && /wie:event_attendees!inner\(user_id\)/.test(repo), "'mijn' lijsten filteren op toewijzing/deelname");
-  check(/agendaBereik\(bron, vandaag, plusDagen\(vandaag, 6\), 'ik'\)/.test(repo) && /takenVoorFilter\(bron, 'telaat', vandaag, \{ wie: 'ik' \}\)/.test(repo), "dashboard toont alleen je eigen taken en afspraken");
+  check(/agendaBereik\(bron, vandaag, plusDagen\(vandaag, 6\)\)/.test(repo) && /export function persoonVoor\(bron: AgendaBron\)/.test(repo), "dashboard toont alleen je eigen taken en afspraken");
   check(/rpc\('taak_betrokken'/.test(repo) && /rpc\('afspraak_betrokken'/.test(repo), "rechtencontrole gebruikt dezelfde functies als de RLS");
   check(/bronVan\(lid\)/.test(lees("components/dashboard/PlanningWidgets.tsx")), "dashboardplanning per ingelogd teamlid");
   for (const f of ["app/api/projecten/route.ts", "app/api/projecten/[id]/route.ts", "app/api/team/route.ts", "app/(app)/agenda/projecten/page.tsx"]) {
@@ -329,6 +334,35 @@ console.log("Welkomstflow en mailbox met één knop");
   const m22 = lees("supabase/migrations/0022_team_crm.sql");
   check(/add column if not exists welkom_klaar_op/.test(m22) && /grant update \(welkom_klaar_op\) on public\.profiles to authenticated/.test(m22), "0022: kolom en grant voor welkom_klaar_op");
   check(!/grant update on public\.profiles|grant all/i.test(m22), "0022: geen brede grant op profiles");
+}
+
+// ---------------------------------------------------------------------------------
+// 8. Team van twee, stap 2: wie ziet welke taak (statisch)
+// ---------------------------------------------------------------------------------
+console.log("Team van twee, stap 2 (wie ziet welke taak)");
+{
+  check(!fs.existsSync(path.join(ROOT, "components/agenda/WieFilter.tsx")), "WieFilter ('Heel team') verwijderd");
+  const agenda = lees("components/agenda/AgendaApp.tsx").replace(/\/\/[^\n]*/g, "");
+  check(!/Heel team|setWie|\bWIE_SLEUTEL\b/.test(agenda), "agenda: geen teamweergave of onthouden keuze meer");
+  const page = lees("app/(app)/agenda/page.tsx");
+  check(/if \(sp\.wie !== undefined\)[\s\S]*?redirect\(/.test(page), "/agenda?wie=… stuurt door zonder wie");
+  check(/sp\.lijst === 'uitgezet'/.test(page), "/agenda?lijst=uitgezet opent de tab Uitgezet");
+  for (const f of ["app/api/agenda/route.ts", "app/api/taken/route.ts"]) {
+    check(!/get\('wie'\)|leesWie/.test(lees(f).replace(/\/\/[^\n]*/g, "")), `${f}: geen wie-parameter`);
+  }
+  const lijst = lees("components/agenda/Takenlijst.tsx");
+  check(/\{ id: 'uitgezet', label: 'Uitgezet' \}/.test(lijst), "takenlijst: tab Uitgezet");
+  const repo = lees("lib/agenda/repo.ts");
+  check(/\.is\('mij', null\)/.test(repo) && /export async function uitgezetAantal/.test(repo), "Uitgezet: anti-join in SQL + teller");
+  const planning = lees("components/dashboard/Planning.tsx");
+  check(!/UitgedeeldKaart/.test(planning) && /\/agenda\?lijst=uitgezet/.test(planning), "dashboard: geen 'Uitgedeeld door jou'-rijen, wel de link");
+  const m22 = lees("supabase/migrations/0022_team_crm.sql");
+  for (const [tabel, naam] of [["tasks", "betrokkenen lezen taken"], ["task_assignees", "betrokkenen lezen toewijzingen"], ["task_subtasks", "betrokkenen lezen subtaken"], ["calendar_events", "betrokkenen lezen afspraken"], ["event_attendees", "betrokkenen lezen deelnemers"]]) {
+    const re = new RegExp(`create policy "${naam}" on public\\.${tabel}[\\s\\S]*?is_teamlid\\(\\)`);
+    check(re.test(m22), `0022: ${tabel} alleen voor betrokkenen (met teamcheck)`);
+  }
+  check(/create or replace function public\.taak_zichtbaar\(p_task uuid\)[\s\S]*?security definer/.test(m22), "0022: taak_zichtbaar() (security definer, geen recursie)");
+  check(/create index if not exists tasks_maker_open_idx/.test(m22), "0022: index voor Uitgezet");
 }
 
 if (ALLEEN_STATISCH) eindig();
@@ -418,7 +452,7 @@ for (const url of ["/social-files/brand/logo-licht.png", "/social-files/projects
 
 {
   // Taken op naam: ook met parameters geen gegevens zonder sessie.
-  for (const url of ["/api/taken?filter=uitgedeeld", "/api/taken?wie=team", "/api/agenda?van=2026-01-01&tot=2026-01-07&wie=team", "/api/projecten?status=alle", "/api/team"]) {
+  for (const url of ["/api/taken?filter=uitgezet", "/api/taken?wie=team", "/api/agenda?van=2026-01-01&tot=2026-01-07&wie=team", "/api/projecten?status=alle", "/api/team"]) {
     const res = await vraag(url);
     check(res.status === 401, `GET ${url} zonder sessie -> 401`, `status ${res.status}`);
   }

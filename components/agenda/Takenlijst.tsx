@@ -1,7 +1,11 @@
 'use client';
 
 import { dagTekst, inAmsterdam, korteDag } from '@/lib/agenda/datum';
+import { namenLijst } from '@/lib/agenda/rechten';
 import type { Taak, TakenFilter, Tellingen } from '@/lib/agenda/types';
+import type { TeamProfiel } from '@/lib/team/types';
+import { groepeerUitgezet } from '@/lib/agenda/zichtbaarheid';
+import { useTeam } from '@/components/team/TeamProvider';
 import { TaakRij } from './TaakRij';
 
 const TABS: { id: TakenFilter; label: string }[] = [
@@ -9,7 +13,8 @@ const TABS: { id: TakenFilter; label: string }[] = [
   { id: 'telaat', label: 'Te laat' },
   { id: 'gepland', label: 'Gepland' },
   { id: 'ooit', label: 'Ooit' },
-  { id: 'afgerond', label: 'Afgerond' }
+  { id: 'afgerond', label: 'Afgerond' },
+  { id: 'uitgezet', label: 'Uitgezet' }
 ];
 
 const LEEG: Record<TakenFilter, { titel: string; tekst: string }> = {
@@ -17,12 +22,26 @@ const LEEG: Record<TakenFilter, { titel: string; tekst: string }> = {
   telaat: { titel: 'Niets achterstallig', tekst: 'Alle taken met een verlopen datum zijn afgerond.' },
   gepland: { titel: 'Nog niets gepland', tekst: 'Taken met een datum na vandaag verschijnen hier, per dag.' },
   ooit: { titel: 'Geen losse ideeën', tekst: 'Taken zonder datum komen hier. Sleep ze naar een dag in de agenda om ze in te plannen.' },
-  afgerond: { titel: 'Nog niets afgerond', tekst: 'Afgevinkte taken verschijnen hier, de nieuwste bovenaan.' }
+  afgerond: { titel: 'Nog niets afgerond', tekst: 'Afgevinkte taken verschijnen hier, de nieuwste bovenaan.' },
+  uitgezet: {
+    titel: 'Niets uitgezet',
+    tekst: 'Maak je een taak voor iemand anders, dan staat hij hier (niet in je eigen lijst), zodat je kunt opvolgen.'
+  }
 };
 
-type Groep = { sleutel: string; titel: string; sub?: string; gevaar?: boolean; taken: Taak[] };
+type Groep = { sleutel: string; titel: string; sub?: string; gevaar?: boolean; klaar?: boolean; taken: Taak[] };
 
-function groepeer(filter: TakenFilter, taken: Taak[], vandaag: string): Groep[] {
+function groepeer(filter: TakenFilter, taken: Taak[], vandaag: string, mijnId: string, perId: Map<string, TeamProfiel>): Groep[] {
+  if (filter === 'uitgezet') {
+    // Open taken per persoon; wat de laatste 14 dagen is afgerond onderaan, grijs.
+    return groepeerUitgezet(taken, mijnId).map((g) => ({
+      sleutel: g.sleutel,
+      titel: g.klaar ? 'Klaar' : `Bij ${namenLijst(g.personen.map((id) => perId.get(id)?.voornaam || perId.get(id)?.naam || 'oud-teamlid'))}`,
+      sub: g.klaar ? 'laatste 14 dagen' : undefined,
+      klaar: g.klaar,
+      taken: g.taken
+    }));
+  }
   const groepen: Groep[] = [];
   const bij = (sleutel: string, maak: () => Omit<Groep, 'taken'>, t: Taak) => {
     let g = groepen.find((x) => x.sleutel === sleutel);
@@ -63,7 +82,7 @@ export function Takenlijst({
   onToggle,
   onOpen,
   onNieuw,
-  teamWeergave = false
+  metUitgezet = true
 }: {
   filter: TakenFilter;
   onFilter: (f: TakenFilter) => void;
@@ -76,14 +95,16 @@ export function Takenlijst({
   onToggle: (t: Taak) => void;
   onOpen: (t: Taak) => void;
   onNieuw?: () => void;
-  /** Taken van het hele team (of een ander teamlid): toegewezenen altijd tonen. */
-  teamWeergave?: boolean;
+  /** Tab "Uitgezet" tonen (niet vóór migratie 0021: dan bestaat toewijzen niet). */
+  metUitgezet?: boolean;
 }) {
-  const groepen = taken ? groepeer(filter, taken, vandaag) : [];
+  const { mijnId, perId } = useTeam();
+  const groepen = taken ? groepeer(filter, taken, vandaag, mijnId, perId) : [];
+  const tabs = metUitgezet ? TABS : TABS.filter((t) => t.id !== 'uitgezet');
   return (
     <div className="ag-lijst">
       <div className="ag-tabs" role="tablist" aria-label="Takenlijst">
-        {TABS.map((t) => {
+        {tabs.map((t) => {
           const n = tellingen && t.id !== 'afgerond' ? tellingen[t.id] : 0;
           return (
             <button
@@ -91,7 +112,8 @@ export function Takenlijst({
               type="button"
               role="tab"
               aria-selected={filter === t.id}
-              className={`ag-tab${filter === t.id ? ' is-aan' : ''}`}
+              className={`ag-tab${filter === t.id ? ' is-aan' : ''}${t.id === 'uitgezet' ? ' ag-tab-uitgezet' : ''}`}
+              title={t.id === 'uitgezet' ? 'Taken die jij voor een ander maakte' : undefined}
               onClick={() => onFilter(t.id)}
             >
               {t.label}
@@ -122,7 +144,7 @@ export function Takenlijst({
           <div className="db-melding">
             <p className="db-melding-titel">{LEEG[filter].titel}</p>
             <p className="db-melding-tekst">{LEEG[filter].tekst}</p>
-            {onNieuw && filter !== 'afgerond' && (
+            {onNieuw && filter !== 'afgerond' && filter !== 'uitgezet' && (
               <div className="db-melding-actie">
                 <button type="button" className="db-knop" onClick={onNieuw}>
                   + Taak
@@ -132,8 +154,8 @@ export function Takenlijst({
           </div>
         ) : (
           groepen.map((g) => (
-            <section key={g.sleutel} className="ag-groep">
-              {(groepen.length > 1 || filter === 'gepland' || filter === 'afgerond') && (
+            <section key={g.sleutel} className={`ag-groep${g.klaar ? ' is-klaar' : ''}`}>
+              {(groepen.length > 1 || filter === 'gepland' || filter === 'afgerond' || filter === 'uitgezet') && (
                 <h3 className={`ag-groep-kop${g.gevaar ? ' is-gevaar' : ''}`}>
                   <span>{g.titel}</span>
                   {g.sub && g.sub !== g.titel && <span className="ag-groep-sub">{g.sub}</span>}
@@ -148,9 +170,8 @@ export function Takenlijst({
                     vandaag={vandaag}
                     onToggle={onToggle}
                     onOpen={onOpen}
-                    toonDatum={filter === 'telaat' || filter === 'afgerond' || (filter === 'vandaag' && g.gevaar)}
-                    versleepbaar={filter !== 'afgerond'}
-                    toonMij={teamWeergave}
+                    toonDatum={filter === 'telaat' || filter === 'afgerond' || filter === 'uitgezet' || (filter === 'vandaag' && g.gevaar)}
+                    versleepbaar={filter !== 'afgerond' && filter !== 'uitgezet'}
                   />
                 ))}
               </ul>

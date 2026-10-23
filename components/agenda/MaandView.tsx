@@ -4,10 +4,8 @@ import { useState } from 'react';
 import { DAGNAMEN_KORT, dagDelen, inAmsterdam, type Dag } from '@/lib/agenda/datum';
 import { isBalk, itemsOpDag } from '@/lib/agenda/weergave';
 import type { Afspraak, Taak } from '@/lib/agenda/types';
-import { useTeam } from '@/components/team/TeamProvider';
 import type { Selectie } from './ItemPaneel';
 import type { Verplaatsing } from './WeekView';
-import { wieStijl } from './wieKleur';
 
 const MAX = 3;
 const SLEEP_TYPE = 'application/x-sl-item';
@@ -21,8 +19,7 @@ export function MaandView({
   afspraken,
   onOpen,
   onKiesDag,
-  onVerplaats,
-  teamWeergave = false
+  onVerplaats
 }: {
   dagen: Dag[];
   /** Maandnummer (1–12) dat centraal staat; andere dagen worden gedimd. */
@@ -33,9 +30,7 @@ export function MaandView({
   onOpen: (s: Selectie) => void;
   onKiesDag: (d: Dag) => void;
   onVerplaats: (v: Verplaatsing) => void;
-  teamWeergave?: boolean;
 }) {
-  const { perId } = useTeam();
   const [drop, setDrop] = useState<string | null>(null);
 
   function opDrop(e: React.DragEvent, dag: Dag) {
@@ -112,8 +107,7 @@ export function MaandView({
                           e.dataTransfer.setData(SLEEP_TYPE, `${x.soort}:${x.item.id}`);
                           e.dataTransfer.effectAllowed = 'move';
                         }}
-                        className={`ag-maand-item ag-maand-${x.soort}${af ? ' is-af' : ''}${x.soort === 'afspraak' && isBalk(x.item) ? ' is-balk' : ''}${teamWeergave ? ' is-team' : ''}`}
-                        style={wieStijl(x.item, perId, teamWeergave)}
+                        className={`ag-maand-item ag-maand-${x.soort}${af ? ' is-af' : ''}${x.soort === 'afspraak' && isBalk(x.item) ? ' is-balk' : ''}`}
                         onClick={() =>
                           onOpen(x.soort === 'taak' ? { soort: 'taak', item: x.item } : { soort: 'afspraak', item: x.item })
                         }

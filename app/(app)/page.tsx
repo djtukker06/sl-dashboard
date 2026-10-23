@@ -59,7 +59,7 @@ export default async function DashboardPage() {
         </ModuleKop>
 
         <div className="db-grid">
-          {/* Jouw Vandaag, Deze week (+ Uitgedeeld door jou) en Taken. */}
+          {/* Jouw Vandaag, Deze week en Taken (alleen op jouw naam; uitgezet = alleen een link). */}
           <Suspense fallback={<PlanningSkelet />}>
             <PlanningWidgets lid={lid} />
           </Suspense>

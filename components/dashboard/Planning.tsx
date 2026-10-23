@@ -4,10 +4,10 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { agendaApi, useNu } from '@/lib/agenda/client';
-import { DAGNAMEN_KORT, dagDelen, dagTekst, inAmsterdam, korteDag, plusDagen, weekdagIndex, type Dag } from '@/lib/agenda/datum';
+import { DAGNAMEN_KORT, dagDelen, inAmsterdam, korteDag, plusDagen, weekdagIndex, type Dag } from '@/lib/agenda/datum';
 import { afspraakRaakt, blokkenOpDag, indelen, isBalk, tijdvak } from '@/lib/agenda/weergave';
 import type { Afspraak, Taak } from '@/lib/agenda/types';
-import { Afvinker, TaakRij, Toegewezenen } from '@/components/agenda/TaakRij';
+import { Afvinker, TaakRij } from '@/components/agenda/TaakRij';
 import { useAfvinken } from '@/components/agenda/useAfvinken';
 import { useTaakDialoog, useTaakGebeurtenis } from '@/components/taken/TakenProvider';
 import { Kaart, KaartMelding } from './Kaart';
@@ -20,7 +20,8 @@ export type PlanningData = {
   zonderDeadline: Taak[];
   /** Jouw eerstvolgende open taken met een deadline na deze 7 dagen. */
   later: Taak[];
-  uitgedeeld: Taak[];
+  /** Aantal open taken die je voor een ander maakte (alleen een link, geen taakrijen). */
+  uitgezet: number;
 };
 
 const VERVERS_MS = 2 * 60_000;
@@ -28,8 +29,9 @@ const VERVERS_MS = 2 * 60_000;
 const EXTRA_MAX = 8;
 
 /**
- * Jouw planning op het dashboard: Vandaag, Deze week, Taken en "Uitgedeeld door jou".
- * Alleen taken voor jou en afspraken waar jij bij hoort; ook taken zonder deadline of
+ * Jouw planning op het dashboard: Vandaag, Deze week en Taken. Alleen taken op JOUW naam
+ * en afspraken waar jij bij hoort; wat je voor een ander maakte staat hier niet (alleen een
+ * link "N uitgezet bij anderen" naar de tab Uitgezet in de agenda); ook taken zonder deadline of
  * met een deadline na deze week (groepen "Zonder deadline" en "Later"). Krijgt de eerste gegevens van de
  * server (PlanningWidgets) en houdt ze daarna zelf bij; ververst bij terugkomen en elke
  * 2 minuten (zo verschijnt werk van je compagnon vanzelf). Vereist <DashboardTaken> erboven.
@@ -56,12 +58,11 @@ export function Planning({
     setBezig(true);
     laatst.current = Date.now();
     try {
-      const [bereik, laat, ooit, gepland, uit] = await Promise.all([
-        agendaApi.bereik(vandaag, plusDagen(vandaag, 6), 'ik'),
-        agendaApi.taken('telaat', { wie: 'ik' }),
-        agendaApi.taken('ooit', { wie: 'ik' }),
-        agendaApi.taken('gepland', { wie: 'ik' }),
-        agendaApi.uitgedeeld()
+      const [bereik, laat, ooit, gepland] = await Promise.all([
+        agendaApi.bereik(vandaag, plusDagen(vandaag, 6)),
+        agendaApi.taken('telaat'),
+        agendaApi.taken('ooit'),
+        agendaApi.taken('gepland')
       ]);
       const grens = plusDagen(vandaag, 6);
       setData({
@@ -70,7 +71,7 @@ export function Planning({
         teLaat: laat.tasks,
         zonderDeadline: ooit.tasks.slice(0, EXTRA_MAX),
         later: gepland.tasks.filter((t) => !!t.datum && t.datum > grens).slice(0, EXTRA_MAX),
-        uitgedeeld: uit.tasks
+        uitgezet: laat.tellingen.uitgezet ?? 0
       });
       setFout(null);
     } catch (e) {
@@ -112,8 +113,7 @@ export function Planning({
             taken: d.taken.map((x) => (x.id === t.id ? { ...x, ...t } : x)),
             teLaat: d.teLaat.map((x) => (x.id === t.id ? { ...x, ...t } : x)),
             zonderDeadline: d.zonderDeadline.map((x) => (x.id === t.id ? { ...x, ...t } : x)),
-            later: d.later.map((x) => (x.id === t.id ? { ...x, ...t } : x)),
-            uitgedeeld: d.uitgedeeld.map((x) => (x.id === t.id ? { ...x, ...t } : x))
+            later: d.later.map((x) => (x.id === t.id ? { ...x, ...t } : x))
           }
         : d
     );
@@ -149,8 +149,7 @@ export function Planning({
     );
   }
 
-  const d = data ?? { taken: [], afspraken: [], teLaat: [], zonderDeadline: [], later: [], uitgedeeld: [] };
-  const opUitgedeeld = d.uitgedeeld.length > 0;
+  const d = data ?? { taken: [], afspraken: [], teLaat: [], zonderDeadline: [], later: [], uitgezet: 0 };
   return (
     <>
       <VandaagKaart vandaag={vandaag} nu={nu} data={d} onToggle={toggle} onNieuw={() => nieuw()} onOpen={open} />
@@ -159,7 +158,6 @@ export function Planning({
           <WeekStrip vandaag={vandaag} taken={d.taken} afspraken={d.afspraken} />
           <Eerstvolgende vandaag={vandaag} nu={nu} afspraken={d.afspraken} />
         </Kaart>
-        {opUitgedeeld && <UitgedeeldKaart vandaag={vandaag} taken={d.uitgedeeld} onOpen={open} />}
       </div>
       <TakenKaart vandaag={vandaag} nu={nu} data={d} onToggle={toggle} onNieuw={() => nieuw()} onOpen={open} />
     </>
@@ -391,6 +389,7 @@ function TakenKaart({
   return (
     <Kaart label={open ? `Taken · ${open} open` : 'Taken'} href="/agenda" linkTekst="Alle taken" className="db-breed">
       {groepen.length === 0 ? (
+        <>
         <KaartMelding
           titel="Geen taken voor jou"
           actie={
@@ -401,6 +400,8 @@ function TakenKaart({
         >
           Er staan geen open taken op jouw naam: niets achterstallig, niets gepland en niets zonder deadline.
         </KaartMelding>
+        <UitgezetLink aantal={data.uitgezet} />
+        </>
       ) : (
         <>
         {groepen.map((g) => (
@@ -421,39 +422,20 @@ function TakenKaart({
             <Link href="/agenda">Meer taken in de agenda</Link>
           </p>
         )}
+        <UitgezetLink aantal={data.uitgezet} />
         </>
       )}
     </Kaart>
   );
 }
 
-// ---------- Uitgedeeld door jou ----------
-
-function UitgedeeldKaart({ vandaag, taken, onOpen }: { vandaag: Dag; taken: Taak[]; onOpen: (id: string) => void }) {
-  const zichtbaar = taken.filter((t) => !t.afgerond).slice(0, 5);
-  if (!zichtbaar.length) return null;
+/** "3 uitgezet bij anderen →": taken die je voor een ander maakte (alleen het aantal). */
+function UitgezetLink({ aantal }: { aantal: number }) {
+  if (!aantal) return null;
   return (
-    <Kaart label={`Uitgedeeld door jou · ${taken.filter((t) => !t.afgerond).length}`} href="/agenda?wie=team" linkTekst="Team" className="db-uitgedeeld">
-      <ul className="db-lijst">
-        {zichtbaar.map((t) => {
-          const laat = !!t.datum && t.datum < vandaag;
-          return (
-            <li key={t.id}>
-              <button type="button" className="db-rij db-rij-knop" onClick={() => onOpen(t.id)}>
-                <Toegewezenen ids={t.toegewezen} max={2} />
-                <span className="db-rij-hoofd">
-                  <span className="db-rij-titel">{t.titel}</span>
-                  <span className={`db-rij-meta${laat ? ' is-gevaar' : ''}`}>
-                    {t.datum ? dagTekst(t.datum, vandaag) : 'Geen deadline'}
-                    {t.subtaken.totaal > 0 ? ` · ${t.subtaken.klaar}/${t.subtaken.totaal}` : ''}
-                  </span>
-                </span>
-              </button>
-            </li>
-          );
-        })}
-      </ul>
-    </Kaart>
+    <p className="db-rustig db-uitgezet-link">
+      <Link href="/agenda?lijst=uitgezet">{aantal} uitgezet bij anderen →</Link>
+    </p>
   );
 }
 

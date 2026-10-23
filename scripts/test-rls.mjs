@@ -7,12 +7,16 @@
 //             → UITVOEREN_0020_UITGAVEN.sql: elke controleregel "ok", niets heropend.
 //             → 0022_team_crm.sql (2x): welkom_klaar_op gezet voor de eigenaar, niet voor
 //               een lid; alleen je eigen welkom-vlag te zetten.
+//             → 0022 wie-ziet-welke-taak: een taak die Daniel alleen voor Mark maakt, ziet
+//               Mark wel en een derde niet; een losse taak van Mark bestaat voor Daniel
+//               niet (tasks, task_assignees, task_subtasks); projecttaken zijn voor het
+//               team leesbaar; afspraken alleen voor maker en deelnemers.
 //             Daarna de toegangsmatrix:
 //               - niet-teamleden (ingelogd zonder lidmaatschap, onbevestigd, gedeactiveerd,
 //                 en anon zonder sessie): op ELKE tabel in public en in ELKE bucket niets
 //                 lezen, invoegen, wijzigen of verwijderen; RPC's geweigerd;
 //               - teamleden: gedeelde data lezen/schrijven, facturen alleen lezen,
-//                 taken alleen wijzigen als maker/toegewezene, eigen profiel, geen
+//                 taken/afspraken alleen lezen en wijzigen als betrokkene (0022), eigen profiel, geen
 //                 user_mailboxes, privé-buckets alleen via de service-role.
 // Scenario B  0001–0019 → UITVOEREN_0021_TEAM.sql (0020 ontbreekt nog) → daarna
 //             UITVOEREN_0020_UITGAVEN.sql: alles "ok", ook uitgaven alleen voor teamleden.
@@ -289,6 +293,7 @@ async function scenarioA() {
   await welkom0022(db);
 
   await zaaiNa0021(db);
+  await zichtbaarheid0022(db);
   await matrix(db);
 
   // De controletabel slaat alarm bij een lek (bv. later met de hand toegevoegde policy).
@@ -383,11 +388,24 @@ async function matrix(db) {
   }
 
   // ---- Teamleden ----
+  // Taken en afspraken (0022): alleen als betrokkene; al het andere: alles.
+  const ZICHTBAAR = {
+    tasks: `select count(*)::int as n from public.tasks t where ${taakZichtbaarSql("t")}`,
+    task_assignees: `select count(*)::int as n from public.task_assignees x join public.tasks t on t.id = x.task_id
+                     where x.user_id = $1 or ${taakZichtbaarSql("t")}`,
+    task_subtasks: `select count(*)::int as n from public.task_subtasks x join public.tasks t on t.id = x.task_id where ${taakZichtbaarSql("t")}`,
+    calendar_events: `select count(*)::int as n from public.calendar_events e where ${afspraakZichtbaarSql("e")}`,
+    event_attendees: `select count(*)::int as n from public.event_attendees x join public.calendar_events e on e.id = x.event_id
+                      where x.user_id = $1 or ${afspraakZichtbaarSql("e")}`,
+  };
   for (const wie of ["daniel", "mark"]) {
     for (const t of tabellen) {
       const sel = await als(db, wie, `select count(*)::int as n from public.${t}`);
       if (t === "user_mailboxes") {
         check(geweigerd(sel), `${wie}: user_mailboxes niet leesbaar (alleen server)`, uitleg(sel));
+      } else if (ZICHTBAAR[t]) {
+        const echt = (await db.query(ZICHTBAAR[t], [U[wie]])).rows[0].n;
+        check(sel.ok && sel.rows[0].n === echt, `${wie}: leest alleen eigen/betrokken rijen uit ${t}`, `${uitleg(sel)} verwacht ${echt}`);
       } else {
         const echt = (await db.query(`select count(*)::int as n from public.${t}`)).rows[0].n;
         check(sel.ok && sel.rows[0].n === echt, `${wie}: leest alles uit ${t}`, uitleg(sel));
@@ -522,6 +540,154 @@ async function welkom0022(db) {
   await voerUit(db, sql, "0022_team_crm.sql (3x)");
   const mark = (await db.query("select welkom_klaar_op from public.profiles where id = $1", [U.mark])).rows[0];
   check(mark.welkom_klaar_op === null, "0022: opnieuw uitvoeren raakt de vlag van een lid niet");
+}
+
+// ---------------------------------------------------------------------------------
+// 0022: wie ziet welke taak en afspraak (stap 2)
+// ---------------------------------------------------------------------------------
+// Dezelfde regel als de policy, als superuser-SQL (voor verwachte aantallen). $1 = user-id.
+function taakZichtbaarSql(t) {
+  return `(${t}.created_by = $1 or ${t}.project_id is not null
+           or exists (select 1 from public.task_assignees a where a.task_id = ${t}.id and a.user_id = $1))`;
+}
+function afspraakZichtbaarSql(e) {
+  return `(${e}.created_by = $1
+           or exists (select 1 from public.event_attendees a where a.event_id = ${e}.id and a.user_id = $1))`;
+}
+
+// Alles in één transactie (rollback aan het eind): wisselen van gebruiker met set_config.
+async function zichtbaarheid0022(db) {
+  const policies = (
+    await db.query(
+      `select tablename, policyname, qual from pg_policies
+       where schemaname = 'public' and cmd = 'SELECT'
+         and tablename in ('tasks', 'task_assignees', 'task_subtasks', 'calendar_events', 'event_attendees')`,
+    )
+  ).rows;
+  check(policies.length === 5, "0022: één leesregel per taak-/afspraaktabel", policies.map((p) => `${p.tablename}:${p.policyname}`).join(", "));
+  check(policies.every((p) => /is_teamlid\(/.test(p.qual)), "0022: elke leesregel vereist teamlid");
+  check(!policies.some((p) => /^teamleden lezen/.test(p.policyname)), "0022: de open leesregels van 0021 zijn weg");
+
+  await db.exec("begin");
+  const fouten0 = fouten;
+  try {
+    await db.exec("set local role authenticated");
+    const alsWie = async (wie, sql, params = []) => {
+      await db.query("select set_config('request.jwt.claim.sub', $1, true)", [U[wie]]);
+      await db.exec("savepoint s");
+      try {
+        const r = await db.query(sql, params);
+        await db.exec("release savepoint s");
+        return { ok: true, rows: r.rows, n: r.affectedRows ?? 0 };
+      } catch (e) {
+        await db.exec("rollback to savepoint s");
+        return { ok: false, code: e.code, msg: e.message };
+      }
+    };
+    const maak = async (wie, taak) => {
+      const r = await alsWie(wie, "select public.taak_aanmaken($1::jsonb) as id", [JSON.stringify(taak)]);
+      check(r.ok, `0022: ${wie} maakt '${taak.titel}'`, uitleg(r));
+      return r.rows?.[0]?.id;
+    };
+    const ziet = async (wie, id) => {
+      const r = await alsWie(
+        wie,
+        `select (select count(*)::int from public.tasks where id = $1) as t,
+                (select count(*)::int from public.task_assignees where task_id = $1) as a,
+                (select count(*)::int from public.task_subtasks where task_id = $1) as s`,
+        [id],
+      );
+      return r.ok ? r.rows[0] : { t: -1, a: -1, s: -1, fout: r.msg };
+    };
+    const lijstVan = async (wie) =>
+      (
+        await alsWie(
+          wie,
+          `select t.id from public.tasks t join public.task_assignees a on a.task_id = t.id and a.user_id = $1`,
+          [U[wie]],
+        )
+      ).rows.map((r) => r.id);
+    // "Uitgezet": gemaakt door mij, ik sta er niet op (zoals de app-query, met anti-join).
+    const uitgezetVan = async (wie) =>
+      (
+        await alsWie(
+          wie,
+          `select t.id from public.tasks t where t.created_by = $1
+             and not exists (select 1 from public.task_assignees a where a.task_id = t.id and a.user_id = $1)`,
+          [U[wie]],
+        )
+      ).rows.map((r) => r.id);
+
+    const voorMark = await maak("daniel", { titel: "Alleen voor Mark", voorWie: [U.mark], subtaken: ["stap"] });
+    const samen = await maak("daniel", { titel: "Voor allebei", voorWie: [U.daniel, U.mark] });
+    const vanMark = await maak("mark", { titel: "Privé van Mark", voorWie: [U.mark], subtaken: ["geheim"] });
+    const project = await maak("mark", {
+      titel: "Projecttaak van Mark",
+      voorWie: [U.mark],
+      projectId: "dddddddd-0000-4000-8000-000000000001",
+    });
+
+    // Daniel → Mark: Mark ziet hem in zijn lijst; Daniel niet in de zijne, wel onder Uitgezet.
+    let z = await ziet("mark", voorMark);
+    check(z.t === 1 && z.a === 1 && z.s === 1, "0022: Mark ziet de taak die Daniel voor hem maakte (met subtaak)", JSON.stringify(z));
+    check((await lijstVan("mark")).includes(voorMark), "0022: staat in Marks eigen lijst");
+    check(!(await lijstVan("daniel")).includes(voorMark), "0022: staat NIET in Daniels eigen lijst");
+    check((await uitgezetVan("daniel")).includes(voorMark), "0022: staat onder Daniels Uitgezet");
+    z = await ziet("daniel", voorMark);
+    check(z.t === 1, "0022: Daniel (maker) kan hem openen om op te volgen", JSON.stringify(z));
+
+    // Voor allebei: bij ieder in de lijst, niet onder Uitgezet.
+    check((await lijstVan("daniel")).includes(samen) && (await lijstVan("mark")).includes(samen), "0022: taak voor twee staat bij beiden");
+    check(!(await uitgezetVan("daniel")).includes(samen), "0022: taak voor twee staat niet onder Uitgezet");
+
+    // Privé van Mark: bestaat voor Daniel niet, ook niet via toewijzingen of subtaken.
+    z = await ziet("daniel", vanMark);
+    check(z.t === 0 && z.a === 0 && z.s === 0, "0022: Daniel ziet een losse taak van Mark niet (tasks/assignees/subtasks)", JSON.stringify(z));
+    let r = await alsWie("daniel", "update public.tasks set title = 'x' where id = $1", [vanMark]);
+    check(r.ok && r.n === 0, "0022: … en kan hem niet wijzigen", uitleg(r));
+    r = await alsWie("daniel", "select public.taak_zichtbaar($1) as z, public.taak_betrokken($1) as b", [vanMark]);
+    check(r.ok && r.rows[0].z === false && r.rows[0].b === false, "0022: taak_zichtbaar/taak_betrokken = false voor Daniel", uitleg(r));
+
+    // Projecttaak: leesbaar voor het team, maar niet in Daniels lijst en niet te wijzigen.
+    z = await ziet("daniel", project);
+    check(z.t === 1 && z.a === 1, "0022: projecttaak voor het team leesbaar", JSON.stringify(z));
+    check(!(await lijstVan("daniel")).includes(project), "0022: projecttaak staat niet in Daniels lijst");
+    r = await alsWie("daniel", "update public.tasks set title = 'x' where id = $1", [project]);
+    check(r.ok && r.n === 0, "0022: projecttaak van een ander niet te wijzigen", uitleg(r));
+
+    // Mark geeft "Voor allebei" alleen aan Daniel: hij kan het nog (eerst toevoegen, dan
+    // zichzelf weghalen) en ziet de taak daarna niet meer (niet de maker, geen project).
+    r = await alsWie("mark", "delete from public.task_assignees where task_id = $1 and user_id = $2", [samen, U.mark]);
+    check(r.ok && r.n === 1, "0022: Mark haalt zichzelf van een gedeelde taak", uitleg(r));
+    z = await ziet("mark", samen);
+    check(z.t === 0, "0022: daarna ziet Mark hem niet meer", JSON.stringify(z));
+    check((await lijstVan("daniel")).includes(samen), "0022: Daniel houdt hem in zijn lijst");
+
+    // Niet-teamleden zien niets, ook geen projecttaak.
+    for (const wie of ["indringer", "oudlid"]) {
+      z = await ziet(wie, project);
+      check(z.t === 0 && z.a === 0 && z.s === 0, `0022: ${wie} ziet geen projecttaak`, JSON.stringify(z));
+    }
+
+    // Afspraken: maker en deelnemers; een ander teamlid niet.
+    r = await alsWie("mark", "insert into public.calendar_events (title, starts_at, ends_at) values ('Tandarts', now(), now() + interval '1 hour') returning id");
+    check(r.ok, "0022: Mark maakt een afspraak", uitleg(r));
+    const afspraak = r.rows?.[0]?.id;
+    r = await alsWie("mark", "insert into public.event_attendees (event_id, user_id) values ($1, $2)", [afspraak, U.mark]);
+    check(r.ok, "0022: Mark is deelnemer", uitleg(r));
+    r = await alsWie("daniel", "select (select count(*)::int from public.calendar_events where id = $1) as e, (select count(*)::int from public.event_attendees where event_id = $1) as a", [afspraak]);
+    check(r.ok && r.rows[0].e === 0 && r.rows[0].a === 0, "0022: Daniel ziet Marks afspraak niet", uitleg(r));
+    r = await alsWie("mark", "insert into public.event_attendees (event_id, user_id) values ($1, $2)", [afspraak, U.daniel]);
+    check(r.ok, "0022: Mark nodigt Daniel uit", uitleg(r));
+    r = await alsWie("daniel", "select (select count(*)::int from public.calendar_events where id = $1) as e, (select count(*)::int from public.event_attendees where event_id = $1) as a", [afspraak]);
+    check(r.ok && r.rows[0].e === 1 && r.rows[0].a === 2, "0022: als deelnemer ziet Daniel de afspraak en wie er komt", uitleg(r));
+
+    const idx = await alsWie("daniel", "select to_regclass('public.tasks_maker_open_idx') is not null as er");
+    check(idx.ok && idx.rows[0].er, "0022: index voor Uitgezet aanwezig", uitleg(idx));
+  } finally {
+    await db.exec("rollback");
+  }
+  if (fouten === fouten0) console.log("  0022 zichtbaarheid: ok");
 }
 
 // ---------------------------------------------------------------------------------

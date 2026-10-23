@@ -7,8 +7,7 @@ import { magAfspraakWijzigen, magTaakWijzigen } from '@/lib/agenda/rechten';
 import type { Afspraak, Taak } from '@/lib/agenda/types';
 import { useTeam } from '@/components/team/TeamProvider';
 import type { Selectie } from './ItemPaneel';
-import { Afvinker, Toegewezenen } from './TaakRij';
-import { personenVan, wieStijl } from './wieKleur';
+import { Afvinker } from './TaakRij';
 
 const UUR = 48; // px per uur
 const STAP = 15; // slepen in stappen van 15 minuten
@@ -40,8 +39,7 @@ export function WeekView({
   onToggle,
   onNieuw,
   onVerplaats,
-  onKiesDag,
-  teamWeergave = false
+  onKiesDag
 }: {
   dagen: Dag[];
   vandaag: Dag;
@@ -53,11 +51,8 @@ export function WeekView({
   onNieuw: (dag: Dag, tijd: string | null, x: number, y: number) => void;
   onVerplaats: (v: Verplaatsing) => void;
   onKiesDag?: (dag: Dag) => void;
-  /** Taken/afspraken van het team: gekleurde rand per persoon en mini-avatars. */
-  teamWeergave?: boolean;
 }) {
-  const { perId, mijnId, overgang } = useTeam();
-  const team = teamWeergave ? ' is-team' : '';
+  const { mijnId, overgang } = useTeam();
   const scroll = useRef<HTMLDivElement>(null);
   const kolommen = useRef<HTMLDivElement>(null);
   const sleepRef = useRef<Sleep | null>(null);
@@ -201,8 +196,7 @@ export function WeekView({
                 <button
                   key={a.id}
                   type="button"
-                  className={`ag-balk${team}`}
-                  style={wieStijl(a, perId, teamWeergave)}
+                  className="ag-balk"
                   onClick={() => onOpen({ soort: 'afspraak', item: a })}
                   title={`${a.titel} · ${tijdvak(a)}`}
                 >
@@ -210,7 +204,7 @@ export function WeekView({
                 </button>
               ))}
               {losse.map((t) => (
-                <div key={t.id} className={`ag-mini-taak${t.afgerond ? ' is-af' : ''}${team}`} style={wieStijl(t, perId, teamWeergave)}>
+                <div key={t.id} className={`ag-mini-taak${t.afgerond ? ' is-af' : ''}`}>
                   <Afvinker taak={t} onToggle={onToggle} klein />
                   <button type="button" className="ag-mini-taak-titel" onClick={() => onOpen({ soort: 'taak', item: t })}>
                     {t.titel}
@@ -257,7 +251,6 @@ export function WeekView({
                     const start = b.start + (sleept ? sleep.minDelta : 0);
                     const hoogte = Math.max(((b.eind - b.start) / 60) * UUR, 20);
                     const stijl: React.CSSProperties = {
-                      ...wieStijl(b.item, perId, teamWeergave),
                       top: (start / 60) * UUR,
                       height: hoogte,
                       left: sleept ? 2 : `calc(${(lane.kolom / lane.kolommen) * 100}% + 2px)`,
@@ -272,7 +265,7 @@ export function WeekView({
                     return (
                       <div
                         key={`${b.soort}:${b.id}`}
-                        className={`ag-blok ag-blok-${b.soort}${b.soort === 'taak' && b.item.afgerond ? ' is-af' : ''}${sleept ? ' is-sleep' : ''}${kort ? ' is-kort' : ''}${team}`}
+                        className={`ag-blok ag-blok-${b.soort}${b.soort === 'taak' && b.item.afgerond ? ' is-af' : ''}${sleept ? ' is-sleep' : ''}${kort ? ' is-kort' : ''}`}
                         style={stijl}
                         role="button"
                         tabIndex={0}
@@ -304,7 +297,6 @@ export function WeekView({
                             {b.soort === 'afspraak' && b.item.locatie ? ` · ${b.item.locatie}` : ''}
                           </span>
                         </span>
-                        {teamWeergave && !kort && <Toegewezenen ids={personenVan(b.item)} metMij max={2} />}
                       </div>
                     );
                   })}

@@ -98,8 +98,7 @@ export function TaakRij({
   onOpen,
   href,
   toonDatum = true,
-  versleepbaar = false,
-  toonMij = false
+  versleepbaar = false
 }: {
   taak: Taak;
   vandaag: string;
@@ -108,8 +107,6 @@ export function TaakRij({
   href?: string;
   toonDatum?: boolean;
   versleepbaar?: boolean;
-  /** Ook jezelf tonen bij de toegewezenen (teamweergave). */
-  toonMij?: boolean;
 }) {
   const teLaat = !taak.afgerond && !!taak.datum && taak.datum < vandaag;
   const klasse = `ag-taak${taak.afgerond ? ' is-af' : ''}${teLaat ? ' is-telaat' : ''}`;
@@ -142,7 +139,7 @@ export function TaakRij({
           {inhoud}
         </button>
       )}
-      <Toegewezenen ids={taak.toegewezen} metMij={toonMij} />
+      <Toegewezenen ids={taak.toegewezen} />
       {taak.prioriteit !== 2 && (
         <span
           className={`ag-prio ag-prio-${taak.prioriteit === 1 ? 'hoog' : 'laag'}`}

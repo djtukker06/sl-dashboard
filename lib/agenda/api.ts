@@ -1,9 +1,7 @@
 import { NextResponse } from 'next/server';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { controleerRoute, type Teamlid } from '@/lib/auth/team';
-import { isUuid } from './invoer';
 import { AgendaFout, type AgendaBron } from './repo';
-import type { Wie } from './types';
 
 // Gedeelde stukken voor de agenda-API-routes (/api/agenda, /api/taken, /api/afspraken).
 
@@ -33,13 +31,6 @@ export async function metSessie(
 /** De databasebron voor de agenda-repo: gebruikerscliënt (RLS), wie, en of 0021 er is. */
 export function bronVan(lid: Teamlid): AgendaBron {
   return { sb: lid.sb, userId: lid.userId, team: !lid.overgang };
-}
-
-/** ?wie=ik|team|<user-id> (standaard: ik). Ongeldig → null. */
-export function leesWie(v: string | null): Wie | null {
-  if (!v || v === 'ik') return 'ik';
-  if (v === 'team') return 'team';
-  return isUuid(v) ? v.toLowerCase() : null;
 }
 
 /** Vangt fouten af tot een nette JSON-fout (503 tabel_ontbreekt vóór de migratie). */

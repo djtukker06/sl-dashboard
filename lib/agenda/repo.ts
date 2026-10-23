@@ -1,14 +1,16 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { tabelOntbreekt } from '@/lib/db/ontbreekt';
 import { bereikMomenten, normTijd, plusDagen } from './datum';
-import type { Afspraak, Project, Subtaak, Taak, TaakDetail, TakenFilter, Tellingen, Wie } from './types';
+import type { Afspraak, Project, Subtaak, Taak, TaakDetail, TakenFilter, Tellingen } from './types';
 
 // Database-toegang voor agenda & taken. Altijd met de gebruikerscliënt (RLS), ná een
 // sessie-check in de aanroepende route of pagina.
 //
 // Taken op naam (migratie 0021): een taak hoort bij één of meer teamleden (task_assignees),
-// een afspraak bij deelnemers (event_attendees). "Mijn" lijsten filteren daarop; "Heel team"
-// toont alles. Zolang 0021 niet is uitgevoerd (bron.team = false) bestaan die tabellen niet:
+// een afspraak bij deelnemers (event_attendees). Elke lijst, de agenda en het dashboard tonen
+// alleen wat op JOUW naam staat; wat je voor een ander maakte zie je alleen onder "Uitgezet"
+// (en op de projectpagina). Er is geen teamweergave: de RLS van 0022 laat een ander teamlid
+// een losse taak van jou niet eens lezen. Zolang 0021 niet is uitgevoerd (bron.team = false) bestaan die tabellen niet:
 // dan werkt alles zoals vóór de teamaccounts (geen toewijzing, geen subtaken, geen projecten).
 
 export class AgendaFout extends Error {
@@ -177,19 +179,21 @@ export function sorteerTaken(a: Taak, b: Taak): number {
   return a.aangemaakt < b.aangemaakt ? -1 : 1;
 }
 
-/** Het user-id waarop gefilterd wordt, of null (heel team / vóór 0021). */
-export function persoonVoor(bron: AgendaBron, wie: Wie | null | undefined): string | null {
-  if (!bron.team) return null;
-  if (!wie || wie === 'ik') return bron.userId;
-  if (wie === 'team') return null;
-  return wie;
+/**
+ * Het user-id waarop gefilterd wordt: altijd jijzelf (vóór 0021: null, dan bestaat er geen
+ * toewijzing). Er is bewust geen parameter: niemand kan de lijst van een ander opvragen.
+ */
+export function persoonVoor(bron: AgendaBron): string | null {
+  return bron.team ? bron.userId : null;
 }
 
 export interface TakenOpties {
-  wie?: Wie | null;
   projectId?: string | null;
   klantId?: string | null;
 }
+
+/** Hoe lang afgeronde taken onder "Uitgezet" blijven staan (om op te volgen). */
+export const UITGEZET_KLAAR_DAGEN = 14;
 
 // ---------------------------------------------------------------------------------
 // Taken
@@ -200,7 +204,8 @@ export async function takenVoorFilter(
   vandaag: string,
   opties: TakenOpties = {}
 ): Promise<Taak[]> {
-  const persoon = persoonVoor(bron, opties.wie);
+  if (filter === 'uitgezet') return uitgezet(bron, vandaag, opties);
+  const persoon = persoonVoor(bron);
   let q = bron.sb.from('tasks').select(taakKolommen(bron.team, !!persoon));
   if (persoon) q = q.eq('wie.user_id', persoon);
   if (bron.team && opties.projectId) q = q.eq('project_id', opties.projectId);
@@ -230,7 +235,7 @@ export async function takenVoorFilter(
 }
 
 export async function tellingen(bron: AgendaBron, vandaag: string, opties: TakenOpties = {}): Promise<Tellingen> {
-  const persoon = persoonVoor(bron, opties.wie);
+  const persoon = persoonVoor(bron);
   function basis() {
     let q = bron.sb
       .from('tasks')
@@ -241,14 +246,61 @@ export async function tellingen(bron: AgendaBron, vandaag: string, opties: Taken
     if (opties.klantId) q = q.eq('client_id', opties.klantId);
     return q;
   }
-  const [a, b, c, d] = await Promise.all([
+  const [a, b, c, d, u] = await Promise.all([
     basis().lte('due_date', vandaag),
     basis().lt('due_date', vandaag),
     basis().gt('due_date', vandaag),
-    basis().is('due_date', null)
+    basis().is('due_date', null),
+    uitgezetAantal(bron, opties)
   ]);
   for (const r of [a, b, c, d]) if (r.error) throw dbFout(r.error);
-  return { vandaag: a.count ?? 0, telaat: b.count ?? 0, gepland: c.count ?? 0, ooit: d.count ?? 0 };
+  return { vandaag: a.count ?? 0, telaat: b.count ?? 0, gepland: c.count ?? 0, ooit: d.count ?? 0, uitgezet: u };
+}
+
+// ---------------------------------------------------------------------------------
+// Uitgezet: taken die jij maakte voor een ander (en waar je zelf niet op staat)
+// ---------------------------------------------------------------------------------
+// Gefilterd in SQL met een anti-join (PostgREST): de koppeling `mij` bevat alleen jouw
+// eigen toewijzing; `mij is null` = je staat er niet op. Zo telt de limiet alleen echte
+// uitgezette taken.
+function uitgezetQuery(bron: AgendaBron, kolommen: string, opties: TakenOpties, telling = false) {
+  let q = bron.sb
+    .from('tasks')
+    .select(`${kolommen},mij:task_assignees(user_id)`, telling ? { count: 'exact', head: true } : undefined)
+    .eq('created_by', bron.userId)
+    .eq('mij.user_id', bron.userId)
+    .is('mij', null);
+  if (opties.projectId) q = q.eq('project_id', opties.projectId);
+  if (opties.klantId) q = q.eq('client_id', opties.klantId);
+  return q;
+}
+
+/**
+ * Open uitgezette taken (te laat en eerstvolgende deadline eerst) plus die in de laatste
+ * UITGEZET_KLAAR_DAGEN dagen zijn afgerond (nieuwste eerst), zodat je kunt opvolgen.
+ */
+export async function uitgezet(bron: AgendaBron, vandaag: string, opties: TakenOpties = {}): Promise<Taak[]> {
+  if (!bron.team) return [];
+  const sinds = bereikMomenten(plusDagen(vandaag, -UITGEZET_KLAAR_DAGEN), vandaag).start;
+  const [open, klaar] = await Promise.all([
+    uitgezetQuery(bron, taakKolommen(true), opties).is('completed_at', null).limit(300),
+    uitgezetQuery(bron, taakKolommen(true), opties)
+      .gte('completed_at', sinds)
+      .order('completed_at', { ascending: false })
+      .limit(50)
+  ]);
+  if (open.error) throw dbFout(open.error);
+  if (klaar.error) throw dbFout(klaar.error);
+  const naar = (d: unknown) => ((d ?? []) as unknown as TaakDbRij[]).map(naarTaak);
+  return [...naar(open.data).sort(sorteerTaken), ...naar(klaar.data)];
+}
+
+/** Aantal open uitgezette taken (tab-teller en de link op het dashboard). */
+export async function uitgezetAantal(bron: AgendaBron, opties: TakenOpties = {}): Promise<number> {
+  if (!bron.team) return 0;
+  const { count, error } = await uitgezetQuery(bron, 'id', opties, true).is('completed_at', null);
+  if (error) throw dbFout(error);
+  return count ?? 0;
 }
 
 /** Eén taak (of null). */
@@ -364,11 +416,10 @@ export async function projectKlant(bron: AgendaBron, projectId: string): Promise
 export async function agendaBereik(
   bron: AgendaBron,
   van: string,
-  tot: string,
-  wie: Wie | null = 'ik'
+  tot: string
 ): Promise<{ taken: Taak[]; afspraken: Afspraak[] }> {
   const { start, eind } = bereikMomenten(van, tot);
-  const persoon = persoonVoor(bron, wie);
+  const persoon = persoonVoor(bron);
   let tq = bron.sb.from('tasks').select(taakKolommen(bron.team, !!persoon)).gte('due_date', van).lte('due_date', tot);
   let aq = bron.sb.from('calendar_events').select(afspraakKolommen(bron.team, !!persoon)).lt('starts_at', eind).gt('ends_at', start);
   if (persoon) {
@@ -384,23 +435,6 @@ export async function agendaBereik(
   };
 }
 
-/** Open taken die jij maakte voor anderen (en waar je zelf niet bij hoort). */
-export async function uitgedeeld(bron: AgendaBron, max = 50): Promise<Taak[]> {
-  if (!bron.team) return [];
-  const { data, error } = await bron.sb
-    .from('tasks')
-    .select(taakKolommen(true))
-    .eq('created_by', bron.userId)
-    .is('completed_at', null)
-    .order('created_at', { ascending: false })
-    .limit(max);
-  if (error) throw dbFout(error);
-  return ((data ?? []) as unknown as TaakDbRij[])
-    .map(naarTaak)
-    .filter((t) => t.toegewezen.length > 0 && !t.toegewezen.includes(bron.userId))
-    .sort(sorteerTaken);
-}
-
 /** Hoeveel taken het dashboard per extra groep ("Zonder deadline", "Later") meeneemt. */
 export const DASHBOARD_EXTRA_MAX = 8;
 
@@ -412,7 +446,8 @@ export interface DashboardPlanning {
   zonderDeadline: Taak[];
   /** Jouw eerstvolgende open taken met een deadline ná deze 7 dagen. */
   later: Taak[];
-  uitgedeeld: Taak[];
+  /** Aantal open taken die je voor een ander maakte (link naar "Uitgezet"; geen taakrijen). */
+  uitgezet: number;
 }
 
 /** Open taken met een deadline na de dashboardweek (vandaag + 6), eerstvolgende eerst. */
@@ -424,22 +459,23 @@ export function latereTaken(taken: Taak[], vandaag: string, max = DASHBOARD_EXTR
 /**
  * Alles voor het eigen dashboard: deze 7 dagen, achterstallige open taken, jouw open taken
  * zonder deadline en de eerstvolgende daarna (zodat elke taak op jouw naam hier te zien
- * is), plus wat je aan anderen uitdeelde.
+ * is), plus het AANTAL taken dat je voor een ander maakte (die taken zelf niet: die staan
+ * niet in jouw lijst, alleen onder "Uitgezet").
  */
 export async function dashboardPlanning(bron: AgendaBron, vandaag: string): Promise<DashboardPlanning> {
   const [bereik, teLaat, ooit, gepland, uit] = await Promise.all([
-    agendaBereik(bron, vandaag, plusDagen(vandaag, 6), 'ik'),
-    takenVoorFilter(bron, 'telaat', vandaag, { wie: 'ik' }),
-    takenVoorFilter(bron, 'ooit', vandaag, { wie: 'ik' }),
-    takenVoorFilter(bron, 'gepland', vandaag, { wie: 'ik' }),
-    uitgedeeld(bron)
+    agendaBereik(bron, vandaag, plusDagen(vandaag, 6)),
+    takenVoorFilter(bron, 'telaat', vandaag),
+    takenVoorFilter(bron, 'ooit', vandaag),
+    takenVoorFilter(bron, 'gepland', vandaag),
+    uitgezetAantal(bron)
   ]);
   return {
     ...bereik,
     teLaat,
     zonderDeadline: ooit.slice(0, DASHBOARD_EXTRA_MAX),
     later: latereTaken(gepland, vandaag),
-    uitgedeeld: uit
+    uitgezet: uit
   };
 }
 

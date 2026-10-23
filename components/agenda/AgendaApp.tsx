@@ -16,7 +16,8 @@ import {
   weeknummer,
   type Dag
 } from '@/lib/agenda/datum';
-import type { Afspraak, Taak, TakenFilter, Tellingen, Wie } from '@/lib/agenda/types';
+import type { Afspraak, Taak, TakenFilter, Tellingen } from '@/lib/agenda/types';
+import { opMijnNaam } from '@/lib/agenda/zichtbaarheid';
 import { ModuleKop } from '@/components/shell/ModuleKop';
 import { TaakKnop } from '@/components/dashboard/TaakKnop';
 import { TakenProvider, useTaakDialoog, useTaakGebeurtenis } from '@/components/taken/TakenProvider';
@@ -27,17 +28,18 @@ import { Takenlijst } from './Takenlijst';
 import { ToastProvider, useToast } from './Toast';
 import { useAfvinken } from './useAfvinken';
 import { WeekView, type Verplaatsing } from './WeekView';
-import { WieFilter } from './WieFilter';
 
 type Weergave = 'week' | 'maand';
 
-const WIE_SLEUTEL = 'sl-agenda-wie';
+// Vroeger onthield de agenda de keuze "Mijn agenda / Heel team" per browser. Die teamweergave
+// bestaat niet meer (je ziet alleen wat op jouw naam staat); de oude sleutel ruimen we op.
+const OUDE_WIE_SLEUTEL = 'sl-agenda-wie';
 
 export function AgendaApp(props: {
   vandaag: Dag;
   startDag: Dag;
   startWeergave: Weergave;
-  startWie: Wie | null;
+  startFilter: TakenFilter;
   startProject: string | null;
   openTaak: string | null;
   openAfspraak: string | null;
@@ -55,7 +57,7 @@ function Agenda({
   vandaag: vandaagServer,
   startDag,
   startWeergave,
-  startWie,
+  startFilter,
   startProject,
   openTaak,
   openAfspraak
@@ -63,7 +65,7 @@ function Agenda({
   vandaag: Dag;
   startDag: Dag;
   startWeergave: Weergave;
-  startWie: Wie | null;
+  startFilter: TakenFilter;
   startProject: string | null;
   openTaak: string | null;
   openAfspraak: string | null;
@@ -71,15 +73,14 @@ function Agenda({
   const toast = useToast();
   const nu = useNu();
   const smal = useSmal();
-  const { mijnId, overgang, leden } = useTeam();
+  const { mijnId, overgang } = useTeam();
   const taakDialoog = useTaakDialoog();
   // "Vandaag" schuift mee als het scherm over middernacht open blijft staan.
   const vandaag = nu ? inAmsterdam(nu).dag : vandaagServer;
 
   const [weergave, setWeergave] = useState<Weergave>(startWeergave);
   const [focus, setFocus] = useState<Dag>(startDag);
-  const [filter, setFilter] = useState<TakenFilter>('vandaag');
-  const [wie, setWieState] = useState<Wie>(overgang ? 'ik' : (startWie ?? 'ik'));
+  const [filter, setFilter] = useState<TakenFilter>(overgang && startFilter === 'uitgezet' ? 'vandaag' : startFilter);
   const [project, setProject] = useState<{ id: string; naam: string } | null>(
     startProject ? { id: startProject, naam: 'Project' } : null
   );
@@ -92,32 +93,13 @@ function Agenda({
   const [nieuw, setNieuw] = useState<{ dag: Dag; tijd: string | null; x: number; y: number } | null>(null);
   const [mobielTab, setMobielTab] = useState<'taken' | 'agenda'>('agenda');
 
-  const teamWeergave = !overgang && wie !== 'ik';
-
-  // Laatste keuze "Mijn / Heel team / persoon" onthouden (per gebruiker, in deze browser).
   useEffect(() => {
-    if (startWie || overgang) return;
     try {
-      const w = localStorage.getItem(`${WIE_SLEUTEL}:${mijnId}`);
-      if (w === 'team' || (w && leden.some((l) => l.actief && l.id === w && l.id !== mijnId))) {
-        // eslint-disable-next-line react-hooks/set-state-in-effect
-        setWieState(w);
-      }
+      localStorage.removeItem(`${OUDE_WIE_SLEUTEL}:${mijnId}`);
     } catch {
-      /* geen opslag: standaard mijn agenda */
+      /* geen opslag */
     }
-  }, [startWie, overgang, mijnId, leden]);
-  const setWie = useCallback(
-    (w: Wie) => {
-      setWieState(w);
-      try {
-        localStorage.setItem(`${WIE_SLEUTEL}:${mijnId}`, w);
-      } catch {
-        /* niet bewaren */
-      }
-    },
-    [mijnId]
-  );
+  }, [mijnId]);
 
   // Projectnaam bij ?project=<id>.
   useEffect(() => {
@@ -143,15 +125,15 @@ function Agenda({
   }, [weergave, focus, smal]);
   const van = dagen[0];
   const tot = dagen[dagen.length - 1];
-  const sleutel = `${van}|${tot}|${wie}`;
-  const lijstSleutel = `${filter}|${wie}|${project?.id ?? ''}`;
+  const sleutel = `${van}|${tot}`;
+  const lijstSleutel = `${filter}|${project?.id ?? ''}`;
 
   // ---------- data ophalen ----------
   useEffect(() => {
     let weg = false;
-    const s = `${van}|${tot}|${wie}`;
+    const s = `${van}|${tot}`;
     agendaApi
-      .bereik(van, tot, wie)
+      .bereik(van, tot)
       .then((r) => {
         if (weg) return;
         setBereik({ sleutel: s, taken: r.tasks, afspraken: r.events });
@@ -163,13 +145,13 @@ function Agenda({
     return () => {
       weg = true;
     };
-  }, [van, tot, wie, teller]);
+  }, [van, tot, teller]);
 
   useEffect(() => {
     let weg = false;
-    const s = `${filter}|${wie}|${project?.id ?? ''}`;
+    const s = `${filter}|${project?.id ?? ''}`;
     agendaApi
-      .taken(filter, { wie, project: project?.id })
+      .taken(filter, { project: project?.id })
       .then((r) => {
         if (weg) return;
         setLijst({ sleutel: s, taken: r.tasks, tellingen: r.tellingen });
@@ -181,7 +163,7 @@ function Agenda({
     return () => {
       weg = true;
     };
-  }, [filter, wie, project?.id, teller]);
+  }, [filter, project?.id, teller]);
 
   // Verversen als je terugkomt naar het tabblad (bv. taak afgevinkt op het dashboard).
   useEffect(() => {
@@ -212,12 +194,12 @@ function Agenda({
     const p = new URLSearchParams();
     if (focus !== vandaag) p.set('dag', focus);
     if (weergave === 'maand') p.set('weergave', 'maand');
-    if (wie !== 'ik') p.set('wie', wie);
+    if (filter === 'uitgezet') p.set('lijst', 'uitgezet');
     if (project) p.set('project', project.id);
     const qs = p.toString();
     const url = `/agenda${qs ? `?${qs}` : ''}`;
     if (window.location.pathname + window.location.search !== url) window.history.replaceState(null, '', url);
-  }, [focus, weergave, vandaag, wie, project]);
+  }, [focus, weergave, vandaag, filter, project]);
 
   const herlaad = useCallback(() => setTeller((t) => t + 1), []);
 
@@ -233,7 +215,8 @@ function Agenda({
         if (oud && oud.afgerond !== t.afgerond) {
           const d = t.afgerond ? -1 : 1;
           const datum = t.datum ?? oud.datum;
-          if (!datum) tellingen.ooit = Math.max(0, tellingen.ooit + d);
+          if (!opMijnNaam(t.toegewezen.length ? t : oud, mijnId, overgang)) tellingen.uitgezet = Math.max(0, tellingen.uitgezet + d);
+          else if (!datum) tellingen.ooit = Math.max(0, tellingen.ooit + d);
           else if (datum > vandaag) tellingen.gepland = Math.max(0, tellingen.gepland + d);
           else {
             tellingen.vandaag = Math.max(0, tellingen.vandaag + d);
@@ -243,7 +226,7 @@ function Agenda({
         return { ...l, tellingen, taken: l.taken.map((x) => (x.id === t.id ? { ...x, ...t } : x)) };
       });
     },
-    [lijst, bereik, vandaag]
+    [lijst, bereik, vandaag, overgang, mijnId]
   );
   const toggle = useAfvinken(pasTaakAan);
 
@@ -420,21 +403,18 @@ function Agenda({
         </div>
       </ModuleKop>
 
-      {!overgang && (
+      {!overgang && project && (
         <div className="ag-filterbalk">
-          <WieFilter waarde={wie} onChange={setWie} />
-          {project && (
-            <span className="ag-chip tk-chip-project ag-filter-project">
-              Project: {project.naam}
-              <button type="button" className="ag-chip-x" aria-label="Projectfilter weghalen" onClick={() => setProject(null)}>
-                ×
-              </button>
-            </span>
-          )}
+          <span className="ag-chip tk-chip-project ag-filter-project">
+            Project: {project.naam}
+            <button type="button" className="ag-chip-x" aria-label="Projectfilter weghalen" onClick={() => setProject(null)}>
+              ×
+            </button>
+          </span>
         </div>
       )}
 
-      <div className={`ag ag-toon-${mobielTab}${teamWeergave ? ' is-team' : ''}`}>
+      <div className={`ag ag-toon-${mobielTab}`}>
         <section className="ag-links" aria-label="Taken">
           <Takenlijst
             filter={filter}
@@ -449,11 +429,10 @@ function Agenda({
             onOpen={(t) => taakDialoog.open(t.id)}
             onNieuw={() =>
               taakDialoog.nieuw({
-                voorWie: wie !== 'ik' && wie !== 'team' ? [wie] : undefined,
                 project: project ? { id: project.id, naam: project.naam, klantId: null, klantNaam: null } : undefined
               })
             }
-            teamWeergave={teamWeergave}
+            metUitgezet={!overgang}
           />
           <p className="ag-toetsen" aria-hidden="true">
             <kbd>n</kbd> taak · <kbd>a</kbd> afspraak · <kbd>t</kbd> vandaag · <kbd>w</kbd>/<kbd>m</kbd> week/maand · <kbd>←</kbd>
@@ -512,7 +491,6 @@ function Agenda({
               nu={nu}
               taken={toonBereik?.taken ?? []}
               afspraken={toonBereik?.afspraken ?? []}
-              teamWeergave={teamWeergave}
               onOpen={openItem}
               onToggle={toggle}
               onNieuw={(dag, tijd, x, y) => setNieuw({ dag, tijd, x, y })}
@@ -525,7 +503,6 @@ function Agenda({
               vandaag={vandaag}
               taken={toonBereik?.taken ?? []}
               afspraken={toonBereik?.afspraken ?? []}
-              teamWeergave={teamWeergave}
               onOpen={openItem}
               onKiesDag={(d) => {
                 setFocus(d);
@@ -549,7 +526,7 @@ function Agenda({
           }}
           onTaak={() => {
             setNieuw(null);
-            taakDialoog.nieuw({ datum: nieuw.dag, tijd: nieuw.tijd, voorWie: wie !== 'ik' && wie !== 'team' ? [wie] : undefined });
+            taakDialoog.nieuw({ datum: nieuw.dag, tijd: nieuw.tijd });
           }}
         />
       )}

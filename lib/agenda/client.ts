@@ -12,8 +12,7 @@ import type {
   TaakDetail,
   TaakInvoer,
   TakenFilter,
-  Tellingen,
-  Wie
+  Tellingen
 } from './types';
 
 // Browser-kant van de agenda: fetch-hulpjes en kleine hooks. Gebruikt door /agenda en
@@ -70,16 +69,17 @@ function qs(p: Record<string, string | null | undefined>): string {
 }
 
 export const agendaApi = {
-  bereik: (van: string, tot: string, wie: Wie = 'ik') =>
-    api<{ tasks: Taak[]; events: Afspraak[] }>(`/api/agenda${qs({ van, tot, wie })}`),
-  taken: (filter: TakenFilter, opties: { wie?: Wie; project?: string | null } = {}) =>
+  bereik: (van: string, tot: string) => api<{ tasks: Taak[]; events: Afspraak[] }>(`/api/agenda${qs({ van, tot })}`),
+  taken: (filter: TakenFilter, opties: { project?: string | null } = {}) =>
     api<{ tasks: Taak[]; tellingen: Tellingen; vandaag: string }>(
-      `/api/taken${qs({ filter, wie: opties.wie ?? 'ik', project: opties.project })}`
+      `/api/taken${qs({ filter, project: opties.project })}`
     ),
-  uitgedeeld: () => api<{ tasks: Taak[] }>('/api/taken?filter=uitgedeeld'),
   taak: (id: string) => api<{ task: TaakDetail }>(`/api/taken/${id}`),
   maakTaak: (b: TaakInvoer) => api<{ task: Taak }>('/api/taken', { method: 'POST', body: body(b) }),
   wijzigTaak: (id: string, b: TaakInvoer) => api<{ task: Taak }>(`/api/taken/${id}`, { method: 'PATCH', body: body(b) }),
+  /** Zoals wijzigTaak, maar met "voor wie": task is null als je de taak aan een ander gaf en hem niet meer mag zien. */
+  bewaarTaak: (id: string, b: TaakInvoer) =>
+    api<{ task: Taak | null; overgedragen?: boolean }>(`/api/taken/${id}`, { method: 'PATCH', body: body(b) }),
   verwijderTaak: (id: string) => api<{ ok: true }>(`/api/taken/${id}`, { method: 'DELETE' }),
   maakSubtaak: (taakId: string, titel: string) =>
     api<{ subtaak: Subtaak }>(`/api/taken/${taakId}/subtaken`, { method: 'POST', body: body({ titel }) }),
