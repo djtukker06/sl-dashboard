@@ -7,11 +7,21 @@ import { veiligVervolg } from '@/lib/vervolg';
 // In Next.js 16 heet dit bestand "proxy.ts" (was "middleware.ts"). Eerste linie van de
 // toegangscontrole (elke pagina, server action en API-route controleert daarnaast zelf,
 // via lib/auth/team.ts):
-//   1. ververst de Supabase-sessie op elk request;
+//   1. ververst de Supabase-sessie op elk request en controleert het toegangstoken met
+//      getClaims() (handtekening lokaal tegen de JWKS van Supabase; zonder asymmetrische
+//      sleutel valt Supabase zelf terug op een controle bij de Auth-server);
 //   2. geen sessie: API's en bestanden krijgen een 401 (JSON), pagina's gaan naar /login;
 //   3. wel een sessie maar geen actief teamlid (migratie 0021): uitloggen, pagina's naar
 //      /geen-toegang, API's een 403 (JSON). Zo komt een account dat zich ondanks alles
 //      heeft kunnen registreren nergens bij.
+//
+// Snelheid: stap 3 (een database-rondgang) doen we alleen bij het openen van een pagina
+// of bestand. API-routes, /social-files en de RSC-verzoeken van de router (navigeren en
+// prefetchen binnen de app) slaan hem over: die doen ALTIJD zelf de volledige controle
+// (teamlidRoute / route() / vereisTeamlidPagina in lib/auth/team.ts, fail closed). Hier
+// nog eens is_teamlid() aanroepen kostte per verzoek een extra rondgang zonder extra
+// bescherming. Een nagemaakte rsc-header helpt een buitenstaander dus niets: de pagina
+// weigert hem zelf; voor losse bestanden (met extensie) geldt de header niet.
 export async function proxy(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request });
 
@@ -42,7 +52,9 @@ export async function proxy(request: NextRequest) {
     return res;
   };
 
-  const { data: { user } } = await supabase.auth.getUser();
+  const { data: claimData } = await supabase.auth.getClaims();
+  const claims = claimData?.claims ?? null;
+  const user = claims?.sub ? { id: claims.sub } : null;
 
   const pad = request.nextUrl.pathname;
   const isLoginPath = pad === '/login' || pad.startsWith('/login/');
@@ -74,8 +86,14 @@ export async function proxy(request: NextRequest) {
     return metCookies(NextResponse.redirect(url));
   }
 
+  // Verzoeken die zelf de volledige teamcheck doen (zie boven).
+  const isRsc =
+    (request.headers.has('rsc') || request.headers.has('next-router-prefetch') || request.headers.has('next-action')) &&
+    !/\.[a-z0-9]+$/i.test(pad);
+  const controleertZelf = isApi || isRsc;
+
   // Wel ingelogd: is dit een actief teamlid? (/auth/* controleert zelf.)
-  if (user && pad !== '/auth/uitloggen' && pad !== '/auth/callback') {
+  if (user && !controleertZelf && pad !== '/auth/uitloggen' && pad !== '/auth/callback') {
     const lid = await controleerLid(supabase);
 
     if (lid === 'geen') {

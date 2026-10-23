@@ -27,7 +27,8 @@ je vanuit elke module terug naar het dashboard.
 2. **SQL uitvoeren** in Supabase: `supabase/UITVOEREN_IN_SQL_EDITOR.sql` (zie hieronder).
    Tot dan tonen social, de agenda en uitgaven een nette melding "nog niet ingericht".
    Al eerder uitgevoerd (0014–0019)? Dan `supabase/UITVOEREN_0020_UITGAVEN.sql`.
-   Al eerder uitgevoerd (0014–0020)? Dan alleen `supabase/UITVOEREN_0021_TEAM.sql`.
+   Al eerder uitgevoerd (0014–0020)? Dan `supabase/UITVOEREN_0021_TEAM.sql`.
+   Al eerder uitgevoerd (0014–0021)? Dan alleen `supabase/UITVOEREN_0022.sql`.
    Alleen de oudste bestaande gebruiker (Daniel) wordt automatisch lid (eigenaar); controleer
    onderaan het aantal leden en wie het zijn.
 3. **Oude social-posts importeren** met `scripts/importeer-social-projecten.mjs`
@@ -36,7 +37,7 @@ je vanuit elke module terug naar het dashboard.
    inclusief `MAIL_ENCRYPTION_KEY` (eigen mailboxen koppelen via `/account`), eventueel
    `MAIL_USER`/`MAIL_PASSWORD` (standaard-mailbox van de eigenaar) en `NEXT_PUBLIC_SITE_URL`.
 5. Deployen op Vercel (zie "Deployen op Vercel").
-6. **Compagnon toevoegen** met `scripts/teamlid-toevoegen.mjs` (zie "Team & toegang").
+6. **Compagnon toevoegen** met `scripts/teamlid-toevoegen.mjs` (zie "Bram toevoegen in 3 stappen").
 
 ## Lokaal draaien
 
@@ -52,10 +53,12 @@ je vanuit elke module terug naar het dashboard.
 ## Database inrichten: één SQL-bestand
 
 Alles wat de nieuwe modules nodig hebben staat in **`supabase/UITVOEREN_IN_SQL_EDITOR.sql`**:
-de migraties 0014–0021 achter elkaar, in één transactie. Wie 0014–0019 al heeft uitgevoerd,
+de migraties 0014–0022 achter elkaar, in één transactie. Wie 0014–0019 al heeft uitgevoerd,
 draait **`supabase/UITVOEREN_0020_UITGAVEN.sql`** (uitgaven + team); wie 0014–0020 al heeft,
-alleen **`supabase/UITVOEREN_0021_TEAM.sql`**. Elk bestand eindigt met 0021, zodat opnieuw
-uitvoeren nooit de oude open policies terugzet.
+**`supabase/UITVOEREN_0021_TEAM.sql`**; wie 0014–0021 al heeft (de huidige situatie), alleen
+**`supabase/UITVOEREN_0022.sql`**. Elk bestand eindigt met 0021 + 0022, zodat opnieuw
+uitvoeren nooit de oude open policies of de open leesregels voor taken terugzet. Onderaan elk
+bestand staat een controletabel (elke regel `ok`) en wie er toegang heeft.
 
 | Migratie | Inhoud |
 |---|---|
@@ -67,6 +70,7 @@ uitvoeren nooit de oude open policies terugzet.
 | `0019_mail_opslag.sql` | privé-bucket `mail-tmp` voor grote mailbijlagen |
 | `0020_uitgaven.sql` | tabellen `expenses` en `expense_files` (RLS, `updated_at`-trigger), privé-buckets `uitgaven` (25 MB, jpeg/png/webp/heic/pdf) en `uitgaven-export` (50 MB, ZIP) |
 | `0021_team_en_taken.sql` | `team_members` (allowlist) + `profiles`, `is_teamlid()` in **alle** policies (ook facturen en Storage), `create_invoice`/`update_invoice` alleen nog voor de service-role, `projects`, `task_assignees`, `task_subtasks`, `event_attendees`, `user_mailboxes`; zaait het lidmaatschap van de oudste bestaande gebruiker (Daniel, eigenaar); andere bestaande accounts worden niet automatisch lid |
+| `0022_team_crm.sql` | team van twee: `profiles.welkom_klaar_op` (welkomstflow), taken/afspraken alleen leesbaar voor betrokkenen (`taak_zichtbaar()`), klanten (`email`, `telefoon`, `status`, `client_notes`), projecten (status gepland/bezig/afgerond, `deadline`, `project_eigenaren`), tellers in één query (`taak_tellingen`, `project_taak_tellingen`) en indexen. Alleen toevoegend; de facturen werken ongewijzigd |
 
 **Uitvoeren:** Supabase-dashboard → je project → **SQL Editor** → *New query* → plak het hele
 bestand → **Run**. Onderaan verschijnt een controletabel; elke regel moet `ok` tonen.
@@ -164,11 +168,15 @@ komen er alleen bij via een script met de service-role key ("aan de achterkant")
   lidmaatschap, 403 bij een wijzigend verzoek van een ander domein) en `vereisTeamlid()` voor
   server actions. De service-role client (`createServiceRoleClient(bewijs)`) vraagt het bewijs
   van die controle: code die hem zonder controle gebruikt, compileert niet.
-- `proxy.ts` logt een ingelogd account zonder lidmaatschap direct uit en stuurt het naar
-  `/geen-toegang` (API's: JSON 403). Ook inloggen en `/auth/callback` controleren het lidmaatschap.
+- `proxy.ts` controleert het toegangstoken (`getClaims()`) en logt bij het openen van een
+  pagina een ingelogd account zonder lidmaatschap direct uit en stuurt het naar
+  `/geen-toegang`. API's, `/social-files` en de RSC-verzoeken van de router slaan die extra
+  lidcheck in de proxy over: ze doen zelf altijd de volledige controle (403/`/geen-toegang`,
+  fail closed). Ook inloggen en `/auth/callback` controleren het lidmaatschap.
 - Gedeelde bedrijfsdata (facturen, prijsopgaven, klanten, bonnetjes, social, projecten) ziet
-  iedereen in het team. Taken en afspraken ook (voor de teamweergave in de agenda), maar
-  **wijzigen** kan alleen de maker of een toegewezene/deelnemer (RLS). Mail is persoonlijk:
+  iedereen in het team. Taken en afspraken zijn persoonlijk (0022): je leest alleen wat je
+  maakte, wat voor jou is, of (taken) wat bij een project hoort; **wijzigen** kan alleen de
+  maker of een toegewezene/deelnemer (RLS). Mail is persoonlijk:
   ieder ziet alleen zijn eigen mailbox. Wachtwoorden van gekoppelde mailboxen staan
   versleuteld in `user_mailboxes` (geen policies; alleen de server leest ze).
 - **Overgangsmodus:** zolang 0021 niet is uitgevoerd, werkt de app zoals voorheen (elk
@@ -226,6 +234,27 @@ eigenaren slaan hem over; zolang 0022 niet is uitgevoerd slaat iedereen hem over
 prijsopgaven, klanten, bonnetjes en social posts zijn al gedeeld; daarvoor hoeft niemand iets
 in te stellen.
 
+### Bram toevoegen in 3 stappen
+
+1. **Eenmalig klaarzetten** (als dat nog niet gedaan is): in Supabase `supabase/UITVOEREN_0022.sql`
+   uitvoeren (onderaan alles `ok`) en bij *Authentication → Emails → "Invite user"* de link op
+   `{{ .SiteURL }}/auth/callback?token_hash={{ .TokenHash }}&type=invite&next=/nieuw-wachtwoord`
+   zetten. Zonder die link komt Bram uit op "link verlopen".
+2. **Uitnodigen** (aan de achterkant, eerst met `--dry-run` kijken wat er gebeurt):
+
+   ```bash
+   node --env-file=.env.local scripts/teamlid-toevoegen.mjs --email bram@studio-levant.nl --naam "Bram" --dry-run
+   node --env-file=.env.local scripts/teamlid-toevoegen.mjs --email bram@studio-levant.nl --naam "Bram"
+   ```
+
+   Optioneel `--kleur #rrggbb` en `--initialen`. Als mede-oprichter kan hij `--rol eigenaar`
+   krijgen (de standaard-mailbox uit de env blijft dan van Daniel); `lid` is ook prima.
+3. **Bram opent de mail**, kiest een wachtwoord en komt op `/welkom`: naam bevestigen, inbox
+   koppelen met alleen `bram@studio-levant.nl` + het wachtwoord van zijn mailbox (servers
+   gaan vanzelf), klaar. Facturen, prijsopgaven, klanten, projecten, bonnetjes en social
+   posts staan er meteen; taken die Daniel voor hem maakt staan in zijn dashboard, takenlijst
+   en agenda.
+
 **Teamlid de toegang ontnemen:**
 
 ```bash
@@ -273,13 +302,41 @@ Nieuwe factuur, Nieuwe prijsopgave, + Bonnetje, Nieuwe post, Nieuwe mail).
   (naar de tab Uitgezet).
 - **Gedeeld met het team:** Facturen, Laatste bonnetjes en Recente posts, met een avatar van
   wie ze maakte/uploadde.
-- Het dashboard ververst als je terugkomt naar het venster en elke 2 minuten, zodat werk van
-  je compagnon vanzelf verschijnt.
+- Het dashboard ververst je planning elke 2 minuten met één verzoek (`GET /api/dashboard`) en
+  als je terugkomt naar het venster ook de gedeelde widgets, zodat werk van je compagnon
+  vanzelf verschijnt. De mailcheck staat in een eigen laadblok: de rest van het dashboard
+  wacht er niet op.
 
 Elke widget laadt los (eigen laad-, leeg- en foutstaat), zodat één
 trage of nog niet ingerichte bron de rest niet blokkeert. De facturen-widget is alleen-lezen
 en rekent met dezelfde regels als het facturenoverzicht (omzet excl. btw per jaar; open =
 aanbetaling zonder restfactuur).
+
+## Snelheid
+
+Twee dagelijkse gebruikers, dus vooral: weinig rondgangen per klik.
+
+- **Per verzoek één teamcheck.** `proxy.ts` controleert het token alleen lokaal (`getClaims()`;
+  zonder asymmetrische JWT-sleutel in Supabase doet Supabase dat zelf bij de Auth-server) en
+  doet de lidcheck alleen bij het openen van een pagina; API's en de router-verzoeken
+  controleren zelf. `lib/auth/team.ts` houdt `getUser()` (uitloggen werkt meteen, ook voor
+  mail) maar vraagt die tegelijk met de lidmaatschappen en profielen van het team op: één
+  ronde. De shell (avatars, kiezers) vraagt daarna niets meer.
+  Rondgangen na elkaar per verzoek (auth- of databasevraag die op een vorige wacht):
+  pagina openen van 5 naar 3 (proxy: token + lidcheck; pagina: één parallelle ronde),
+  navigeren binnen de app en API-verzoeken van 4 naar 1–2. In aantallen: van 2 auth + 5
+  database naar 1–2 auth + 3 database per pagina, en van 2 auth + 3 database naar 1–2 auth
+  + 2 database per API-verzoek.
+- **Dashboard:** de mailcheck staat in Suspense (en is 30 s per gebruiker gecachet; koppelen
+  of ontkoppelen wist de cache); de planning komt uit 3 queries (waren 5) en ververst met
+  één verzoek (waren 4) en zonder volledige `router.refresh()` elke 2 minuten.
+- **Tellers** van de takenlijst in één query (`taak_tellingen`, waren 5) en de voortgang van
+  projecten met een `group by` (`project_taak_tellingen`). Vóór 0022 valt de app terug op
+  de oude losse queries.
+- **Rail-badge:** zonder gekoppelde mailbox vraagt de rail de mailstatus nog maar eens per
+  kwartier op.
+- **Indexen** (0022): taken op datum (ook afgerond), op maker, op klant; afspraken op klant
+  en maker; klanten en projecten op status; notities per klant; projecteigenaren per persoon.
 
 ## Agenda & taken
 
@@ -316,10 +373,9 @@ aanbetaling zonder restfactuur).
   maker en de deelnemers. Wijzigen, afvinken en verwijderen kan de maker of iemand voor wie
   het is (`taak_betrokken`/`afspraak_betrokken`; de API geeft anders 403). Toewijzen kan
   alleen aan actieve teamleden. Geef je in de popup een taak helemaal aan een ander, dan
-  verdwijnt hij uit jouw lijsten ("Taak overgedragen"). Let op: de oude verzamelbestanden
-  (`UITVOEREN_0021_TEAM.sql`, `UITVOEREN_IN_SQL_EDITOR.sql`, `UITVOEREN_0020_UITGAVEN.sql`)
-  bevatten 0021 en zetten bij opnieuw uitvoeren de open leesregels terug; voer daarna 0022
-  opnieuw uit.
+  verdwijnt hij uit jouw lijsten ("Taak overgedragen"). Alle verzamelbestanden
+  (`UITVOEREN_*.sql`) eindigen met 0022, dus opnieuw uitvoeren zet de open leesregels van
+  0021 niet terug.
 - **Agenda:** alleen jouw taken met een datum en de afspraken waar jij bij hoort.
   **+ Afspraak** (of `a`) opent het
   afsprakenpaneel met "Wie" (deelnemers, standaard jij). Klik op een leeg vak: kies
@@ -563,6 +619,7 @@ sinds Klanten & projecten de nieuwe klantpagina (met een link naar de facturen v
 | `/klanten`, `/klanten/<id>` | Klanten (`?nieuw=1` opent "Nieuwe klant") en de klantpagina |
 | `/projecten`, `/projecten/<id>` | Projecten en de projectpagina |
 | `/api/klanten`, `/api/klanten/<id>`, `/api/klanten/<id>/notities…` | Klant maken/wijzigen (niet verwijderen) en klantnotities (503 `tabel_ontbreekt` vóór 0022) |
+| `/api/dashboard` | Jouw planning voor het dashboard in één verzoek (zelfde gegevens als bij het laden) |
 | `/api/agenda`, `/api/taken…` (incl. `?filter=uitgezet`, `/[id]/subtaken…`), `/api/afspraken…` | Agenda-API; alleen jouw taken/afspraken (geen parameter voor die van een ander) (503 `tabel_ontbreekt` vóór de SQL, 403 als je iets van een ander wilt wijzigen) |
 | `/api/projecten…`, `/api/team` | Projecten (gedeeld; `?status=lopend\|afgerond\|alle`, met deadline en eigenaren) en de actieve teamleden (alleen naam, initialen, kleur) |
 | `/mail` | Mail (`?map=`, `?uid=`, `?nieuw=1`) |
@@ -607,10 +664,16 @@ node --experimental-strip-types scripts/rooktest-render.mjs   # social-renderer 
 
 `scripts/test-rls.mjs` (devDependency `@electric-sql/pglite`, geen netwerk, geen Supabase):
 
-- voert 0001–0020 uit met testdata (Daniel, een bevestigde tweede gebruiker, een
-  onbevestigd en een anoniem account), daarna `UITVOEREN_0021_TEAM.sql` twee keer,
-  `UITVOEREN_IN_SQL_EDITOR.sql` en `UITVOEREN_0020_UITGAVEN.sql` opnieuw: elke controleregel
-  `ok`, niets heropend, geen extra leden. Ook het pad "0021 vóór 0020" wordt getest;
+- voert 0001–0021 uit met testdata (Daniel, een bevestigde tweede gebruiker, een
+  onbevestigd en een anoniem account) — de situatie zoals in Supabase nu — en een tweede
+  teamlid met projecten in de oude statussen; daarna `UITVOEREN_0022.sql` twee keer, en
+  `UITVOEREN_0021_TEAM.sql` (2x), `UITVOEREN_IN_SQL_EDITOR.sql` en `UITVOEREN_0020_UITGAVEN.sql`
+  opnieuw: elke controleregel `ok`, niets heropend (ook de leesregels voor taken niet), geen
+  extra leden. Ook het pad "0021 vóór 0020" wordt getest;
+- 0022: welkom-vlag (alleen de eigen, alleen die kolom), wie welke taak/afspraak ziet
+  (taak voor een ander, voor twee, privé, projecttaak), klanten/notities/projecteigenaren,
+  de omzetting van projectstatussen, en dat `taak_tellingen`/`project_taak_tellingen`
+  precies tellen wat de lijsten tonen (niets van een ander, niets voor niet-teamleden);
 - zaaien: alleen bevestigde, niet-anonieme accounts; de oudste wordt eigenaar; bestaande
   taken en afspraken gaan naar hun maker of de eigenaar;
 - **niet-teamleden** (ingelogd zonder lidmaatschap, onbevestigd, anoniem, gedeactiveerd, en

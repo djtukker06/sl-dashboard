@@ -4,10 +4,8 @@ import Link from 'next/link';
 import { vereisTeamlidPagina } from '@/lib/auth/team';
 import { dagLabel, groet, isoWeek } from '@/lib/dashboard/tijd';
 import { ModuleKop } from '@/components/shell/ModuleKop';
-import { Kaart, KaartSkelet } from '@/components/dashboard/Kaart';
-import { InboxWidget } from '@/components/dashboard/InboxWidget';
-import { NietGekoppeld } from '@/components/mail/NietGekoppeld';
-import { magEnvMailbox, mailConfigVoor } from '@/lib/mail/config';
+import { KaartSkelet } from '@/components/dashboard/Kaart';
+import { InboxKaart, InboxKaartSkelet, NieuweMailKnop } from '@/components/dashboard/InboxKaart';
 import { FacturenWidget } from '@/components/dashboard/FacturenWidget';
 import { SocialWidget } from '@/components/dashboard/SocialWidget';
 import { PlanningSkelet, PlanningWidgets } from '@/components/dashboard/PlanningWidgets';
@@ -30,8 +28,6 @@ export default async function DashboardPage() {
 
   const nu = new Date();
   const voornaam = lid.profiel.voornaam;
-  // Alleen je eigen mailbox (nooit die van een ander teamlid).
-  const mailGekoppeld = (await mailConfigVoor(lid)) !== null;
 
   return (
     <DashboardTaken>
@@ -51,11 +47,10 @@ export default async function DashboardPage() {
           <a className="db-knop" href="/social#nieuw">
             Nieuwe post
           </a>
-          {mailGekoppeld && (
-            <Link className="db-knop" href="/mail?nieuw=1">
-              Nieuwe mail
-            </Link>
-          )}
+          {/* Alleen je eigen mailbox; de mailcheck houdt de rest van de pagina niet op. */}
+          <Suspense fallback={null}>
+            <NieuweMailKnop lid={lid} />
+          </Suspense>
         </ModuleKop>
 
         <div className="db-grid">
@@ -64,14 +59,10 @@ export default async function DashboardPage() {
             <PlanningWidgets lid={lid} />
           </Suspense>
 
-          {/* Inbox: client-component, zodat IMAP de eerste weergave niet ophoudt. */}
-          {mailGekoppeld ? (
-            <InboxWidget />
-          ) : (
-            <Kaart label="Inbox" href="/mail" linkTekst="Mail" className="db-smal db-inbox">
-              <NietGekoppeld email={lid.email} compact reden={(await magEnvMailbox(lid)) ? 'instellen' : 'eigen'} />
-            </Kaart>
-          )}
+          {/* Inbox: de mailcheck in Suspense, IMAP daarna in de client (InboxWidget). */}
+          <Suspense fallback={<InboxKaartSkelet />}>
+            <InboxKaart lid={lid} />
+          </Suspense>
 
           <Suspense fallback={<KaartSkelet label="Recente posts" regels={2} className="db-breed" />}>
             <SocialWidget lid={lid} />

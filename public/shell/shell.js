@@ -36,12 +36,15 @@
     }
   });
   const MAIL_MS = 60_000;
+  // Geen mailbox gekoppeld (bv. een nieuw teamlid): niet elke 2 minuten opnieuw vragen.
+  // Koppelen via /account of /welkom wist deze cache (MailboxSnelKoppelen).
+  const GEEN_MAIL_MS = 15 * 60_000;
   const leesStatus = () => {
     try {
       const ruw = sessionStorage.getItem(MAIL_CACHE);
       if (!ruw) return null;
       const { t, v } = JSON.parse(ruw);
-      return Date.now() - t < MAIL_MS ? v : null;
+      return Date.now() - t < (v && v.geconfigureerd === false ? GEEN_MAIL_MS : MAIL_MS) ? v : null;
     } catch {
       return null;
     }

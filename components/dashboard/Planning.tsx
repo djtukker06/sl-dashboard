@@ -58,47 +58,38 @@ export function Planning({
     setBezig(true);
     laatst.current = Date.now();
     try {
-      const [bereik, laat, ooit, gepland] = await Promise.all([
-        agendaApi.bereik(vandaag, plusDagen(vandaag, 6)),
-        agendaApi.taken('telaat'),
-        agendaApi.taken('ooit'),
-        agendaApi.taken('gepland')
-      ]);
-      const grens = plusDagen(vandaag, 6);
-      setData({
-        taken: bereik.tasks,
-        afspraken: bereik.events,
-        teLaat: laat.tasks,
-        zonderDeadline: ooit.tasks.slice(0, EXTRA_MAX),
-        later: gepland.tasks.filter((t) => !!t.datum && t.datum > grens).slice(0, EXTRA_MAX),
-        uitgezet: laat.tellingen.uitgezet ?? 0
-      });
+      // Eén verzoek (was vier, elk met een eigen teamcheck).
+      const { planning } = await agendaApi.dashboard();
+      setData(planning);
       setFout(null);
     } catch (e) {
       setFout(e && typeof e === 'object' && 'nietIngericht' in e && (e as { nietIngericht: boolean }).nietIngericht ? 'niet-ingericht' : 'fout');
     } finally {
       setBezig(false);
     }
-  }, [vandaag]);
+  }, []);
 
-  // Verversen als je terugkomt (tabblad of venster) en elke 2 minuten zolang het zichtbaar
-  // is; router.refresh() ververst ook de gedeelde widgets (facturen, bonnetjes, posts).
+  // Bij het laden komen de gegevens van de server (PlanningWidgets): niet meteen opnieuw
+  // ophalen. Daarna: elke 2 minuten (zolang zichtbaar) alleen de planning; bij terugkomen
+  // (tabblad of venster) de planning én — via router.refresh() — de gedeelde widgets
+  // (facturen, bonnetjes, posts). Hooguit eens per 30 seconden.
   useEffect(() => {
-    const opnieuw = (forceer = false) => {
+    laatst.current = Date.now();
+    const terug = () => {
       if (document.visibilityState !== 'visible') return;
-      if (!forceer && Date.now() - laatst.current < 30_000) return;
+      if (Date.now() - laatst.current < 30_000) return;
       void ververs();
       router.refresh();
     };
-    const zicht = () => opnieuw();
-    const focus = () => opnieuw();
-    const timer = setInterval(() => opnieuw(true), VERVERS_MS);
-    document.addEventListener('visibilitychange', zicht);
-    window.addEventListener('focus', focus);
+    const timer = setInterval(() => {
+      if (document.visibilityState === 'visible') void ververs();
+    }, VERVERS_MS);
+    document.addEventListener('visibilitychange', terug);
+    window.addEventListener('focus', terug);
     return () => {
       clearInterval(timer);
-      document.removeEventListener('visibilitychange', zicht);
-      window.removeEventListener('focus', focus);
+      document.removeEventListener('visibilitychange', terug);
+      window.removeEventListener('focus', terug);
     };
   }, [ververs, router]);
 

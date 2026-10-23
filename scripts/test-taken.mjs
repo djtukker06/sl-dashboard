@@ -5,6 +5,9 @@
 //     van migratie 0021) en de namenlijst in meldingen;
 //   - lib/agenda/zichtbaarheid.ts: "mijn taak" vs. "uitgezet" en de groepen van de tab
 //     Uitgezet (0022, stap 2);
+//   - lib/agenda/dashboard.ts: het dashboard haalt jouw taken in één query op en verdeelt ze
+//     hier over Vandaag/Deze week, Te laat, Zonder deadline en Later (stap 4);
+//   - bronbewaking snelheid: één dashboard-verzoek, tellers via één database-functie;
 //   - bronbewaking: geen teamweergave meer ("Heel team", ?wie=…, WieFilter) en de
 //     lijst-/agenda-API kan niet de taken van een ander opvragen.
 //
@@ -18,9 +21,10 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 // TS laden vereist type-stripping (Node >= 22.6). Zo nodig opnieuw starten met de vlag.
-let inv, rechten, zicht;
+let inv, rechten, zicht, dash;
 try {
   inv = await import(pathToFileURL(path.join(ROOT, "lib", "agenda", "teaminvoer.ts")).href);
+  dash = await import(pathToFileURL(path.join(ROOT, "lib", "agenda", "dashboard.ts")).href);
   rechten = await import(pathToFileURL(path.join(ROOT, "lib", "agenda", "rechten.ts")).href);
   zicht = await import(pathToFileURL(path.join(ROOT, "lib", "agenda", "zichtbaarheid.ts")).href);
 } catch (e) {
@@ -226,6 +230,73 @@ test("0022: leesregels op taken/afspraken, geen 'teamleden lezen taken' meer", (
     assert.match(s, new RegExp(`create policy "${p}"`));
   }
   assert.match(s, /drop policy if exists "teamleden lezen taken" on public\.tasks/);
+});
+
+// ---------- dashboard: één query, verdeeld (stap 4) ----------
+{
+  const T = (id, datum, afgerond = false) => ({ id, datum, afgerond });
+  const lijst = [
+    T("laat", "2026-10-20"),
+    T("laat-klaar", "2026-10-21", true),
+    T("vandaag", "2026-10-23"),
+    T("vandaag-klaar", "2026-10-23", true),
+    T("week", "2026-10-29"),
+    T("later", "2026-10-30"),
+    T("later-klaar", "2026-11-02", true),
+    T("ooit", null),
+    T("ooit-klaar", null, true),
+  ];
+  const v = dash.verdeelDashboardTaken(lijst, "2026-10-23", "2026-10-29", 8);
+  const ids = (a) => a.map((t) => t.id);
+  test("dashboard: deze week = open én afgerond met een datum in de 7 dagen", () =>
+    assert.deepEqual(ids(v.taken), ["vandaag", "vandaag-klaar", "week"]));
+  test("dashboard: te laat = alleen open taken vóór vandaag", () => assert.deepEqual(ids(v.teLaat), ["laat"]));
+  test("dashboard: zonder deadline = alleen open", () => assert.deepEqual(ids(v.zonderDeadline), ["ooit"]));
+  test("dashboard: later = open na de week", () => assert.deepEqual(ids(v.later), ["later"]));
+  test("dashboard: hooguit max per extra groep, volgorde behouden", () => {
+    const veel = Array.from({ length: 12 }, (_, i) => T(`o${i}`, null));
+    assert.deepEqual(ids(dash.verdeelDashboardTaken(veel, "2026-10-23", "2026-10-29", 8).zonderDeadline), veel.slice(0, 8).map((t) => t.id));
+  });
+}
+
+// ---------- bronbewaking snelheid (stap 4) ----------
+test("dashboard ververst met één verzoek (/api/dashboard), niet vier", () => {
+  const s = bron("components/dashboard/Planning.tsx");
+  assert.match(s, /agendaApi\.dashboard\(\)/);
+  assert.doesNotMatch(s, /agendaApi\.(taken|bereik)\(/);
+  const r = bron("app/api/dashboard/route.ts");
+  assert.match(r, /metSessie\(request\)/);
+  assert.match(r, /dashboardPlanning\(s\.bron/);
+});
+test("dashboardPlanning: drie queries tegelijk, niet vijf", () => {
+  const s = bron("lib/agenda/repo.ts");
+  const f = s.slice(s.indexOf("export async function dashboardPlanning"), s.indexOf("export async function dashboardPlanning") + 1600);
+  assert.doesNotMatch(f, /takenVoorFilter|agendaBereik/);
+  assert.match(f, /verdeelDashboardTaken/);
+});
+test("tellers via taak_tellingen (met terugval vóór 0022)", () => {
+  const s = bron("lib/agenda/repo.ts");
+  assert.match(s, /rpc\('taak_tellingen'/);
+  assert.match(s, /rpc\('project_taak_tellingen'/);
+  assert.match(s, /tellingenLos\(bron, vandaag, opties\)/);
+});
+test("dashboard wacht niet op de mailcheck (Suspense)", () => {
+  const s = bron("app/(app)/page.tsx");
+  assert.doesNotMatch(s, /await (mailConfigVoor|magEnvMailbox|mailboxVoor)/);
+  assert.match(s, /<InboxKaart lid=\{lid\} \/>\s*<\/Suspense>/);
+});
+test("proxy: getClaims en geen dubbele lidcheck voor API's/RSC (die controleren zelf)", () => {
+  const s = bron("proxy.ts");
+  assert.match(s, /auth\.getClaims\(\)/);
+  assert.doesNotMatch(s, /auth\.getUser\(\)/);
+  assert.match(s, /const controleertZelf = isApi \|\| isRsc;/);
+  assert.match(s, /if \(user && !controleertZelf && /);
+});
+test("teamcheck: getUser (blijft) tegelijk met leden/profielen, shell vraagt niets extra", () => {
+  const s = bron("lib/auth/team.ts");
+  assert.match(s, /await Promise\.all\(\[\s*sb\.auth\.getUser\(\),\s*sb\.from\('team_members'\)/);
+  assert.doesNotMatch(s, /getClaims\(/);
+  assert.match(bron("lib/team/profielen.ts"), /lid\.team \?\? null/);
 });
 
 console.log(`test-taken: ${goed} geslaagd${process.exitCode ? ", met fouten" : ""}`);

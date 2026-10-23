@@ -1,16 +1,15 @@
 import 'server-only';
 import type { Teamlid } from '@/lib/auth/team';
-import { eigenMailboxRij, mailboxVoor, standaardAdresVoor } from '@/lib/mail/config';
+import { eigenMailboxRij, magEnvMailbox, mailboxUit, standaardAdresVoor } from '@/lib/mail/config';
 import { kluisBeschikbaar, ontsleutel } from '@/lib/mail/kluis';
 import type { MailboxStatus } from './types';
 
 /** De mailbox-status voor /account. Nooit het wachtwoord, ook niet versleuteld. */
 export async function mailboxStatus(lid: Teamlid): Promise<MailboxStatus> {
-  const [{ rij, ingericht }, { bron }, standaardAdres] = await Promise.all([
-    eigenMailboxRij(lid),
-    mailboxVoor(lid),
-    standaardAdresVoor(lid)
-  ]);
+  // Eén keer het eigen record en één keer het recht op de env-mailbox (was: elk twee keer).
+  const [{ rij, ingericht }, magEnv] = await Promise.all([eigenMailboxRij(lid), magEnvMailbox(lid)]);
+  const { bron } = mailboxUit(lid, rij, magEnv);
+  const standaardAdres = await standaardAdresVoor(lid, magEnv);
   return {
     bron,
     ingericht,

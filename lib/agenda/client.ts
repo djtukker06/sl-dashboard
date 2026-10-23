@@ -69,6 +69,19 @@ function qs(p: Record<string, string | null | undefined>): string {
 }
 
 export const agendaApi = {
+  /** Alles voor de planning op het dashboard in één verzoek (zie app/api/dashboard). */
+  dashboard: () =>
+    api<{
+      planning: {
+        taken: Taak[];
+        afspraken: Afspraak[];
+        teLaat: Taak[];
+        zonderDeadline: Taak[];
+        later: Taak[];
+        uitgezet: number;
+      };
+      vandaag: string;
+    }>('/api/dashboard'),
   bereik: (van: string, tot: string) => api<{ tasks: Taak[]; events: Afspraak[] }>(`/api/agenda${qs({ van, tot })}`),
   taken: (filter: TakenFilter, opties: { project?: string | null } = {}) =>
     api<{ tasks: Taak[]; tellingen: Tellingen; vandaag: string }>(

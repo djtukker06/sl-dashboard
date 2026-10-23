@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { kolomOntbreekt, tabelOntbreekt } from '@/lib/db/ontbreekt';
 import { projectStatusVan } from './teaminvoer';
 import { bereikMomenten, normTijd, plusDagen } from './datum';
+import { verdeelDashboardTaken } from './dashboard';
 import type { Afspraak, Project, Subtaak, Taak, TaakDetail, TakenFilter, Tellingen } from './types';
 
 // Database-toegang voor agenda & taken. Altijd met de gebruikerscliënt (RLS), ná een
@@ -236,6 +237,24 @@ export async function takenVoorFilter(
 }
 
 export async function tellingen(bron: AgendaBron, vandaag: string, opties: TakenOpties = {}): Promise<Tellingen> {
+  // Met 0022: één query (database-functie taak_tellingen, RLS geldt). Zonder: vijf.
+  if (bron.team) {
+    const { data, error } = await bron.sb.rpc('taak_tellingen', {
+      p_vandaag: vandaag,
+      p_project: opties.projectId ?? null,
+      p_klant: opties.klantId ?? null
+    });
+    if (!error) {
+      const r = (Array.isArray(data) ? data[0] : data) as Partial<Tellingen> | null;
+      return { vandaag: r?.vandaag ?? 0, telaat: r?.telaat ?? 0, gepland: r?.gepland ?? 0, ooit: r?.ooit ?? 0, uitgezet: r?.uitgezet ?? 0 };
+    }
+    if (!tabelOntbreekt(error)) throw dbFout(error);
+  }
+  return tellingenLos(bron, vandaag, opties);
+}
+
+/** De tellers met losse count-queries (vóór migratie 0022). */
+async function tellingenLos(bron: AgendaBron, vandaag: string, opties: TakenOpties): Promise<Tellingen> {
   const persoon = persoonVoor(bron);
   function basis() {
     let q = bron.sb
@@ -451,12 +470,6 @@ export interface DashboardPlanning {
   uitgezet: number;
 }
 
-/** Open taken met een deadline na de dashboardweek (vandaag + 6), eerstvolgende eerst. */
-export function latereTaken(taken: Taak[], vandaag: string, max = DASHBOARD_EXTRA_MAX): Taak[] {
-  const grens = plusDagen(vandaag, 6);
-  return taken.filter((t) => !!t.datum && t.datum > grens).slice(0, max);
-}
-
 /**
  * Alles voor het eigen dashboard: deze 7 dagen, achterstallige open taken, jouw open taken
  * zonder deadline en de eerstvolgende daarna (zodat elke taak op jouw naam hier te zien
@@ -464,18 +477,27 @@ export function latereTaken(taken: Taak[], vandaag: string, max = DASHBOARD_EXTR
  * niet in jouw lijst, alleen onder "Uitgezet").
  */
 export async function dashboardPlanning(bron: AgendaBron, vandaag: string): Promise<DashboardPlanning> {
-  const [bereik, teLaat, ooit, gepland, uit] = await Promise.all([
-    agendaBereik(bron, vandaag, plusDagen(vandaag, 6)),
-    takenVoorFilter(bron, 'telaat', vandaag),
-    takenVoorFilter(bron, 'ooit', vandaag),
-    takenVoorFilter(bron, 'gepland', vandaag),
-    uitgezetAantal(bron)
-  ]);
+  // Drie queries tegelijk (waren er vijf): jouw taken die open zijn OF in deze 7 dagen
+  // vallen (verdeeld in lib/agenda/dashboard.ts), jouw afspraken, en het aantal uitgezet.
+  const tot = plusDagen(vandaag, 6);
+  const { start, eind } = bereikMomenten(vandaag, tot);
+  const persoon = persoonVoor(bron);
+  let tq = bron.sb
+    .from('tasks')
+    .select(taakKolommen(bron.team, !!persoon))
+    .or(`completed_at.is.null,and(due_date.gte.${vandaag},due_date.lte.${tot})`);
+  let aq = bron.sb.from('calendar_events').select(afspraakKolommen(bron.team, !!persoon)).lt('starts_at', eind).gt('ends_at', start);
+  if (persoon) {
+    tq = tq.eq('wie.user_id', persoon);
+    aq = aq.eq('wie.user_id', persoon);
+  }
+  const [t, a, uit] = await Promise.all([tq.limit(1000), aq.order('starts_at').limit(2000), uitgezetAantal(bron)]);
+  if (t.error) throw dbFout(t.error);
+  if (a.error) throw dbFout(a.error);
+  const taken = ((t.data ?? []) as unknown as TaakDbRij[]).map(naarTaak).sort(sorteerTaken);
   return {
-    ...bereik,
-    teLaat,
-    zonderDeadline: ooit.slice(0, DASHBOARD_EXTRA_MAX),
-    later: latereTaken(gepland, vandaag),
+    ...verdeelDashboardTaken(taken, vandaag, tot, DASHBOARD_EXTRA_MAX),
+    afspraken: ((a.data ?? []) as unknown as AfspraakDbRij[]).map(naarAfspraak),
     uitgezet: uit
   };
 }
@@ -545,6 +567,16 @@ export async function projectTaakTellingen(
 ): Promise<Map<string, { open: number; totaal: number }>> {
   const uit = new Map<string, { open: number; totaal: number }>();
   if (projectIds && !projectIds.length) return uit;
+  // Met 0022: een group by in de database (project_taak_tellingen, RLS geldt).
+  const rpc = await bron.sb.rpc('project_taak_tellingen', { p_projecten: projectIds ?? null });
+  if (!rpc.error) {
+    for (const r of (rpc.data ?? []) as { project_id: string; open: number; totaal: number }[]) {
+      uit.set(r.project_id, { open: Number(r.open) || 0, totaal: Number(r.totaal) || 0 });
+    }
+    return uit;
+  }
+  if (!tabelOntbreekt(rpc.error)) throw dbFout(rpc.error);
+  // Zonder 0022: de taakrijen ophalen en hier tellen.
   let q = bron.sb.from('tasks').select('project_id,completed_at').not('project_id', 'is', null).limit(10000);
   if (projectIds) q = q.in('project_id', projectIds);
   const { data, error } = await q;

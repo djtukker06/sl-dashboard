@@ -139,30 +139,61 @@ export function configUitRij(rij: MailboxRij, wachtwoord: string): MailConfig {
 
 export type MailBron = 'eigen' | 'standaard' | 'geen';
 
-/** De mailbox van dit teamlid en waar hij vandaan komt (zie boven). */
-export async function mailboxVoor(lid: Teamlid): Promise<{ cfg: MailConfig | null; bron: MailBron }> {
-  let rij: MailboxRij | null = null;
-  try {
-    rij = (await eigenMailboxRij(lid)).rij;
-  } catch {
-    // Storing bij het ophalen: liever de standaard-mailbox (als die van jou is) dan niets.
-    rij = null;
-  }
+/** Welke mailbox volgt uit het eigen record en het recht op de env-mailbox (zonder I/O). */
+export function mailboxUit(lid: Pick<Teamlid, 'userId'>, rij: MailboxRij | null, magEnv: boolean): { cfg: MailConfig | null; bron: MailBron } {
   if (rij) {
     const wachtwoord = ontsleutel(rij.wachtwoord_enc, lid.userId);
     if (wachtwoord !== null) return { cfg: configUitRij(rij, wachtwoord), bron: 'eigen' };
     console.warn('[mail] eigen mailbox niet te ontsleutelen (andere MAIL_ENCRYPTION_KEY?): opnieuw koppelen via /account.');
   }
-  if (await magEnvMailbox(lid)) {
+  if (magEnv) {
     const env = envMailConfig();
     if (env) return { cfg: env, bron: 'standaard' };
   }
   return { cfg: null, bron: 'geen' };
 }
 
+// Korte cache per gebruiker (per serverinstantie): het dashboard, de rail-badge en elke
+// /api/mail/**-call vragen de mailbox op; zonder cache is dat telkens een service-role-query
+// (+ soms de eigenaar-query) en een ontsleuteling. Altijd per user-id: nooit de mailbox van
+// een ander. Koppelen/ontkoppelen via /account wist de eigen regel meteen (vergeetMailbox);
+// op een andere serverinstantie is een wijziging hooguit MAILBOX_CACHE_MS oud.
+export const MAILBOX_CACHE_MS = 30_000;
+const mailboxCache = new Map<string, { tot: number; waarde: { cfg: MailConfig | null; bron: MailBron } }>();
+
+/** Wist de gecachete mailbox van deze gebruiker (na koppelen of ontkoppelen). */
+export function vergeetMailbox(userId: string): void {
+  for (const k of mailboxCache.keys()) if (k.startsWith(`${userId}:`)) mailboxCache.delete(k);
+}
+
+/** De mailbox van dit teamlid en waar hij vandaan komt (zie boven). */
+export async function mailboxVoor(lid: Teamlid): Promise<{ cfg: MailConfig | null; bron: MailBron }> {
+  const sleutel = `${lid.userId}:${lid.overgang ? 'o' : 't'}`;
+  const nu = Date.now();
+  const hit = mailboxCache.get(sleutel);
+  if (hit && hit.tot > nu) return hit.waarde;
+
+  let rij: MailboxRij | null = null;
+  let gelukt = true;
+  try {
+    rij = (await eigenMailboxRij(lid)).rij;
+  } catch {
+    // Storing bij het ophalen: liever de standaard-mailbox (als die van jou is) dan niets.
+    rij = null;
+    gelukt = false;
+  }
+  const waarde = mailboxUit(lid, rij, await magEnvMailbox(lid));
+  // Een storing niet onthouden: dan volgende keer gewoon opnieuw proberen.
+  if (gelukt) {
+    if (mailboxCache.size > 100) mailboxCache.clear();
+    mailboxCache.set(sleutel, { tot: nu + MAILBOX_CACHE_MS, waarde });
+  }
+  return waarde;
+}
+
 /** Het adres van de standaard-mailbox, alleen als dit teamlid hem mag gebruiken. */
-export async function standaardAdresVoor(lid: Teamlid): Promise<string | null> {
-  return (await magEnvMailbox(lid)) ? envMailConfig()?.user ?? null : null;
+export async function standaardAdresVoor(lid: Teamlid, magEnv?: boolean): Promise<string | null> {
+  return (magEnv ?? (await magEnvMailbox(lid))) ? envMailConfig()?.user ?? null : null;
 }
 
 /**

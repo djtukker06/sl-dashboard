@@ -3,8 +3,10 @@
 // auth.uid() (uit request.jwt.claim.sub, zoals PostgREST) en storage.buckets/objects.
 // Er wordt niets tegen Supabase uitgevoerd en niets naar het netwerk gestuurd.
 //
-// Scenario A  0001–0020 → data → UITVOEREN_0021_TEAM.sql (2x) → UITVOEREN_IN_SQL_EDITOR.sql
-//             → UITVOEREN_0020_UITGAVEN.sql: elke controleregel "ok", niets heropend.
+// Scenario A  0001–0020 → data → 0021 (los, zoals nu in Supabase) → Mark + oude projecten
+//             → UITVOEREN_0022.sql (2x) → UITVOEREN_0021_TEAM.sql (2x) → UITVOEREN_IN_SQL_EDITOR.sql
+//             → UITVOEREN_0020_UITGAVEN.sql: elke controleregel "ok", niets heropend (ook de
+//               open leesregels voor taken van 0021 komen niet terug).
 //             → 0022_team_crm.sql (2x): welkom_klaar_op gezet voor de eigenaar, niet voor
 //               een lid; alleen je eigen welkom-vlag te zetten.
 //             → 0022 klanten & projecten: oude projectstatussen omgezet (actief→bezig,
@@ -15,6 +17,8 @@
 //               Mark wel en een derde niet; een losse taak van Mark bestaat voor Daniel
 //               niet (tasks, task_assignees, task_subtasks); projecttaken zijn voor het
 //               team leesbaar; afspraken alleen voor maker en deelnemers.
+//             → 0022 snelheid: taak_tellingen / project_taak_tellingen tellen precies wat de
+//               lijsten tonen, niets van een ander, niets voor niet-teamleden of anon.
 //             Daarna de toegangsmatrix:
 //               - niet-teamleden (ingelogd zonder lidmaatschap, onbevestigd, gedeactiveerd,
 //                 en anon zonder sessie): op ELKE tabel in public en in ELKE bucket niets
@@ -267,9 +271,9 @@ async function scenarioA() {
   );
   check(open.rows[0].n > 10, "vóór 0021: controle herkent de open policies", `${open.rows[0].n}`);
 
+  // Zoals in Supabase nu: 0021 is (los) uitgevoerd, 0022 nog niet.
+  await voerUit(db, lees("supabase/migrations/0021_team_en_taken.sql"), "0021_team_en_taken.sql");
   const team = lees("supabase/UITVOEREN_0021_TEAM.sql");
-  checkControle(await voerUit(db, team, "UITVOEREN_0021_TEAM.sql"), "A: 0021_TEAM (1e keer)");
-  checkControle(await voerUit(db, team, "UITVOEREN_0021_TEAM.sql (2x)"), "A: 0021_TEAM (2e keer)");
 
   // Zaaien: alleen de oudste bevestigde, niet-anonieme gebruiker (eigenaar). Andere
   // bestaande accounts (mogelijk zelf geregistreerd door een buitenstaander) NIET.
@@ -291,13 +295,8 @@ async function scenarioA() {
   const soort = (await db.query("select soort from public.expenses")).rows[0]?.soort;
   check(soort === "inkoopfactuur", "bestaande upload (PDF) krijgt soort inkoopfactuur", soort);
 
-  // Opnieuw de grote bestanden: mogen de open policies niet terugzetten.
-  checkControle(await voerUit(db, lees("supabase/UITVOEREN_IN_SQL_EDITOR.sql"), "UITVOEREN_IN_SQL_EDITOR.sql"), "A: IN_SQL_EDITOR opnieuw");
-  checkControle(await voerUit(db, lees("supabase/UITVOEREN_0020_UITGAVEN.sql"), "UITVOEREN_0020_UITGAVEN.sql"), "A: 0020_UITGAVEN opnieuw");
-  const nLeden = (await db.query("select count(*)::int as n from public.team_members")).rows[0].n;
-  check(nLeden === 1, "opnieuw uitvoeren zaait geen extra leden", `${nLeden}`);
-
-  // Mark komt er (zoals in het echt) bij via het teamlid-script: profiel + lidmaatschap.
+  // Mark komt er (zoals in het echt) bij via het teamlid-script: profiel + lidmaatschap,
+  // vóór 0022 (Bram wordt mogelijk al uitgenodigd voordat 0022 is uitgevoerd).
   await db.query("insert into public.profiles (id, naam, initialen, email) values ($1, 'Mark', 'M', 'mark@studio-levant.nl')", [U.mark]);
   await db.query("insert into public.team_members (user_id, actief, rol) values ($1, true, 'lid')", [U.mark]);
 
@@ -308,6 +307,22 @@ async function scenarioA() {
        ('dddddddd-0000-4000-8000-0000000000a2', 'Oud archief', 'gearchiveerd', null)`,
     [U.mark],
   );
+
+  // supabase/UITVOEREN_0022.sql: twee keer achter elkaar, controle telkens "ok".
+  const sql0022 = lees("supabase/UITVOEREN_0022.sql");
+  checkControle(await voerUit(db, sql0022, "UITVOEREN_0022.sql"), "A: UITVOEREN_0022 (1e keer)");
+  checkControle(await voerUit(db, sql0022, "UITVOEREN_0022.sql (2x)"), "A: UITVOEREN_0022 (2e keer)");
+
+  // Opnieuw de oudere/grote bestanden: mogen de open policies van 0014–0020 én de open
+  // leesregels voor taken van 0021 niet terugzetten (ze eindigen met 0021 + 0022).
+  checkControle(await voerUit(db, team, "UITVOEREN_0021_TEAM.sql"), "A: 0021_TEAM opnieuw");
+  checkControle(await voerUit(db, team, "UITVOEREN_0021_TEAM.sql (2x)"), "A: 0021_TEAM opnieuw (2x)");
+  checkControle(await voerUit(db, lees("supabase/UITVOEREN_IN_SQL_EDITOR.sql"), "UITVOEREN_IN_SQL_EDITOR.sql"), "A: IN_SQL_EDITOR opnieuw");
+  checkControle(await voerUit(db, lees("supabase/UITVOEREN_0020_UITGAVEN.sql"), "UITVOEREN_0020_UITGAVEN.sql"), "A: 0020_UITGAVEN opnieuw");
+  const nLeden = (await db.query("select count(*)::int as n from public.team_members")).rows[0].n;
+  check(nLeden === 2, "opnieuw uitvoeren zaait geen extra leden", `${nLeden}`);
+  const open0021 = (await db.query("select count(*)::int as n from pg_policies where policyname like 'teamleden lezen %' and tablename in ('tasks', 'task_assignees', 'task_subtasks', 'calendar_events', 'event_attendees')")).rows[0].n;
+  check(open0021 === 0, "oudere bestanden opnieuw: open leesregels voor taken blijven weg", `${open0021}`);
 
   await welkom0022(db);
 
@@ -702,10 +717,49 @@ async function zichtbaarheid0022(db) {
     r = await alsWie("daniel", "select (select count(*)::int from public.calendar_events where id = $1) as e, (select count(*)::int from public.event_attendees where event_id = $1) as a", [afspraak]);
     check(r.ok && r.rows[0].e === 1 && r.rows[0].a === 2, "0022: als deelnemer ziet Daniel de afspraak en wie er komt", uitleg(r));
 
+    // Stap 4: tellingen in één query. Moeten exact gelijk zijn aan de lijsten (zelfde regels),
+    // en tellen niets wat je niet mag zien (Marks privétaak telt niet bij Daniel).
+    for (const wie of ["daniel", "mark"]) {
+      const rpc = await alsWie(wie, "select * from public.taak_tellingen(current_date)");
+      const los = await alsWie(
+        wie,
+        `select
+           (select count(*)::int from public.tasks t join public.task_assignees a on a.task_id = t.id and a.user_id = $1 where t.completed_at is null and t.due_date <= current_date) as vandaag,
+           (select count(*)::int from public.tasks t join public.task_assignees a on a.task_id = t.id and a.user_id = $1 where t.completed_at is null and t.due_date < current_date) as telaat,
+           (select count(*)::int from public.tasks t join public.task_assignees a on a.task_id = t.id and a.user_id = $1 where t.completed_at is null and t.due_date > current_date) as gepland,
+           (select count(*)::int from public.tasks t join public.task_assignees a on a.task_id = t.id and a.user_id = $1 where t.completed_at is null and t.due_date is null) as ooit,
+           (select count(*)::int from public.tasks t where t.created_by = $1 and t.completed_at is null
+              and not exists (select 1 from public.task_assignees a where a.task_id = t.id and a.user_id = $1)) as uitgezet`,
+        [U[wie]],
+      );
+      check(rpc.ok && los.ok && JSON.stringify(rpc.rows[0]) === JSON.stringify(los.rows[0]), `0022: taak_tellingen voor ${wie} = de losse tellingen`, `${JSON.stringify(rpc.rows?.[0] ?? rpc.msg)} vs ${JSON.stringify(los.rows?.[0] ?? los.msg)}`);
+    }
+    const dTel = (await alsWie("daniel", "select * from public.taak_tellingen(current_date)")).rows[0];
+    check(dTel.uitgezet >= 1, "0022: Daniels taak voor Mark telt als uitgezet", JSON.stringify(dTel));
+    const mOoit = (await alsWie("mark", "select ooit from public.taak_tellingen(current_date)")).rows[0].ooit;
+    const dZonder = (await alsWie("daniel", "select count(*)::int as n from public.tasks where id = $1", [vanMark])).rows[0].n;
+    check(mOoit >= 1 && dZonder === 0, "0022: Marks privétaak telt bij Mark, bestaat niet voor Daniel", `${mOoit}/${dZonder}`);
+    let pt = await alsWie("daniel", "select * from public.project_taak_tellingen(array['dddddddd-0000-4000-8000-000000000001']::uuid[])");
+    const ptLos = await alsWie("daniel", "select count(*)::int as totaal, (count(*) filter (where completed_at is null))::int as open from public.tasks where project_id = 'dddddddd-0000-4000-8000-000000000001'");
+    check(pt.ok && pt.rows.length === 1 && pt.rows[0].totaal === ptLos.rows[0].totaal && pt.rows[0].open === ptLos.rows[0].open && pt.rows[0].totaal >= 1,
+      "0022: project_taak_tellingen = de projecttaken die het team ziet", `${JSON.stringify(pt.rows ?? pt.msg)} vs ${JSON.stringify(ptLos.rows)}`);
+    pt = await alsWie("daniel", "select * from public.project_taak_tellingen()");
+    check(pt.ok && pt.rows.some((r) => r.project_id === "dddddddd-0000-4000-8000-000000000001"), "0022: project_taak_tellingen zonder lijst = alle projecten", uitleg(pt));
+    for (const wie of ["indringer", "oudlid"]) {
+      const t = await alsWie(wie, "select * from public.taak_tellingen(current_date)");
+      check(t.ok && Object.values(t.rows[0]).every((n) => n === 0), `0022: ${wie} telt niets`, JSON.stringify(t.rows?.[0] ?? t.msg));
+      const p2 = await alsWie(wie, "select * from public.project_taak_tellingen()");
+      check(p2.ok && p2.rows.length === 0, `0022: ${wie} ziet geen projectvoortgang`, uitleg(p2));
+    }
+
     const idx = await alsWie("daniel", "select to_regclass('public.tasks_maker_open_idx') is not null as er");
     check(idx.ok && idx.rows[0].er, "0022: index voor Uitgezet aanwezig", uitleg(idx));
   } finally {
     await db.exec("rollback");
+  }
+  for (const f of ["taak_tellingen(current_date)", "project_taak_tellingen()"]) {
+    const r = await als(db, "anon", `select * from public.${f}`);
+    check(geweigerd(r), `0022: anon mag ${f.split("(")[0]} niet aanroepen`, uitleg(r));
   }
   if (fouten === fouten0) console.log("  0022 zichtbaarheid: ok");
 }

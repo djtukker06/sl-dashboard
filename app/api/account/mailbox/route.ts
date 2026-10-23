@@ -3,7 +3,7 @@ import { teamlidRoute } from '@/lib/auth/team';
 import { createServiceRoleClient } from '@/lib/supabase/service-role';
 import { mailboxStatus } from '@/lib/account/mailbox';
 import { valideerMailbox } from '@/lib/account/types';
-import { eigenMailboxRij } from '@/lib/mail/config';
+import { eigenMailboxRij, vergeetMailbox } from '@/lib/mail/config';
 import { KOPPEL_MELDING, MailFout, type AppWachtwoordHint } from '@/lib/mail/fout';
 import { instellingenVoor, vasteInstellingen } from '@/lib/mail/providers';
 import { zoekMx } from '@/lib/mail/mx';
@@ -140,6 +140,7 @@ export const POST = teamlidRoute(
       console.error('[account] mailbox opslaan mislukt', error.code ?? '', error.message);
       return fout(500, 'Opslaan is niet gelukt. Probeer het opnieuw.');
     }
+    vergeetMailbox(lid.userId);
     return json(await mailboxStatus(lid));
   },
   { label: 'account/mailbox' }
@@ -149,6 +150,7 @@ export const DELETE = teamlidRoute(
   async (_request, _ctx, lid) => {
     if (lid.overgang) return fout(409, NIET_INGERICHT, 'niet_ingericht');
     const { error } = await createServiceRoleClient(lid.bewijs).from('user_mailboxes').delete().eq('user_id', lid.userId);
+    vergeetMailbox(lid.userId);
     if (error) {
       console.error('[account] mailbox ontkoppelen mislukt', error.code ?? '', error.message);
       return fout(500, 'Ontkoppelen is niet gelukt. Probeer het opnieuw.');

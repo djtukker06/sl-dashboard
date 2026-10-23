@@ -14,10 +14,19 @@ import { eigenHerkomst, isWijzigend } from './herkomst';
 // gaat hierlangs vóór er data wordt gelezen of geschreven — en zeker vóór de service-role.
 //
 //   1. getUser(): de sessie wordt bij de Auth-server gecontroleerd (een uitgelogde,
-//      geblokkeerde of verwijderde gebruiker valt meteen af, niet pas na een uur);
+//      geblokkeerde of verwijderde gebruiker valt meteen af, niet pas na een uur). Bewust
+//      niet alleen de handtekening lokaal controleren (zoals proxy.ts doet): dan bleef een
+//      token na uitloggen nog tot een uur bruikbaar voor de routes die met de service-role
+//      werken (mail, social);
 //   2. team_members: alleen een ACTIEF teamlid komt erin (de allowlist uit migratie 0021).
 //      Een account zonder lidmaatschap — bv. iemand die zich toch heeft weten te
 //      registreren — krijgt "geen toegang".
+//
+// Snelheid: 1 en 2 lopen TEGELIJK (één rondgang i.p.v. twee na elkaar). Dat kan omdat
+// stap 2 niet op het user-id filtert maar de (kleine) tabellen team_members en profiles van
+// het team ophaalt — RLS laat een niet-lid alleen zijn eigen lidmaatschap zien. De uitkomst
+// van 2 telt pas als 1 is gelukt. Zo heeft de shell (avatars, kiezers;
+// lib/team/profielen.ts) daarna ook niets meer op te vragen.
 //
 // Overgangsmodus: zolang migratie 0021 niet is uitgevoerd (tabel team_members bestaat
 // nog niet) geldt elke ingelogde, niet-anonieme gebruiker als lid — precies de
@@ -93,6 +102,14 @@ export interface Teamlid {
   /** Gebruikerscliënt (RLS geldt). */
   sb: SupabaseClient;
   bewijs: TeamlidBewijs;
+  /** De profielen en lidmaatschappen van het team, al opgehaald bij de controle (voor
+   *  lib/team/profielen.ts). Alleen wat RLS dit teamlid laat zien. */
+  team?: TeamRijen;
+}
+
+export interface TeamRijen {
+  profielen: { id: string; naam?: string | null; initialen?: string | null; kleur?: string | null }[];
+  leden: { user_id: string; actief: boolean }[];
 }
 
 export type TeamStatus =
@@ -134,20 +151,23 @@ export function maakProfiel(
 
 async function bepaalStatus(): Promise<TeamStatus> {
   const sb = await createClient();
-  const {
-    data: { user }
-  } = await sb.auth.getUser();
+
+  // Eén parallelle ronde: de sessie (Auth-server) + lidmaatschappen en profielen van het
+  // team (database, met hetzelfde token; RLS: een niet-lid ziet alleen zijn eigen
+  // lidmaatschap en geen profielen).
+  const [userRes, lidRes, profielRes] = await Promise.all([
+    sb.auth.getUser(),
+    sb.from('team_members').select('user_id, actief, rol').limit(200),
+    // select('*') i.p.v. losse kolommen: zo geeft een ontbrekende kolom welkom_klaar_op
+    // (0022 nog niet uitgevoerd) geen fout en blijft het profiel gewoon leesbaar.
+    sb.from('profiles').select('*').limit(200)
+  ]);
+  const user = userRes.data.user;
   if (!user) return { soort: 'anoniem' };
   // Anonieme sign-ins (als die ooit aan zouden staan) zijn nooit teamlid.
   if (user.is_anonymous) return { soort: 'geen_toegang' };
+  const userId = user.id;
   const email = user.email ?? '';
-
-  const [lidRes, profielRes] = await Promise.all([
-    sb.from('team_members').select('actief, rol').eq('user_id', user.id).maybeSingle(),
-    // select('*') i.p.v. losse kolommen: zo geeft een ontbrekende kolom welkom_klaar_op
-    // (0022 nog niet uitgevoerd) geen fout en blijft het profiel gewoon leesbaar.
-    sb.from('profiles').select('*').eq('id', user.id).maybeSingle()
-  ]);
 
   if (lidRes.error) {
     if (tabelOntbreekt(lidRes.error)) {
@@ -156,7 +176,7 @@ async function bepaalStatus(): Promise<TeamStatus> {
       return {
         soort: 'lid',
         lid: {
-          userId: user.id,
+          userId,
           email,
           naam: profiel.naam,
           profiel,
@@ -172,15 +192,17 @@ async function bepaalStatus(): Promise<TeamStatus> {
     return { soort: 'storing' };
   }
 
-  const rij = lidRes.data as { actief: boolean; rol: string } | null;
+  const leden = (lidRes.data ?? []) as { user_id: string; actief: boolean; rol: string }[];
+  const rij = leden.find((l) => l.user_id === userId) ?? null;
   if (!rij || rij.actief !== true) return { soort: 'geen_toegang' };
 
-  const profielRij = profielRes.error ? null : (profielRes.data as (Partial<Profiel> & { welkom_klaar_op?: string | null }) | null);
+  const profielen = profielRes.error ? null : ((profielRes.data ?? []) as (TeamRijen['profielen'][number] & { welkom_klaar_op?: string | null })[]);
+  const profielRij = profielen?.find((p) => p.id === userId) ?? null;
   const profiel = maakProfiel(profielRij, email);
   return {
     soort: 'lid',
     lid: {
-      userId: user.id,
+      userId,
       email,
       naam: profiel.naam,
       profiel,
@@ -188,7 +210,8 @@ async function bepaalStatus(): Promise<TeamStatus> {
       welkomKlaar: welkomKlaarVan(profielRij),
       overgang: false,
       sb,
-      bewijs: maakBewijs()
+      bewijs: maakBewijs(),
+      team: profielen ? { profielen, leden: leden.map((l) => ({ user_id: l.user_id, actief: l.actief === true })) } : undefined
     }
   };
 }

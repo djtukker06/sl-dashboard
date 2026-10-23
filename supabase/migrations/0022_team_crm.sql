@@ -7,6 +7,8 @@
 --   stap 2  wie ziet welke taak/afspraak (leesregels), index voor "Uitgezet"
 --   stap 3  klanten & projecten: contact/status op clients, client_notes, projectstatus
 --           gepland/bezig/afgerond + deadline + project_eigenaren
+--   stap 4  snelheid: tellingen in één query (taak_tellingen, project_taak_tellingen) en
+--           indexen voor de agenda en de klantpagina
 
 -- ---------------------------------------------------------------------------------
 -- Stap 1. Welkomstflow
@@ -211,3 +213,67 @@ drop policy if exists "teamleden halen projecteigenaren weg" on public.project_e
 create policy "teamleden halen projecteigenaren weg" on public.project_eigenaren
   for delete to authenticated using ((select public.is_teamlid()));
 revoke update on public.project_eigenaren from anon, authenticated;
+
+-- ---------------------------------------------------------------------------------
+-- Stap 4. Snelheid
+-- ---------------------------------------------------------------------------------
+-- De tellers van de takenlijst (Vandaag, Te laat, Gepland, Ooit, Uitgezet) in één query
+-- i.p.v. vijf. SECURITY INVOKER: de leesregels hierboven gelden gewoon; je telt alleen wat
+-- je mag zien. "Mijn" = ik sta erop (task_assignees); "uitgezet" = ik maakte hem en sta er
+-- zelf niet op — dezelfde regels als de lijsten in de app (lib/agenda/repo.ts).
+create or replace function public.taak_tellingen(p_vandaag date, p_project uuid default null, p_klant uuid default null)
+returns table (vandaag integer, telaat integer, gepland integer, ooit integer, uitgezet integer)
+language sql
+stable
+security invoker
+set search_path = ''
+as $$
+  select
+    (count(*) filter (where x.mijn and x.due_date <= p_vandaag))::integer,
+    (count(*) filter (where x.mijn and x.due_date < p_vandaag))::integer,
+    (count(*) filter (where x.mijn and x.due_date > p_vandaag))::integer,
+    (count(*) filter (where x.mijn and x.due_date is null))::integer,
+    (count(*) filter (where not x.mijn and x.created_by = (select auth.uid())))::integer
+  from (
+    select t.due_date, t.created_by,
+           exists (select 1 from public.task_assignees a
+                   where a.task_id = t.id and a.user_id = (select auth.uid())) as mijn
+    from public.tasks t
+    where t.completed_at is null
+      and (p_project is null or t.project_id = p_project)
+      and (p_klant is null or t.client_id = p_klant)
+  ) x;
+$$;
+revoke all on function public.taak_tellingen(date, uuid, uuid) from public, anon;
+grant execute on function public.taak_tellingen(date, uuid, uuid) to authenticated, service_role;
+
+-- Voortgang per project (open / totaal) met een group by, i.p.v. alle taakrijen naar de
+-- app halen. Ook SECURITY INVOKER: projecttaken zijn voor het team leesbaar (stap 2).
+create or replace function public.project_taak_tellingen(p_projecten uuid[] default null)
+returns table (project_id uuid, open integer, totaal integer)
+language sql
+stable
+security invoker
+set search_path = ''
+as $$
+  select t.project_id,
+         (count(*) filter (where t.completed_at is null))::integer,
+         count(*)::integer
+  from public.tasks t
+  where t.project_id is not null
+    and (p_projecten is null or t.project_id = any (p_projecten))
+  group by t.project_id;
+$$;
+revoke all on function public.project_taak_tellingen(uuid[]) from public, anon;
+grant execute on function public.project_taak_tellingen(uuid[]) to authenticated, service_role;
+
+-- Indexen (de data is klein; dit houdt het vlot als hij groeit).
+-- Agenda en dashboard zoeken op datum, ook in afgeronde taken (de index uit 0018 dekt
+-- alleen open taken).
+create index if not exists tasks_due_idx on public.tasks (due_date) where due_date is not null;
+-- Klantfilter in de agenda / klantpagina.
+create index if not exists calendar_events_client_idx on public.calendar_events (client_id) where client_id is not null;
+-- Afspraken waar de maker in staat (leesregel stap 2) en Uitgezet voor afgeronde taken.
+create index if not exists calendar_events_maker_idx on public.calendar_events (created_by);
+create index if not exists tasks_maker_idx on public.tasks (created_by, completed_at);
+

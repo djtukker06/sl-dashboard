@@ -7,7 +7,8 @@
 // 2. Statisch: de teamtoegang (lib/auth/team.ts) zit overal vóór:
 //    - elke API-route gebruikt de helper of een wrapper die hem aanroept;
 //    - elke pagina in app/(app) begint met vereisTeamlidPagina();
-//    - createServiceRoleClient() krijgt altijd een bewijs; nergens signUp( of getClaims;
+//    - createServiceRoleClient() krijgt altijd een bewijs; nergens signUp(; getClaims alleen in
+//      proxy.ts (eerste linie) — de echte teamcheck (lib/auth/team.ts) gebruikt getUser;
 //    - migratie 0021 maakt geen open policy ("auth.uid() is not null") en elk SQL-Editor-
 //      bestand eindigt met 0021; de proxy-matcher heeft geen algemene .png/.jpg-uitzondering.
 // 3. Tegen een draaiende server (`npm run build && npx next start -p 3107`):
@@ -150,11 +151,12 @@ function bestandenIn(map, filter) {
     const src = lees(f);
     if (/createServiceRoleClient\(\s*\)/.test(src)) zonderBewijs.push(f);
     if (/\bsignUp\(/.test(src)) signUp.push(f);
-    if (/\bgetClaims\(/.test(src)) claims.push(f);
+    if (/\bgetClaims\(/.test(src) && f !== "proxy.ts") claims.push(f);
   }
   check(zonderBewijs.length === 0, "createServiceRoleClient() altijd met bewijs", zonderBewijs.join(", "));
   check(signUp.length === 0, "nergens signUp( (geen registratie in de app)", signUp.join(", "));
-  check(claims.length === 0, "nergens alleen getClaims() als toegangscontrole", claims.join(", "));
+  check(claims.length === 0, "getClaims() alleen in proxy.ts (de teamcheck zelf gebruikt getUser)", claims.join(", "));
+  check(/sb\.auth\.getUser\(\)/.test(lees("lib/auth/team.ts")), "lib/auth/team.ts controleert de sessie met getUser()");
   check(/^import 'server-only';/m.test(lees("lib/supabase/service-role.ts")), "service-role.ts is server-only");
   check(/^import 'server-only';/m.test(lees("lib/auth/team.ts")), "lib/auth/team.ts is server-only");
   check(/createServiceRoleClient\(bewijs: TeamlidBewijs\)/.test(lees("lib/supabase/service-role.ts")), "service-role vraagt een TeamlidBewijs");
@@ -170,10 +172,12 @@ function bestandenIn(map, filter) {
   check(/create or replace function public\.is_teamlid\(\)/.test(m21), "0021 definieert is_teamlid()");
   check(/revoke all on function %s from public, anon, authenticated/.test(m21), "0021 sluit create_invoice/update_invoice af");
   check(/revoke all on all tables in schema public from anon/.test(m21), "0021 ontneemt anon alle rechten");
-  for (const f of ["UITVOEREN_IN_SQL_EDITOR.sql", "UITVOEREN_0020_UITGAVEN.sql", "UITVOEREN_0021_TEAM.sql"]) {
+  for (const f of ["UITVOEREN_IN_SQL_EDITOR.sql", "UITVOEREN_0020_UITGAVEN.sql", "UITVOEREN_0021_TEAM.sql", "UITVOEREN_0022.sql"]) {
     const sql = lees(`supabase/${f}`);
-    const laatste = [...sql.matchAll(/^-- (\d{4}_[\w]+\.sql)$/gm)].pop()?.[1];
-    check(laatste === "0021_team_en_taken.sql", `${f} eindigt met 0021`, laatste || "geen");
+    const delen = [...sql.matchAll(/^-- (\d{4}_[\w]+\.sql)$/gm)].map((m) => m[1]);
+    // 0021 (alleen teamleden) en daarna 0022 (taken alleen voor betrokkenen) sluiten af.
+    const ok = delen.at(-1) === "0022_team_crm.sql" && (f === "UITVOEREN_0022.sql" || delen.at(-2) === "0021_team_en_taken.sql");
+    check(ok, `${f} eindigt met 0021 + 0022`, delen.slice(-2).join(", ") || "geen");
   }
 
   const headers = lees("next.config.ts");
@@ -277,7 +281,10 @@ console.log("Taken op naam");
   }
   const repo = lees("lib/agenda/repo.ts");
   check(/wie:task_assignees!inner\(user_id\)/.test(repo) && /wie:event_attendees!inner\(user_id\)/.test(repo), "'mijn' lijsten filteren op toewijzing/deelname");
-  check(/agendaBereik\(bron, vandaag, plusDagen\(vandaag, 6\)\)/.test(repo) && /export function persoonVoor\(bron: AgendaBron\)/.test(repo), "dashboard toont alleen je eigen taken en afspraken");
+  {
+    const dp = repo.slice(repo.indexOf("export async function dashboardPlanning"), repo.indexOf("export async function dashboardPlanning") + 1600);
+    check(/const persoon = persoonVoor\(bron\)/.test(dp) && /tq = tq\.eq\('wie\.user_id', persoon\)/.test(dp) && /aq = aq\.eq\('wie\.user_id', persoon\)/.test(dp) && /export function persoonVoor\(bron: AgendaBron\)/.test(repo), "dashboard toont alleen je eigen taken en afspraken");
+  }
   check(/rpc\('taak_betrokken'/.test(repo) && /rpc\('afspraak_betrokken'/.test(repo), "rechtencontrole gebruikt dezelfde functies als de RLS");
   check(/bronVan\(lid\)/.test(lees("components/dashboard/PlanningWidgets.tsx")), "dashboardplanning per ingelogd teamlid");
   for (const f of ["app/api/projecten/route.ts", "app/api/projecten/[id]/route.ts", "app/api/team/route.ts", "app/(app)/agenda/projecten/page.tsx"]) {
@@ -405,6 +412,34 @@ console.log("Team van twee, stap 3 (klanten & projecten)");
   }
   check(/check \(status in \('gepland', 'bezig', 'afgerond'\)\)/.test(m22) && /status = 'bezig' where status = 'actief'/.test(m22), "0022: projectstatus omgezet");
   check(/add column if not exists status text not null default 'actief'/.test(m22), "0022: klantstatus standaard 'actief' (facturen ongewijzigd)");
+}
+
+// ---------------------------------------------------------------------------------
+// 10. Team van twee, stap 4: snelheid, SQL, README (statisch)
+// ---------------------------------------------------------------------------------
+console.log("Snelheid, UITVOEREN_0022.sql en README");
+{
+  const sql = lees("supabase/UITVOEREN_0022.sql");
+  const tx = sql.slice(0, sql.lastIndexOf("-- Controle:"));
+  check((tx.match(/^begin;$/gm) || []).length === 1 && (tx.match(/^commit;$/gm) || []).length === 1, "UITVOEREN_0022.sql: alles in één transactie");
+  for (const regel of ["taken alleen voor betrokkenen", "geen open leesregels voor taken", "projectstatus omgezet", "eigenaren slaan de welkomstflow over", "functie taak_tellingen", "tellingen dicht voor anon", "indexen 0022"]) {
+    check(sql.includes(`('${regel}'`), `controletabel 0022: '${regel}'`);
+  }
+  check(/teamlid: /.test(sql), "UITVOEREN_0022.sql toont wie er toegang heeft");
+  const m22 = lees("supabase/migrations/0022_team_crm.sql");
+  check(/function public\.taak_tellingen[\s\S]*?security invoker/.test(m22) && /function public\.project_taak_tellingen[\s\S]*?security invoker/.test(m22), "0022: tellingen als security invoker (RLS geldt)");
+  check(/revoke all on function public\.taak_tellingen\(date, uuid, uuid\) from public, anon/.test(m22), "0022: taak_tellingen dicht voor anon");
+  const proxy = lees("proxy.ts");
+  check(/auth\.getClaims\(\)/.test(proxy) && !/auth\.getUser\(\)/.test(proxy), "proxy: token lokaal controleren (getClaims)");
+  check(/const controleertZelf = isApi \|\| isRsc;/.test(proxy) && /!\/\\\.\[a-z0-9\]\+\$\/i\.test\(pad\)/.test(proxy), "proxy: lidcheck alleen overslaan voor API's en RSC zonder bestandsextensie");
+  const dash = lees("app/(app)/page.tsx");
+  check(!/await (mailConfigVoor|magEnvMailbox|mailboxVoor)/.test(dash) && /<InboxKaart lid=\{lid\} \/>/.test(dash), "dashboard wacht niet op de mailcheck");
+  check(/agendaApi\.dashboard\(\)/.test(lees("components/dashboard/Planning.tsx")), "dashboard ververst met één verzoek");
+  check(/vergeetMailbox\(lid\.userId\)/.test(lees("app/api/account/mailbox/route.ts")), "mailbox-cache wordt gewist bij koppelen/ontkoppelen");
+  check(!/teamProfielen\(lid\)[\s\S]{0,40}from\('profiles'\)/.test(lees("app/(app)/layout.tsx")), "layout vraagt geen profielen extra op");
+  const readme = lees("README.md");
+  check(/### Bram toevoegen in 3 stappen/.test(readme) && /UITVOEREN_0022\.sql/.test(readme), "README: Bram toevoegen in 3 stappen en UITVOEREN_0022.sql");
+  check(/## Snelheid/.test(readme), "README: sectie Snelheid");
 }
 
 if (ALLEEN_STATISCH) eindig();
@@ -537,6 +572,13 @@ console.log("Kernpagina's: precies 307 naar /login");
 for (const url of ["/", "/boekhouding", "/boekhouding/bonnetjes", "/account", "/facturen", "/agenda/projecten", "/welkom", "/klanten", "/klanten?nieuw=1", "/projecten", "/klanten/00000000-0000-4000-8000-000000000000", "/projecten/00000000-0000-4000-8000-000000000000"]) {
   const res = await vraag(url);
   check(res.status === 307 && naarLogin(res), url, `status ${res.status} ${res.headers.get("location") || ""}`);
+}
+
+console.log("RSC-verzoeken van de router (proxy slaat alleen de lidcheck over, nooit de sessiecheck)");
+for (const [url, verwacht] of [["/", "login"], ["/klanten", "login"], ["/api/dashboard", 401], ["/api/taken?filter=vandaag", 401]]) {
+  const res = await vraag(url, { headers: { rsc: "1", "next-router-prefetch": "1" } });
+  const ok = verwacht === "login" ? naarLogin(res) : res.status === verwacht;
+  check(ok, `${url} met rsc-header zonder sessie -> ${verwacht}`, `status ${res.status}`);
 }
 
 console.log("Oude adressen");
