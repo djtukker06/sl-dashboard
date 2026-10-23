@@ -517,7 +517,9 @@ console.log("Bestanden (Google Drive, 0024)");
   check(/xhr\.open\('PUT', uploadUrl\)/.test(lees("components/bestanden/driveApi.ts")), "upload gaat rechtstreeks naar Google (niet via Vercel)");
   check(/uploadType=resumable/.test(lees("lib/drive/kern.ts")), "resumable upload-sessie");
   check(/naDrive\(lid, 'factuur', resultaat\.id\)/.test(lees("app/api/invoices/route.ts")), "nieuwe factuur → kopie naar Drive (na het antwoord)");
-  check(/after\(async/.test(lees("lib/drive/kopieen.ts")), "kopieën via next/server after()");
+  check(/import \{ after \} from 'next\/server'/.test(lees("lib/drive/kopieen.ts")) && /after\((taak|async)/.test(lees("lib/drive/kopieen.ts")), "kopieën via next/server after()");
+  check(/\[drive\] \$\{label\}: MISLUKT/.test(lees("lib/drive/kopieen.ts")), "mislukte Drive-kopie gelogd met prefix [drive]");
+  check(/alleenEigenaar: true/.test(lees("app/api/drive/diagnose/route.ts")), "Test Drive-koppeling alleen voor de eigenaar");
 }
 
 if (ALLEEN_STATISCH) eindig();

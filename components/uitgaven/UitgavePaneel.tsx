@@ -14,8 +14,12 @@ import {
   korteDatumNL,
   leesBedrag,
   opCenten,
+  ontbreektMelding,
   soortLabel,
+  VERPLICHT_LABEL,
+  VERPLICHTE_VELDEN,
   type AiVeld,
+  type VerplichtVeld,
   type Leverancier,
   type Uitgave,
   type UitgaveBestand,
@@ -25,10 +29,12 @@ import { LeverancierVeld } from './LeverancierVeld';
 import { UgIcoon } from './Iconen';
 import { uploadNaam } from './RecenteBonnetjes';
 
-// Paneel rechts bij één upload: groot voorbeeld, downloaden en verwijderen. De gegevens
-// (leverancier, datum, bedrag, …) zijn optioneel en staan ingeklapt: ze helpen bij het
-// zoeken en de export, maar je hoeft niets in te vullen. Door Claude ingevulde velden
-// krijgen een stip.
+// Paneel rechts bij één upload: groot voorbeeld, downloaden en verwijderen. Leverancier,
+// datum en bedrag zijn verplicht: Claude leest ze uit; lukt dat niet, dan staan die velden
+// gemarkeerd ("Kon de datum niet lezen — vul hem zelf in"), gaan de gegevens open en krijgt
+// het eerste ontbrekende veld de focus. Twijfelde Claude ("onzeker"), dan staat er
+// "Controleer dit" met een knop "Klopt". De overige gegevens zijn optioneel. Door Claude
+// ingevulde velden krijgen een stip.
 
 type Form = {
   soort: string;
@@ -91,6 +97,7 @@ export function UitgavePaneel({
   const [begin, setBegin] = useState<Form>(() => naarForm(uitgave));
   const [f, setF] = useState<Form>(begin);
   const [ai, setAi] = useState<Set<AiVeld>>(() => new Set(uitgave.aiVelden));
+  const [onzeker, setOnzeker] = useState<Set<VerplichtVeld>>(() => new Set(uitgave.aiOnzeker));
   const [klant, setKlant] = useState(uitgave.klantId ? { id: uitgave.klantId, naam: uitgave.klantNaam ?? 'Klant' } : null);
   const [bestanden, setBestanden] = useState<UitgaveBestand[]>(uitgave.bestanden);
   const [actiefBestand, setActiefBestand] = useState(0);
@@ -101,11 +108,26 @@ export function UitgavePaneel({
   const [weg, setWeg] = useState<string | null>(null);
   const [gegevensOpen, setGegevensOpen] = useState(false);
   const btwAuto = useRef(false);
+  const veldenRef = useRef<HTMLFieldSetElement>(null);
+  const autoOpen = useRef(false);
+  const aandachtGetoond = useRef(false);
   const bestandKiezer = useRef<HTMLInputElement>(null);
   const sluitKnop = useRef<HTMLButtonElement>(null);
 
+  const onzekerGewijzigd =
+    onzeker.size !== uitgave.aiOnzeker.length || uitgave.aiOnzeker.some((v) => !onzeker.has(v));
   const gewijzigd =
-    (Object.keys(f) as (keyof Form)[]).some((k) => f[k] !== begin[k]) || (klant?.id ?? null) !== uitgave.klantId;
+    (Object.keys(f) as (keyof Form)[]).some((k) => f[k] !== begin[k]) || (klant?.id ?? null) !== uitgave.klantId || onzekerGewijzigd;
+
+  // Verplichte velden (leverancier, datum, bedrag): wat ontbreekt en wat Claude onzeker las.
+  const leeg: Record<VerplichtVeld, boolean> = {
+    leverancier: !f.leverancier.trim(),
+    datum: !f.datum,
+    totaal: leesBedrag(f.totaal) === null
+  };
+  const ontbrekend = VERPLICHTE_VELDEN.filter((v) => leeg[v]);
+  const teControleren = VERPLICHTE_VELDEN.filter((v) => !leeg[v] && onzeker.has(v));
+  const uitgelezen = uitgave.aiStatus !== 'geen';
 
   // De keuze "gegevens open/dicht" onthouden (per browser).
   useEffect(() => {
@@ -116,6 +138,32 @@ export function UitgavePaneel({
       /* geen opslag */
     }
   }, []);
+
+  // Na het uitlezen (of bij openen): ontbreekt er iets of moet iets gecontroleerd worden,
+  // dan de gegevens openklappen en het eerste ontbrekende (anders onzekere) veld focussen.
+  useEffect(() => {
+    if (uitlezen || aandachtGetoond.current) return;
+    const eerste = ontbrekend[0] ?? teControleren[0];
+    if (!eerste) return;
+    let focus = 0;
+    const open = window.setTimeout(() => {
+      // Pas hier markeren: in StrictMode wordt de eerste timeout weer opgeruimd.
+      aandachtGetoond.current = true;
+      if (!veldenRef.current?.closest('details')?.open) {
+        autoOpen.current = true;
+        setGegevensOpen(true);
+      }
+      focus = window.setTimeout(() => {
+        veldenRef.current?.querySelector<HTMLInputElement>(`[data-veld="${eerste}"] input`)?.focus({ preventScroll: false });
+      }, 60);
+    }, 0);
+    return () => {
+      window.clearTimeout(open);
+      window.clearTimeout(focus);
+    };
+    // Alleen bij openen en zodra het uitlezen klaar is.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [uitlezen]);
 
   function vraagSluiten() {
     if (gewijzigd && !window.confirm('Wijzigingen weggooien?')) return;
@@ -145,6 +193,9 @@ export function UitgavePaneel({
 
   function zet<K extends keyof Form>(veld: K, waarde: Form[K]) {
     setF((x) => ({ ...x, [veld]: waarde }));
+    if ((VERPLICHTE_VELDEN as readonly string[]).includes(veld) && onzeker.has(veld as VerplichtVeld)) {
+      klopt(veld as VerplichtVeld);
+    }
     const a = AI_VAN[veld];
     if (a && ai.has(a)) {
       setAi((s) => {
@@ -153,6 +204,15 @@ export function UitgavePaneel({
         return n;
       });
     }
+  }
+
+  /** "Klopt": de gebruiker heeft een onzeker uitgelezen veld gecontroleerd. */
+  function klopt(veld: VerplichtVeld) {
+    setOnzeker((s) => {
+      const n = new Set(s);
+      n.delete(veld);
+      return n;
+    });
   }
 
   /** Btw uit totaal en tarief, als het btw-veld leeg is of eerder automatisch berekend. */
@@ -190,7 +250,8 @@ export function UitgavePaneel({
       factuurnummer: f.factuurnummer,
       klantId: klant?.id ?? null,
       notitie: f.notitie,
-      aiVelden: [...ai]
+      aiVelden: [...ai],
+      aiOnzeker: [...onzeker].filter((v) => ai.has(v))
     };
   }
 
@@ -246,6 +307,7 @@ export function UitgavePaneel({
       setBegin(b);
       onBijgewerkt({ ...u, aiStatus: uitgave.aiStatus });
       setAi(nieuw);
+      setOnzeker(new Set([...onzeker, ...u.aiOnzeker.filter((v) => nieuw.has(v))]));
       setAiMelding(u.aiStatus === 'mislukt' ? u.aiMelding : '');
       if (aantal) setGegevensOpen(true);
       if (u.aiStatus === 'klaar') toast(aantal ? `${aantal} veld${aantal === 1 ? '' : 'en'} ingevuld` : 'Niets nieuws gevonden');
@@ -294,6 +356,11 @@ export function UitgavePaneel({
 
   function wisselGegevens(open: boolean) {
     setGegevensOpen(open);
+    // Automatisch opengeklapt (er ontbreekt iets): niet als voorkeur onthouden.
+    if (autoOpen.current) {
+      autoOpen.current = false;
+      return;
+    }
     try {
       localStorage.setItem(GEGEVENS_OPEN, open ? '1' : '0');
     } catch {
@@ -305,7 +372,34 @@ export function UitgavePaneel({
   const btwGetal = leesBedrag(f.btwBedrag) ?? 0;
   const excl = totaalGetal === null ? null : opCenten(totaalGetal - btwGetal);
   const huidig = bestanden[Math.min(actiefBestand, bestanden.length - 1)];
-  const isAi = (v: AiVeld) => (ai.has(v) ? ' is-ai' : '');
+  const isAi = (v: AiVeld) =>
+    (ai.has(v) ? ' is-ai' : '') +
+    (!uitlezen && (ontbrekend as string[]).includes(v) ? ' is-ontbreekt' : '') +
+    (!uitlezen && (teControleren as string[]).includes(v) ? ' is-onzeker' : '');
+  /** Uitleg onder een verplicht veld: ontbreekt (rood) of controleren (zand) met "Klopt". */
+  function hint(v: VerplichtVeld) {
+    if (uitlezen) return null;
+    if (leeg[v]) {
+      const { naam, lidwoord } = VERPLICHT_LABEL[v];
+      return (
+        <span className="ug-veld-hint is-ontbreekt" id={`ug-hint-${v}`}>
+          {uitgelezen ? ontbreektMelding([v]) : `Vul ${lidwoord} ${naam} in (verplicht).`}
+        </span>
+      );
+    }
+    if (onzeker.has(v)) {
+      return (
+        <span className="ug-veld-hint is-onzeker" id={`ug-hint-${v}`}>
+          Controleer dit: niet zeker uitgelezen.{' '}
+          <button type="button" className="ag-link-knop" onClick={() => klopt(v)}>
+            Klopt
+          </button>
+        </span>
+      );
+    }
+    return null;
+  }
+  const hintId = (v: VerplichtVeld) => (!uitlezen && (leeg[v] || onzeker.has(v)) ? `ug-hint-${v}` : undefined);
   const aiTitel = 'Automatisch ingevuld';
   const samenvatting = [f.leverancier.trim(), f.datum ? korteDatumNL(f.datum) : '', totaalGetal !== null ? euro(totaalGetal) : '']
     .filter(Boolean)
@@ -420,17 +514,30 @@ export function UitgavePaneel({
               <p className="ug-ai-uitleg" role="status">
                 <span className="ug-ai-stip" aria-hidden="true" /> Wordt automatisch uitgelezen…
               </p>
-            ) : aiMelding ? (
-              <p className="ug-melding">{aiMelding}</p>
-            ) : null}
+            ) : (
+              <>
+                {aiMelding && <p className="ug-melding">{aiMelding}</p>}
+                {ontbrekend.length > 0 ? (
+                  <p className="ug-aanvullen" role="status">
+                    <strong>Aanvullen:</strong>{' '}
+                    {uitgelezen && uitgave.aiStatus === 'klaar' ? ontbreektMelding(ontbrekend) : ontbreektMelding(ontbrekend, false)}
+                  </p>
+                ) : teControleren.length > 0 ? (
+                  <p className="ug-controleren" role="status">
+                    <strong>Controleer:</strong> {teControleren.map((v) => VERPLICHT_LABEL[v].naam).join(', ')} — niet zeker uitgelezen.
+                  </p>
+                ) : null}
+              </>
+            )}
 
             {/* ---------- gegevens (optioneel) ---------- */}
             <details className="ug-gegevens" open={gegevensOpen} onToggle={(e) => wisselGegevens((e.target as HTMLDetailsElement).open)}>
               <summary>
-                <span className="ug-gegevens-titel">Gegevens (optioneel)</span>
+                <span className="ug-gegevens-titel">Gegevens</span>
+                {!gegevensOpen && !uitlezen && ontbrekend.length > 0 && <span className="ug-badge is-aanvullen">Aanvullen</span>}
                 {!gegevensOpen && samenvatting && <span className="ug-gegevens-kort">{samenvatting}</span>}
               </summary>
-              <fieldset className="ug-gegevens-velden" disabled={uitlezen}>
+              <fieldset ref={veldenRef} className="ug-gegevens-velden" disabled={uitlezen}>
                 {ai.size > 0 && (
                   <p className="ug-ai-uitleg">
                     <span className="ug-ai-stip" aria-hidden="true" /> Velden met een stip zijn automatisch ingevuld.
@@ -453,15 +560,20 @@ export function UitgavePaneel({
                   </div>
                 </div>
 
-                <label className={`ag-label${isAi('leverancier')}`} title={ai.has('leverancier') ? aiTitel : undefined}>
-                  Leverancier
+                <label data-veld="leverancier" className={`ag-label${isAi('leverancier')}`} title={ai.has('leverancier') ? aiTitel : undefined}>
+                  <span>
+                    Leverancier <span className="ug-verplicht" aria-hidden="true">*</span>
+                  </span>
                   <LeverancierVeld
                     waarde={f.leverancier}
                     leveranciers={leveranciers}
                     onChange={(v) => zet('leverancier', v)}
                     onKies={() => {}}
                     className="ag-veld"
+                    beschrijving={hintId('leverancier')}
+                    verplicht
                   />
+                  {hint('leverancier')}
                 </label>
 
                 <label className={`ag-label${isAi('omschrijving')}`} title={ai.has('omschrijving') ? aiTitel : undefined}>
@@ -476,9 +588,20 @@ export function UitgavePaneel({
                 </label>
 
                 <div className="ag-velden-2">
-                  <label className={`ag-label${isAi('datum')}`} title={ai.has('datum') ? aiTitel : undefined}>
-                    Datum
-                    <input className="ag-veld" type="date" value={f.datum} onChange={(e) => zet('datum', e.target.value)} />
+                  <label data-veld="datum" className={`ag-label${isAi('datum')}`} title={ai.has('datum') ? aiTitel : undefined}>
+                    <span>
+                      Datum <span className="ug-verplicht" aria-hidden="true">*</span>
+                    </span>
+                    <input
+                      className="ag-veld"
+                      type="date"
+                      value={f.datum}
+                      aria-required="true"
+                      aria-invalid={!uitlezen && leeg.datum ? true : undefined}
+                      aria-describedby={hintId('datum')}
+                      onChange={(e) => zet('datum', e.target.value)}
+                    />
+                    {hint('datum')}
                   </label>
                   <label className={`ag-label${isAi('factuurnummer')}`} title={ai.has('factuurnummer') ? aiTitel : undefined}>
                     Factuurnummer
@@ -487,8 +610,10 @@ export function UitgavePaneel({
                 </div>
 
                 <div className="ag-velden-2">
-                  <label className={`ag-label${isAi('totaal')}`} title={ai.has('totaal') ? aiTitel : undefined}>
-                    Bedrag incl. btw
+                  <label data-veld="totaal" className={`ag-label${isAi('totaal')}`} title={ai.has('totaal') ? aiTitel : undefined}>
+                    <span>
+                      Bedrag incl. btw <span className="ug-verplicht" aria-hidden="true">*</span>
+                    </span>
                     <span className="ug-bedrag">
                       <span className="ug-bedrag-valuta">{uitgave.valuta === 'EUR' ? '€' : uitgave.valuta}</span>
                       <input
@@ -496,6 +621,9 @@ export function UitgavePaneel({
                         inputMode="decimal"
                         value={f.totaal}
                         placeholder="0,00"
+                        aria-required="true"
+                        aria-invalid={!uitlezen && leeg.totaal ? true : undefined}
+                        aria-describedby={hintId('totaal')}
                         onChange={(e) => zet('totaal', e.target.value)}
                         onBlur={() => {
                           const n = leesBedrag(f.totaal);
@@ -504,6 +632,7 @@ export function UitgavePaneel({
                         }}
                       />
                     </span>
+                    {hint('totaal')}
                   </label>
                   <label className={`ag-label${isAi('btwTarief')}`} title={ai.has('btwTarief') ? aiTitel : undefined}>
                     Btw-tarief

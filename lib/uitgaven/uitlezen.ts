@@ -3,7 +3,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { dbFout } from './api';
 import { heeftApiKey, samenvoegen, systeemPrompt, vraagClaude } from './claude';
 import { download } from './opslag';
-import { normaliseerUitgelezen, snuffelType, type Uitgave } from './model';
+import { normaliseerUitgelezen, ontbreektMelding, ontbrekendeVelden, schrijfAiVelden, snuffelType, type Uitgave } from './model';
 import { bestandenVan, leveranciers, moetUitgave } from './repo';
 
 // Bonnetjes en facturen automatisch uitlezen: bestanden uit Storage halen, Claude vragen
@@ -78,11 +78,22 @@ export async function leesUitgaveUit(sb: SupabaseClient, id: string, vandaag: st
         const ruw = await vraagClaude(blokken, systeemPrompt(vandaag, bekend));
         const r = normaliseerUitgelezen(ruw, vandaag);
         const s = samenvoegen(uitgave, r, bekend);
+        // Ontbreekt na het uitlezen nog een verplicht veld (leverancier, datum, bedrag), dan
+        // zegt de melding welk; de app markeert die velden en vraagt ze zelf in te vullen.
+        const ontbreekt = ontbrekendeVelden({
+          leverancier: (s.kolommen.supplier as string | undefined) ?? uitgave.leverancier,
+          datum: (s.kolommen.expense_date as string | undefined) ?? uitgave.datum,
+          totaal: (s.kolommen.total_amount as number | undefined) ?? uitgave.totaal
+        });
         kolommen = {
           ...s.kolommen,
-          ai_fields: [...new Set([...uitgave.aiVelden, ...s.velden])],
+          ai_fields: schrijfAiVelden([...uitgave.aiVelden, ...s.velden], [...uitgave.aiOnzeker, ...s.onzeker]),
           ai_status: 'klaar',
-          ai_message: s.velden.length ? '' : 'Er is niets nieuws gevonden om in te vullen.'
+          ai_message: ontbreekt.length
+            ? ontbreektMelding(ontbreekt)
+            : s.velden.length
+              ? ''
+              : 'Er is niets nieuws gevonden om in te vullen.'
         };
       }
     } catch (e) {

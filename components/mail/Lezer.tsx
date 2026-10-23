@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { adresNaam, bijlageUrl, downloadBijlage, grootteTekst, initialen, MailApiFout, volleDatum } from '@/lib/mail/client';
 import { useToast } from '@/components/agenda/Toast';
 import { uitgavenApi } from '@/lib/uitgaven/client';
-import { isBestandsType, typeUitNaam } from '@/lib/uitgaven/model';
+import { isBestandsType, ontbreektMelding, ontbrekendeVelden, typeUitNaam } from '@/lib/uitgaven/model';
 import type { Adres, Bericht, MapRol } from '@/lib/mail/types';
 import { Icoon, type MailIcoonNaam } from './Iconen';
 import { VeiligeMailFrame } from './VeiligeMailFrame';
@@ -138,7 +138,10 @@ export function Lezer({
     try {
       const { uitgave } = await uitgavenApi.uitMail({ map, uid, deel, onderwerp });
       const wat = uitgave.leverancier ? `${uitgave.leverancier}${uitgave.totaal !== null ? ` · € ${uitgave.totaal.toLocaleString('nl-NL', { minimumFractionDigits: 2 })}` : ''}` : 'bijlage';
-      toast(`Bewaard bij Bonnetjes & inkoopfacturen: ${wat}`, {
+      // Kon Claude leverancier, datum of bedrag niet lezen, dan zegt de melding dat meteen.
+      const ontbreekt = ontbrekendeVelden(uitgave);
+      const aanvullen = ontbreekt.length ? ` — ${ontbreektMelding(ontbreekt)}` : '';
+      toast(`Bewaard bij Bonnetjes & inkoopfacturen: ${wat}${aanvullen}`, {
         actie: { label: 'Openen', onClick: () => router.push(`/boekhouding/bonnetjes?uitgave=${uitgave.id}`) },
         duur: 8000
       });

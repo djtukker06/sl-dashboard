@@ -255,6 +255,48 @@
   line-height: 1.5;
   color: var(--sl-muted);
 }
+/* Verplicht (leverancier, datum, bedrag): ontbreekt = rood ("Aanvullen"), onzeker = amber ("Controleren"). */
+.ug-aanvullen, .ug-controleren {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--sl-line);
+  border-left: 2px solid var(--sl-danger);
+  border-radius: var(--sl-r);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--sl-text);
+}
+.ug-controleren { border-left-color: var(--sl-let-op, #d4b27a); }
+.ug-verplicht { color: var(--sl-muted); font-weight: 400; }
+.ag-label.is-ontbreekt .ag-veld { border-color: var(--sl-danger); }
+.ag-label.is-onzeker .ag-veld { border-color: var(--sl-let-op, #d4b27a); }
+.ug-veld-hint { display: block; font-size: 12px; line-height: 1.4; font-weight: 400; }
+.ug-veld-hint.is-ontbreekt { color: var(--sl-danger); }
+.ug-veld-hint.is-onzeker { color: var(--sl-let-op, #d4b27a); }
+.ug-veld-hint .ag-link-knop { font-size: 12px; padding: 0; text-decoration: underline; }
+.ug-badge {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 8px;
+  padding: 1px 7px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.5;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  vertical-align: 1px;
+}
+.ug-badge.is-aanvullen { color: var(--sl-danger); }
+.ug-badge.is-controleren { color: var(--sl-let-op, #d4b27a); }
+.ug-kaart-beeld > .ug-badge {
+  position: absolute;
+  left: 8px;
+  bottom: 8px;
+  margin: 0;
+  background: rgba(35, 35, 35, .9);
+}
 .ug-ai-uitleg { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 12.5px; color: var(--sl-muted); }
 
 /* Door Claude ingevuld: subtiele stip achter het label en een zandkleurige rand links. */

@@ -3,8 +3,14 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   // @sparticuz/chromium en puppeteer-core staan al op Next.js' eigen auto-externalize-lijst,
   // maar we zetten het expliciet zodat het ook zo blijft werken als dat ooit verandert.
-  // Mail (imapflow, mailparser, nodemailer, sanitize-html) draait als gewone Node-modules.
-  serverExternalPackages: ['@sparticuz/chromium', 'puppeteer-core', 'imapflow', 'mailparser', 'nodemailer', 'sanitize-html'],
+  // Mail (imapflow, mailparser, nodemailer) draait als gewone Node-modules: die leveren zelf
+  // een CommonJS-build mee (exports.require) en laden ook zonder require(esm).
+  // sanitize-html staat hier bewust NIET in: 2.18 is CommonJS maar require't htmlparser2 12,
+  // dat alleen nog ESM is. Als external faalt dat op Vercel met ERR_REQUIRE_ESM ("Failed to
+  // load external module sanitize-html"); door hem te laten bundelen lost Turbopack de
+  // CJS→ESM-import zelf op, onafhankelijk van de Node-versie. Controle:
+  // scripts/test-externals.mjs.
+  serverExternalPackages: ['@sparticuz/chromium', 'puppeteer-core', 'imapflow', 'mailparser', 'nodemailer'],
   // De output-file-tracer volgt alleen require()/import-statements, niet de losse
   // Chromium-binaire bestanden (.br) die @sparticuz/chromium pas tijdens het draaien
   // dynamisch inleest — die moeten dus expliciet worden meegenomen in de deploy-bundel.

@@ -1,5 +1,5 @@
 import { dbFout, fout, isUuid, json, leesJson, uitgavenRoute } from '@/lib/uitgaven/api';
-import type { UitgaveInvoer } from '@/lib/uitgaven/model';
+import { schrijfAiVelden, type UitgaveInvoer } from '@/lib/uitgaven/model';
 import { verwijder } from '@/lib/uitgaven/opslag';
 import {
   bestandenVan,
@@ -39,8 +39,12 @@ export const PATCH = uitgavenRoute(async (request, ctx: Ctx, sb) => {
   if (status === 'verwerkt' && (!datum || totaal === null || totaal === undefined)) {
     return fout(400, 'Vul eerst een datum en een bedrag in voordat je de uitgave op verwerkt zet.');
   }
-  // Wie zelf iets invult, vervangt de melding van het uitlezen.
-  const kolommen = { ...p.waarde, ...(uitgave.aiStatus === 'mislukt' ? { ai_message: '' } : {}) };
+  // Wie zelf iets invult, vervangt de melding van het uitlezen (mislukt, of "kon … niet lezen").
+  const kolommen: Record<string, unknown> = { ...p.waarde, ...(uitgave.aiMelding ? { ai_message: '' } : {}) };
+  // Een client die alleen aiVelden stuurt, houdt de bestaande onzeker-markeringen.
+  if (Array.isArray(body.aiVelden) && !Array.isArray(body.aiOnzeker)) {
+    kolommen.ai_fields = schrijfAiVelden(body.aiVelden.map(String), uitgave.aiOnzeker);
+  }
 
   const { data, error } = await metKolommen((k, metSoort) =>
     sb

@@ -4,6 +4,8 @@
 //   - lib/uitgaven/claude.ts: het verzoek aan Claude (model, JSON-schema, afbeelding als
 //     base64), het uitlezen van het antwoord en de terugval zonder schema na een 400 —
 //     met een nagebootste fetch, dus zonder echte API-aanroep;
+//   - verplichte velden (leverancier, datum, bedrag): rechtsvorm-ruis, ontbrekend en onzeker,
+//     de "onzeker:"-markeringen in ai_fields en de melding "Kon … niet lezen";
 //   - een gegenereerde testafbeelding van een bonnetje (PNG via sharp) loopt door die keten.
 //
 // Gebruik:  node scripts/test-uitgaven.mjs
@@ -189,7 +191,7 @@ const basisUitgave = {
   id: "00000000-0000-0000-0000-000000000001",
   datum: null, leverancier: "", omschrijving: "", categorie: null, totaal: null, btwBedrag: null, btwTarief: null,
   valuta: "EUR", factuurnummer: "", betaaldVia: null, klantId: null, klantNaam: null, projectNotitie: "", notitie: "",
-  status: "concept", aiVelden: [], aiStatus: "geen", aiMelding: "", bron: "upload", bronInfo: "", bestanden: [],
+  status: "concept", aiVelden: [], aiOnzeker: [], aiStatus: "geen", aiMelding: "", bron: "upload", bronInfo: "", bestanden: [],
   aangemaakt: "2026-10-22T10:00:00Z", gewijzigd: "2026-10-22T10:00:00Z",
 };
 await test("samenvoegen: alleen lege velden, bekende leverancier wint", () => {
@@ -206,6 +208,88 @@ await test("samenvoegen: alleen lege velden, bekende leverancier wint", () => {
   assert.equal(s.kolommen.currency, undefined); // EUR is de standaard: niets te doen
   assert.equal(s.kolommen.total_amount, 72.6);
   assert.ok(s.velden.includes("totaal") && !s.velden.includes("omschrijving"));
+});
+
+// ---------------------------------------------------------------- verplicht: ontbrekend en onzeker
+await test("schoneBedrijfsnaam: rechtsvorm-ruis weg", () => {
+  const n = model.schoneBedrijfsnaam;
+  assert.equal(n("Albert Heijn B.V."), "Albert Heijn");
+  assert.equal(n("Albert Heijn BV"), "Albert Heijn");
+  assert.equal(n("Coolblue N.V."), "Coolblue");
+  assert.equal(n("Adobe Systems Software Ireland Ltd."), "Adobe Systems Software Ireland");
+  assert.equal(n("Figma, Inc."), "Figma");
+  assert.equal(n("Hornbach Baumarkt AG"), "Hornbach Baumarkt");
+  assert.equal(n("Bakkerij De Zon V.O.F."), "Bakkerij De Zon");
+  assert.equal(n("Google Cloud EMEA Limited"), "Google Cloud EMEA");
+  assert.equal(n("Coolblue"), "Coolblue"); // 'co' alleen als los woord
+  assert.equal(n("Bol.com"), "Bol.com");
+  assert.equal(n("BV"), "BV"); // alleen een rechtsvorm: laten staan
+  assert.equal(model.normaliseerUitgelezen({ leverancier: "Albert Heijn B.V." }, VANDAAG).leverancier, "Albert Heijn");
+});
+await test("normaliseerUitgelezen: zekerheid per verplicht veld", () => {
+  const n = (x) => model.normaliseerUitgelezen(x, VANDAAG);
+  const zeker = { leverancier: "zeker", datum: "zeker", totaal: "zeker" };
+  assert.deepEqual(n({ leverancier: "NS", datum: "2026-10-01", totaal: 5, zekerheid: zeker }).onzeker, []);
+  assert.deepEqual(n({ leverancier: "NS", datum: "2026-10-01", totaal: 5, zekerheid: { ...zeker, datum: "onzeker" } }).onzeker, ["datum"]);
+  // onzeker over een veld dat null is: dat is gewoon ontbrekend, niet "onzeker"
+  assert.deepEqual(n({ leverancier: "NS", datum: null, totaal: 5, zekerheid: { ...zeker, datum: "onzeker" } }).onzeker, []);
+  // ongeldige datum (toekomst) wordt null en telt dus ook niet als onzeker
+  assert.deepEqual(n({ datum: "2031-01-01", zekerheid: { datum: "onzeker" } }).onzeker, []);
+  // zonder zekerheid-object (oud antwoord / terugval): niets extra markeren
+  assert.deepEqual(n({ leverancier: "NS", datum: "2026-10-01", totaal: 5 }).onzeker, []);
+  // een onbekende waarde telt als onzeker
+  assert.deepEqual(n({ leverancier: "NS", zekerheid: { leverancier: "misschien" } }).onzeker, ["leverancier"]);
+  // een bedrag in een andere valuta altijd laten controleren
+  assert.deepEqual(n({ totaal: 20, valuta: "USD", zekerheid: zeker }).onzeker, ["totaal"]);
+  assert.deepEqual(n({ totaal: 20, valuta: "EUR", zekerheid: zeker }).onzeker, []);
+});
+await test("ontbrekendeVelden, aandachtVoor en ontbreektMelding", () => {
+  const leeg = { leverancier: "", datum: null, totaal: null, aiOnzeker: [] };
+  assert.deepEqual(model.ontbrekendeVelden(leeg), ["leverancier", "datum", "totaal"]);
+  assert.deepEqual(model.ontbrekendeVelden({ leverancier: "  ", datum: "2026-10-01", totaal: 0 }), ["leverancier"]); // 0 is een bedrag
+  assert.equal(model.aandachtVoor(leeg), "aanvullen");
+  assert.equal(model.aandachtVoor({ leverancier: "NS", datum: "2026-10-01", totaal: 5, aiOnzeker: ["datum"] }), "controleren");
+  assert.equal(model.aandachtVoor({ leverancier: "NS", datum: null, totaal: 5, aiOnzeker: ["leverancier"] }), "aanvullen"); // ontbreken gaat voor
+  assert.equal(model.aandachtVoor({ leverancier: "NS", datum: "2026-10-01", totaal: 5, aiOnzeker: [] }), null);
+  assert.equal(model.ontbreektMelding(["datum"]), "Kon de datum niet lezen — vul hem zelf in.");
+  assert.equal(model.ontbreektMelding(["leverancier", "totaal"]), "Kon de leverancier en het bedrag niet lezen — vul ze zelf in.");
+  assert.equal(model.ontbreektMelding(["leverancier", "datum", "totaal"]), "Kon de leverancier, de datum en het bedrag niet lezen — vul ze zelf in.");
+  assert.equal(model.ontbreektMelding(["totaal"], false), "Vul het bedrag nog in.");
+  assert.equal(model.ontbreektMelding([]), "");
+});
+await test("ai_fields: onzeker-markeringen heen en terug", () => {
+  const kolom = model.schrijfAiVelden(["leverancier", "datum", "omschrijving", "rommel"], ["datum", "totaal", "omschrijving"]);
+  // totaal is niet automatisch ingevuld en omschrijving is geen verplicht veld: niet als onzeker
+  assert.deepEqual(kolom, ["leverancier", "datum", "omschrijving", "onzeker:datum"]);
+  assert.deepEqual(model.leesAiVelden(kolom), { velden: ["leverancier", "datum", "omschrijving"], onzeker: ["datum"] });
+  assert.deepEqual(model.leesAiVelden(["onzeker:datum"]), { velden: [], onzeker: [] }); // zonder het veld zelf
+  assert.deepEqual(model.leesAiVelden(null), { velden: [], onzeker: [] });
+});
+await test("samenvoegen: onzeker alleen voor wat nu wordt ingevuld", () => {
+  const r = model.normaliseerUitgelezen(
+    { leverancier: "Bakkerij De Zon", datum: "2026-10-14", totaal: null, zekerheid: { leverancier: "onzeker", datum: "onzeker", totaal: "onzeker" } },
+    VANDAAG,
+  );
+  assert.deepEqual(r.onzeker, ["leverancier", "datum"]);
+  // datum was al ingevuld door de gebruiker: niet overschreven en dus niet onzeker
+  const s = claude.samenvoegen({ ...basisUitgave, datum: "2026-10-13" }, r, []);
+  assert.deepEqual(s.onzeker, ["leverancier"]);
+  assert.equal(s.kolommen.expense_date, undefined);
+  // bekende leverancier: de eerdere schrijfwijze geldt als zeker
+  const s2 = claude.samenvoegen(basisUitgave, r, [{ naam: "Bakkerij De Zon", categorie: null, betaaldVia: null, aantal: 1 }]);
+  assert.deepEqual(s2.onzeker, ["datum"]);
+});
+await test("schema en prompt: zekerheid, ISO-datum, EUR, null bij twijfel", () => {
+  const z = claude.SCHEMA.properties.zekerheid;
+  assert.equal(z.type, "object");
+  assert.equal(z.additionalProperties, false);
+  assert.deepEqual([...z.required], ["leverancier", "datum", "totaal"]);
+  assert.ok(claude.SCHEMA.required.includes("zekerheid"));
+  const p = claude.systeemPrompt(VANDAAG, []);
+  assert.ok(p.includes("YYYY-MM-DD"));
+  assert.ok(/euro \(EUR\)/.test(p));
+  assert.ok(/gok niet/.test(p) && /null/.test(p));
+  assert.ok(/zonder rechtsvorm/.test(p));
 });
 
 // ---------------------------------------------------------------- filteren, totalen, CSV
@@ -280,6 +364,7 @@ function nepAntwoord(status, body) {
 const antwoordTekst = JSON.stringify({
   leverancier: "Bakkerij De Zon", datum: "2026-10-14", totaal: 16.75, btwBedrag: 1.38, btwTarief: "9", valuta: "EUR",
   factuurnummer: "4711", omschrijving: "Lunch: croissant, koffie en broodje", categorie: "representatie", betaalmethode: "zakelijk",
+  zekerheid: { leverancier: "zeker", datum: "zeker", totaal: "zeker" },
 });
 const berichtVan = (tekst) => ({
   id: "msg_test", type: "message", role: "assistant", model: claude.MODEL, stop_reason: "end_turn", stop_sequence: null,
@@ -316,6 +401,8 @@ if (!ECHT) {
         [r.leverancier, r.datum, r.totaal, r.btwBedrag, r.btwTarief, r.categorie, r.betaaldVia, r.factuurnummer],
         ["Bakkerij De Zon", "2026-10-14", 16.75, 1.38, "9", "representatie", "zakelijk", "4711"],
       );
+      assert.deepEqual(r.onzeker, []);
+      assert.deepEqual(v.output_config.format.schema.properties.zekerheid.required, ["leverancier", "datum", "totaal"]);
     });
     await test("vraagClaude: terugval zonder schema na een 400", async () => {
       verzoeken.length = 0;
@@ -354,6 +441,23 @@ if (!ECHT) {
     assert.equal(r.datum, "2026-10-14");
     assert.equal(r.btwTarief, "9");
     assert.ok(r.leverancier && /zon/i.test(r.leverancier));
+    assert.ok(ruw.zekerheid && typeof ruw.zekerheid === "object", "zekerheid per veld teruggegeven");
+    assert.deepEqual(r.onzeker, [], "een scherp testbonnetje is zeker leesbaar");
+  });
+  await test("échte Claude-aanroep: onleesbaar bonnetje geeft null (geen gok)", async () => {
+    // Datum en totaal zijn weggevaagd/afgesneden: verwacht null of 'onzeker', nooit een stellige gok.
+    const svg = bonnetjeSvg()
+      .replace(/Datum: 14-10-2026/, "Datum: ▒▒-▒▒-▒▒▒▒")
+      .replace(/EUR 16,75/, "EUR ▒▒,▒▒");
+    const vaag = await sharp(Buffer.from(svg)).png().toBuffer();
+    const ruw = await claude.vraagClaude(
+      [{ type: "image", source: { type: "base64", media_type: "image/png", data: vaag.toString("base64") } }],
+      claude.systeemPrompt(VANDAAG, []),
+    );
+    const r = model.normaliseerUitgelezen(ruw, VANDAAG);
+    console.log("  Onleesbaar bonnetje:", { leverancier: r.leverancier, datum: r.datum, totaal: r.totaal, onzeker: r.onzeker }, "ontbreekt:", model.ontbrekendeVelden(r));
+    assert.ok(r.datum === null || r.onzeker.includes("datum"), "datum niet stellig gegokt");
+    assert.ok(r.totaal === null || r.onzeker.includes("totaal") || r.totaal === 16.75, "totaal niet stellig gegokt");
   });
 }
 

@@ -342,3 +342,60 @@
 .db-projtel-wachten .db-projtel-n { color: var(--sl-let-op); }
 .db-projtel-afgerond .db-projtel-n { color: var(--sl-muted); }
 .db-projtel-telaat { margin: 10px 0 0; font-size: 12.5px; color: var(--sl-danger); }
+
+/* ==========================================================
+   Inhoudsbreedte van de shell-pagina's (niet social: die heeft een eigen layout)
+   ----------------------------------------------------------
+   Twee soorten pagina's:
+   - werkpagina's met veel kolommen (mail, agenda week/maand, projectenbord) vullen de
+     volle breedte naast de rail (--sl-inhoud: 100%, de standaard);
+   - lees-/overzichtspagina's (dashboard, klant- en projectpagina, klantenlijst, boekhouding,
+     bonnetjes, bestanden, account) staan in een gecentreerde container met een royale
+     max-width en gelijke marges links en rechts.
+   De modulekop (sl-kop) en de subnavigatie (bh-tabs, ug-tabs) blijven over de hele breedte
+   lopen (lijn en achtergrond), maar hun inhoud lijnt uit met de container eronder:
+   padding = max(gutter, (breedte − inhoud) / 2 + gutter).
+   Per pagina kiest .sl-main:has(<container>) de breedte, zodat geen pagina-component hoeft
+   te veranderen. Specificiteit .sl-main .x (0,2,0) wint van de losse modulebestanden.
+   ========================================================== */
+.sl-main {
+  --sl-gutter: 40px;
+  --sl-inhoud: 100%;
+  --sl-uitlijn: max(var(--sl-gutter), calc((100% - var(--sl-inhoud)) / 2 + var(--sl-gutter)));
+}
+/* Overzichtspagina's met kaarten en tabellen: breed maar gecentreerd. */
+.sl-main:has(.db-grid),
+.sl-main:has(.bs),
+.sl-main:has(.ug-inhoud) { --sl-inhoud: 1440px; }
+/* Klant-, project- en klantenpagina, boekhouding-overzicht: iets smaller (leesbaarheid). */
+.sl-main:has(.kp:not(.kp-breed)),
+.sl-main:has(.bh-tegels) { --sl-inhoud: 1280px; }
+/* Account: formulieren, smal en gecentreerd (inhoud 860px zoals voorheen). */
+.sl-main:has(.ac-inhoud) { --sl-inhoud: 940px; }
+/* Facturen: eigen .wrap (globals.css, 980px, padding 24px) staat al gecentreerd; de kop en
+   de subnavigatie lijnen daarmee uit. De facturenschermen zelf veranderen niet. */
+.sl-main:has(> .wrap) { --sl-inhoud: 980px; --sl-gutter: 24px; }
+/* Projectenbord: vier kolommen, volle breedte. */
+.sl-main:has(.kp-breed) { --sl-inhoud: 100%; }
+
+.sl-main .db-grid,
+.sl-main .bs,
+.sl-main .ug-inhoud,
+.sl-main .kp,
+.sl-main .bh-tegels,
+.sl-main .ac-inhoud {
+  width: 100%;
+  max-width: var(--sl-inhoud);
+  margin-inline: auto;
+  padding-inline: var(--sl-gutter);
+  box-sizing: border-box;
+}
+.sl-main .sl-kop,
+.sl-main .bh-tabs,
+.sl-main .ug-tabs { padding-inline: var(--sl-uitlijn); }
+
+@media (max-width: 760px) {
+  .sl-main { --sl-gutter: 16px; }
+  /* Facturen houdt op smalle schermen zijn eigen 24px. */
+  .sl-main:has(> .wrap) { --sl-gutter: 24px; }
+}

@@ -136,8 +136,15 @@ test("facturen: zelfde bestandsnaam als de download (lib/invoice/bestandsnaam)",
   assert.equal(b.veiligeBestandsnaam("", "Factuur 2026-007"), "Factuur 2026-007.pdf");
   assert.equal(b.veiligeBestandsnaam("Website: fase 1", "x"), "Website- fase 1.pdf");
   const k = lees("lib/drive/kopieen.ts");
-  assert.match(k, /veiligeBestandsnaam\(data\.name \|\| '', `Factuur \$\{data\.invoice_number\}`\)/);
-  assert.match(k, /veiligeBestandsnaam\(data\.name \|\| '', 'Prijsopgave'\)/);
+  // Drive-naam = de downloadnaam (veiligeBestandsnaam), met het nummer ervoor als het er niet in staat.
+  assert.match(k, /metNummer\(veiligeBestandsnaam\(naam \|\| '', n \? `\$\{terugval\} \$\{n\}` : terugval\), n\)/);
+  assert.match(k, /documentNaam\(data\.name, data\.invoice_number, 'Factuur'\)/);
+  assert.match(k, /documentNaam\(data\.name, data\.quote_number, 'Prijsopgave'\)/);
+  assert.equal(kern.metNummer("Website.pdf", "2026-014"), "2026-014 Website.pdf");
+  assert.equal(kern.metNummer("Factuur 2026-014.pdf", "2026-014"), "Factuur 2026-014.pdf"); // staat er al in
+  assert.equal(kern.metNummer("2026-014 website.pdf", "2026-014"), "2026-014 website.pdf");
+  assert.equal(kern.metNummer("Website.pdf", null), "Website.pdf");
+  assert.equal(kern.metNummer("Website.pdf", "a/b"), "a-b Website.pdf"); // veilig voor Drive
 });
 
 // ---------------------------------------------------------------------------------
@@ -481,6 +488,34 @@ test("drive_koppeling alleen via de service-role; nooit tokens naar de browser",
   const status = lees("lib/drive/koppeling.ts");
   assert.ok(!/refresh/.test(status.slice(status.indexOf("export async function driveStatus"))), "status zonder token");
 });
+test("DriveFout: technische oorzaak voor de logs, korte melding voor de gebruiker", async () => {
+  const res = new Response(JSON.stringify({ error: { errors: [{ reason: "rateLimitExceeded" }], message: "Rate Limit Exceeded" } }), { status: 403 });
+  const f = await kern.DriveClient.fout(res);
+  assert.equal(f.code, "google");
+  assert.equal(f.message, kern.MELDING.google);
+  assert.equal(f.detail, "HTTP 403 rateLimitExceeded: Rate Limit Exceeded");
+  assert.equal(kern.foutTekst(f), `google: ${kern.MELDING.google} (HTTP 403 rateLimitExceeded: Rate Limit Exceeded)`);
+  const vol = await kern.DriveClient.fout(new Response(JSON.stringify({ error: { errors: [{ reason: "storageQuotaExceeded" }] } }), { status: 403 }));
+  assert.equal(vol.code, "vol");
+  assert.equal(kern.foutTekst(new Error("x")), "x");
+  // Token verversen mislukt (app in "Testing": na 7 dagen invalid_grant) → opnieuw koppelen, met oorzaak.
+  const nep = async () => new Response(JSON.stringify({ error: "invalid_grant", error_description: "Token has been expired or revoked." }), { status: 400 });
+  await assert.rejects(
+    () => kern.vernieuwToken(nep, { clientId: "c", clientSecret: "s", refreshToken: "r" }),
+    (e) => e.code === "opnieuw_koppelen" && /invalid_grant/.test(e.detail) && !/\br\b|"s"/.test(e.detail),
+  );
+});
+
+test("Test Drive-koppeling en logs met [drive]", () => {
+  const d = lees("lib/drive/diagnose.ts");
+  for (const pad of ["boekhoudPad('factuur', jaar)", "boekhoudPad('prijsopgave', jaar)", "boekhoudPad('bonnetje', jaar)", "[KLANTEN]", "[ALGEMEEN]"]) assert.ok(d.includes(pad), pad);
+  assert.ok(!/upload\(/.test(d), "de diagnose uploadt niets");
+  assert.match(lees("app/api/drive/diagnose/route.ts"), /export const POST = driveRoute\([\s\S]*alleenEigenaar: true/);
+  const k = lees("lib/drive/kopieen.ts");
+  assert.match(k, /console\.error\(`\[drive\] \$\{label\}: MISLUKT/);
+  assert.match(k, /console\.info\(`\[drive\] \$\{label\}: gestart`\)/);
+});
+
 test("kopieën na het antwoord (after), best effort; lib/invoice ongewijzigd", () => {
   const k = lees("lib/drive/kopieen.ts");
   assert.match(k, /import \{ after \} from 'next\/server';/);

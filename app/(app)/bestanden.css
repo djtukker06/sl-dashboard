@@ -109,6 +109,32 @@ tr:hover .bs-acties, .bs-kaartje:hover .bs-acties, .bs-acties:focus-within { opa
 /* Instellingen */
 .bs-instellingen-acties { display: flex; flex-wrap: wrap; gap: 8px; }
 
+/* "Test Drive-koppeling": per stap OK / fout / info. */
+.bs-diagnose { list-style: none; margin: 4px 0 0; padding: 0; display: grid; gap: 6px; max-width: 900px; }
+.bs-diagnose-stap {
+  display: grid;
+  grid-template-columns: 20px minmax(140px, 260px) 1fr;
+  gap: 4px 10px;
+  align-items: baseline;
+  padding: 7px 10px;
+  border: 1px solid var(--sl-line-soft);
+  border-radius: var(--sl-r);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.bs-diagnose-teken { font-weight: 700; text-align: center; }
+.bs-diagnose-stap.is-ok .bs-diagnose-teken { color: #8fbf8a; }
+.bs-diagnose-stap.is-fout { border-color: var(--sl-danger); }
+.bs-diagnose-stap.is-fout .bs-diagnose-teken { color: var(--sl-danger); }
+.bs-diagnose-stap.is-info .bs-diagnose-teken { color: var(--sl-muted); }
+.bs-diagnose-naam { font-weight: 600; overflow-wrap: anywhere; }
+.bs-diagnose-naam a { color: inherit; }
+.bs-diagnose-tekst { color: var(--sl-muted); overflow-wrap: anywhere; }
+@media (max-width: 720px) {
+  .bs-diagnose-stap { grid-template-columns: 20px 1fr; }
+  .bs-diagnose-tekst { grid-column: 2; }
+}
+
 /* Dialogen */
 .bs-dialoog {
   width: min(460px, calc(100vw - 32px)); padding: 0; border: 1px solid var(--sl-line); border-radius: 8px;

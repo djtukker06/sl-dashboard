@@ -65,6 +65,21 @@ export const AI_VELDEN = [
 ] as const;
 export type AiVeld = (typeof AI_VELDEN)[number];
 
+/**
+ * De drie velden die er bij elk bonnetje/elke inkoopfactuur moeten zijn. Claude probeert ze
+ * uit te lezen; lukt dat niet, dan vraagt de app de gebruiker ze zelf in te vullen en staat
+ * de upload als "Aanvullen" in de lijst.
+ */
+export const VERPLICHTE_VELDEN = ['leverancier', 'datum', 'totaal'] as const;
+export type VerplichtVeld = (typeof VERPLICHTE_VELDEN)[number];
+export const VERPLICHT_LABEL: Record<VerplichtVeld, { naam: string; lidwoord: string }> = {
+  leverancier: { naam: 'leverancier', lidwoord: 'de' },
+  datum: { naam: 'datum', lidwoord: 'de' },
+  totaal: { naam: 'bedrag', lidwoord: 'het' }
+};
+/** In ai_fields staat een onzeker uitgelezen veld als 'onzeker:<veld>' (geen extra kolom nodig). */
+export const ONZEKER_PREFIX = 'onzeker:';
+
 export const TOEGESTANE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif', 'application/pdf'] as const;
 export type BestandsType = (typeof TOEGESTANE_TYPES)[number];
 export const MAX_BESTAND_BYTES = 25 * 1024 * 1024;
@@ -108,6 +123,8 @@ export interface Uitgave {
   notitie: string;
   status: Status;
   aiVelden: AiVeld[];
+  /** Automatisch ingevulde verplichte velden waar Claude niet zeker van was ("controleer dit"). */
+  aiOnzeker: VerplichtVeld[];
   aiStatus: 'geen' | 'klaar' | 'mislukt';
   aiMelding: string;
   bron: 'upload' | 'mail' | 'handmatig';
@@ -139,6 +156,7 @@ export interface UitgaveInvoer {
   status?: string;
   soort?: string | null;
   aiVelden?: string[];
+  aiOnzeker?: string[];
 }
 
 export interface Leverancier {
@@ -534,6 +552,8 @@ export interface RuwUitgelezen {
   omschrijving?: unknown;
   categorie?: unknown;
   betaalmethode?: unknown;
+  /** Per verplicht veld 'zeker' of 'onzeker'. */
+  zekerheid?: unknown;
 }
 
 export interface Uitgelezen {
@@ -547,6 +567,83 @@ export interface Uitgelezen {
   omschrijving: string | null;
   categorie: Categorie | null;
   betaaldVia: Betaalwijze | null;
+  /** Ingevulde verplichte velden waar het model niet zeker van was. */
+  onzeker: VerplichtVeld[];
+}
+
+/** Alleen een expliciet 'zeker' telt als zeker; alles anders (ook ontbreken) is onzeker. */
+function leesZekerheid(z: unknown, veld: VerplichtVeld): boolean {
+  if (!z || typeof z !== 'object') return true; // oud antwoord zonder zekerheid: niet extra markeren
+  const w = (z as Record<string, unknown>)[veld];
+  return typeof w === 'string' && /^(zeker|certain|sure|high)$/i.test(w.trim());
+}
+
+const RECHTSVORM =
+  /(?:[\s,]+|^)(?:b\.?\s?v\.?|n\.?\s?v\.?|v\.?\s?o\.?\s?f\.?|c\.?\s?v\.?|ltd\.?|limited|inc\.?|incorporated|llc|l\.?l\.?c\.?|gmbh|ag|s\.?a\.?r\.?l\.?|s\.?a\.?|plc|corp\.?|corporation|co\.?|& co\.?|ug|bvba|e\.?k\.?)$/i;
+
+/**
+ * Bedrijfsnaam zoals op de bon, zonder rechtsvorm-ruis aan het eind: "Albert Heijn B.V." →
+ * "Albert Heijn", "Adobe Systems Software Ireland Ltd" → "Adobe Systems Software Ireland".
+ * Een naam die alleen uit een rechtsvorm bestaat blijft staan.
+ */
+export function schoneBedrijfsnaam(naam: string): string {
+  let s = naam.replace(/\s+/g, ' ').trim();
+  for (let i = 0; i < 3; i++) {
+    const kaal = s.replace(RECHTSVORM, '').replace(/[\s,.\-–]+$/, '').trim();
+    if (!kaal || kaal === s) break;
+    s = kaal;
+  }
+  return s;
+}
+
+/** Welke verplichte velden (leverancier, datum, bedrag) nog leeg zijn. */
+export function ontbrekendeVelden(u: Pick<Uitgave, 'leverancier' | 'datum' | 'totaal'>): VerplichtVeld[] {
+  const leeg: Record<VerplichtVeld, boolean> = {
+    leverancier: !u.leverancier?.trim(),
+    datum: !u.datum,
+    totaal: u.totaal === null || u.totaal === undefined
+  };
+  return VERPLICHTE_VELDEN.filter((v) => leeg[v]);
+}
+
+/**
+ * Afgeleide status voor de lijst: 'aanvullen' zolang een verplicht veld ontbreekt,
+ * 'controleren' als een uitgelezen verplicht veld onzeker is, anders null.
+ */
+export function aandachtVoor(u: Pick<Uitgave, 'leverancier' | 'datum' | 'totaal' | 'aiOnzeker'>): 'aanvullen' | 'controleren' | null {
+  if (ontbrekendeVelden(u).length) return 'aanvullen';
+  if ((u.aiOnzeker ?? []).length) return 'controleren';
+  return null;
+}
+
+function opsomming(delen: string[]): string {
+  return delen.length <= 1 ? (delen[0] ?? '') : `${delen.slice(0, -1).join(', ')} en ${delen[delen.length - 1]}`;
+}
+
+/** "Kon de datum niet lezen — vul hem zelf in." / "Kon de leverancier en het bedrag niet lezen — vul ze zelf in." */
+export function ontbreektMelding(velden: VerplichtVeld[], uitgelezen = true): string {
+  if (!velden.length) return '';
+  const namen = velden.map((v) => `${VERPLICHT_LABEL[v].lidwoord} ${VERPLICHT_LABEL[v].naam}`);
+  const wie = velden.length === 1 ? 'hem' : 'ze';
+  return uitgelezen ? `Kon ${opsomming(namen)} niet lezen — vul ${wie} zelf in.` : `Vul ${opsomming(namen)} nog in.`;
+}
+
+/** ai_fields (tekstarray) → automatisch ingevulde velden en onzekere verplichte velden. */
+export function leesAiVelden(ruw: string[] | null | undefined): { velden: AiVeld[]; onzeker: VerplichtVeld[] } {
+  const lijst = ruw ?? [];
+  const velden = lijst.filter((v): v is AiVeld => (AI_VELDEN as readonly string[]).includes(v));
+  const onzeker = lijst
+    .filter((v) => v.startsWith(ONZEKER_PREFIX))
+    .map((v) => v.slice(ONZEKER_PREFIX.length))
+    .filter((v): v is VerplichtVeld => (VERPLICHTE_VELDEN as readonly string[]).includes(v) && velden.includes(v as AiVeld));
+  return { velden: [...new Set(velden)], onzeker: [...new Set(onzeker)] };
+}
+
+/** Omgekeerd: velden + onzeker → ai_fields. Onzeker telt alleen voor een automatisch ingevuld veld. */
+export function schrijfAiVelden(velden: readonly string[], onzeker: readonly string[] = []): string[] {
+  const v = [...new Set(velden.filter((x) => (AI_VELDEN as readonly string[]).includes(x)))];
+  const o = [...new Set(onzeker.filter((x) => (VERPLICHTE_VELDEN as readonly string[]).includes(x) && v.includes(x)))];
+  return [...v, ...o.map((x) => ONZEKER_PREFIX + x)];
 }
 
 function leesTarief(v: unknown): BtwTarief | null {
@@ -601,8 +698,14 @@ export function normaliseerUitgelezen(r: RuwUitgelezen, vandaag: string): Uitgel
   const valutaRuw = schoon(r.valuta, 10).toUpperCase().replace('€', 'EUR');
   const valuta = /^[A-Z]{3}$/.test(valutaRuw) ? valutaRuw : null;
   const categorie = isCategorie(r.categorie) ? r.categorie : null;
+  const leverancierRuw = tekst(r.leverancier, 200);
+  const leverancier = leverancierRuw ? schoneBedrijfsnaam(leverancierRuw) || null : null;
+  const waarden: Record<VerplichtVeld, unknown> = { leverancier, datum, totaal };
+  const onzeker = VERPLICHTE_VELDEN.filter((v) => waarden[v] !== null && !leesZekerheid(r.zekerheid, v));
+  // Een bedrag in een andere valuta dan EUR altijd laten controleren.
+  if (totaal !== null && valuta && valuta !== 'EUR' && !onzeker.includes('totaal')) onzeker.push('totaal');
   return {
-    leverancier: tekst(r.leverancier, 200),
+    leverancier,
     datum,
     totaal,
     btwBedrag,
@@ -611,7 +714,8 @@ export function normaliseerUitgelezen(r: RuwUitgelezen, vandaag: string): Uitgel
     factuurnummer: tekst(r.factuurnummer, 100),
     omschrijving: tekst(r.omschrijving, 300),
     categorie,
-    betaaldVia: leesBetaalwijze(r.betaalmethode)
+    betaaldVia: leesBetaalwijze(r.betaalmethode),
+    onzeker: VERPLICHTE_VELDEN.filter((v) => onzeker.includes(v))
   };
 }
 

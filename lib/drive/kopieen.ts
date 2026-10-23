@@ -4,7 +4,7 @@ import type { Teamlid, TeamlidBewijs } from '@/lib/auth/team';
 import { tabelOntbreekt } from '@/lib/db/ontbreekt';
 import { veiligeBestandsnaam } from '@/lib/invoice/bestandsnaam';
 import { ontbrekendeEnv } from './config';
-import { bonnetjeNaam, boekhoudPad, dagVan, DriveFout, jaarVan, MELDING, type KopieSoort } from './kern';
+import { bonnetjeNaam, boekhoudPad, dagVan, DriveFout, foutTekst, jaarVan, MELDING, metNummer, type KopieSoort } from './kern';
 import { verbind, type Verbinding } from './koppeling';
 import { zorgVoorPad } from './mappen';
 
@@ -19,6 +19,21 @@ import { zorgVoorPad } from './mappen';
 //   wordt vervangen (geen dubbele bestanden).
 // - kopieerBestaande() doet hetzelfde voor alles wat er al was (knop voor de eigenaar),
 //   in porties binnen een tijdslimiet; opnieuw draaien slaat het gekopieerde over.
+// - Logs: elke regel begint met "[drive]" (zoeken in de Vercel-logs). Per kopie een
+//   start- en een eindregel; een startregel zonder eindregel = de functie is gestopt
+//   (maxDuration van de route, 60 s voor facturen) voordat de kopie klaar was.
+
+/** Na zoveel ms een waarschuwing in de logs als de kopie nog loopt (routes hebben maxDuration 60). */
+const TRAAG_MS = 40_000;
+
+/**
+ * Bestandsnaam voor een factuur/prijsopgave in Drive: dezelfde (veilige) naam als de
+ * download, met het nummer ervoor als het er nog niet in staat (zie metNummer in kern.ts).
+ */
+export function documentNaam(naam: string | null | undefined, nummer: string | null | undefined, terugval: string): string {
+  const n = (nummer || '').trim();
+  return metNummer(veiligeBestandsnaam(naam || '', n ? `${terugval} ${n}` : terugval), n);
+}
 
 interface Bron {
   pad: string;
@@ -35,8 +50,8 @@ async function leesBron(v: Verbinding, soort: KopieSoort, id: string): Promise<B
     return {
       pad: data.pdf_path,
       bucket: 'invoices',
-      // Dezelfde naam als de download (app/api/invoices/[id]/pdf).
-      naam: veiligeBestandsnaam(data.name || '', `Factuur ${data.invoice_number}`),
+      // De naam van de download (app/api/invoices/[id]/pdf), met het factuurnummer erbij.
+      naam: documentNaam(data.name, data.invoice_number, 'Factuur'),
       mime: 'application/pdf',
       jaar: jaarVan(data.issued_at)
     };
@@ -47,7 +62,7 @@ async function leesBron(v: Verbinding, soort: KopieSoort, id: string): Promise<B
     return {
       pad: data.pdf_path,
       bucket: 'invoices',
-      naam: veiligeBestandsnaam(data.name || '', 'Prijsopgave'),
+      naam: documentNaam(data.name, data.quote_number, 'Prijsopgave'),
       mime: 'application/pdf',
       jaar: jaarVan(data.issued_at)
     };
@@ -70,10 +85,18 @@ async function leesBron(v: Verbinding, soort: KopieSoort, id: string): Promise<B
 }
 
 export type KopieUitkomst = 'gekopieerd' | 'bijgewerkt' | 'overgeslagen' | 'geen_bestand';
+export interface KopieResultaat {
+  uitkomst: KopieUitkomst;
+  /** Map in Drive, bv. "Boekhouding/Facturen/2026". */
+  map?: string;
+  naam?: string;
+}
 
-async function kopieer(v: Verbinding, soort: KopieSoort, id: string, controleer: boolean): Promise<KopieUitkomst> {
+async function kopieer(v: Verbinding, soort: KopieSoort, id: string, controleer: boolean): Promise<KopieResultaat> {
   const bron = await leesBron(v, soort, id);
-  if (!bron) return 'geen_bestand';
+  if (!bron) return { uitkomst: 'geen_bestand' };
+  const map = boekhoudPad(soort, bron.jaar).join('/');
+  const r = (uitkomst: KopieUitkomst): KopieResultaat => ({ uitkomst, map, naam: bron.naam });
 
   const { data: bestaand, error } = await v.service
     .from('drive_kopieen')
@@ -98,10 +121,10 @@ async function kopieer(v: Verbinding, soort: KopieSoort, id: string, controleer:
       else throw e;
     }
   }
-  if (driveId && bestaand?.bron_pad === bron.pad) return 'overgeslagen';
+  if (driveId && bestaand?.bron_pad === bron.pad) return r('overgeslagen');
 
   const { data: blob, error: dlFout } = await v.service.storage.from(bron.bucket).download(bron.pad);
-  if (dlFout || !blob) throw new Error(`Bestand niet op te halen uit Storage (${soort})`);
+  if (dlFout || !blob) throw new Error(`Bestand niet op te halen uit Storage (${bron.bucket}/${bron.pad}): ${dlFout?.message ?? 'leeg'}`);
   const inhoud = new Uint8Array(await blob.arrayBuffer());
 
   let resultaat: KopieUitkomst = 'gekopieerd';
@@ -125,16 +148,51 @@ async function kopieer(v: Verbinding, soort: KopieSoort, id: string, controleer:
     { onConflict: 'root_id,bron,bron_id' }
   );
   if (schrijfFout) console.error('[drive] kopie vastleggen', schrijfFout.code ?? '', schrijfFout.message);
-  return resultaat;
+  return r(resultaat);
 }
 
 /** Kopieer één factuur/prijsopgave/bonnetje-bestand naar Drive (gooit bij fouten). */
-export async function kopieerNaarDrive(bewijs: TeamlidBewijs, soort: KopieSoort, id: string): Promise<KopieUitkomst> {
+export async function kopieerNaarDrive(bewijs: TeamlidBewijs, soort: KopieSoort, id: string): Promise<KopieResultaat> {
   const v = await verbind(bewijs);
   return kopieer(v, soort, id, true);
 }
 
+/** Geen fout maar een toestand (niet ingericht/gekoppeld): één korte info-regel. */
 const STIL = new Set(['niet_ingericht', 'niet_gekoppeld', 'tabel_ontbreekt']);
+
+/**
+ * Voert een Drive-taak uit binnen after(), met logregels die in Vercel te vinden zijn:
+ * "[drive] <label>: gestart", daarna "klaar …", "overgeslagen …" of "MISLUKT …", en een
+ * waarschuwing als het na TRAAG_MS nog loopt. Gooit nooit.
+ */
+export async function metDriveLog<T>(label: string, fn: () => Promise<T>, klaar: (r: T) => string = () => 'klaar'): Promise<void> {
+  const start = Date.now();
+  const traag = setTimeout(() => {
+    console.warn(`[drive] ${label}: na ${Math.round(TRAAG_MS / 1000)} s nog niet klaar (de route stopt na maxDuration; dan ontbreekt de kopie)`);
+  }, TRAAG_MS);
+  console.info(`[drive] ${label}: gestart`);
+  try {
+    const r = await fn();
+    console.info(`[drive] ${label}: ${klaar(r)} (${((Date.now() - start) / 1000).toFixed(1)} s)`);
+  } catch (e) {
+    if (e instanceof DriveFout && STIL.has(e.code)) {
+      console.info(`[drive] ${label}: overgeslagen, ${foutTekst(e)}`);
+    } else {
+      console.error(`[drive] ${label}: MISLUKT na ${((Date.now() - start) / 1000).toFixed(1)} s, ${foutTekst(e)}`);
+    }
+  } finally {
+    clearTimeout(traag);
+  }
+}
+
+function plan(label: string, taak: () => Promise<void>): void {
+  try {
+    after(taak);
+  } catch (e) {
+    // after() buiten een verzoek (zou niet moeten): dan in elk geval in de logs.
+    console.error(`[drive] ${label}: plannen mislukt, ${foutTekst(e)}`);
+  }
+}
 
 /**
  * Plan een kopie naar Drive ná het antwoord (next/server `after`). Gooit nooit en wacht
@@ -142,36 +200,30 @@ const STIL = new Set(['niet_ingericht', 'niet_gekoppeld', 'tabel_ontbreekt']);
  */
 export function naDrive(lid: Teamlid, soort: KopieSoort, id: string | null | undefined): void {
   try {
-    if (!id || lid.overgang || ontbrekendeEnv().length) return;
+    const label = `kopie ${soort} ${id ?? '?'}`;
+    if (!id || lid.overgang) return;
+    const ontbreekt = ontbrekendeEnv();
+    if (ontbreekt.length) {
+      console.info(`[drive] ${label}: overgeslagen, env ontbreekt (${ontbreekt.join(', ')})`);
+      return;
+    }
     const bewijs = lid.bewijs;
-    after(async () => {
-      try {
-        await kopieerNaarDrive(bewijs, soort, id);
-      } catch (e) {
-        if (e instanceof DriveFout && STIL.has(e.code)) return;
-        console.warn(`[drive] kopie ${soort} ${id} mislukt:`, (e as Error)?.message ?? e);
-      }
-    });
+    plan(label, () =>
+      metDriveLog(
+        label,
+        () => kopieerNaarDrive(bewijs, soort, id),
+        (r) => (r.uitkomst === 'geen_bestand' ? 'geen PDF/bestand gevonden, niets gekopieerd' : `${r.uitkomst} → ${r.map}/${r.naam}`)
+      )
+    );
   } catch (e) {
-    console.warn('[drive] kopie plannen mislukt:', (e as Error)?.message ?? e);
+    console.error(`[drive] kopie ${soort} ${id ?? '?'}: plannen mislukt, ${foutTekst(e)}`);
   }
 }
 
-/** Plan iets anders na het antwoord (best effort, zelfde garanties als naDrive). */
+/** Plan iets anders na het antwoord (best effort, zelfde garanties en logs als naDrive). */
 export function naAntwoord(label: string, fn: () => Promise<unknown>): void {
-  try {
-    if (ontbrekendeEnv().length) return;
-    after(async () => {
-      try {
-        await fn();
-      } catch (e) {
-        if (e instanceof DriveFout && STIL.has(e.code)) return;
-        console.warn(`[drive] ${label} mislukt:`, (e as Error)?.message ?? e);
-      }
-    });
-  } catch {
-    /* best effort */
-  }
+  if (ontbrekendeEnv().length) return;
+  plan(label, () => metDriveLog(label, fn));
 }
 
 export interface BulkUitkomst {
@@ -213,14 +265,14 @@ export async function kopieerBestaande(bewijs: TeamlidBewijs, tijdslimietMs = 40
   for (const x of te) {
     if (Date.now() - start > tijdslimietMs) break;
     try {
-      const r = await kopieer(v, x.soort, x.id, false);
+      const { uitkomst: r } = await kopieer(v, x.soort, x.id, false);
       if (r === 'overgeslagen' || r === 'geen_bestand') uit.overgeslagen++;
       else uit.gekopieerd++;
     } catch (e) {
       // Koppeling weg of opslag vol: stoppen in plaats van elk bestand te laten mislukken.
       if (e instanceof DriveFout && (e.code === 'opnieuw_koppelen' || e.code === 'vol' || e.code === 'tabel_ontbreekt')) throw e;
       uit.mislukt++;
-      console.warn(`[drive] bestaande ${x.soort} ${x.id} kopiëren mislukt:`, (e as Error)?.message ?? e);
+      console.error(`[drive] bestaande ${x.soort} ${x.id} kopiëren MISLUKT, ${foutTekst(e)}`);
     }
     uit.resterend--;
   }

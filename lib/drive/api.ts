@@ -1,7 +1,7 @@
 import 'server-only';
 import { NextResponse } from 'next/server';
 import { controleerRoute, metTeamlid, type Teamlid } from '@/lib/auth/team';
-import { DriveFout } from './kern';
+import { DriveFout, foutTekst } from './kern';
 
 // Gedeelde stukken voor /api/drive/**. Elke route:
 //   1. controleert eerst sessie + teamlidmaatschap (lib/auth/team.ts: 401/403/503) en bij
@@ -32,7 +32,7 @@ export function driveRoute<C>(fn: Handler<C>, opties: { alleenEigenaar?: boolean
       return await metTeamlid(c.lid, () => fn(request, ctx, c.lid));
     } catch (e) {
       if (e instanceof DriveFout) {
-        if (e.code === 'google') console.warn('[drive]', e.message);
+        if (e.code === 'google' || e.code === 'opnieuw_koppelen' || e.code === 'vol') console.warn('[drive]', new URL(request.url).pathname, foutTekst(e));
         return fout(e.status, e.message, e.code);
       }
       console.error('[drive]', e);

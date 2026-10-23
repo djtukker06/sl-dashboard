@@ -9,7 +9,9 @@ export function LeverancierVeld({
   leveranciers,
   onChange,
   onKies,
-  className
+  className,
+  beschrijving,
+  verplicht
 }: {
   waarde: string;
   leveranciers: Leverancier[];
@@ -17,6 +19,9 @@ export function LeverancierVeld({
   /** Gekozen uit de lijst (of exact getypt en het veld verlaten). */
   onKies: (l: Leverancier) => void;
   className?: string;
+  /** id van een uitleg onder het veld (aria-describedby). */
+  beschrijving?: string;
+  verplicht?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [actief, setActief] = useState(0);
@@ -54,6 +59,9 @@ export function LeverancierVeld({
         aria-expanded={zichtbaar.length > 0}
         aria-controls={lijstId}
         aria-autocomplete="list"
+        aria-describedby={beschrijving}
+        aria-required={verplicht || undefined}
+        aria-invalid={verplicht && !waarde.trim() && beschrijving ? true : undefined}
         onChange={(e) => {
           onChange(e.target.value);
           setOpen(true);

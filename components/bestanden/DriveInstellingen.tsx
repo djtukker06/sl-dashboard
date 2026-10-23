@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import type { DriveStatus } from '@/lib/drive/types';
+import type { DiagnoseResultaat, DriveStatus } from '@/lib/drive/types';
 import { BevestigDialoog } from './Dialogen';
 import { driveApi } from './driveApi';
 
@@ -18,6 +18,23 @@ export function DriveInstellingen({ status }: { status: DriveStatus }) {
   const [bezig, setBezig] = useState(false);
   const [melding, setMelding] = useState<string | null>(null);
   const [ontkoppelVraag, setOntkoppelVraag] = useState(false);
+  const [diagnose, setDiagnose] = useState<DiagnoseResultaat | null>(null);
+
+  /** "Test Drive-koppeling": controleert koppeling en vaste mappen zonder een factuur te maken. */
+  async function test() {
+    setBezig(true);
+    setMelding('Drive-koppeling testen…');
+    setDiagnose(null);
+    try {
+      const r = await driveApi<DiagnoseResultaat>('/api/drive/diagnose', 'POST');
+      setDiagnose(r);
+      setMelding(r.ok ? `Alles in orde (${(r.duurMs / 1000).toFixed(1)} s). Nieuwe facturen gaan automatisch naar Drive.` : 'Er ging iets mis; zie hieronder.');
+    } catch (e) {
+      setMelding(e instanceof Error ? e.message : 'Testen is mislukt.');
+    } finally {
+      setBezig(false);
+    }
+  }
 
   async function kopieer() {
     setBezig(true);
@@ -66,6 +83,9 @@ export function DriveInstellingen({ status }: { status: DriveStatus }) {
         </p>
         {status.eigenaar ? (
           <div className="bs-instellingen-acties">
+            <button type="button" className="db-knop" disabled={bezig} onClick={() => void test()} title="Controleert de koppeling en de vaste mappen (maakt ontbrekende aan); er wordt niets geüpload">
+              Test Drive-koppeling
+            </button>
             <button type="button" className="db-knop" disabled={bezig} onClick={() => void kopieer()}>
               Bestaande facturen, prijsopgaven en bonnetjes naar Drive kopiëren
             </button>
@@ -80,6 +100,28 @@ export function DriveInstellingen({ status }: { status: DriveStatus }) {
           <p className="bs-uitleg" role="status">
             {melding}
           </p>
+        )}
+        {diagnose && (
+          <ul className="bs-diagnose" aria-label="Uitkomst van de test">
+            {diagnose.stappen.map((s, i) => (
+              <li key={i} className={`bs-diagnose-stap is-${s.uitkomst}`}>
+                <span className="bs-diagnose-teken" aria-hidden="true">
+                  {s.uitkomst === 'ok' ? '✓' : s.uitkomst === 'fout' ? '✕' : 'i'}
+                </span>
+                <span className="bs-diagnose-naam">
+                  {s.link ? (
+                    <a href={s.link} target="_blank" rel="noopener noreferrer">
+                      {s.naam}
+                    </a>
+                  ) : (
+                    s.naam
+                  )}
+                  <span className="sr-only">{s.uitkomst === 'ok' ? ' (OK)' : s.uitkomst === 'fout' ? ' (fout)' : ''}</span>
+                </span>
+                <span className="bs-diagnose-tekst">{s.tekst}</span>
+              </li>
+            ))}
+          </ul>
         )}
       </div>
       {ontkoppelVraag && (

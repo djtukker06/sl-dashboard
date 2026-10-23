@@ -1,7 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { dbFout, isUuid, UitgavenFout } from './api';
 import {
-  AI_VELDEN,
   isBestandsType,
   isBetaalwijze,
   isBtwTarief,
@@ -9,12 +8,13 @@ import {
   isDatum,
   isSoort,
   isStatus,
+  leesAiVelden,
   leesBedrag,
+  schrijfAiVelden,
   afgeleideSoort,
   periodeVan,
   zoekWoorden,
   schoon,
-  type AiVeld,
   type Leverancier,
   type Soort,
   type Uitgave,
@@ -141,7 +141,8 @@ export function naarUitgave(r: UitgaveRij): Uitgave {
     projectNotitie: r.project_note,
     notitie: r.notes,
     status: isStatus(r.status) ? r.status : 'concept',
-    aiVelden: (r.ai_fields ?? []).filter((v): v is AiVeld => (AI_VELDEN as readonly string[]).includes(v)),
+    aiVelden: leesAiVelden(r.ai_fields).velden,
+    aiOnzeker: leesAiVelden(r.ai_fields).onzeker,
     aiStatus: r.ai_status === 'klaar' || r.ai_status === 'mislukt' ? r.ai_status : 'geen',
     aiMelding: r.ai_message,
     bron: r.source === 'mail' || r.source === 'handmatig' ? r.source : 'upload',
@@ -226,9 +227,11 @@ export function parseInvoer(b: UitgaveInvoer): { ok: true; waarde: Kolommen } | 
     k.status = b.status;
   }
   if (heeft('aiVelden')) {
-    k.ai_fields = Array.isArray(b.aiVelden)
-      ? [...new Set(b.aiVelden.filter((v) => (AI_VELDEN as readonly string[]).includes(v)))]
-      : [];
+    // Onzeker-markeringen ('onzeker:<veld>') gaan mee in dezelfde kolom; zonder aiOnzeker vervallen ze.
+    k.ai_fields = schrijfAiVelden(
+      Array.isArray(b.aiVelden) ? b.aiVelden.map(String) : [],
+      Array.isArray(b.aiOnzeker) ? b.aiOnzeker.map(String) : []
+    );
   }
   return { ok: true, waarde: k };
 }

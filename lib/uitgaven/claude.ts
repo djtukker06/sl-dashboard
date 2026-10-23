@@ -8,7 +8,8 @@ import {
   type Leverancier,
   type RuwUitgelezen,
   type Uitgave,
-  type Uitgelezen
+  type Uitgelezen,
+  type VerplichtVeld
 } from './model';
 
 // De Claude-kant van het uitlezen: schema, prompt, de aanroep en het samenvoegen met wat
@@ -44,12 +45,19 @@ export const SCHEMA = {
     'factuurnummer',
     'omschrijving',
     'categorie',
-    'betaalmethode'
+    'betaalmethode',
+    'zekerheid'
   ],
   properties: {
-    leverancier: { ...leeg, description: 'Naam van de winkel/het bedrijf dat het bonnetje of de factuur uitgaf, zonder rechtsvorm-ruis.' },
-    datum: { ...leeg, description: 'Datum van aankoop of factuurdatum, formaat YYYY-MM-DD.' },
-    totaal: { ...getal, description: 'Totaalbedrag inclusief btw (wat er betaald is).' },
+    leverancier: {
+      ...leeg,
+      description: 'Bedrijfsnaam van de verkoper zoals op het document, zonder rechtsvorm (B.V., N.V., Ltd, Inc., GmbH, …). null als niet leesbaar.'
+    },
+    datum: { ...leeg, description: 'Aankoop- of factuurdatum in ISO-formaat YYYY-MM-DD. null als niet (zeker) leesbaar.' },
+    totaal: {
+      ...getal,
+      description: 'Totaalbedrag inclusief btw in euro (wat er betaald is). null als niet (zeker) leesbaar.'
+    },
     btwBedrag: { ...getal, description: 'Totaal btw-bedrag. 0 als er geen btw is of de btw verlegd is.' },
     btwTarief: {
       // Met '%': de API weigert enum-strings die op een getal lijken ('21'); leesTarief haalt het teken weg.
@@ -66,6 +74,17 @@ export const SCHEMA = {
     betaalmethode: {
       anyOf: [{ type: 'string', enum: ['zakelijk', 'prive', 'creditcard', 'contant'] }, { type: 'null' }],
       description: 'Alleen als het zichtbaar is: pin/iDEAL/overboeking/incasso = zakelijk, creditcard = creditcard, contant = contant. Anders null.'
+    },
+    zekerheid: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['leverancier', 'datum', 'totaal'],
+      description: 'Per verplicht veld: "zeker" als je het duidelijk op het document leest, "onzeker" als je twijfelt (vaag, afgesneden, meerdere kandidaten).',
+      properties: {
+        leverancier: { type: 'string', enum: ['zeker', 'onzeker'] },
+        datum: { type: 'string', enum: ['zeker', 'onzeker'] },
+        totaal: { type: 'string', enum: ['zeker', 'onzeker'] }
+      }
     }
   }
 } as const;
@@ -75,14 +94,15 @@ export function systeemPrompt(vandaag: string, bekend: Leverancier[]) {
   const namen = bekend.slice(0, 80).map((l) => l.naam);
   return `Je leest bonnetjes en (betaalde) inkoopfacturen uit voor de boekhouding van Studio Levant, een kleine Nederlandse ontwerpstudio (eenmanszaak). Vandaag is ${vandaag}.
 
-Geef precies de gevraagde velden terug. Regels:
-- Vul alleen in wat je echt op het document ziet; anders null. Verzin niets.
+Geef precies de gevraagde velden terug. De drie belangrijkste zijn leverancier, datum en totaal: lees die altijd zo goed mogelijk uit. Regels:
+- Vul alleen in wat je echt op het document ziet; anders null. Verzin niets en gok niet: bij twijfel tussen twee waarden, of als de tekst onleesbaar/afgesneden is, geef null. Een lege waarde vult de gebruiker zelf in; een verkeerde waarde valt niet op.
+- zekerheid: geef voor leverancier, datum en totaal "zeker" als je de waarde duidelijk leest, anders "onzeker" (ook als je null teruggeeft).
 - Bedragen als getal met punt als decimaalteken (12.5), zonder valutateken.
-- totaal = het betaalde bedrag inclusief btw. btwBedrag = de totale btw op het document.
+- totaal = het betaalde eindbedrag inclusief btw, in euro (EUR). Niet een subtotaal, btw-bedrag of wisselgeld. Staat het document in een andere valuta, gebruik dan een vermeld bedrag in euro als dat er is (valuta "EUR"); anders het totaal in die valuta met de juiste valuta-code en zekerheid "onzeker". btwBedrag = de totale btw op het document.
 - Bij "btw verlegd" / "reverse charge" / "VAT reverse charged": btwTarief "verlegd", btwBedrag 0. Tarieven als "21%", "9%" of "0%".
 - Buitenlandse factuur zonder btw (bv. een Amerikaans softwarebedrijf): btwTarief "geen", btwBedrag 0.
-- Datum als YYYY-MM-DD. Nederlandse datums zijn dag-maand-jaar.
-- leverancier: de verkoper (niet Studio Levant zelf, dat is de klant). Gebruik de gangbare naam.${
+- datum in ISO-formaat YYYY-MM-DD: de aankoop- of factuurdatum (niet de vervaldatum of leverdatum). Nederlandse datums zijn dag-maand-jaar; een jaar van twee cijfers is 20xx.
+- leverancier: de bedrijfsnaam van de verkoper zoals op de bon/factuur staat (niet Studio Levant zelf, dat is de klant), zonder rechtsvorm en ruis: geen "B.V.", "N.V.", "V.O.F.", "Ltd", "Inc.", "GmbH", adres, filiaalnummer of KvK. Bijvoorbeeld "Albert Heijn" in plaats van "Albert Heijn B.V. filiaal 1234".${
     namen.length ? `\n  Is het een van deze eerder gebruikte leveranciers, schrijf de naam dan precies zo: ${namen.join(', ')}.` : ''
   }
 - omschrijving: kort en in het Nederlands, waarvoor de uitgave is.
@@ -112,7 +132,7 @@ export async function vraagClaude(blokken: ContentBlockParam[], systeem: string)
     bericht = await getClient().messages.create(
       {
         ...basis,
-        system: `${systeem}\n\nAntwoord uitsluitend met één JSON-object met de sleutels: ${SCHEMA.required.join(', ')}. Gebruik null voor onbekend.`
+        system: `${systeem}\n\nAntwoord uitsluitend met één JSON-object met de sleutels: ${SCHEMA.required.join(', ')}. Gebruik null voor onbekend. zekerheid is een object {"leverancier": "zeker"|"onzeker", "datum": …, "totaal": …}.`
       },
       { timeout: 50_000, maxRetries: 1 }
     );
@@ -149,7 +169,7 @@ export function samenvoegen(
   huidig: Uitgave,
   r: Uitgelezen,
   bekend: Leverancier[]
-): { kolommen: Record<string, unknown>; velden: AiVeld[] } {
+): { kolommen: Record<string, unknown>; velden: AiVeld[]; onzeker: VerplichtVeld[] } {
   const kolommen: Record<string, unknown> = {};
   const velden: AiVeld[] = [];
   const bekende = r.leverancier ? vindLeverancier(r.leverancier, bekend) : null;
@@ -184,6 +204,8 @@ export function samenvoegen(
     kolommen[VELD_KOLOM[veld]] = w;
     velden.push(veld);
   }
-  return { kolommen, velden };
+  // Alleen wat nú is ingevuld kan onzeker zijn; een bekende leverancier geldt als zeker.
+  const onzeker = r.onzeker.filter((v) => velden.includes(v) && !(v === 'leverancier' && bekende));
+  return { kolommen, velden, onzeker };
 }
 

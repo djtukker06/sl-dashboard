@@ -10,10 +10,14 @@ import { typtIn } from '@/lib/agenda/client';
 import { downloadLink, euro, uitgavenApi, UitgavenApiFout, type ZoekResultaat } from '@/lib/uitgaven/client';
 import {
   SOORTEN,
+  VERPLICHT_LABEL,
+  aandachtVoor,
   korteDatumNL,
   maandLabel,
   maandNaam,
   maandSleutel,
+  ontbreektMelding,
+  ontbrekendeVelden,
   periodeLabel,
   periodeRond,
   schuifPeriode,
@@ -207,7 +211,10 @@ function Bonnetjes({
       setTeller((t) => t + 1); // thumbnails ophalen
       if (nieuw.length === 1 && !fouten) {
         const u = nieuw[0];
-        toast(`Geüpload: ${uploadNaam(u)}`, { actie: { label: 'Openen', onClick: () => setSelectie(u) } });
+        const ontbreekt = ontbrekendeVelden(u);
+        toast(`Geüpload: ${uploadNaam(u)}${ontbreekt.length ? ` — ${ontbreektMelding(ontbreekt)}` : ''}`, {
+          actie: { label: ontbreekt.length ? 'Aanvullen' : 'Openen', onClick: () => setSelectie(u) }
+        });
       } else if (nieuw.length > 1) {
         toast(`${nieuw.length} bestanden geüpload${fouten ? `, ${fouten} mislukt` : ''}.`);
       }
@@ -598,7 +605,12 @@ function Kaartje({
 }) {
   const pdf = u.bestanden[0]?.type === 'application/pdf';
   return (
-    <button type="button" className={`ug-kaart${open ? ' is-open' : ''}`} onClick={onOpen} aria-label={`${uploadNaam(u)}, ${meta(u)}`}>
+    <button
+      type="button"
+      className={`ug-kaart${open ? ' is-open' : ''}`}
+      onClick={onOpen}
+      aria-label={`${uploadNaam(u)}, ${meta(u)}${!uitlezen && aandachtVoor(u) ? `, ${AANDACHT[aandachtVoor(u)!].label.toLowerCase()}` : ''}`}
+    >
       <span className="ug-kaart-beeld">
         {voorbeeld ? (
           // eslint-disable-next-line @next/next/no-img-element
@@ -609,10 +621,12 @@ function Kaartje({
             {pdf && <span className="ug-kaart-type">PDF</span>}
           </span>
         )}
-        {uitlezen && (
+        {uitlezen ? (
           <span className="ug-kaart-bezig">
             <span className="ug-ai-stip" aria-hidden="true" /> Wordt uitgelezen…
           </span>
+        ) : (
+          <AandachtBadge u={u} />
         )}
       </span>
       <span className="ug-kaart-tekst">
@@ -627,6 +641,27 @@ function Kaartje({
   );
 }
 
+const AANDACHT = {
+  aanvullen: { label: 'Aanvullen', klasse: 'is-aanvullen' },
+  controleren: { label: 'Controleren', klasse: 'is-controleren' }
+} as const;
+
+/** "Aanvullen" (leverancier, datum of bedrag ontbreekt) of "Controleren" (onzeker uitgelezen). */
+function AandachtBadge({ u }: { u: Uitgave }) {
+  const a = aandachtVoor(u);
+  if (!a) return null;
+  const ontbreekt = ontbrekendeVelden(u);
+  const titel =
+    a === 'aanvullen'
+      ? `Nog invullen: ${ontbreekt.map((v) => VERPLICHT_LABEL[v].naam).join(', ')}`
+      : `Controleer: ${u.aiOnzeker.map((v) => VERPLICHT_LABEL[v].naam).join(', ')}`;
+  return (
+    <span className={`ug-badge ${AANDACHT[a].klasse}`} title={titel}>
+      {AANDACHT[a].label}
+    </span>
+  );
+}
+
 function Rij({ u, uitlezen, open, onOpen }: { u: Uitgave; uitlezen: boolean; open: boolean; onOpen: () => void }) {
   return (
     <button type="button" className={`ug-lrij${open ? ' is-open' : ''}`} onClick={onOpen}>
@@ -636,7 +671,10 @@ function Rij({ u, uitlezen, open, onOpen }: { u: Uitgave; uitlezen: boolean; ope
           <UgIcoon naam={u.bestanden[0]?.type === 'application/pdf' ? 'pdf' : 'beeld'} grootte={14} />
           {uploadNaam(u)}
         </span>
-        <span className="ug-lrij-omschrijving">{uitlezen ? 'Wordt uitgelezen…' : u.omschrijving || u.factuurnummer || ''}</span>
+        <span className="ug-lrij-omschrijving">
+          {uitlezen ? 'Wordt uitgelezen…' : u.omschrijving || u.factuurnummer || ''}
+          {!uitlezen && <AandachtBadge u={u} />}
+        </span>
       </span>
       <span className="ug-lrij-soort">{soortLabel(u.soort)}</span>
       <span className="ug-lrij-bedrag">{u.totaal === null ? '—' : euro(u.totaal, u.valuta)}</span>

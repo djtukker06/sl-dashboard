@@ -97,6 +97,17 @@ export function padSleutel(pad: string[]): string {
 }
 
 /** Bestandsnaam van een bonnetje in Drive: "2026-03-14 bonnetje.jpg". */
+/**
+ * Zet het factuur-/offertenummer vóór een bestandsnaam als het er nog niet in staat:
+ * ("Website.pdf", "2026-014") → "2026-014 Website.pdf". Zo zijn facturen met dezelfde
+ * omschrijving in de jaarmap uit elkaar te houden. Zonder nummer: ongewijzigd.
+ */
+export function metNummer(bestandsnaam: string, nummer: string | null | undefined): string {
+  const n = schoneNaam(String(nummer ?? ''), '', 60);
+  if (!n || bestandsnaam.toLowerCase().includes(n.toLowerCase())) return bestandsnaam;
+  return `${n} ${bestandsnaam}`;
+}
+
 export function bonnetjeNaam(dag: string, bestandsnaam: string): string {
   const naam = schoneNaam(bestandsnaam, 'bonnetje', 180);
   return /^\d{4}-\d{2}-\d{2}$/.test(dag) && !naam.startsWith(dag) ? `${dag} ${naam}` : naam;
@@ -162,11 +173,24 @@ const STATUS: Record<DriveFoutCode, number> = {
 export class DriveFout extends Error {
   code: DriveFoutCode;
   status: number;
-  constructor(code: DriveFoutCode, bericht: string) {
+  /**
+   * Technische oorzaak voor de logs en de diagnose van de eigenaar (bv. "HTTP 403
+   * rateLimitExceeded: …"); nooit tokens. De gewone melding blijft voor iedereen kort.
+   */
+  detail: string;
+  constructor(code: DriveFoutCode, bericht: string, detail = '') {
     super(bericht);
     this.code = code;
     this.status = STATUS[code];
+    this.detail = detail.slice(0, 300);
   }
+}
+
+/** Eén regel voor de logs: "code: melding (detail)". */
+export function foutTekst(e: unknown): string {
+  if (e instanceof DriveFout) return `${e.code}: ${e.message}${e.detail ? ` (${e.detail})` : ''}`;
+  if (e instanceof Error) return e.message;
+  return String(e);
 }
 
 export const MELDING: Record<DriveFoutCode, string> = {
@@ -211,17 +235,20 @@ async function tokenVerzoek(f: FetchFn, velden: Record<string, string>) {
       body: new URLSearchParams(velden).toString(),
       cache: 'no-store'
     });
-  } catch {
-    throw new DriveFout('google', MELDING.google);
+  } catch (e) {
+    throw new DriveFout('google', MELDING.google, `token-verzoek: netwerkfout ${(e as Error)?.message ?? ''}`.trim());
   }
   const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
   if (!res.ok) {
-    // invalid_grant: refresh token ingetrokken/verlopen, of de code is al gebruikt.
+    // Alleen de foutcode en -omschrijving van Google, nooit de verzonden velden.
+    const detail = `token-verzoek: HTTP ${res.status} ${String(data.error ?? '')} ${String(data.error_description ?? '')}`.trim();
+    // invalid_grant: refresh token ingetrokken/verlopen (bij een app in "Testing" na 7 dagen),
+    // of de code is al gebruikt.
     if (data.error === 'invalid_grant' || data.error === 'unauthorized_client') {
-      throw new DriveFout('opnieuw_koppelen', MELDING.opnieuw_koppelen);
+      throw new DriveFout('opnieuw_koppelen', MELDING.opnieuw_koppelen, detail);
     }
-    if (data.error === 'invalid_client') throw new DriveFout('niet_ingericht', 'GOOGLE_CLIENT_ID of GOOGLE_CLIENT_SECRET klopt niet.');
-    throw new DriveFout('google', MELDING.google);
+    if (data.error === 'invalid_client') throw new DriveFout('niet_ingericht', 'GOOGLE_CLIENT_ID of GOOGLE_CLIENT_SECRET klopt niet.', detail);
+    throw new DriveFout('google', MELDING.google, detail);
   }
   return data;
 }
@@ -316,8 +343,8 @@ export class DriveClient {
     let res: Response;
     try {
       res = await this.f(url, { ...init, headers, cache: 'no-store' });
-    } catch {
-      throw new DriveFout('google', MELDING.google);
+    } catch (e) {
+      throw new DriveFout('google', MELDING.google, `netwerkfout ${(e as Error)?.message ?? ''}`.trim());
     }
     if (res.status === 401 && opnieuw) return this.verzoek(url, init, false);
     return res;
@@ -333,14 +360,15 @@ export class DriveClient {
   static async fout(res: Response): Promise<DriveFout> {
     const data = (await res.json().catch(() => null)) as { error?: { errors?: { reason?: string }[]; message?: string } } | null;
     const reden = data?.error?.errors?.[0]?.reason ?? '';
-    if (res.status === 404) return new DriveFout('niet_gevonden', MELDING.niet_gevonden);
-    if (res.status === 401) return new DriveFout('opnieuw_koppelen', MELDING.opnieuw_koppelen);
-    if (reden === 'storageQuotaExceeded') return new DriveFout('vol', MELDING.vol);
+    const detail = `HTTP ${res.status} ${reden}${data?.error?.message ? `: ${data.error.message}` : ''}`.trim();
+    if (res.status === 404) return new DriveFout('niet_gevonden', MELDING.niet_gevonden, detail);
+    if (res.status === 401) return new DriveFout('opnieuw_koppelen', MELDING.opnieuw_koppelen, detail);
+    if (reden === 'storageQuotaExceeded') return new DriveFout('vol', MELDING.vol, detail);
     if (res.status === 403 && /insufficient(Permissions|FilePermissions)|ACCESS_TOKEN_SCOPE_INSUFFICIENT/i.test(`${reden} ${data?.error?.message ?? ''}`)) {
-      return new DriveFout('opnieuw_koppelen', MELDING.opnieuw_koppelen);
+      return new DriveFout('opnieuw_koppelen', MELDING.opnieuw_koppelen, detail);
     }
-    if (res.status === 400) return new DriveFout('ongeldig', MELDING.ongeldig);
-    return new DriveFout('google', MELDING.google);
+    if (res.status === 400) return new DriveFout('ongeldig', MELDING.ongeldig, detail);
+    return new DriveFout('google', MELDING.google, detail);
   }
 
   over(): Promise<{ user?: { emailAddress?: string; displayName?: string }; storageQuota?: { limit?: string; usage?: string } }> {

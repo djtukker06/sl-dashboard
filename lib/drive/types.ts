@@ -43,3 +43,21 @@ export interface MapInhoud {
 }
 
 export type KoppelDoel = { map: string } | { klant: string } | { project: string };
+
+/** Eén regel van "Test Drive-koppeling" (POST /api/drive/diagnose, alleen de eigenaar). */
+export interface DiagnoseStap {
+  /** Bv. "Toegang tot Google Drive" of "Boekhouding/Facturen/2026". */
+  naam: string;
+  /** ok = gelukt, fout = mislukt, info = ter informatie (geen fout). */
+  uitkomst: 'ok' | 'fout' | 'info';
+  /** Wat er gebeurde of de fout (met technische oorzaak, nooit tokens). */
+  tekst: string;
+  /** Link naar de map in Google Drive (alleen voor wie met het bedrijfsaccount is ingelogd). */
+  link?: string | null;
+}
+
+export interface DiagnoseResultaat {
+  ok: boolean;
+  stappen: DiagnoseStap[];
+  duurMs: number;
+}

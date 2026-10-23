@@ -304,6 +304,14 @@ De scripts lezen de sleutels alleen uit de procesomgeving (`--env-file`), lezen 
 - **Uitloggen** is een gewoon formulier naar `POST /auth/uitloggen` (controleert de
   `Origin`), zodat het ook in social werkt.
 - Op een telefoon (≤ 720 px) wordt de rail een tabbalk onderaan.
+- **Breedte van de inhoud** (onderaan `app/(app)/app.css`): werkpagina's met veel kolommen
+  (mail, agenda, projectenbord) vullen de volle breedte naast de rail; overzichtspagina's
+  staan gecentreerd met gelijke marges: dashboard, bonnetjes en bestanden max. 1440 px,
+  klant-/projectpagina, klantenlijst en boekhouding-overzicht 1280 px, account 940 px
+  (formulieren), facturen hun eigen 980 px (`.wrap`, ongewijzigd). De kop (`sl-kop`) en de
+  subnavigatie lopen over de hele breedte maar hun inhoud lijnt uit met de container
+  (`--sl-inhoud`, `--sl-gutter`: 40 px, 16 px op ≤ 760 px). Per pagina gekozen met
+  `.sl-main:has(<container>)`, zonder pagina-componenten aan te passen.
 
 ## Dashboard
 
@@ -481,9 +489,9 @@ meteen (na verversen; de pagina ververst ook vanzelf als je terugkomt).
 
 ### Bonnetjes & inkoopfacturen
 
-Uploaden en makkelijk terugvinden staat voorop; het is geen boekhoudpakket. Leverancier,
-datum en bedrag worden automatisch uitgelezen om het zoeken makkelijk te maken, maar alle
-velden zijn optioneel. Op het dashboard: de knop **+ Bonnetje** en de kaart *Laatste
+Uploaden en makkelijk terugvinden staat voorop; het is geen boekhoudpakket. **Leverancier,
+datum en bedrag** zijn de drie vaste gegevens: Claude leest ze uit en vult ze in. Lukt dat
+niet, dan vraagt de app je ze zelf in te vullen; de overige velden zijn optioneel. Op het dashboard: de knop **+ Bonnetje** en de kaart *Laatste
 bonnetjes*; in mail: **Bij bonnetjes** naast een PDF- of fotobijlage.
 
 - **Uploaden.** Sleep foto's/PDF's op de pagina, kies ze met **Kies bestanden** (sneltoets
@@ -500,6 +508,22 @@ bonnetjes*; in mail: **Bij bonnetjes** naast een PDF- of fotobijlage.
   aanpast. Bij een bekende leverancier gaat de laatst gebruikte categorie/betaalwijze voor.
   Zonder `ANTHROPIC_API_KEY`, bij HEIC-foto's (die de API niet leest) of bij een fout blijft
   het een concept dat je zelf invult.
+- **Leverancier, datum, bedrag: ontbreekt of onzeker.** De prompt vraagt de datum in ISO
+  (`JJJJ-MM-DD`), het bedrag als totaal incl. btw in euro en de bedrijfsnaam zoals op de bon
+  zonder rechtsvorm ("Albert Heijn", niet "Albert Heijn B.V."; de app haalt restjes ook
+  zelf weg), en expliciet `null` bij twijfel in plaats van gokken. Per veld geeft Claude
+  `zeker`/`onzeker` terug (`zekerheid` in het schema). Wat dan:
+  - **ontbreekt** (null): het veld krijgt een rode rand en de tekst "Kon de datum niet lezen —
+    vul hem zelf in", de gegevens klappen open, het eerste ontbrekende veld krijgt de focus,
+    en in de lijst staat het bonnetje als **Aanvullen** tot alle drie er zijn. De
+    upload-melding (ook bij **Als uitgave** uit mail) zegt het meteen.
+  - **onzeker**: het veld is wel ingevuld maar krijgt een okerkleurige rand, "Controleer
+    dit" met een knop **Klopt**, en in de lijst **Controleren**. Aanpassen of *Klopt* haalt
+    de markering weg. Een bedrag in een andere valuta dan EUR is altijd "onzeker"; een
+    bekende leverancier (eerder gebruikte schrijfwijze) geldt als zeker.
+  - Opslag zonder migratie: onzekere velden staan als `onzeker:<veld>` in `expenses.ai_fields`.
+    "Aanvullen"/"Controleren" is afgeleid (`aandachtVoor()` in `lib/uitgaven/model.ts`),
+    naast de bestaande status concept/verwerkt.
 - **Terugvinden.** Eén groot zoekveld (`/`) zoekt in het hele archief: leverancier,
   omschrijving, notitie, factuurnummer en bestandsnaam; een bedrag (`12,50`, `12.5`, `€12`)
   vindt ook het totaalbedrag. Filters als chips: periode (alles, een jaar, daarna een maand),
@@ -601,6 +625,24 @@ Studio Levant/
   nooit op en kan er niet door mislukken; zonder koppeling gebeurt er niets. De
   facturenlogica (`lib/invoice`) is niet aangepast. `drive_kopieen` onthoudt per bron welk
   PDF-pad er staat: een bewerkte factuur vervangt de inhoud van hetzelfde Drive-bestand.
+  Naam in Drive: de naam van de download, met het factuur-/offertenummer ervoor als het er
+  nog niet in staat (`2026-014 Website.pdf`); jaar = factuurdatum (Europe/Amsterdam). Lege
+  `drive_mappen` (net gekoppeld) is geen probleem: Boekhouding/Facturen/<jaar> wordt bij de
+  eerste kopie gezocht of aangemaakt en onthouden.
+- **Controleren zonder factuur te maken:** Bestanden → **Test Drive-koppeling** (alleen de
+  eigenaar, `POST /api/drive/diagnose`). Controleert de server-instellingen, de koppeling
+  (token verversen, account, opslag), de hoofdmap en de vaste mappen
+  (Boekhouding/Facturen|Prijsopgaven|Bonnetjes/<dit jaar>, Klanten, Algemeen; ontbrekende
+  worden aangemaakt) en toont per stap OK of de fout met de oorzaak van Google, plus of de
+  laatste factuur al in Drive staat. Er wordt niets geüpload.
+- **Logs (Vercel → Logs, zoek op `[drive]`):** per kopie `[drive] kopie factuur <id>: gestart`
+  en daarna `gekopieerd → Boekhouding/Facturen/2026/<naam>`, `overgeslagen, …` (niet
+  gekoppeld) of `MISLUKT na … s, <code>: <melding> (<oorzaak van Google>)`. Een startregel
+  zonder eindregel betekent dat de functie stopte (maxDuration 60 s van de factuurroutes,
+  inclusief het maken van de PDF); na 40 s volgt een waarschuwing. Een verlopen toestemming
+  (Google-app in "Testing": na 7 dagen `invalid_grant`) staat er als `opnieuw_koppelen`.
+- Een bonnetje gaat naar Drive direct na het uploaden, dus vóór het uitlezen: naam en
+  jaarmap gebruiken dan de uploaddatum.
 - **Uploaden** gaat niet via de server (Vercel laat maximaal 4,5 MB per verzoek door): de
   server maakt bij Google een *resumable upload-sessie* voor precies dat ene bestand in die
   map, en de browser zet het bestand daar rechtstreeks neer (met voortgang). Daarna legt de
@@ -758,7 +800,7 @@ sinds Klanten & projecten de nieuwe klantpagina (met een link naar de facturen v
 | `/uitgaven` | Oud adres: tijdelijke redirect naar `/boekhouding/bonnetjes` (query gaat mee) |
 | `/api/uitgaven/…` | Bonnetjes-API, o.a. `GET ?q=&jaar=&maand=&soort=&door=` (503 `tabel_ontbreekt`/`opslag_ontbreekt` vóór de SQL) |
 | `/bestanden` | Bestanden (Google Drive; `?map=<id>` opent een map, `?drive=<uitkomst>` na het koppelen) |
-| `/api/drive/…` | Drive-API: `status`, `map` (GET `?id=`/`?klant=`/`?project=`, POST maakt een klant-/projectmap), `mappen`, `bestanden/<id>` (PATCH hernoemen, DELETE prullenbak), `bestanden/<id>/inhoud` (proxy), `upload` + `upload/klaar`, `zoeken?q=`, en voor de eigenaar `koppelen`, `callback`, `ontkoppelen`, `kopieer-bestaande` (503 `tabel_ontbreekt`/`niet_ingericht`, 409 `niet_gekoppeld`/`opnieuw_koppelen`) |
+| `/api/drive/…` | Drive-API: `status`, `map` (GET `?id=`/`?klant=`/`?project=`, POST maakt een klant-/projectmap), `mappen`, `bestanden/<id>` (PATCH hernoemen, DELETE prullenbak), `bestanden/<id>/inhoud` (proxy), `upload` + `upload/klaar`, `zoeken?q=`, en voor de eigenaar `koppelen`, `callback`, `ontkoppelen`, `kopieer-bestaande`, `diagnose` (POST: "Test Drive-koppeling") (503 `tabel_ontbreekt`/`niet_ingericht`, 409 `niet_gekoppeld`/`opnieuw_koppelen`) |
 | `/account` | Account & mail |
 | `/api/account/profiel`, `/api/account/mailbox` | Eigen profiel wijzigen; eigen mailbox ophalen/koppelen/ontkoppelen (nooit het wachtwoord terug) |
 | `/social` | Social-media-tool (`#p=<id>` opent een project, `#nieuw` een nieuwe post) |
@@ -783,12 +825,13 @@ npx next start -p 3107 &                              # (na de build)
 node scripts/rooktest-shell.mjs http://localhost:3107 # alle pagina's -> /login, alle API's JSON-401, koppen
 node scripts/test-snelinvoer.mjs                      # herkenning datum/tijd in de taak-popup (incl. zomer-/wintertijd)
 node scripts/test-taken.mjs                           # taken op naam: toewijzing, subtaken, projecten, rechten
-node scripts/test-uitgaven.mjs                        # uitgaven: bedragen, btw, CSV, uitlezen (nagebootst)
+node scripts/test-uitgaven.mjs                        # uitgaven: bedragen, btw, CSV, uitlezen (nagebootst), ontbrekend/onzeker
 node scripts/test-team.mjs                            # herkomst (CSRF), basis-URL voor mails, teambeheer-scripts
 node scripts/test-account.mjs                         # mailkluis (AES-GCM), SSRF-controle, profiel/mailbox-invoer, zoeken
 node scripts/test-brand-guard-parity.mjs              # social-port gelijk aan het origineel
 node scripts/test-rls.mjs                             # RLS van 0021 op lokale Postgres (PGlite): per tabel/bucket wie wat mag
 node scripts/test-drive.mjs                           # Google Drive: paden, namen, state (CSRF), token-kluis, Drive-API (nagebootst)
+node scripts/test-externals.mjs                       # serverExternalPackages laden zonder require(esm); gebouwde mailroutes (na build)
 node scripts/genereer-sql-editor.mjs --controleer     # SQL-bestanden actueel
 node scripts/teamlid-toevoegen.mjs --help             # teambeheer (niet uitvoeren zonder reden)
 node --experimental-strip-types scripts/rooktest-render.mjs   # social-renderer (lokale Chrome nodig)
@@ -864,6 +907,17 @@ Instellingen:
   `785_000` (pas ook de foutmelding aan). Op het Hobby-plan is 300 het maximum; een hogere
   waarde laat de deploy mislukken.
 - Mail-routes hebben `maxDuration` 30 (`vercel.json`); er blijft geen IMAP-verbinding open.
+- **Node-versie:** `package.json` → `"engines": { "node": ">=22.17.0 <25" }`. Vercel kiest
+  daarmee de nieuwste toegestane major (24.x); lokaal werkt ook Node 22.
+  `@sparticuz/chromium` vraagt `^22.17.0 || >=24`. De bovengrens voorkomt dat een nieuwe
+  major (26) vanzelf meekomt.
+- **sanitize-html wordt gebundeld, niet als external geladen.** sanitize-html 2.18 is
+  CommonJS maar require't htmlparser2 12, dat alleen ESM is. Als `serverExternalPackages`
+  faalde dat op Vercel met `Failed to load external module sanitize-html…: ERR_REQUIRE_ESM`
+  (alle mailroutes). Turbopack bundelt hem nu en lost dat zelf op, ongeacht de Node-versie.
+  imapflow, mailparser en nodemailer blijven external: die laadt Turbopack met `import()`
+  (eigen ESM-build) en ze laden ook zonder require(esm). `node scripts/test-externals.mjs`
+  controleert dit (na `npm run build` ook de gebouwde mailroutes, zonder require(esm)).
 
 **Let op — een gratis Supabase-project pauzeert na 1 week inactiviteit.** Zet het dan eerst
 weer aan in het Supabase-dashboard.
