@@ -12,7 +12,9 @@
 --   - Klanten: e-mail, telefoon en status (lead / actief / afgerond, standaard actief);
 --     notities per klant (client_notes).
 --   - Projecten: status gepland / bezig / afgerond (actief -> bezig, gearchiveerd ->
---     afgerond), een deadline en eigenaren (project_eigenaren).
+--     afgerond), een deadline en eigenaren (project_eigenaren). Daarna kan
+--     UITVOEREN_0023.sql (projectstatus voor het bord); is 0023 al uitgevoerd, dan laat
+--     dit bestand die statussen staan.
 --   - Snelheid: tellers in één query (taak_tellingen, project_taak_tellingen) en indexen.
 --
 -- Vereist 0021 (team). Nog niet uitgevoerd? Gebruik dan UITVOEREN_0021_TEAM.sql (bevat
@@ -216,25 +218,35 @@ revoke update on public.client_notes from anon, authenticated;
 
 -- Projecten: status gepland / bezig / afgerond (was actief / gearchiveerd), een optionele
 -- deadline en een langere notitie. Oude waarden worden omgezet; de app leest beide.
+-- Is 0023 (projectstatus voorbereiding/bezig/wachten/afgerond, kolom status_sinds) al
+-- uitgevoerd, dan blijven status, check en standaardwaarde van 0023 staan: opnieuw
+-- uitvoeren zet de statussen nooit terug.
 do $$
 declare
   c record;
+  na0023 boolean := exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'projects' and column_name = 'status_sinds'
+  );
 begin
   for c in
     select conname from pg_constraint
     where conrelid = 'public.projects'::regclass and contype = 'c'
-      and (pg_get_constraintdef(oid) ilike '%status%' or pg_get_constraintdef(oid) ilike '%notitie%')
+      and ((not na0023 and pg_get_constraintdef(oid) ilike '%status%') or pg_get_constraintdef(oid) ilike '%notitie%')
   loop
     execute format('alter table public.projects drop constraint %I', c.conname);
   end loop;
+
+  if not na0023 then
+    update public.projects set status = 'bezig' where status = 'actief';
+    update public.projects set status = 'afgerond' where status = 'gearchiveerd';
+
+    alter table public.projects alter column status set default 'bezig';
+    alter table public.projects add constraint projects_status_check check (status in ('gepland', 'bezig', 'afgerond'));
+  end if;
 end
 $$;
 
-update public.projects set status = 'bezig' where status = 'actief';
-update public.projects set status = 'afgerond' where status = 'gearchiveerd';
-
-alter table public.projects alter column status set default 'bezig';
-alter table public.projects add constraint projects_status_check check (status in ('gepland', 'bezig', 'afgerond'));
 alter table public.projects add constraint projects_notitie_check check (length(notitie) <= 5000);
 alter table public.projects add column if not exists deadline date;
 
@@ -361,7 +373,7 @@ from (values
   ('tabel client_notes',      to_regclass('public.client_notes') is not null),
   ('tabel project_eigenaren', to_regclass('public.project_eigenaren') is not null),
   ('kolom projects.deadline', exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'projects' and column_name = 'deadline')),
-  ('projectstatus omgezet',   not exists (select 1 from public.projects where status not in ('gepland', 'bezig', 'afgerond'))),
+  ('projectstatus omgezet',   not exists (select 1 from public.projects where status not in ('gepland', 'voorbereiding', 'bezig', 'wachten', 'afgerond'))),
   ('functie taak_tellingen',  to_regprocedure('public.taak_tellingen(date,uuid,uuid)') is not null),
   ('functie project_taak_tellingen', to_regprocedure('public.project_taak_tellingen(uuid[])') is not null),
   ('tellingen dicht voor anon', not has_function_privilege('anon', 'public.taak_tellingen(date,uuid,uuid)', 'execute')),

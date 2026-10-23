@@ -320,3 +320,25 @@
 @media (max-width: 760px) {
   .sl-overgang { padding: 10px 16px; }
 }
+
+/* ---------- dashboard: projecten per status ---------- */
+/* Aandacht (deadline binnenkort, wachten op goedkeuring): zand-oker naast --sl-danger. */
+:root { --sl-let-op: #d4b27a; }
+.db-projtel { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; margin: 0; padding: 0; list-style: none; }
+.db-projtel-vak {
+  display: grid;
+  gap: 2px;
+  padding: 10px 8px;
+  border: 1px solid var(--sl-line-soft);
+  border-radius: var(--sl-r);
+  color: var(--sl-text);
+  text-decoration: none;
+  transition: background-color .15s var(--sl-ease), border-color .15s var(--sl-ease);
+}
+.db-projtel-vak:hover { background: var(--sl-hover); border-color: var(--sl-line); }
+.db-projtel-vak:focus-visible { outline: none; box-shadow: var(--sl-focus); }
+.db-projtel-n { font-size: 22px; font-weight: 700; line-height: 1.1; }
+.db-projtel-label { font-family: var(--sl-mono); font-size: 9.5px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--sl-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.db-projtel-wachten .db-projtel-n { color: var(--sl-let-op); }
+.db-projtel-afgerond .db-projtel-n { color: var(--sl-muted); }
+.db-projtel-telaat { margin: 10px 0 0; font-size: 12.5px; color: var(--sl-danger); }

@@ -12,7 +12,7 @@ je vanuit elke module terug naar het dashboard.
 | Dashboard | `/` | Jouw eigen "Vandaag": begroeting, snelle acties, jouw dagplanning, taken en week, wat je uitdeelde, je eigen inbox; gedeeld: facturen, laatste bonnetjes en recente posts (met wie ze maakte) |
 | Mail | `/mail` | Je eigen mailbox (Private Email): lezen, beantwoorden, doorsturen, nieuwe mail, mail → taak |
 | Agenda | `/agenda` | Taken op naam (popup: voor wie, deadline, urgentie, klant, project, subtaken) en afspraken in één agenda (week/maand), alleen wat op jouw naam staat; tab Uitgezet voor wat je bij een ander hebt uitgezet |
-| Klanten & projecten | `/klanten`, `/projecten` | Simpel CRM/PM: klanten (lead/actief/afgerond) met contact, notities, projecten, open taken, facturen en prijsopgaven; projecten (gepland/bezig/afgerond) met klant, deadline, eigenaar(s), taken met voortgang en een notitieveld |
+| Klanten & projecten | `/klanten`, `/projecten` | Simpel CRM/PM: klanten (lead/actief/afgerond) met contact, notities, projecten, open taken, facturen en prijsopgaven; projecten als bord of lijst (voorbereiding/bezig/wachten op goedkeuring/afgerond) met klant, deadline, eigenaar(s), taken met voortgang en een notitieveld |
 | Boekhouding | `/boekhouding` | Keuze tussen **Facturen** (`/facturen`: facturen, prijsopgaven, klanten en PDF's, ongewijzigd) en **Bonnetjes & inkoopfacturen** (`/boekhouding/bonnetjes`: foto/PDF uploaden en snel terugvinden) |
 | Account & mail | `/account` | Je profiel (naam, initialen, kleur), je eigen mailbox koppelen, wachtwoord wijzigen |
 | Social | `/social` | De social-media-tool (voorheen lokaal), met dezelfde schermen en werking |
@@ -28,7 +28,9 @@ je vanuit elke module terug naar het dashboard.
    Tot dan tonen social, de agenda en uitgaven een nette melding "nog niet ingericht".
    Al eerder uitgevoerd (0014–0019)? Dan `supabase/UITVOEREN_0020_UITGAVEN.sql`.
    Al eerder uitgevoerd (0014–0020)? Dan `supabase/UITVOEREN_0021_TEAM.sql`.
-   Al eerder uitgevoerd (0014–0021)? Dan alleen `supabase/UITVOEREN_0022.sql`.
+   Al eerder uitgevoerd (0014–0021)? Dan alleen `supabase/UITVOEREN_0022.sql` en daarna
+   `supabase/UITVOEREN_0023.sql`. Al eerder uitgevoerd (0014–0022, de huidige situatie)? Dan
+   alleen `supabase/UITVOEREN_0023.sql` (projectstatus voor het bord).
    Alleen de oudste bestaande gebruiker (Daniel) wordt automatisch lid (eigenaar); controleer
    onderaan het aantal leden en wie het zijn.
 3. **Oude social-posts importeren** met `scripts/importeer-social-projecten.mjs`
@@ -53,11 +55,14 @@ je vanuit elke module terug naar het dashboard.
 ## Database inrichten: één SQL-bestand
 
 Alles wat de nieuwe modules nodig hebben staat in **`supabase/UITVOEREN_IN_SQL_EDITOR.sql`**:
-de migraties 0014–0022 achter elkaar, in één transactie. Wie 0014–0019 al heeft uitgevoerd,
+de migraties 0014–0023 achter elkaar, in één transactie. Wie 0014–0019 al heeft uitgevoerd,
 draait **`supabase/UITVOEREN_0020_UITGAVEN.sql`** (uitgaven + team); wie 0014–0020 al heeft,
-**`supabase/UITVOEREN_0021_TEAM.sql`**; wie 0014–0021 al heeft (de huidige situatie), alleen
-**`supabase/UITVOEREN_0022.sql`**. Elk bestand eindigt met 0021 + 0022, zodat opnieuw
-uitvoeren nooit de oude open policies of de open leesregels voor taken terugzet. Onderaan elk
+**`supabase/UITVOEREN_0021_TEAM.sql`**; wie 0014–0021 al heeft, **`supabase/UITVOEREN_0022.sql`**
+en daarna **`supabase/UITVOEREN_0023.sql`**; wie 0014–0022 al heeft (de huidige situatie),
+alleen **`supabase/UITVOEREN_0023.sql`**. Elk groot bestand eindigt met 0021 + 0022 (+ 0023,
+alleen de projectstatus), zodat opnieuw uitvoeren nooit de oude open policies of de open
+leesregels voor taken terugzet. 0022 opnieuw uitvoeren na 0023 laat de nieuwe projectstatussen
+staan. Onderaan elk
 bestand staat een controletabel (elke regel `ok`) en wie er toegang heeft.
 
 | Migratie | Inhoud |
@@ -71,6 +76,7 @@ bestand staat een controletabel (elke regel `ok`) en wie er toegang heeft.
 | `0020_uitgaven.sql` | tabellen `expenses` en `expense_files` (RLS, `updated_at`-trigger), privé-buckets `uitgaven` (25 MB, jpeg/png/webp/heic/pdf) en `uitgaven-export` (50 MB, ZIP) |
 | `0021_team_en_taken.sql` | `team_members` (allowlist) + `profiles`, `is_teamlid()` in **alle** policies (ook facturen en Storage), `create_invoice`/`update_invoice` alleen nog voor de service-role, `projects`, `task_assignees`, `task_subtasks`, `event_attendees`, `user_mailboxes`; zaait het lidmaatschap van de oudste bestaande gebruiker (Daniel, eigenaar); andere bestaande accounts worden niet automatisch lid |
 | `0022_team_crm.sql` | team van twee: `profiles.welkom_klaar_op` (welkomstflow), taken/afspraken alleen leesbaar voor betrokkenen (`taak_zichtbaar()`), klanten (`email`, `telefoon`, `status`, `client_notes`), projecten (status gepland/bezig/afgerond, `deadline`, `project_eigenaren`), tellers in één query (`taak_tellingen`, `project_taak_tellingen`) en indexen. Alleen toevoegend; de facturen werken ongewijzigd |
+| `0023_projectstatus.sql` | projectenbord: status `voorbereiding`/`bezig`/`wachten`/`afgerond` (`gepland` → `voorbereiding`, standaard `voorbereiding`), kolom `status_sinds` met trigger (zet "nu" bij elke statuswijziging; bestaande projecten krijgen hun laatste wijziging), indexen op status + status_sinds en deadline. RLS ongewijzigd |
 
 **Uitvoeren:** Supabase-dashboard → je project → **SQL Editor** → *New query* → plak het hele
 bestand → **Run**. Onderaan verschijnt een controletabel; elke regel moet `ok` tonen.
@@ -398,22 +404,35 @@ taak alleen de maker en wie hem kreeg). Bewust simpel: geen pipeline, geen uren,
 tientallen velden.
 
 - **Klanten** (`/klanten`): zoeken, filter Alle · Lead · Actief · Afgerond, per klant het
-  aantal lopende projecten. **+ Klant** (of `/klanten?nieuw=1`): bedrijfsnaam (verplicht),
+  aantal lopende projecten. Afgeronde klanten worden nooit verborgen: bij "Alle" staan ze
+  rustig onderaan in een eigen groep (gedimd), en zoeken vindt ze altijd. **+ Klant** (of `/klanten?nieuw=1`): bedrijfsnaam (verplicht),
   contactpersoon, e-mail en status (standaard Lead); daarna sta je op de klantpagina. Het
   zijn dezelfde klanten als in de facturen: een klant die via een factuur ontstaat, krijgt
   status Actief.
-- **Klantpagina** (`/klanten/<id>`): status (direct opgeslagen), contact (e-mail opent een
+- **Klantpagina** (`/klanten/<id>`): status als knoppen Lead · Actief · Afgerond in de kop
+  (direct opgeslagen). Is de klant afgerond, dan staat bovenaan een rustige melding met
+  **+ Nieuw project**: een nieuw (niet-afgerond) project zet de klant vanzelf terug op Actief
+  (de popup zegt dat vooraf; de server doet het alleen als de klant echt afgerond was). Verder:
+  contact (e-mail opent een
   nieuwe mail, één knop Bewerken), notities als tijdlijn (alleen je eigen notitie kun je
   verwijderen), projecten met voortgang en **+ Project**, open taken met **+ Taak** (klant al
   ingevuld), en de laatste 5 facturen en prijsopgaven met links naar Boekhouding.
   Prijsopgaven hebben geen klantkoppeling (0011); ze worden op klantnaam gevonden. Een
   klant verwijderen kan alleen in Facturen (met de bestaande controle).
-- **Projecten** (`/projecten`): groepen Bezig, Gepland en (ingeklapt) Afgerond; per project
-  klant, eigenaar(s), deadline (rood als die verstreken is) en voortgang "3/7".
-  **+ Project**: naam, klant, status (standaard Bezig), deadline en eigenaar(s) (standaard
-  jij). Ook vanuit de taak-popup kun je een project maken.
-- **Projectpagina** (`/projecten/<id>`): naam, status, klant, deadline en eigenaren direct
-  bewerkbaar; alle taken met voortgang (afgeronde ingeklapt) en **+ Taak** (project al
+- **Projecten** (`/projecten`): een **bord** met vier kolommen — Voorbereiding, Bezig,
+  Wachten op goedkeuring, Afgerond — of een compacte **lijst** op deadline (schakelaar
+  Bord | Lijst, onthouden in de browser). Per kaart: naam, klant, deadline (rood = te laat,
+  oker = binnen 7 dagen), eigenaren, voortgang van de taken en hoe lang het project al in deze
+  status staat. Status wijzigen: kaart naar een andere kolom slepen, de statuskeuze op de
+  kaart, of **Alt + ←/→** op een kaart (toetsenbord). Afgerond toont standaard de laatste 30
+  dagen ("Toon alle …"). Filter **Alleen mijn projecten** (eigenaar = jij, onthouden). Op een
+  telefoon scrolt het bord horizontaal, één kolom per keer. `?weergave=bord|lijst` kiest de
+  weergave (het dashboard linkt zo naar een kolom, bv. `/projecten?weergave=bord#kolom-wachten`).
+  **+ Project**: naam, klant, status (standaard Voorbereiding), deadline en eigenaar(s)
+  (standaard jij). Ook vanuit de taak-popup kun je een project maken.
+- **Projectpagina** (`/projecten/<id>`): een stappenbalk Voorbereiding → Bezig → Wachten op
+  goedkeuring → Afgerond (één klik, direct opgeslagen) met "Bezig sinds 12 okt (11 dagen)";
+  naam, klant, deadline en eigenaren direct bewerkbaar; alle taken met voortgang (afgeronde ingeklapt) en **+ Taak** (project al
   ingevuld, "voor wie" standaard jij); één notitieveld dat vanzelf opslaat.
 - **Migratie 0022** (stap 3, alleen toevoegend): `clients.email`, `clients.telefoon`,
   `clients.status` (standaard `actief`), tabel `client_notes`, `projects.deadline`, langere
@@ -422,8 +441,17 @@ tientallen velden.
   (bestaande projecten krijgen hun maker als eigenaar). Zolang 0022 niet is uitgevoerd
   tonen `/klanten` en `/projecten` "nog niet ingericht"; de taak-popup en de facturen
   werken gewoon.
-- Tests: `node scripts/test-crm.mjs` (invoer en bronbewaking) en `node scripts/test-rls.mjs`
-  (RLS van notities en eigenaren, omzetting van de status).
+- **Dashboard**: kaart **Projecten** met tellers Voorbereiding · Bezig · Wachten · Afgerond
+  (laatste 30 dagen) en hoeveel lopende projecten over de deadline zijn; elke teller opent die
+  kolom op het bord.
+- **Migratie 0023** (`supabase/UITVOEREN_0023.sql`): zie de tabel bij "Database inrichten".
+  **Werkt ook vóór 0023**: de app leest 'gepland' als Voorbereiding en schrijft dan 'gepland'
+  zodra de database 'voorbereiding' weigert; "Wachten op goedkeuring" geeft vóór 0023 een
+  nette melding; "x dagen in deze status" en het 30-dagenfilter verschijnen pas na 0023
+  (tot dan staan alle afgeronde projecten in de kolom).
+- Tests: `node scripts/test-crm.mjs` (invoer, projectstatus-hulpjes en bronbewaking) en
+  `node scripts/test-rls.mjs` (RLS van notities en eigenaren, omzetting van de status in 0022
+  en 0023, de status_sinds-trigger en opnieuw uitvoeren).
 
 ## Boekhouding
 
@@ -666,13 +694,15 @@ node --experimental-strip-types scripts/rooktest-render.mjs   # social-renderer 
 
 - voert 0001–0021 uit met testdata (Daniel, een bevestigde tweede gebruiker, een
   onbevestigd en een anoniem account) — de situatie zoals in Supabase nu — en een tweede
-  teamlid met projecten in de oude statussen; daarna `UITVOEREN_0022.sql` twee keer, en
+  teamlid met projecten in de oude statussen; daarna `UITVOEREN_0022.sql` twee keer, een
+  gepland project en `UITVOEREN_0023.sql` twee keer, en
   `UITVOEREN_0021_TEAM.sql` (2x), `UITVOEREN_IN_SQL_EDITOR.sql` en `UITVOEREN_0020_UITGAVEN.sql`
   opnieuw: elke controleregel `ok`, niets heropend (ook de leesregels voor taken niet), geen
   extra leden. Ook het pad "0021 vóór 0020" wordt getest;
 - 0022: welkom-vlag (alleen de eigen, alleen die kolom), wie welke taak/afspraak ziet
   (taak voor een ander, voor twee, privé, projecttaak), klanten/notities/projecteigenaren,
-  de omzetting van projectstatussen, en dat `taak_tellingen`/`project_taak_tellingen`
+  de omzetting van projectstatussen (ook 0023: gepland → voorbereiding, `status_sinds` en de
+  trigger, 0022/0023 opnieuw uitvoeren laat statussen staan), en dat `taak_tellingen`/`project_taak_tellingen`
   precies tellen wat de lijsten tonen (niets van een ander, niets voor niet-teamleden);
 - zaaien: alleen bevestigde, niet-anonieme accounts; de oudste wordt eigenaar; bestaande
   taken en afspraken gaan naar hun maker of de eigenaar;

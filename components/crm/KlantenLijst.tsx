@@ -7,7 +7,11 @@ import { StatusPil } from './StatusPil';
 
 type Filter = 'alle' | KlantStatus;
 
-/** Het klantenoverzicht: zoeken en filteren gebeurt direct in de browser (kleine lijst). */
+/**
+ * Het klantenoverzicht: zoeken en filteren gebeurt direct in de browser (kleine lijst).
+ * Afgeronde klanten blijven vindbaar (zoeken, filter Afgerond) maar staan bij "Alle"
+ * rustig onderaan in een eigen groep, gedimd.
+ */
 export function KlantenLijst({ klanten }: { klanten: KlantRegel[] }) {
   const [q, setQ] = useState('');
   const [filter, setFilter] = useState<Filter>('alle');
@@ -21,6 +25,8 @@ export function KlantenLijst({ klanten }: { klanten: KlantRegel[] }) {
         (!z || k.naam.toLowerCase().includes(z) || k.contactpersoon.toLowerCase().includes(z) || k.email.toLowerCase().includes(z))
     );
   }, [klanten, q, filter]);
+  const lopend = zichtbaar.filter((k) => k.status !== 'afgerond');
+  const afgerond = zichtbaar.filter((k) => k.status === 'afgerond');
 
   return (
     <>
@@ -50,27 +56,45 @@ export function KlantenLijst({ klanten }: { klanten: KlantRegel[] }) {
       ) : zichtbaar.length === 0 ? (
         <p className="kp-leeg">Geen klanten gevonden.</p>
       ) : (
-        <ul className="kp-lijst">
-          {zichtbaar.map((k) => (
-            <li key={k.id}>
-              <Link className="kp-rij" href={`/klanten/${k.id}`}>
-                <span className="kp-rij-hoofd">
-                  <span className="kp-rij-titel">{k.naam}</span>
-                  <span className="kp-rij-sub">{[k.contactpersoon, k.email].filter(Boolean).join(' · ') || '—'}</span>
-                </span>
-                <span className="kp-rij-meta">
-                  {k.lopendeProjecten > 0 && (
-                    <span>
-                      {k.lopendeProjecten} {k.lopendeProjecten === 1 ? 'project' : 'projecten'}
-                    </span>
-                  )}
-                  <StatusPil status={k.status} />
-                </span>
-              </Link>
-            </li>
-          ))}
-        </ul>
+        <>
+          {filter !== 'afgerond' && lopend.length > 0 && <Regels klanten={lopend} />}
+          {afgerond.length > 0 && (
+            <section className="kp-groep kp-klanten-af" aria-label="Afgeronde klanten">
+              {filter === 'alle' && (
+                <h2 className="kp-groep-kop">
+                  Afgerond <span>{afgerond.length}</span>
+                </h2>
+              )}
+              <Regels klanten={afgerond} />
+            </section>
+          )}
+        </>
       )}
     </>
+  );
+}
+
+function Regels({ klanten }: { klanten: KlantRegel[] }) {
+  return (
+    <ul className="kp-lijst">
+      {klanten.map((k) => (
+        <li key={k.id}>
+          <Link className={`kp-rij${k.status === 'afgerond' ? ' is-af' : ''}`} href={`/klanten/${k.id}`}>
+            <span className="kp-rij-hoofd">
+              <span className="kp-rij-titel">{k.naam}</span>
+              <span className="kp-rij-sub">{[k.contactpersoon, k.email].filter(Boolean).join(' · ') || '—'}</span>
+            </span>
+            <span className="kp-rij-meta">
+              {k.lopendeProjecten > 0 && (
+                <span>
+                  {k.lopendeProjecten} {k.lopendeProjecten === 1 ? 'project' : 'projecten'}
+                </span>
+              )}
+              <StatusPil status={k.status} />
+            </span>
+          </Link>
+        </li>
+      ))}
+    </ul>
   );
 }

@@ -9,6 +9,7 @@ import { InboxKaart, InboxKaartSkelet, NieuweMailKnop } from '@/components/dashb
 import { FacturenWidget } from '@/components/dashboard/FacturenWidget';
 import { SocialWidget } from '@/components/dashboard/SocialWidget';
 import { PlanningSkelet, PlanningWidgets } from '@/components/dashboard/PlanningWidgets';
+import { ProjectenWidget } from '@/components/dashboard/ProjectenWidget';
 import { TaakKnop } from '@/components/dashboard/TaakKnop';
 import { UitgavenWidget } from '@/components/dashboard/UitgavenWidget';
 import { BonnetjeKnop } from '@/components/uitgaven/BonnetjeKnop';
@@ -20,7 +21,8 @@ export const metadata: Metadata = { title: 'Dashboard · Studio Levant' };
 // Dashboard "Vandaag": het eigen startpunt van elk teamlid. Elke widget is een eigen async
 // server-component in <Suspense>, zodat één trage of kapotte bron de rest niet blokkeert.
 //   - persoonlijk: begroeting, jouw afspraken en taken, wat je uitdeelde, jouw mailbox;
-//   - gedeeld met het team: facturen, bonnetjes en posts (met wie ze maakte).
+//   - gedeeld met het team: projecten (tellers per status), facturen, bonnetjes en posts
+//     (met wie ze maakte).
 export default async function DashboardPage() {
   // Elke pagina controleert zelf sessie + teamlidmaatschap (de social-widget leest daarna
   // met de service-role, met dit teamlid als bewijs).
@@ -68,8 +70,11 @@ export default async function DashboardPage() {
             <SocialWidget lid={lid} />
           </Suspense>
 
-          {/* Facturen en de laatste bonnetjes onder elkaar naast de posts. */}
+          {/* Projecten (tellers per status), facturen en de laatste bonnetjes onder elkaar naast de posts. */}
           <div className="db-smal db-stapel">
+            <Suspense fallback={<KaartSkelet label="Projecten" regels={1} className="db-projecten" />}>
+              <ProjectenWidget lid={lid} />
+            </Suspense>
             <Suspense fallback={<KaartSkelet label="Facturen" className="db-facturen" />}>
               <FacturenWidget />
             </Suspense>

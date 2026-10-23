@@ -4,8 +4,11 @@
 //   - bronbewaking: elke nieuwe route en pagina gaat via de centrale teamcheck, klanten
 //     verwijderen kan hier niet, de rail heeft één tab "Klanten" (6 items) en de
 //     facturen-routes zijn niet aangeraakt.
-// De RLS van client_notes/project_eigenaren en de omzetting van de projectstatus staan in
-// scripts/test-rls.mjs (PGlite).
+//   - lib/crm/projectstatus.ts (0023): deadlinekleur, dagen in een status, afgerond in de
+//     laatste 30 dagen, sorteren op deadline, buurstatus (Alt + ←/→);
+//   - bord, stappenbalk, dashboardkaart en "afgeronde klant → nieuw project" (bron).
+// De RLS van client_notes/project_eigenaren en de omzetting van de projectstatus (0022 en
+// 0023) staan in scripts/test-rls.mjs (PGlite).
 //
 // Gebruik:  node scripts/test-crm.mjs
 import fs from "node:fs";
@@ -17,9 +20,10 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const lees = (p) => fs.readFileSync(path.join(ROOT, p), "utf8");
 
-let inv;
+let inv, ps;
 try {
   inv = await import(pathToFileURL(path.join(ROOT, "lib", "crm", "invoer.ts")).href);
+  ps = await import(pathToFileURL(path.join(ROOT, "lib", "crm", "projectstatus.ts")).href);
 } catch (e) {
   if (process.execArgv.includes("--experimental-strip-types")) throw e;
   const r = spawnSync(process.execPath, ["--experimental-strip-types", "--no-warnings", fileURLToPath(import.meta.url), ...process.argv.slice(2)], {
@@ -90,6 +94,125 @@ test("notitie: maximaal 2000 tekens", () => {
   assert.equal(inv.parseNotitie("x".repeat(2001)).ok, false);
 });
 test("ilike: % _ en \\ letterlijk", () => assert.equal(inv.likeLetterlijk("50%_a\\b"), "50\\%\\_a\\\\b"));
+
+// ---------------------------------------------------------------------------------
+// Projectstatus (0023)
+// ---------------------------------------------------------------------------------
+test("bord: vier statussen in volgorde, met Nederlandse labels", () => {
+  assert.deepEqual(ps.BORD_STATUSSEN, ["voorbereiding", "bezig", "wachten", "afgerond"]);
+  assert.equal(ps.PROJECT_STATUS_LABEL.wachten, "Wachten op goedkeuring");
+  assert.equal(ps.PROJECT_STATUS_KORT.wachten, "Wachten");
+});
+test("deadline: te laat, binnenkort (≤ 7 dagen), later, geen", () => {
+  assert.equal(ps.deadlineStand("2026-10-22", "2026-10-23", "bezig"), "telaat");
+  assert.equal(ps.deadlineStand("2026-10-23", "2026-10-23", "bezig"), "binnenkort");
+  assert.equal(ps.deadlineStand("2026-10-30", "2026-10-23", "wachten"), "binnenkort");
+  assert.equal(ps.deadlineStand("2026-10-31", "2026-10-23", "bezig"), "later");
+  assert.equal(ps.deadlineStand(null, "2026-10-23", "bezig"), null);
+});
+test("deadline: afgerond is nooit te laat", () => assert.equal(ps.deadlineStand("2026-01-01", "2026-10-23", "afgerond"), "later"));
+test("deadline: over de wintertijd heen (25 okt) blijft het hele dagen", () => assert.equal(ps.deadlineStand("2026-10-31", "2026-10-24", "bezig"), "binnenkort"));
+test("dagen in status", () => {
+  const nu = new Date("2026-10-23T10:00:00Z");
+  assert.equal(ps.dagenSinds("2026-10-23T09:00:00Z", nu), 0);
+  assert.equal(ps.dagenSinds("2026-10-11T10:00:00Z", nu), 12);
+  assert.equal(ps.dagenSinds("2026-10-30T10:00:00Z", nu), 0, "toekomst telt als vandaag");
+  assert.equal(ps.dagenSinds(null, nu), null);
+  assert.equal(ps.dagenSinds("geen datum", nu), null);
+  assert.equal(ps.dagenTekst(0), "vandaag");
+  assert.equal(ps.dagenTekst(1), "1 dag");
+  assert.equal(ps.dagenTekst(12), "12 dagen");
+});
+test("afgerond: laatste 30 dagen; zonder status_sinds (vóór 0023) wel tonen", () => {
+  const nu = new Date("2026-10-23T10:00:00Z");
+  assert.equal(ps.isRecentAfgerond("2026-09-23T11:00:00Z", nu), true);
+  assert.equal(ps.isRecentAfgerond("2026-09-01T10:00:00Z", nu), false);
+  assert.equal(ps.isRecentAfgerond(null, nu), true);
+});
+test("lijst: op deadline, zonder deadline achteraan, dan op naam", () => {
+  const l = [
+    { naam: "Zonder", deadline: null },
+    { naam: "B", deadline: "2026-11-01" },
+    { naam: "A", deadline: "2026-11-01" },
+    { naam: "Eerst", deadline: "2026-10-01" },
+  ].sort(ps.opDeadline);
+  assert.deepEqual(l.map((p) => p.naam), ["Eerst", "A", "B", "Zonder"]);
+});
+test("Alt + ←/→: buurstatus, niet voorbij de rand", () => {
+  assert.equal(ps.buurStatus("bezig", 1), "wachten");
+  assert.equal(ps.buurStatus("bezig", -1), "voorbereiding");
+  assert.equal(ps.buurStatus("voorbereiding", -1), null);
+  assert.equal(ps.buurStatus("afgerond", 1), null);
+});
+
+test("migratie 0023: idempotent, alleen projects, RLS niet aangeraakt", () => {
+  const sql = lees("supabase/migrations/0023_projectstatus.sql");
+  for (const s of [
+    "check (status in ('voorbereiding', 'bezig', 'wachten', 'afgerond'))",
+    "update public.projects set status = 'voorbereiding' where status = 'gepland'",
+    "alter column status set default 'voorbereiding'",
+    "add column if not exists status_sinds timestamptz",
+    "drop trigger if exists projects_status_sinds on public.projects",
+    "create index if not exists projects_status_sinds_idx",
+  ])
+    assert.ok(sql.includes(s), s);
+  const zonderCommentaar = sql.replace(/--[^\n]*/g, "");
+  assert.ok(!/policy|grant |drop table|drop column|invoices|quotes|clients/i.test(zonderCommentaar), "geen policies, grants of andere tabellen");
+  assert.ok(sql.indexOf("add column if not exists status_sinds") < sql.indexOf("set status = 'voorbereiding'"), "status_sinds vóór het omzetten gevuld");
+});
+test("migratie 0022: laat de status van 0023 staan bij opnieuw uitvoeren", () => {
+  const sql = lees("supabase/migrations/0022_team_crm.sql");
+  assert.match(sql, /na0023 boolean := exists \([\s\S]*?column_name = 'status_sinds'/);
+  assert.match(sql, /if not na0023 then[\s\S]*?check \(status in \('gepland', 'bezig', 'afgerond'\)\)[\s\S]*?end if;/);
+});
+test("UITVOEREN_0023.sql: één transactie, controle per onderdeel, actueel", () => {
+  const sql = lees("supabase/UITVOEREN_0023.sql");
+  const tx = sql.slice(0, sql.lastIndexOf("-- Controle:"));
+  assert.equal((tx.match(/^begin;$/gm) || []).length, 1);
+  assert.equal((tx.match(/^commit;$/gm) || []).length, 1);
+  for (const r of ["projectstatus voorbereiding/bezig/wachten/afgerond", "kolom projects.status_sinds", "trigger status_sinds", "RLS projects ongewijzigd (teamlid)", "indexen 0023"]) assert.ok(sql.includes(`('${r}'`), r);
+  for (const f of ["UITVOEREN_IN_SQL_EDITOR.sql", "UITVOEREN_0020_UITGAVEN.sql", "UITVOEREN_0021_TEAM.sql"]) {
+    const delen = [...lees(`supabase/${f}`).matchAll(/^-- (\d{4}_[\w]+\.sql)$/gm)].map((m) => m[1]);
+    assert.deepEqual(delen.slice(-3), ["0021_team_en_taken.sql", "0022_team_crm.sql", "0023_projectstatus.sql"], f);
+  }
+  const r = spawnSync(process.execPath, [path.join(ROOT, "scripts/genereer-sql-editor.mjs"), "--controleer"], { encoding: "utf8" });
+  assert.equal(r.status, 0, r.stderr);
+});
+
+test("API: status vóór 0023 opvangen (gepland i.p.v. voorbereiding) bij maken én wijzigen", () => {
+  assert.match(lees("app/api/projecten/route.ts"), /metStatusTerugval<\{ id: string \}>\(p\.waarde/);
+  assert.match(lees("app/api/projecten/[id]/route.ts"), /metStatusTerugval<\{ id: string \}>\(p\.waarde/);
+  const repo = lees("lib/agenda/repo.ts");
+  assert.match(repo, /projects_status_check/);
+  assert.match(repo, /PROJECT_KOLOMMEN_0023 = `\$\{PROJECT_KOLOMMEN\},status_sinds`/);
+});
+test("nieuw project bij een afgeronde klant: alleen afgerond → actief", () => {
+  const src = lees("app/api/projecten/route.ts");
+  assert.match(src, /\.update\(\{ status: 'actief' \}\)\s*\.eq\('id', p\.waarde\.client_id\)\s*\.eq\('status', 'afgerond'\)/);
+  assert.match(lees("app/(app)/klanten/[id]/page.tsx"), /klant\.status === 'afgerond' &&[\s\S]*?<NieuwProject[^>]*klantAfgerond/);
+});
+test("klantenlijst: afgerond blijft vindbaar (zoeken + filter), onderaan gegroepeerd", () => {
+  const src = lees("components/crm/KlantenLijst.tsx");
+  assert.match(src, /'alle', 'lead', 'actief', 'afgerond'/);
+  assert.match(src, /kp-klanten-af/);
+});
+test("bord: slepen, keuzelijst en Alt+pijl; weergave en filter onthouden", () => {
+  const src = lees("components/crm/ProjectenBord.tsx");
+  for (const s of ["onDragStart", "onDrop", "aria-label={`Status van ${project.naam}`}", "e.altKey", "localStorage.setItem", "Alleen mijn projecten", "isRecentAfgerond", "id={`kolom-${status}`}"]) assert.ok(src.includes(s), s);
+});
+test("projectpagina: stappenbalk met sinds wanneer", () => {
+  assert.match(lees("app/(app)/projecten/[id]/page.tsx"), /<StatusStappen/);
+  assert.match(lees("components/crm/StatusStappen.tsx"), /aria-current=\{i === huidig \? 'step' : undefined\}/);
+  assert.ok(!/<option value="gepland">/.test(lees("components/crm/ProjectKop.tsx")), "geen oude statuskeuze meer");
+});
+test("dashboard: kaart Projecten via de teamcheck van het dashboard, links naar het bord", () => {
+  const dash = lees("app/(app)/page.tsx");
+  assert.ok(dash.indexOf("vereisTeamlidPagina(") < dash.indexOf("<ProjectenWidget lid={lid} />"));
+  const w = lees("components/dashboard/ProjectenWidget.tsx");
+  assert.match(w, /projectTellers\(bronVan\(lid\)/);
+  assert.match(w, /href=\{`\/projecten\?weergave=bord#kolom-\$\{s\}`\}/);
+  assert.ok(!/createServiceRoleClient|service_role/.test(w));
+});
 
 // ---------------------------------------------------------------------------------
 // Bronbewaking

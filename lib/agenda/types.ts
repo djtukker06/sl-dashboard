@@ -46,11 +46,12 @@ export interface TaakDetail extends Taak {
 }
 
 /**
- * Status van een project (migratie 0022). Vóór 0022 kende de database 'actief' en
- * 'gearchiveerd'; die worden bij het lezen getoond als 'bezig' en 'afgerond'.
+ * Status van een project (migratie 0023), in de volgorde van het bord. Oudere waarden in
+ * de database worden bij het lezen omgezet: 'gepland' (0022) → 'voorbereiding',
+ * 'actief' → 'bezig', 'gearchiveerd' → 'afgerond' (vóór 0022).
  */
-export type ProjectStatus = 'gepland' | 'bezig' | 'afgerond';
-export const PROJECT_STATUSSEN: ProjectStatus[] = ['bezig', 'gepland', 'afgerond'];
+export type ProjectStatus = 'voorbereiding' | 'bezig' | 'wachten' | 'afgerond';
+export const PROJECT_STATUSSEN: ProjectStatus[] = ['voorbereiding', 'bezig', 'wachten', 'afgerond'];
 
 export interface Project {
   id: string;
@@ -68,6 +69,8 @@ export interface Project {
   /** Alle taken (open + afgerond), voor de voortgang "3/7". */
   totaalTaken: number;
   aangemaaktDoor: string | null;
+  /** Sinds wanneer in deze status (ISO-moment); null vóór migratie 0023. */
+  statusSinds: string | null;
 }
 
 export interface Afspraak {

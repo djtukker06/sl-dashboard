@@ -1,10 +1,19 @@
-import { KLANT_STATUS_LABEL, PROJECT_STATUS_LABEL } from '@/lib/crm/types';
+import { KLANT_STATUS_LABEL, PROJECT_STATUS_KORT, PROJECT_STATUS_LABEL } from '@/lib/crm/types';
 
-const LABELS: Record<string, string> = { ...KLANT_STATUS_LABEL, ...PROJECT_STATUS_LABEL };
+const LABELS: Record<string, string> = { ...KLANT_STATUS_LABEL, ...PROJECT_STATUS_KORT };
+const TITELS: Record<string, string> = PROJECT_STATUS_LABEL;
 
-/** Statuslabel van een klant (lead/actief/afgerond) of project (gepland/bezig/afgerond). */
+/**
+ * Statuslabel van een klant (lead/actief/afgerond) of project (voorbereiding/bezig/
+ * wachten/afgerond; "Wachten" voluit als tooltip).
+ */
 export function StatusPil({ status }: { status: string }) {
-  return <span className={`kp-pil kp-pil-${status}`}>{LABELS[status] ?? status}</span>;
+  const titel = TITELS[status] && TITELS[status] !== LABELS[status] ? TITELS[status] : undefined;
+  return (
+    <span className={`kp-pil kp-pil-${status}`} title={titel}>
+      {LABELS[status] ?? status}
+    </span>
+  );
 }
 
 /** Voortgang "3/7" met een balkje (afgeronde taken van het totaal). */

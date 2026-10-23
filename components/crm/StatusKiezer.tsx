@@ -5,17 +5,25 @@ import { useState } from 'react';
 import { useToast } from '@/components/agenda/Toast';
 import { crmApi } from './CrmDialoog';
 
-/** Status als keuzelijst die direct opslaat (klant: lead/actief/afgerond; project: gepland/bezig/afgerond). */
+/**
+ * Status die direct opslaat (de klant: lead/actief/afgerond). Standaard als knoppenrij
+ * (alle keuzes zichtbaar, één klik); `lijst` geeft een keuzelijst.
+ */
 export function StatusKiezer({
   url,
   waarde,
   opties,
-  label = 'Status'
+  label = 'Status',
+  lijst = false,
+  meldingen
 }: {
   url: string;
   waarde: string;
   opties: [string, string][];
   label?: string;
+  lijst?: boolean;
+  /** Optionele bevestiging na opslaan (toast), per nieuwe status. */
+  meldingen?: Record<string, string>;
 }) {
   const router = useRouter();
   const toast = useToast();
@@ -23,11 +31,13 @@ export function StatusKiezer({
   const [bezig, setBezig] = useState(false);
 
   async function wijzig(nieuw: string) {
+    if (nieuw === status) return;
     const oud = status;
     setStatus(nieuw);
     setBezig(true);
     try {
       await crmApi(url, 'PATCH', { status: nieuw });
+      if (meldingen?.[nieuw]) toast(meldingen[nieuw]);
       router.refresh();
     } catch (e) {
       setStatus(oud);
@@ -35,6 +45,25 @@ export function StatusKiezer({
     } finally {
       setBezig(false);
     }
+  }
+
+  if (!lijst) {
+    return (
+      <div className="ag-segment kp-statusknoppen" role="group" aria-label={label}>
+        {opties.map(([w, l]) => (
+          <button
+            key={w}
+            type="button"
+            aria-pressed={status === w}
+            className={status === w ? `is-aan kp-statusknop-${w}` : ''}
+            disabled={bezig}
+            onClick={() => void wijzig(w)}
+          >
+            {l}
+          </button>
+        ))}
+      </div>
+    );
   }
 
   return (

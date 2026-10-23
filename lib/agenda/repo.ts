@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { kolomOntbreekt, tabelOntbreekt } from '@/lib/db/ontbreekt';
-import { projectStatusVan } from './teaminvoer';
+import { projectStatusVan, projectStatusVoor0023, type ProjectRij } from './teaminvoer';
 import { bereikMomenten, normTijd, plusDagen } from './datum';
 import { verdeelDashboardTaken } from './dashboard';
 import type { Afspraak, Project, Subtaak, Taak, TaakDetail, TakenFilter, Tellingen } from './types';
@@ -505,11 +505,18 @@ export async function dashboardPlanning(bron: AgendaBron, vandaag: string): Prom
 // ---------------------------------------------------------------------------------
 // Projecten
 // ---------------------------------------------------------------------------------
-// Met migratie 0022: status gepland/bezig/afgerond, deadline en eigenaren. Daarvóór
-// (oude modus) bestaan deadline en project_eigenaren niet en is de status actief/
-// gearchiveerd; dan lezen we de oude kolommen en tonen we 'bezig'/'afgerond'.
+// Met migratie 0023: status voorbereiding/bezig/wachten/afgerond en status_sinds. Met 0022:
+// status gepland/bezig/afgerond, deadline en eigenaren (geen status_sinds; 'gepland' wordt
+// getoond als voorbereiding). Daarvóór (oude modus) bestaan deadline en project_eigenaren
+// niet en is de status actief/gearchiveerd; dan lezen we de oude kolommen en tonen we
+// 'bezig'/'afgerond'.
 const PROJECT_KOLOMMEN_OUD = 'id,naam,client_id,status,notitie,created_by,client:clients(company_name)';
 const PROJECT_KOLOMMEN = `${PROJECT_KOLOMMEN_OUD},deadline,eigenaren:project_eigenaren(user_id)`;
+const PROJECT_KOLOMMEN_0023 = `${PROJECT_KOLOMMEN},status_sinds`;
+
+// Of 0023 er is, onthouden we even (per serverproces), zodat niet elke query eerst
+// mislukt zolang de migratie nog niet is uitgevoerd. Na een minuut kijken we opnieuw.
+let zonder0023Tot = 0;
 
 interface ProjectDbRij {
   id: string;
@@ -518,6 +525,7 @@ interface ProjectDbRij {
   status: string;
   notitie: string | null;
   deadline?: string | null;
+  status_sinds?: string | null;
   created_by: string | null;
   client?: Join<{ company_name: string | null }>;
   eigenaren?: { user_id: string }[] | null;
@@ -530,6 +538,7 @@ export function naarProject(r: ProjectDbRij, taken: { open: number; totaal: numb
     klantId: r.client_id,
     klantNaam: eerste(r.client)?.company_name ?? null,
     status: projectStatusVan(r.status) ?? 'bezig',
+    statusSinds: r.status_sinds ?? null,
     notitie: r.notitie ?? '',
     deadline: r.deadline ?? null,
     eigenaren: [...new Set((r.eigenaren ?? []).map((x) => x.user_id))],
@@ -539,7 +548,7 @@ export function naarProject(r: ProjectDbRij, taken: { open: number; totaal: numb
   };
 }
 
-/** Welke projecten: 'lopend' = gepland of bezig (de kiezer in de taak-popup). */
+/** Welke projecten: 'lopend' = alles behalve afgerond (de kiezer in de taak-popup). */
 export type ProjectSelectie = 'lopend' | 'afgerond' | 'alle';
 const AFGEROND = ['afgerond', 'gearchiveerd'];
 
@@ -551,6 +560,12 @@ async function metProjectKolommen<T>(
   q: (kolommen: string) => PromiseLike<{ data: T | null; error: unknown }>,
   strikt = false
 ): Promise<T | null> {
+  if (Date.now() >= zonder0023Tot) {
+    const n = await q(PROJECT_KOLOMMEN_0023);
+    if (!n.error) return n.data;
+    if (!kolomOntbreekt(n.error) || tabelOntbreekt(n.error)) throw dbFout(n.error);
+    zonder0023Tot = Date.now() + 60_000;
+  }
   const r = await q(PROJECT_KOLOMMEN);
   if (!r.error) return r.data;
   if (!kolomOntbreekt(r.error) || tabelOntbreekt(r.error)) throw dbFout(r.error);
@@ -654,6 +669,27 @@ export async function zetProjectEigenaren(bron: AgendaBron, projectId: string, e
     if ((e2 as { code?: string }).code === '42501') throw new AgendaFout(400, 'Alleen actieve teamleden kunnen eigenaar zijn.');
     throw dbFout(e2);
   }
+}
+
+/** Melding als je "Wachten op goedkeuring" kiest vóór migratie 0023. */
+export const WACHTEN_NA_0023 = 'De status "Wachten op goedkeuring" werkt zodra migratie 0023 is uitgevoerd (supabase/UITVOEREN_0023.sql).';
+
+/**
+ * Schrijft een project (insert of update) en vangt een database van vóór 0023 op: weigert
+ * de statuscheck de nieuwe waarde, dan nogmaals met de oude ('voorbereiding' → 'gepland').
+ * 'wachten' bestaat vóór 0023 niet: een nette 503.
+ */
+export async function metStatusTerugval<T>(
+  rij: ProjectRij,
+  schrijf: (rij: ProjectRij) => PromiseLike<{ data: T | null; error: { code?: string; message?: string } | null }>
+): Promise<{ data: T | null; error: { code?: string; message?: string } | null }> {
+  const r = await schrijf(rij);
+  const statusFout = r.error?.code === '23514' && /projects_status_check/.test(r.error.message ?? '');
+  if (!statusFout || !rij.status) return r;
+  const oud = projectStatusVoor0023(rij.status);
+  if (oud === null) throw new AgendaFout(409, WACHTEN_NA_0023);
+  if (oud === rij.status) return r;
+  return schrijf({ ...rij, status: oud });
 }
 
 /** Melding als migratie 0022 (klanten & projecten) nog niet is uitgevoerd. */

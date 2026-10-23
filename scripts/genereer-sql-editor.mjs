@@ -1,11 +1,12 @@
 // Bouwt de bestanden voor de Supabase SQL Editor:
-//   supabase/UITVOEREN_IN_SQL_EDITOR.sql  0014–0022 (social, agenda, mail, uitgaven, team, klanten)
-//   supabase/UITVOEREN_0020_UITGAVEN.sql  0020 + 0021 + 0022 (voor wie 0014–0019 al heeft uitgevoerd)
-//   supabase/UITVOEREN_0021_TEAM.sql      0021 + 0022 (team, toegang en taken op naam)
+//   supabase/UITVOEREN_IN_SQL_EDITOR.sql  0014–0023 (social, agenda, mail, uitgaven, team, klanten)
+//   supabase/UITVOEREN_0020_UITGAVEN.sql  0020 + 0021 + 0022 + 0023 (voor wie 0014–0019 al heeft uitgevoerd)
+//   supabase/UITVOEREN_0021_TEAM.sql      0021 + 0022 + 0023 (team, toegang en taken op naam)
 //   supabase/UITVOEREN_0022.sql           alleen 0022 (welkomstflow, wie-ziet-welke-taak,
 //                                         klanten & projecten, snelheid) — vereist 0021
+//   supabase/UITVOEREN_0023.sql           alleen 0023 (projectstatus voor het bord) — vereist 0022
 //
-// 0021 + 0022 sluiten ELK bestand af: 0014–0020 maken nog policies "auth.uid() is not null"
+// 0021 + 0022 (+ 0023, alleen projectstatus) sluiten ELK groot bestand af: 0014–0020 maken nog policies "auth.uid() is not null"
 // (open voor elk account) en 0021 laat elk teamlid alle taken lezen. Wie een ouder bestand
 // opnieuw uitvoert, zou zonder 0021/0022 erachter die open regels terugzetten; nu eindigt
 // elk bestand met alleen-teamleden en de afgeschermde taken van 0022.
@@ -29,6 +30,7 @@ const DOEL = path.join(ROOT, "supabase", "UITVOEREN_IN_SQL_EDITOR.sql");
 const DOEL_UITGAVEN = path.join(ROOT, "supabase", "UITVOEREN_0020_UITGAVEN.sql");
 const DOEL_TEAM = path.join(ROOT, "supabase", "UITVOEREN_0021_TEAM.sql");
 const DOEL_0022 = path.join(ROOT, "supabase", "UITVOEREN_0022.sql");
+const DOEL_0023 = path.join(ROOT, "supabase", "UITVOEREN_0023.sql");
 
 const MIGRATIES = [
   "0014_social.sql",
@@ -40,6 +42,7 @@ const MIGRATIES = [
   "0020_uitgaven.sql",
   "0021_team_en_taken.sql",
   "0022_team_crm.sql",
+  "0023_projectstatus.sql",
 ];
 
 // Controle-regels per onderdeel (onderaan elk bestand; elke regel hoort "ok" te tonen).
@@ -94,11 +97,22 @@ const CONTROLE_0022 = [
   "  ('tabel client_notes',      to_regclass('public.client_notes') is not null)",
   "  ('tabel project_eigenaren', to_regclass('public.project_eigenaren') is not null)",
   "  ('kolom projects.deadline', exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'projects' and column_name = 'deadline'))",
-  "  ('projectstatus omgezet',   not exists (select 1 from public.projects where status not in ('gepland', 'bezig', 'afgerond')))",
+  "  ('projectstatus omgezet',   not exists (select 1 from public.projects where status not in ('gepland', 'voorbereiding', 'bezig', 'wachten', 'afgerond')))",
   "  ('functie taak_tellingen',  to_regprocedure('public.taak_tellingen(date,uuid,uuid)') is not null)",
   "  ('functie project_taak_tellingen', to_regprocedure('public.project_taak_tellingen(uuid[])') is not null)",
   "  ('tellingen dicht voor anon', not has_function_privilege('anon', 'public.taak_tellingen(date,uuid,uuid)', 'execute'))",
   "  ('indexen 0022',            (select count(*) from pg_class where relname in ('tasks_maker_open_idx', 'clients_status_idx', 'client_notes_klant_idx', 'projects_status_idx', 'tasks_client_idx', 'project_eigenaren_user_idx', 'tasks_due_idx', 'calendar_events_client_idx', 'calendar_events_maker_idx', 'tasks_maker_idx')) = 10)",
+];
+
+// Projectstatus voor het bord (0023).
+const CONTROLE_0023 = [
+  "  ('projectstatus voorbereiding/bezig/wachten/afgerond', not exists (select 1 from public.projects where status not in ('voorbereiding', 'bezig', 'wachten', 'afgerond')))",
+  "  ('nieuwe projecten standaard voorbereiding', (select column_default from information_schema.columns where table_schema = 'public' and table_name = 'projects' and column_name = 'status') like '%voorbereiding%')",
+  "  ('check op projectstatus', exists (select 1 from pg_constraint where conrelid = 'public.projects'::regclass and conname = 'projects_status_check' and pg_get_constraintdef(oid) ilike '%wachten%'))",
+  "  ('kolom projects.status_sinds', exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'projects' and column_name = 'status_sinds' and is_nullable = 'NO'))",
+  "  ('trigger status_sinds',    exists (select 1 from pg_trigger where tgname = 'projects_status_sinds' and tgrelid = 'public.projects'::regclass))",
+  "  ('RLS projects ongewijzigd (teamlid)', not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'projects' and (coalesce(qual, '') || ' ' || coalesce(with_check, '')) !~ 'is_teamlid\\('))",
+  "  ('indexen 0023',            (select count(*) from pg_class where relname in ('projects_status_sinds_idx', 'projects_deadline_idx')) = 2)",
 ];
 
 // Onder de controle: wie er nu toegang heeft (zo zie je meteen of er iemand tussen staat
@@ -170,6 +184,8 @@ function bouw() {
 --                            taken op naam, projecten, eigen mailbox per gebruiker
 --   0022       Team van twee welkomstflow, taken alleen voor betrokkenen, klanten &
 --                            projecten (status, notities, eigenaren), snelheid
+--   0023       Projectenbord projectstatus voorbereiding / bezig / wachten / afgerond
+--                            en sinds wanneer (status_sinds)
 -- Van de facturen-tabellen (0001–0013) veranderen alleen de toegangsregels (0021) en
 -- komen er bij clients drie kolommen met standaardwaarden bij (0022).
 --
@@ -185,7 +201,8 @@ function bouw() {
 --
 -- Al eerder 0014–0019 uitgevoerd? Dan volstaat supabase/UITVOEREN_0020_UITGAVEN.sql.
 -- Al eerder 0014–0020 uitgevoerd? Dan volstaat supabase/UITVOEREN_0021_TEAM.sql.
--- Al eerder 0014–0021 uitgevoerd? Dan volstaat supabase/UITVOEREN_0022.sql.
+-- Al eerder 0014–0021 uitgevoerd? Dan volstaat supabase/UITVOEREN_0022.sql (+ 0023).
+-- Al eerder 0014–0022 uitgevoerd? Dan volstaat supabase/UITVOEREN_0023.sql.
 --
 -- Daarna: importeer de oude social-projecten met
 --   scripts/importeer-social-projecten.mjs (zie README).
@@ -218,6 +235,7 @@ ${controle([
   ...CONTROLE_UITGAVEN,
   ...CONTROLE_TEAM,
   ...CONTROLE_0022,
+  ...CONTROLE_0023,
 ], TEAMLEDEN)}`;
 }
 
@@ -229,8 +247,8 @@ function bouwUitgaven() {
 -- Wat dit doet: tabellen expenses en expense_files (met RLS en updated_at-trigger) en
 -- de privé-buckets "uitgaven" (bonnetjes, max. 25 MB, jpeg/png/webp/heic/pdf) en
 -- "uitgaven-export" (tijdelijke ZIP's voor de boekhouder, max. 50 MB).
--- Daarna migratie 0021 (team): alleen actieve teamleden mogen nog iets, overal, en 0022
--- (taken alleen voor betrokkenen, klanten & projecten).
+-- Daarna migratie 0021 (team): alleen actieve teamleden mogen nog iets, overal, 0022
+-- (taken alleen voor betrokkenen, klanten & projecten) en 0023 (projectstatus).
 --
 -- Zo voer je het uit:
 --   1. Supabase-dashboard -> je project -> SQL Editor -> "New query".
@@ -243,8 +261,8 @@ function bouwUitgaven() {
 ${TEAM_STAPPEN}
 --
 -- Gegenereerd met scripts/genereer-sql-editor.mjs uit supabase/migrations/0020_uitgaven.sql,
--- 0021_team_en_taken.sql en 0022_team_crm.sql. Niet met de hand aanpassen; pas de migratie
--- aan en genereer opnieuw.
+-- 0021_team_en_taken.sql, 0022_team_crm.sql en 0023_projectstatus.sql. Niet met de hand
+-- aanpassen; pas de migratie aan en genereer opnieuw.
 -- ============================================================================
 
 begin;
@@ -252,12 +270,13 @@ begin;
 ${deel("0020_uitgaven.sql")}
 ${deel("0021_team_en_taken.sql")}
 ${deel("0022_team_crm.sql")}
+${deel("0023_projectstatus.sql")}
 commit;
 
 -- PostgREST (de API van Supabase) direct laten weten dat er nieuwe tabellen zijn.
 notify pgrst, 'reload schema';
 
-${controle([...CONTROLE_UITGAVEN, ...CONTROLE_TEAM, ...CONTROLE_0022], TEAMLEDEN)}`;
+${controle([...CONTROLE_UITGAVEN, ...CONTROLE_TEAM, ...CONTROLE_0022, ...CONTROLE_0023], TEAMLEDEN)}`;
 }
 
 function bouwTeam() {
@@ -276,7 +295,7 @@ function bouwTeam() {
 --     deelnemers aan afspraken en een eigen mailbox per gebruiker. Bestaande taken en
 --     afspraken gaan naar hun maker (of de eigenaar). Er wordt niets verwijderd.
 --   - Daarna 0022 (zie UITVOEREN_0022.sql), zodat dit bestand nooit de open leesregels
---     voor taken van 0021 terugzet.
+--     voor taken van 0021 terugzet, en 0023 (projectstatus, zie UITVOEREN_0023.sql).
 --
 -- Vereist 0014–0019 (zie UITVOEREN_IN_SQL_EDITOR.sql). Uitgaven (0020) nog niet uitgevoerd?
 -- Dan worden die onderdelen overgeslagen; voer dit bestand na 0020 gewoon nog eens uit.
@@ -291,20 +310,22 @@ function bouwTeam() {
 --
 ${TEAM_STAPPEN}
 --
--- Gegenereerd met scripts/genereer-sql-editor.mjs uit supabase/migrations/0021_team_en_taken.sql
--- en 0022_team_crm.sql. Niet met de hand aanpassen; pas de migratie aan en genereer opnieuw.
+-- Gegenereerd met scripts/genereer-sql-editor.mjs uit supabase/migrations/0021_team_en_taken.sql,
+-- 0022_team_crm.sql en 0023_projectstatus.sql. Niet met de hand aanpassen; pas de migratie
+-- aan en genereer opnieuw.
 -- ============================================================================
 
 begin;
 
 ${deel("0021_team_en_taken.sql")}
 ${deel("0022_team_crm.sql")}
+${deel("0023_projectstatus.sql")}
 commit;
 
 -- PostgREST (de API van Supabase) direct laten weten dat er nieuwe tabellen zijn.
 notify pgrst, 'reload schema';
 
-${controle([...CONTROLE_TEAM, ...CONTROLE_0022], TEAMLEDEN)}`;
+${controle([...CONTROLE_TEAM, ...CONTROLE_0022, ...CONTROLE_0023], TEAMLEDEN)}`;
 }
 
 function bouw0022() {
@@ -322,7 +343,9 @@ function bouw0022() {
 --   - Klanten: e-mail, telefoon en status (lead / actief / afgerond, standaard actief);
 --     notities per klant (client_notes).
 --   - Projecten: status gepland / bezig / afgerond (actief -> bezig, gearchiveerd ->
---     afgerond), een deadline en eigenaren (project_eigenaren).
+--     afgerond), een deadline en eigenaren (project_eigenaren). Daarna kan
+--     UITVOEREN_0023.sql (projectstatus voor het bord); is 0023 al uitgevoerd, dan laat
+--     dit bestand die statussen staan.
 --   - Snelheid: tellers in één query (taak_tellingen, project_taak_tellingen) en indexen.
 --
 -- Vereist 0021 (team). Nog niet uitgevoerd? Gebruik dan UITVOEREN_0021_TEAM.sql (bevat
@@ -352,11 +375,50 @@ notify pgrst, 'reload schema';
 ${controle(CONTROLE_0022, TEAMLEDEN)}`;
 }
 
+function bouw0023() {
+  return `-- ============================================================================
+-- Studio Levant-backoffice — projectstatus voor het projectenbord (migratie 0023)
+-- ============================================================================
+--
+-- Wat dit doet (alleen de tabel projects; RLS en facturen ongewijzigd):
+--   - Status voorbereiding / bezig / wachten (op goedkeuring) / afgerond. Bestaande
+--     'gepland' wordt 'voorbereiding'; nieuwe projecten staan standaard op voorbereiding.
+--   - Kolom status_sinds (gevuld met de laatste wijziging) en een trigger die hem bij
+--     elke statuswijziging op "nu" zet: voor "12 dagen in deze status" op het bord.
+--   - Indexen op status + status_sinds en op deadline.
+--
+-- Vereist 0022. Nog niet uitgevoerd? Voer dan eerst UITVOEREN_0022.sql uit (of het grote
+-- UITVOEREN_0021_TEAM.sql, dat 0021, 0022 én 0023 bevat).
+--
+-- Zo voer je het uit:
+--   1. Supabase-dashboard -> je project -> SQL Editor -> "New query".
+--   2. Plak dit hele bestand en klik op "Run".
+--   3. Onderaan: elke regel moet "ok" tonen, en daaronder staat wie er toegang heeft.
+--
+-- Veilig om nogmaals uit te voeren; alles draait in één transactie (gaat er iets mis, dan
+-- wordt niets half doorgevoerd). De app werkt vóór en na dit bestand.
+--
+-- Gegenereerd met scripts/genereer-sql-editor.mjs uit supabase/migrations/0023_projectstatus.sql.
+-- Niet met de hand aanpassen; pas de migratie aan en genereer opnieuw.
+-- ============================================================================
+
+begin;
+
+${deel("0023_projectstatus.sql")}
+commit;
+
+-- PostgREST (de API van Supabase) direct laten weten dat er een nieuwe kolom is.
+notify pgrst, 'reload schema';
+
+${controle(CONTROLE_0023, TEAMLEDEN)}`;
+}
+
 const bestanden = [
   [DOEL, bouw()],
   [DOEL_UITGAVEN, bouwUitgaven()],
   [DOEL_TEAM, bouwTeam()],
   [DOEL_0022, bouw0022()],
+  [DOEL_0023, bouw0023()],
 ];
 if (process.argv.includes("--controleer")) {
   let verouderd = false;
@@ -368,10 +430,10 @@ if (process.argv.includes("--controleer")) {
     }
   }
   if (verouderd) process.exit(1);
-  console.log("UITVOEREN_IN_SQL_EDITOR.sql, UITVOEREN_0020_UITGAVEN.sql, UITVOEREN_0021_TEAM.sql en UITVOEREN_0022.sql zijn actueel.");
+  console.log("UITVOEREN_IN_SQL_EDITOR.sql, UITVOEREN_0020_UITGAVEN.sql, UITVOEREN_0021_TEAM.sql, UITVOEREN_0022.sql en UITVOEREN_0023.sql zijn actueel.");
 } else {
   for (const [doel, inhoud] of bestanden) fs.writeFileSync(doel, inhoud);
   console.log(
-    `Geschreven: ${path.relative(ROOT, DOEL)} (${MIGRATIES.length} migraties), ${path.relative(ROOT, DOEL_UITGAVEN)}, ${path.relative(ROOT, DOEL_TEAM)} en ${path.relative(ROOT, DOEL_0022)}`,
+    `Geschreven: ${path.relative(ROOT, DOEL)} (${MIGRATIES.length} migraties), ${path.relative(ROOT, DOEL_UITGAVEN)}, ${path.relative(ROOT, DOEL_TEAM)}, ${path.relative(ROOT, DOEL_0022)} en ${path.relative(ROOT, DOEL_0023)}`,
   );
 }

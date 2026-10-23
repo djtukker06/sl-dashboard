@@ -177,25 +177,35 @@ revoke update on public.client_notes from anon, authenticated;
 
 -- Projecten: status gepland / bezig / afgerond (was actief / gearchiveerd), een optionele
 -- deadline en een langere notitie. Oude waarden worden omgezet; de app leest beide.
+-- Is 0023 (projectstatus voorbereiding/bezig/wachten/afgerond, kolom status_sinds) al
+-- uitgevoerd, dan blijven status, check en standaardwaarde van 0023 staan: opnieuw
+-- uitvoeren zet de statussen nooit terug.
 do $$
 declare
   c record;
+  na0023 boolean := exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'projects' and column_name = 'status_sinds'
+  );
 begin
   for c in
     select conname from pg_constraint
     where conrelid = 'public.projects'::regclass and contype = 'c'
-      and (pg_get_constraintdef(oid) ilike '%status%' or pg_get_constraintdef(oid) ilike '%notitie%')
+      and ((not na0023 and pg_get_constraintdef(oid) ilike '%status%') or pg_get_constraintdef(oid) ilike '%notitie%')
   loop
     execute format('alter table public.projects drop constraint %I', c.conname);
   end loop;
+
+  if not na0023 then
+    update public.projects set status = 'bezig' where status = 'actief';
+    update public.projects set status = 'afgerond' where status = 'gearchiveerd';
+
+    alter table public.projects alter column status set default 'bezig';
+    alter table public.projects add constraint projects_status_check check (status in ('gepland', 'bezig', 'afgerond'));
+  end if;
 end
 $$;
 
-update public.projects set status = 'bezig' where status = 'actief';
-update public.projects set status = 'afgerond' where status = 'gearchiveerd';
-
-alter table public.projects alter column status set default 'bezig';
-alter table public.projects add constraint projects_status_check check (status in ('gepland', 'bezig', 'afgerond'));
 alter table public.projects add constraint projects_notitie_check check (length(notitie) <= 5000);
 alter table public.projects add column if not exists deadline date;
 

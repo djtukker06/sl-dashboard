@@ -23,7 +23,7 @@ export interface KlantRegel {
   contactpersoon: string;
   email: string;
   status: KlantStatus;
-  /** Projecten die gepland of bezig zijn. */
+  /** Projecten die nog niet afgerond zijn. */
   lopendeProjecten: number;
 }
 
@@ -45,4 +45,4 @@ export interface KlantInvoer {
   status?: KlantStatus;
 }
 
-export const PROJECT_STATUS_LABEL = { gepland: 'Gepland', bezig: 'Bezig', afgerond: 'Afgerond' } as const;
+export { PROJECT_STATUS_LABEL, PROJECT_STATUS_KORT } from './projectstatus';

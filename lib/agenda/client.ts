@@ -108,7 +108,7 @@ export const agendaApi = {
   project: (id: string) => api<{ project: Project }>(`/api/projecten/${id}`),
   projecten: (status: 'lopend' | 'afgerond' | 'alle' = 'lopend') =>
     api<{ projecten: Project[] }>(`/api/projecten${qs({ status })}`),
-  maakProject: (b: ProjectInvoer) => api<{ project: Project }>('/api/projecten', { method: 'POST', body: body(b) }),
+  maakProject: (b: ProjectInvoer) => api<{ project: Project; klantWeerActief?: boolean }>('/api/projecten', { method: 'POST', body: body(b) }),
   wijzigProject: (id: string, b: ProjectInvoer) =>
     api<{ project: Project }>(`/api/projecten/${id}`, { method: 'PATCH', body: body(b) })
 };

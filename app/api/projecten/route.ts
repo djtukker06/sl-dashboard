@@ -3,6 +3,7 @@ import {
   AgendaFout,
   CRM_NIET_INGERICHT,
   dbFout,
+  metStatusTerugval,
   NIET_INGERICHT,
   projectenLijst,
   projectOphalen,
@@ -28,7 +29,7 @@ const SELECTIE: Record<string, ProjectSelectie> = {
 };
 
 // GET /api/projecten?status=lopend|afgerond|alle&klant=<id> → { projecten }
-// Gedeeld met het hele team. 'lopend' (of 'actief') = gepland + bezig.
+// Gedeeld met het hele team. 'lopend' (of 'actief') = alles behalve afgerond.
 export async function GET(request: Request) {
   const s = await metSessie(request);
   if ('antwoord' in s) return s.antwoord;
@@ -47,9 +48,11 @@ export async function GET(request: Request) {
   }
 }
 
-// POST /api/projecten  { naam, klantId?, status?, deadline?, notitie?, eigenaren? } → { project }
-// Zonder status: de standaard van de database ('bezig'; vóór 0022 'actief'). Zonder
-// eigenaren: jijzelf (vanaf 0022).
+// POST /api/projecten  { naam, klantId?, status?, deadline?, notitie?, eigenaren? }
+//   → { project, klantWeerActief }
+// Zonder status: de standaard van de database ('voorbereiding'; vóór 0023 'bezig', vóór
+// 0022 'actief'). Zonder eigenaren: jijzelf (vanaf 0022). Een nieuw (niet-afgerond) project
+// bij een afgeronde klant zet die klant terug op 'actief' (klantWeerActief: true).
 export async function POST(request: Request) {
   const s = await metSessie(request);
   if ('antwoord' in s) return s.antwoord;
@@ -61,11 +64,13 @@ export async function POST(request: Request) {
   if (!p.ok) return fout(400, p.fout);
 
   try {
-    const { data, error } = await s.sb
-      .from('projects')
-      .insert({ ...p.waarde, created_by: s.bron.userId })
-      .select('id')
-      .single();
+    const { data, error } = await metStatusTerugval<{ id: string }>(p.waarde, (rij) =>
+      s.sb
+        .from('projects')
+        .insert({ ...rij, created_by: s.bron.userId })
+        .select('id')
+        .single()
+    );
     if (error) {
       if (error.code === '23505') return fout(409, BESTAAT_AL);
       if (kolomOntbreekt(error) || error.code === '23514') {
@@ -74,6 +79,7 @@ export async function POST(request: Request) {
       }
       throw dbFout(error);
     }
+    if (!data) throw new AgendaFout(500, 'Het project kon niet worden aangemaakt.');
     const id = data.id as string;
 
     try {
@@ -86,9 +92,22 @@ export async function POST(request: Request) {
       }
     }
 
+    // Afgeronde klant krijgt een nieuw project: weer actief (blijft verder ongemoeid).
+    let klantWeerActief = false;
+    if (p.waarde.client_id && p.waarde.status !== 'afgerond') {
+      const k = await s.sb
+        .from('clients')
+        .update({ status: 'actief' })
+        .eq('id', p.waarde.client_id)
+        .eq('status', 'afgerond')
+        .select('id');
+      if (k.error && !kolomOntbreekt(k.error)) throw dbFout(k.error);
+      klantWeerActief = !k.error && (k.data ?? []).length > 0;
+    }
+
     const project = await projectOphalen(s.bron, id);
     if (!project) throw new AgendaFout(500, 'Het project is aangemaakt maar kon niet worden gelezen.');
-    return json({ project }, 201);
+    return json({ project, klantWeerActief }, 201);
   } catch (e) {
     return foutAntwoord(e);
   }

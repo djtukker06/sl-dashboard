@@ -1,5 +1,5 @@
 import { isUuid, parseProject } from '@/lib/agenda/invoer';
-import { CRM_NIET_INGERICHT, dbFout, NIET_INGERICHT, projectOphalen, zetProjectEigenaren } from '@/lib/agenda/repo';
+import { CRM_NIET_INGERICHT, dbFout, metStatusTerugval, NIET_INGERICHT, projectOphalen, zetProjectEigenaren } from '@/lib/agenda/repo';
 import { kolomOntbreekt } from '@/lib/db/ontbreekt';
 import type { ProjectInvoer } from '@/lib/agenda/types';
 import { fout, foutAntwoord, json, leesBody, metSessie } from '@/lib/agenda/api';
@@ -56,7 +56,8 @@ export async function PATCH(request: Request, ctx: Ctx) {
       }
     }
     if (Object.keys(p.waarde).length) {
-      const { data, error } = await s.sb.from('projects').update(p.waarde).eq('id', id).select('id').maybeSingle();
+      // Vóór 0023 kent de database 'voorbereiding' nog als 'gepland' (metStatusTerugval).
+      const { data, error } = await metStatusTerugval<{ id: string }>(p.waarde, (rij) => s.sb.from('projects').update(rij).eq('id', id).select('id').maybeSingle());
       if (error) {
         if (error.code === '23505') return fout(409, 'Er bestaat al een project met die naam (bij deze klant).');
         if (kolomOntbreekt(error) || error.code === '23514') return fout(503, CRM_NIET_INGERICHT, 'tabel_ontbreekt');

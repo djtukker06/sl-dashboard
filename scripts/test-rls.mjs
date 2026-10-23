@@ -4,7 +4,9 @@
 // Er wordt niets tegen Supabase uitgevoerd en niets naar het netwerk gestuurd.
 //
 // Scenario A  0001–0020 → data → 0021 (los, zoals nu in Supabase) → Mark + oude projecten
-//             → UITVOEREN_0022.sql (2x) → UITVOEREN_0021_TEAM.sql (2x) → UITVOEREN_IN_SQL_EDITOR.sql
+//             → UITVOEREN_0022.sql (2x) → (vóór 0023: 'gepland' en de foutmelding van de
+//               statuscheck die de app herkent) → UITVOEREN_0023.sql (2x)
+//             → UITVOEREN_0021_TEAM.sql (2x) → UITVOEREN_IN_SQL_EDITOR.sql
 //             → UITVOEREN_0020_UITGAVEN.sql: elke controleregel "ok", niets heropend (ook de
 //               open leesregels voor taken van 0021 komen niet terug).
 //             → 0022_team_crm.sql (2x): welkom_klaar_op gezet voor de eigenaar, niet voor
@@ -19,6 +21,10 @@
 //               team leesbaar; afspraken alleen voor maker en deelnemers.
 //             → 0022 snelheid: taak_tellingen / project_taak_tellingen tellen precies wat de
 //               lijsten tonen, niets van een ander, niets voor niet-teamleden of anon.
+//             → 0023 projectstatus: gepland→voorbereiding, standaard voorbereiding, wachten
+//               mag, oude waarden niet; status_sinds behoudt de laatste wijziging en de
+//               trigger zet hem alleen bij een statuswijziging; opnieuw uitvoeren van 0022
+//               of 0023 laat statussen en status_sinds staan; RLS ongewijzigd.
 //             Daarna de toegangsmatrix:
 //               - niet-teamleden (ingelogd zonder lidmaatschap, onbevestigd, gedeactiveerd,
 //                 en anon zonder sessie): op ELKE tabel in public en in ELKE bucket niets
@@ -312,6 +318,25 @@ async function scenarioA() {
   const sql0022 = lees("supabase/UITVOEREN_0022.sql");
   checkControle(await voerUit(db, sql0022, "UITVOEREN_0022.sql"), "A: UITVOEREN_0022 (1e keer)");
   checkControle(await voerUit(db, sql0022, "UITVOEREN_0022.sql (2x)"), "A: UITVOEREN_0022 (2e keer)");
+  const def22 = (await db.query("select column_default from information_schema.columns where table_name = 'projects' and column_name = 'status'")).rows[0].column_default;
+  check(/bezig/.test(def22 ?? ""), "0022: nieuwe projecten standaard 'bezig'", def22);
+
+  // Vóór 0023 (zo staat Supabase nu): een gepland project van vijf dagen oud. 'wachten'
+  // bestaat nog niet; de app herkent die weigering aan de naam van de check.
+  await db.query(
+    `insert into public.projects (id, naam, status, created_by, updated_at) values
+       ('dddddddd-0000-4000-8000-0000000000a3', 'Oud gepland', 'gepland', $1, now() - interval '5 days')`,
+    [U.mark],
+  );
+  let r23 = await als(db, "mark", "update public.projects set status = 'wachten' where id = 'dddddddd-0000-4000-8000-0000000000a3'");
+  check(!r23.ok && r23.code === "23514" && /projects_status_check/.test(r23.msg), "vóór 0023: 'wachten' geweigerd door projects_status_check (de app vangt dat op)", uitleg(r23));
+  r23 = await als(db, "mark", "update public.projects set status = 'voorbereiding' where id = 'dddddddd-0000-4000-8000-0000000000a3'");
+  check(!r23.ok && /projects_status_check/.test(r23.msg ?? ""), "vóór 0023: 'voorbereiding' geweigerd (de app schrijft dan 'gepland')", uitleg(r23));
+
+  // supabase/UITVOEREN_0023.sql: twee keer achter elkaar, controle telkens "ok".
+  const sql0023 = lees("supabase/UITVOEREN_0023.sql");
+  checkControle(await voerUit(db, sql0023, "UITVOEREN_0023.sql"), "A: UITVOEREN_0023 (1e keer)");
+  checkControle(await voerUit(db, sql0023, "UITVOEREN_0023.sql (2x)"), "A: UITVOEREN_0023 (2e keer)");
 
   // Opnieuw de oudere/grote bestanden: mogen de open policies van 0014–0020 én de open
   // leesregels voor taken van 0021 niet terugzetten (ze eindigen met 0021 + 0022).
@@ -328,6 +353,7 @@ async function scenarioA() {
 
   await zaaiNa0021(db);
   await crm0022(db);
+  await projectstatus0023(db);
   await zichtbaarheid0022(db);
   await matrix(db);
 
@@ -779,8 +805,6 @@ async function crm0022(db) {
   );
   check(eig["Oud actief"] === U.mark, "0022: bestaand project krijgt de maker als eigenaar", JSON.stringify(eig));
   check(eig["Oud archief"] === U.daniel, "0022: project zonder maker krijgt de team-eigenaar", JSON.stringify(eig));
-  const def = (await db.query("select column_default from information_schema.columns where table_name = 'projects' and column_name = 'status'")).rows[0].column_default;
-  check(/bezig/.test(def ?? ""), "0022: nieuwe projecten standaard 'bezig'", def);
 
   // Opnieuw uitvoeren: een weggehaalde eigenaar komt niet terug, statussen blijven.
   await db.query("delete from public.project_eigenaren where project_id = 'dddddddd-0000-4000-8000-0000000000a1'");
@@ -817,7 +841,7 @@ async function crm0022(db) {
   check(!r.ok && r.code === "23514", "0022: onbekende klantstatus geweigerd", uitleg(r));
   r = await als(db, "mark", "update public.projects set status = 'actief' where id = 'dddddddd-0000-4000-8000-000000000001'");
   check(!r.ok && r.code === "23514", "0022: oude projectstatus niet meer te schrijven", uitleg(r));
-  r = await als(db, "mark", "update public.projects set status = 'gepland', deadline = '2026-12-01', notitie = repeat('x', 5000) where id = 'dddddddd-0000-4000-8000-000000000001'");
+  r = await als(db, "mark", "update public.projects set status = 'voorbereiding', deadline = '2026-12-01', notitie = repeat('x', 5000) where id = 'dddddddd-0000-4000-8000-000000000001'");
   check(r.ok && r.n === 1, "0022: status, deadline en notitie (5000) wijzigen", uitleg(r));
   r = await als(db, "mark", "update public.projects set notitie = repeat('x', 5001) where id = 'dddddddd-0000-4000-8000-000000000001'");
   check(!r.ok && r.code === "23514", "0022: notitie langer dan 5000 geweigerd", uitleg(r));
@@ -869,6 +893,68 @@ async function crm0022(db) {
   )).rows[0].n;
   check(idx === 5, "0022: indexen voor klanten & projecten aanwezig", `${idx}`);
   if (fouten === fouten0) console.log("  0022 klanten & projecten: ok");
+}
+
+// ---------------------------------------------------------------------------------
+// 0023: projectstatus voor het bord
+// ---------------------------------------------------------------------------------
+async function projectstatus0023(db) {
+  const fouten0 = fouten;
+  const status = async () =>
+    Object.fromEntries((await db.query("select naam, status from public.projects where naam like 'Oud %'")).rows.map((r) => [r.naam, r.status]));
+  let st = await status();
+  check(st["Oud gepland"] === "voorbereiding" && st["Oud actief"] === "bezig" && st["Oud archief"] === "afgerond", "0023: gepland→voorbereiding, rest blijft", JSON.stringify(st));
+  const n = (await db.query("select count(*)::int as n from public.projects where status not in ('voorbereiding', 'bezig', 'wachten', 'afgerond')")).rows[0].n;
+  check(n === 0, "0023: alleen nog de vier statussen", `${n}`);
+  const def = (await db.query("select column_default from information_schema.columns where table_name = 'projects' and column_name = 'status'")).rows[0].column_default;
+  check(/voorbereiding/.test(def ?? ""), "0023: nieuwe projecten standaard 'voorbereiding'", def);
+
+  // status_sinds: bestaande projecten houden hun laatste wijziging (niet het omzetten).
+  const G = "dddddddd-0000-4000-8000-0000000000a3";
+  const sinds = async (id) => (await db.query("select status_sinds, extract(epoch from now() - status_sinds)::int as s from public.projects where id = $1", [id])).rows[0];
+  const s0 = await sinds(G);
+  check(s0.s > 4 * 86400, "0023: status_sinds = laatste wijziging vóór het omzetten (5 dagen)", `${s0.s}s`);
+
+  // Als teamlid (RLS): nieuw project, status wijzigen, alleen naam wijzigen.
+  let r = await als(db, "mark", "insert into public.projects (naam) values ('Nieuw bord') returning status, extract(epoch from now() - status_sinds)::int as s");
+  check(r.ok && r.rows[0].status === "voorbereiding" && r.rows[0].s <= 5, "0023: nieuw project in voorbereiding, sinds nu", uitleg(r));
+  r = await als(db, "mark", `update public.projects set status = 'wachten' where id = '${G}' returning extract(epoch from now() - status_sinds)::int as s`);
+  check(r.ok && r.n === 1 && r.rows[0].s <= 5, "0023: wachten op goedkeuring kiezen zet status_sinds op nu", uitleg(r));
+  r = await als(db, "mark", `update public.projects set naam = 'Oud gepland (hernoemd)' where id = '${G}' returning extract(epoch from now() - status_sinds)::int as s`);
+  check(r.ok && r.rows[0].s > 4 * 86400, "0023: andere wijziging laat status_sinds staan", uitleg(r));
+  r = await als(db, "mark", `update public.projects set status_sinds = now() - interval '400 days' where id = '${G}' returning extract(epoch from now() - status_sinds)::int as s`);
+  check(r.ok && r.rows[0].s < 6 * 86400, "0023: status_sinds is niet met de hand te verzetten", uitleg(r));
+  for (const oud of ["gepland", "actief", "gearchiveerd", "klaar"]) {
+    r = await als(db, "mark", `update public.projects set status = '${oud}' where id = '${G}'`);
+    check(!r.ok && r.code === "23514", `0023: status '${oud}' geweigerd`, uitleg(r));
+  }
+  for (const wie of ["indringer", "oudlid", "anon"]) {
+    r = await als(db, wie, `update public.projects set status = 'afgerond' where id = '${G}'`);
+    check(nietsGeraakt(r), `0023: ${wie} wijzigt geen projectstatus`, uitleg(r));
+    r = await als(db, wie, "select status_sinds from public.projects");
+    check(leeg(r), `0023: ${wie} leest geen status_sinds`, uitleg(r));
+  }
+  const pol = (await db.query("select coalesce(qual, '') || ' ' || coalesce(with_check, '') as q from pg_policies where tablename = 'projects'")).rows;
+  check(pol.length > 0 && pol.every((p) => /is_teamlid\(/.test(p.q)), "0023: policies op projects vereisen nog steeds teamlid", `${pol.length}`);
+
+  // Echt wachten (blijvend) en dan opnieuw uitvoeren: 0022 (los en als bestand) en 0023
+  // laten statussen, check en status_sinds staan.
+  await db.query(`update public.projects set status = 'wachten' where id = '${G}'`);
+  const voor = (await sinds(G)).status_sinds;
+  await voerUit(db, lees("supabase/migrations/0022_team_crm.sql"), "0022_team_crm.sql (na 0023)");
+  checkControle(await voerUit(db, lees("supabase/UITVOEREN_0022.sql"), "UITVOEREN_0022.sql (na 0023)"), "A: UITVOEREN_0022 na 0023");
+  checkControle(await voerUit(db, lees("supabase/UITVOEREN_0023.sql"), "UITVOEREN_0023.sql (3x)"), "A: UITVOEREN_0023 (3e keer)");
+  st = await status();
+  check(st["Oud gepland"] === "wachten", "0023: opnieuw uitvoeren van 0022/0023 laat 'wachten' staan", JSON.stringify(st));
+  const na = (await sinds(G)).status_sinds;
+  check(String(na) === String(voor), "0023: opnieuw uitvoeren laat status_sinds staan", `${voor} / ${na}`);
+  const def2 = (await db.query("select column_default from information_schema.columns where table_name = 'projects' and column_name = 'status'")).rows[0].column_default;
+  check(/voorbereiding/.test(def2 ?? ""), "0023: na opnieuw 0022 blijft de standaard 'voorbereiding'", def2);
+  const chk = (await db.query("select pg_get_constraintdef(oid) as d from pg_constraint where conrelid = 'public.projects'::regclass and contype = 'c' and pg_get_constraintdef(oid) ilike '%status%'")).rows;
+  check(chk.length === 1 && /wachten/.test(chk[0].d), "0023: precies één statuscheck (met wachten)", JSON.stringify(chk));
+  const idx = (await db.query("select count(*)::int as n from pg_class where relname in ('projects_status_sinds_idx', 'projects_deadline_idx')")).rows[0].n;
+  check(idx === 2, "0023: indexen aanwezig", `${idx}`);
+  if (fouten === fouten0) console.log("  0023 projectstatus: ok");
 }
 
 // ---------------------------------------------------------------------------------

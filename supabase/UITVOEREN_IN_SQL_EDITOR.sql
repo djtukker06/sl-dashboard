@@ -11,6 +11,8 @@
 --                            taken op naam, projecten, eigen mailbox per gebruiker
 --   0022       Team van twee welkomstflow, taken alleen voor betrokkenen, klanten &
 --                            projecten (status, notities, eigenaren), snelheid
+--   0023       Projectenbord projectstatus voorbereiding / bezig / wachten / afgerond
+--                            en sinds wanneer (status_sinds)
 -- Van de facturen-tabellen (0001–0013) veranderen alleen de toegangsregels (0021) en
 -- komen er bij clients drie kolommen met standaardwaarden bij (0022).
 --
@@ -26,7 +28,8 @@
 --
 -- Al eerder 0014–0019 uitgevoerd? Dan volstaat supabase/UITVOEREN_0020_UITGAVEN.sql.
 -- Al eerder 0014–0020 uitgevoerd? Dan volstaat supabase/UITVOEREN_0021_TEAM.sql.
--- Al eerder 0014–0021 uitgevoerd? Dan volstaat supabase/UITVOEREN_0022.sql.
+-- Al eerder 0014–0021 uitgevoerd? Dan volstaat supabase/UITVOEREN_0022.sql (+ 0023).
+-- Al eerder 0014–0022 uitgevoerd? Dan volstaat supabase/UITVOEREN_0023.sql.
 --
 -- Daarna: importeer de oude social-projecten met
 --   scripts/importeer-social-projecten.mjs (zie README).
@@ -1685,25 +1688,35 @@ revoke update on public.client_notes from anon, authenticated;
 
 -- Projecten: status gepland / bezig / afgerond (was actief / gearchiveerd), een optionele
 -- deadline en een langere notitie. Oude waarden worden omgezet; de app leest beide.
+-- Is 0023 (projectstatus voorbereiding/bezig/wachten/afgerond, kolom status_sinds) al
+-- uitgevoerd, dan blijven status, check en standaardwaarde van 0023 staan: opnieuw
+-- uitvoeren zet de statussen nooit terug.
 do $$
 declare
   c record;
+  na0023 boolean := exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'projects' and column_name = 'status_sinds'
+  );
 begin
   for c in
     select conname from pg_constraint
     where conrelid = 'public.projects'::regclass and contype = 'c'
-      and (pg_get_constraintdef(oid) ilike '%status%' or pg_get_constraintdef(oid) ilike '%notitie%')
+      and ((not na0023 and pg_get_constraintdef(oid) ilike '%status%') or pg_get_constraintdef(oid) ilike '%notitie%')
   loop
     execute format('alter table public.projects drop constraint %I', c.conname);
   end loop;
+
+  if not na0023 then
+    update public.projects set status = 'bezig' where status = 'actief';
+    update public.projects set status = 'afgerond' where status = 'gearchiveerd';
+
+    alter table public.projects alter column status set default 'bezig';
+    alter table public.projects add constraint projects_status_check check (status in ('gepland', 'bezig', 'afgerond'));
+  end if;
 end
 $$;
 
-update public.projects set status = 'bezig' where status = 'actief';
-update public.projects set status = 'afgerond' where status = 'gearchiveerd';
-
-alter table public.projects alter column status set default 'bezig';
-alter table public.projects add constraint projects_status_check check (status in ('gepland', 'bezig', 'afgerond'));
 alter table public.projects add constraint projects_notitie_check check (length(notitie) <= 5000);
 alter table public.projects add column if not exists deadline date;
 
@@ -1811,6 +1824,96 @@ create index if not exists calendar_events_client_idx on public.calendar_events 
 create index if not exists calendar_events_maker_idx on public.calendar_events (created_by);
 create index if not exists tasks_maker_idx on public.tasks (created_by, completed_at);
 
+-- ------------------------------------------------------------------------------
+-- 0023_projectstatus.sql
+-- ------------------------------------------------------------------------------
+
+-- 0023: projectstatussen voor het projectenbord. Idempotent: twee keer uitvoeren geeft
+-- geen fout. Alleen projects verandert; RLS (is_teamlid) blijft zoals in 0021/0022 en de
+-- facturen worden niet aangeraakt. Vereist 0022.
+--
+--   - status voorbereiding / bezig / wachten (op goedkeuring) / afgerond; bestaande
+--     'gepland' wordt 'voorbereiding' (en oude 'actief'/'gearchiveerd', mocht er nog iets
+--     staan, 'bezig'/'afgerond'). Nieuwe projecten standaard 'voorbereiding'.
+--   - status_sinds: wanneer de status voor het laatst veranderde (gevuld met updated_at),
+--     bijgehouden door een trigger. Voor "12 dagen in deze status" en "afgerond, laatste
+--     30 dagen" op het bord.
+--   - index voor het bord (status + status_sinds) en voor deadlines.
+--
+-- De app werkt vóór en na deze migratie: vóór 0023 schrijft hij 'gepland' voor
+-- Voorbereiding en is "Wachten op goedkeuring" nog niet te kiezen.
+
+-- Sinds wanneer in deze status. Bestaande projecten: hun laatste wijziging (vóór het
+-- omzetten hieronder, dat updated_at bijwerkt).
+alter table public.projects add column if not exists status_sinds timestamptz;
+update public.projects set status_sinds = coalesce(updated_at, created_at, now()) where status_sinds is null;
+alter table public.projects alter column status_sinds set default now();
+alter table public.projects alter column status_sinds set not null;
+
+-- Status: eerst de oude check weg, dan omzetten, dan de nieuwe check.
+do $$
+declare
+  c record;
+begin
+  for c in
+    select conname from pg_constraint
+    where conrelid = 'public.projects'::regclass and contype = 'c'
+      and pg_get_constraintdef(oid) ilike '%status%'
+      and pg_get_constraintdef(oid) not ilike '%voorbereiding%'
+  loop
+    execute format('alter table public.projects drop constraint %I', c.conname);
+  end loop;
+end
+$$;
+
+update public.projects set status = 'voorbereiding' where status = 'gepland';
+update public.projects set status = 'bezig' where status = 'actief';
+update public.projects set status = 'afgerond' where status = 'gearchiveerd';
+
+alter table public.projects alter column status set default 'voorbereiding';
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.projects'::regclass and conname = 'projects_status_check'
+  ) then
+    alter table public.projects add constraint projects_status_check
+      check (status in ('voorbereiding', 'bezig', 'wachten', 'afgerond'));
+  end if;
+end
+$$;
+
+-- Trigger: bij elke statuswijziging status_sinds op nu (de app hoeft daar niets voor te
+-- doen; een meegestuurde waarde wordt genegeerd zodat de tijdlijn klopt).
+create or replace function public.projects_status_sinds()
+returns trigger
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+begin
+  if tg_op = 'INSERT' then
+    new.status_sinds := now();
+  elsif new.status is distinct from old.status then
+    new.status_sinds := now();
+  else
+    new.status_sinds := old.status_sinds;
+  end if;
+  return new;
+end
+$$;
+revoke all on function public.projects_status_sinds() from public, anon, authenticated;
+
+drop trigger if exists projects_status_sinds on public.projects;
+create trigger projects_status_sinds
+  before insert or update on public.projects
+  for each row execute function public.projects_status_sinds();
+
+-- Het bord haalt alles in één keer op (kleine tabel); deze indexen houden de tellers op
+-- het dashboard en "afgerond, laatste 30 dagen" vlot als de lijst groeit.
+create index if not exists projects_status_sinds_idx on public.projects (status, status_sinds desc);
+create index if not exists projects_deadline_idx on public.projects (deadline) where deadline is not null;
+
 commit;
 
 -- PostgREST (de API van Supabase) direct laten weten dat er nieuwe tabellen zijn.
@@ -1871,11 +1974,18 @@ from (values
   ('tabel client_notes',      to_regclass('public.client_notes') is not null),
   ('tabel project_eigenaren', to_regclass('public.project_eigenaren') is not null),
   ('kolom projects.deadline', exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'projects' and column_name = 'deadline')),
-  ('projectstatus omgezet',   not exists (select 1 from public.projects where status not in ('gepland', 'bezig', 'afgerond'))),
+  ('projectstatus omgezet',   not exists (select 1 from public.projects where status not in ('gepland', 'voorbereiding', 'bezig', 'wachten', 'afgerond'))),
   ('functie taak_tellingen',  to_regprocedure('public.taak_tellingen(date,uuid,uuid)') is not null),
   ('functie project_taak_tellingen', to_regprocedure('public.project_taak_tellingen(uuid[])') is not null),
   ('tellingen dicht voor anon', not has_function_privilege('anon', 'public.taak_tellingen(date,uuid,uuid)', 'execute')),
-  ('indexen 0022',            (select count(*) from pg_class where relname in ('tasks_maker_open_idx', 'clients_status_idx', 'client_notes_klant_idx', 'projects_status_idx', 'tasks_client_idx', 'project_eigenaren_user_idx', 'tasks_due_idx', 'calendar_events_client_idx', 'calendar_events_maker_idx', 'tasks_maker_idx')) = 10)
+  ('indexen 0022',            (select count(*) from pg_class where relname in ('tasks_maker_open_idx', 'clients_status_idx', 'client_notes_klant_idx', 'projects_status_idx', 'tasks_client_idx', 'project_eigenaren_user_idx', 'tasks_due_idx', 'calendar_events_client_idx', 'calendar_events_maker_idx', 'tasks_maker_idx')) = 10),
+  ('projectstatus voorbereiding/bezig/wachten/afgerond', not exists (select 1 from public.projects where status not in ('voorbereiding', 'bezig', 'wachten', 'afgerond'))),
+  ('nieuwe projecten standaard voorbereiding', (select column_default from information_schema.columns where table_schema = 'public' and table_name = 'projects' and column_name = 'status') like '%voorbereiding%'),
+  ('check op projectstatus', exists (select 1 from pg_constraint where conrelid = 'public.projects'::regclass and conname = 'projects_status_check' and pg_get_constraintdef(oid) ilike '%wachten%')),
+  ('kolom projects.status_sinds', exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'projects' and column_name = 'status_sinds' and is_nullable = 'NO')),
+  ('trigger status_sinds',    exists (select 1 from pg_trigger where tgname = 'projects_status_sinds' and tgrelid = 'public.projects'::regclass)),
+  ('RLS projects ongewijzigd (teamlid)', not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'projects' and (coalesce(qual, '') || ' ' || coalesce(with_check, '')) !~ 'is_teamlid\(')),
+  ('indexen 0023',            (select count(*) from pg_class where relname in ('projects_status_sinds_idx', 'projects_deadline_idx')) = 2)
 ) as c(onderdeel, aanwezig)
 union all
 select 'teamlid: ' || coalesce(p.naam, '?') || ' <' || coalesce(p.email, '?') || '> (' || m.rol || ')',

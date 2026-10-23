@@ -89,7 +89,8 @@ export function parseSubtaakWijziging(
 export interface ProjectRij {
   naam?: string;
   client_id?: string | null;
-  status?: 'gepland' | 'bezig' | 'afgerond';
+  /** Wat de app kiest; vóór 0023 schrijft de API 'gepland' i.p.v. 'voorbereiding'. */
+  status?: 'voorbereiding' | 'bezig' | 'wachten' | 'afgerond' | 'gepland';
   notitie?: string;
   deadline?: string | null;
 }
@@ -103,11 +104,26 @@ export function isGeldigeDag(v: unknown): v is string {
   return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === v;
 }
 
-/** Oude statuswaarden (vóór 0022) en nieuwe, naar de nieuwe. Onbekend: null. */
-export function projectStatusVan(v: unknown): 'gepland' | 'bezig' | 'afgerond' | null {
-  if (v === 'gepland' || v === 'bezig' || v === 'afgerond') return v;
+/**
+ * Projectstatus (0023: voorbereiding / bezig / wachten / afgerond). Oudere waarden worden
+ * omgezet: 'gepland' (0022) → voorbereiding, 'actief' → bezig, 'gearchiveerd' → afgerond.
+ * Onbekend: null.
+ */
+export function projectStatusVan(v: unknown): 'voorbereiding' | 'bezig' | 'wachten' | 'afgerond' | null {
+  if (v === 'voorbereiding' || v === 'bezig' || v === 'wachten' || v === 'afgerond') return v;
+  if (v === 'gepland') return 'voorbereiding';
   if (v === 'actief') return 'bezig';
   if (v === 'gearchiveerd') return 'afgerond';
+  return null;
+}
+
+/**
+ * Dezelfde status in de waarden van vóór migratie 0023 (check gepland/bezig/afgerond),
+ * voor als de database de nieuwe waarde nog weigert. 'wachten' bestaat dan nog niet: null.
+ */
+export function projectStatusVoor0023(s: string): 'gepland' | 'bezig' | 'afgerond' | null {
+  if (s === 'voorbereiding' || s === 'gepland') return 'gepland';
+  if (s === 'bezig' || s === 'afgerond') return s;
   return null;
 }
 

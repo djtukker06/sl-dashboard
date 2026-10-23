@@ -12,22 +12,29 @@ import { CrmDialoog } from './CrmDialoog';
 type Klant = { id: string; naam: string } | null;
 
 /**
- * "+ Project": naam, klant, status (standaard Bezig), deadline (optioneel) en eigenaar(s)
- * (standaard jij). Na opslaan ga je naar de projectpagina.
+ * "+ Project": naam, klant, status (standaard Voorbereiding), deadline (optioneel) en
+ * eigenaar(s) (standaard jij). Na opslaan ga je naar de projectpagina. Een nieuw project
+ * bij een afgeronde klant zet die klant weer op Actief (de server doet dat; de popup
+ * zegt het vooraf).
  */
 export function NieuwProject({
   klant: vasteKlant = null,
-  klasse = 'db-knop db-knop-primair'
+  klasse = 'db-knop db-knop-primair',
+  label = '+ Project',
+  klantAfgerond = false
 }: {
   klant?: Klant;
   klasse?: string;
+  label?: string;
+  /** De vaste klant staat op afgerond. */
+  klantAfgerond?: boolean;
 }) {
   const router = useRouter();
   const { mijnId } = useTeam();
   const [open, setOpen] = useState(false);
   const [naam, setNaam] = useState('');
   const [klant, setKlant] = useState<Klant>(vasteKlant);
-  const [status, setStatus] = useState<ProjectStatus>('bezig');
+  const [status, setStatus] = useState<ProjectStatus>('voorbereiding');
   const [deadline, setDeadline] = useState('');
   const [eigenaren, setEigenaren] = useState<string[]>([mijnId]);
   const [bezig, setBezig] = useState(false);
@@ -36,7 +43,7 @@ export function NieuwProject({
   function openen() {
     setNaam('');
     setKlant(vasteKlant);
-    setStatus('bezig');
+    setStatus('voorbereiding');
     setDeadline('');
     setEigenaren([mijnId]);
     setFout('');
@@ -69,7 +76,7 @@ export function NieuwProject({
   return (
     <>
       <button type="button" className={klasse} onClick={openen}>
-        + Project
+        {label}
       </button>
       {open && (
         <CrmDialoog titel="Nieuw project" onSluit={() => setOpen(false)}>
@@ -86,9 +93,9 @@ export function NieuwProject({
               <div className="ag-label">
                 <span>Status</span>
                 <div className="ag-segment" role="group" aria-label="Status">
-                  {(['gepland', 'bezig'] as const).map((s) => (
+                  {(['voorbereiding', 'bezig'] as const).map((s) => (
                     <button key={s} type="button" aria-pressed={status === s} className={status === s ? 'is-aan' : ''} onClick={() => setStatus(s)}>
-                      {s === 'gepland' ? 'Gepland' : 'Bezig'}
+                      {s === 'voorbereiding' ? 'Voorbereiding' : 'Bezig'}
                     </button>
                   ))}
                 </div>
@@ -102,6 +109,9 @@ export function NieuwProject({
               <span>Eigenaar</span>
               <VoorWieKiezer waarde={eigenaren} onChange={setEigenaren} label="Eigenaar" />
             </div>
+            {klantAfgerond && klant?.id === vasteKlant?.id && (
+              <p className="kp-uitleg">{vasteKlant?.naam} staat op afgerond; met dit project wordt de klant weer Actief.</p>
+            )}
             {fout && (
               <p className="ag-fout" role="alert">
                 {fout}

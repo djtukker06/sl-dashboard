@@ -61,6 +61,9 @@
 //      met RLS (is_teamlid), projectstatus gepland/bezig/afgerond.
 // Live: /klanten, /projecten, /klanten/<id>, /projecten/<id> en /agenda/projecten zonder
 //       sessie -> /login; /api/klanten* -> 401.
+// 11. Statisch, projectenbord (0023): bord + lijst, stappenbalk, dashboardkaart, oude
+//     statussen nergens meer als keuze; UITVOEREN_0023.sql in één transactie.
+// Live: /projecten?weergave=bord|lijst zonder sessie -> /login; PATCH /api/projecten/<id> -> 401.
 //
 // Gebruik:  node scripts/rooktest-shell.mjs [http://localhost:3107]
 //           node scripts/rooktest-shell.mjs --alleen-statisch
@@ -175,9 +178,19 @@ function bestandenIn(map, filter) {
   for (const f of ["UITVOEREN_IN_SQL_EDITOR.sql", "UITVOEREN_0020_UITGAVEN.sql", "UITVOEREN_0021_TEAM.sql", "UITVOEREN_0022.sql"]) {
     const sql = lees(`supabase/${f}`);
     const delen = [...sql.matchAll(/^-- (\d{4}_[\w]+\.sql)$/gm)].map((m) => m[1]);
-    // 0021 (alleen teamleden) en daarna 0022 (taken alleen voor betrokkenen) sluiten af.
-    const ok = delen.at(-1) === "0022_team_crm.sql" && (f === "UITVOEREN_0022.sql" || delen.at(-2) === "0021_team_en_taken.sql");
-    check(ok, `${f} eindigt met 0021 + 0022`, delen.slice(-2).join(", ") || "geen");
+    // 0021 (alleen teamleden) en daarna 0022 (taken alleen voor betrokkenen) sluiten af;
+    // in de grote bestanden volgt alleen nog 0023 (projectstatus, geen policies).
+    const ok =
+      f === "UITVOEREN_0022.sql"
+        ? delen.join(",") === "0022_team_crm.sql"
+        : delen.slice(-3).join(",") === "0021_team_en_taken.sql,0022_team_crm.sql,0023_projectstatus.sql";
+    check(ok, `${f} eindigt met 0021 + 0022 (+ 0023)`, delen.slice(-3).join(", ") || "geen");
+  }
+  {
+    const delen = [...lees("supabase/UITVOEREN_0023.sql").matchAll(/^-- (\d{4}_[\w]+\.sql)$/gm)].map((m) => m[1]);
+    check(delen.join(",") === "0023_projectstatus.sql", "UITVOEREN_0023.sql bevat alleen 0023", delen.join(", "));
+    const m23 = lees("supabase/migrations/0023_projectstatus.sql").replace(/--[^\n]*/g, "");
+    check(!/create policy|drop policy|grant /i.test(m23), "0023 raakt geen policies of rechten (RLS is_teamlid blijft)");
   }
 
   const headers = lees("next.config.ts");
@@ -442,6 +455,25 @@ console.log("Snelheid, UITVOEREN_0022.sql en README");
   check(/## Snelheid/.test(readme), "README: sectie Snelheid");
 }
 
+// ---------------------------------------------------------------------------------
+// 11. Projectenbord (0023, statisch)
+// ---------------------------------------------------------------------------------
+console.log("Projectenbord (0023)");
+{
+  const sql = lees("supabase/UITVOEREN_0023.sql");
+  const tx = sql.slice(0, sql.lastIndexOf("-- Controle:"));
+  check((tx.match(/^begin;$/gm) || []).length === 1 && (tx.match(/^commit;$/gm) || []).length === 1, "UITVOEREN_0023.sql: alles in één transactie");
+  check(/teamlid: /.test(sql) && /'ok'/.test(sql), "UITVOEREN_0023.sql: controletabel en wie er toegang heeft");
+  const pagina = lees("app/(app)/projecten/page.tsx");
+  check(pagina.indexOf("vereisTeamlidPagina(") > 0 && pagina.indexOf("vereisTeamlidPagina(") < pagina.indexOf("projectenLijst("), "/projecten: teamcheck vóór de data");
+  check(/<ProjectenBord/.test(pagina), "/projecten toont het bord");
+  check(/<StatusStappen/.test(lees("app/(app)/projecten/[id]/page.tsx")), "projectpagina: stappenbalk");
+  check(/<ProjectenWidget lid=\{lid\} \/>/.test(lees("app/(app)/page.tsx")), "dashboard: kaart Projecten");
+  const ui = ["components/crm/NieuwProject.tsx", "components/crm/ProjectKop.tsx", "components/crm/ProjectenBord.tsx", "components/crm/StatusStappen.tsx"].map(lees).join("\n");
+  check(!/'gepland'|"gepland"/.test(ui), "UI biedt 'gepland' nergens meer als keuze");
+  check(/Wachten op goedkeuring/.test(lees("lib/crm/projectstatus.ts")), "label 'Wachten op goedkeuring'");
+}
+
 if (ALLEEN_STATISCH) eindig();
 
 // ---------------------------------------------------------------------------------
@@ -533,6 +565,8 @@ for (const url of ["/social-files/brand/logo-licht.png", "/social-files/projects
     const res = await vraag(url);
     check(res.status === 401, `GET ${url} zonder sessie -> 401`, `status ${res.status}`);
   }
+  const patch = await vraag("/api/projecten/00000000-0000-4000-8000-000000000000", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ status: "wachten" }) });
+  check(patch.status === 401, "PATCH /api/projecten/<id> (status) zonder sessie -> 401", `status ${patch.status}`);
   const res = await vraag("/agenda?wie=team&project=00000000-0000-0000-0000-000000000000");
   check(naarLogin(res), "/agenda?wie=team -> /login", `status ${res.status}`);
 }
@@ -569,7 +603,7 @@ for (const url of ["/login", "/geen-toegang", "/api/taken"]) {
 }
 
 console.log("Kernpagina's: precies 307 naar /login");
-for (const url of ["/", "/boekhouding", "/boekhouding/bonnetjes", "/account", "/facturen", "/agenda/projecten", "/welkom", "/klanten", "/klanten?nieuw=1", "/projecten", "/klanten/00000000-0000-4000-8000-000000000000", "/projecten/00000000-0000-4000-8000-000000000000"]) {
+for (const url of ["/", "/boekhouding", "/boekhouding/bonnetjes", "/account", "/facturen", "/agenda/projecten", "/welkom", "/klanten", "/klanten?nieuw=1", "/projecten", "/projecten?weergave=bord", "/projecten?weergave=lijst", "/klanten/00000000-0000-4000-8000-000000000000", "/projecten/00000000-0000-4000-8000-000000000000"]) {
   const res = await vraag(url);
   check(res.status === 307 && naarLogin(res), url, `status ${res.status} ${res.headers.get("location") || ""}`);
 }

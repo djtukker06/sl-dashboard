@@ -88,9 +88,19 @@ test("project: naam wordt opgeschoond", () => assert.equal(inv.parseProject({ na
 test("project: te lange naam", () => assert.equal(inv.parseProject({ naam: "x".repeat(121) }, true).ok, false));
 test("project: ongeldige klant", () => assert.equal(inv.parseProject({ naam: "A", klantId: "x" }, true).ok, false));
 test("project: afronden", () => assert.deepEqual(inv.parseProject({ status: "afgerond" }, false).waarde, { status: "afgerond" }));
-test("project: gepland en bezig", () => {
-  assert.equal(inv.parseProject({ status: "gepland" }, false).waarde.status, "gepland");
-  assert.equal(inv.parseProject({ status: "bezig" }, false).waarde.status, "bezig");
+test("project: voorbereiding, bezig, wachten en afgerond (0023)", () => {
+  for (const s of ["voorbereiding", "bezig", "wachten", "afgerond"]) assert.equal(inv.parseProject({ status: s }, false).waarde.status, s);
+  assert.equal(inv.parseProject({ status: "klaar" }, false).ok, false);
+});
+test("project: 'gepland' (0022) wordt voorbereiding", () => {
+  assert.equal(inv.parseProject({ status: "gepland" }, false).waarde.status, "voorbereiding");
+  assert.equal(inv.projectStatusVan("gepland"), "voorbereiding");
+});
+test("project: vóór 0023 schrijft de API de oude waarde (wachten bestaat dan niet)", () => {
+  assert.equal(inv.projectStatusVoor0023("voorbereiding"), "gepland");
+  assert.equal(inv.projectStatusVoor0023("bezig"), "bezig");
+  assert.equal(inv.projectStatusVoor0023("afgerond"), "afgerond");
+  assert.equal(inv.projectStatusVoor0023("wachten"), null);
 });
 test("project: oude statussen worden omgezet (actief→bezig, gearchiveerd→afgerond)", () => {
   assert.equal(inv.parseProject({ status: "actief" }, false).waarde.status, "bezig");

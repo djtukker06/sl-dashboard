@@ -5,6 +5,7 @@ import { vereisTeamlidPagina } from '@/lib/auth/team';
 import { bronVan } from '@/lib/agenda/api';
 import { dagTekst, vandaag as vandaagNL } from '@/lib/agenda/datum';
 import { isUuid } from '@/lib/agenda/invoer';
+import { BORD_STATUSSEN, deadlineStand, opDeadline } from '@/lib/crm/projectstatus';
 import { isNietIngericht, klantPagina } from '@/lib/crm/repo';
 import { korteDatum } from '@/lib/dashboard/tijd';
 import { formatEuro } from '@/lib/format';
@@ -39,13 +40,14 @@ export default async function KlantPage({ params }: { params: Promise<{ id: stri
   if (!data) notFound();
   const { klant, notities, projecten, taken, facturen, aantalFacturen, prijsopgaven } = data;
   const vandaag = vandaagNL();
-  const lopend = projecten.filter((p) => p.status !== 'afgerond');
-  const afgerond = projecten.filter((p) => p.status === 'afgerond');
+  const lopend = projecten.filter((p) => p.status !== 'afgerond').sort((a, b) => BORD_STATUSSEN.indexOf(a.status) - BORD_STATUSSEN.indexOf(b.status) || opDeadline(a, b));
+  const afgerond = projecten.filter((p) => p.status === 'afgerond').sort(opDeadline);
 
   return (
     <CrmProviders>
       <ModuleKop label={<Link href="/klanten">← Klanten</Link>} titel={klant.naam}>
         <StatusKiezer
+          key={klant.status}
           url={`/api/klanten/${klant.id}`}
           waarde={klant.status}
           label="Status van de klant"
@@ -54,10 +56,24 @@ export default async function KlantPage({ params }: { params: Promise<{ id: stri
             ['actief', 'Actief'],
             ['afgerond', 'Afgerond']
           ]}
+          meldingen={{
+            afgerond: 'Klant afgerond. Hij blijft vindbaar onder Klanten (filter Afgerond).',
+            actief: 'Klant staat op Actief.',
+            lead: 'Klant staat op Lead.'
+          }}
         />
       </ModuleKop>
 
       <div className="kp kp-detail">
+        {klant.status === 'afgerond' && (
+          <div className="kp-afgerond-melding" role="note">
+            <p>
+              <strong>Deze klant is afgerond.</strong> Hij blijft gewoon vindbaar onder Klanten (onderaan, of met het filter Afgerond).
+              Komt er nieuw werk? Een nieuw project zet de klant weer op Actief.
+            </p>
+            <NieuwProject klant={{ id: klant.id, naam: klant.naam }} klantAfgerond label="+ Nieuw project" />
+          </div>
+        )}
         <div className="kp-hoofd">
           <section className="db-kaart" aria-labelledby="kp-taken">
             <header className="db-kaart-kop">
@@ -75,7 +91,7 @@ export default async function KlantPage({ params }: { params: Promise<{ id: stri
               <h2 id="kp-projecten" className="db-label">
                 Projecten
               </h2>
-              <NieuwProject klant={{ id: klant.id, naam: klant.naam }} klasse="db-knop" />
+              <NieuwProject klant={{ id: klant.id, naam: klant.naam }} klasse="db-knop" klantAfgerond={klant.status === 'afgerond'} />
             </header>
             <div className="db-kaart-inhoud">
               {projecten.length === 0 ? (
@@ -88,7 +104,7 @@ export default async function KlantPage({ params }: { params: Promise<{ id: stri
                         <span className="kp-rij-hoofd">
                           <span className="kp-rij-titel">{p.naam}</span>
                           {p.deadline && (
-                            <span className={`kp-rij-sub${p.status !== 'afgerond' && p.deadline < vandaag ? ' is-telaat' : ''}`}>
+                            <span className={`kp-rij-sub pb-deadline is-${deadlineStand(p.deadline, vandaag, p.status)}`}>
                               deadline {dagTekst(p.deadline, vandaag)}
                             </span>
                           )}

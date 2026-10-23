@@ -11,12 +11,11 @@ import { VoorWieKiezer } from '@/components/taken/VoorWieKiezer';
 
 type Klant = { id: string; naam: string } | null;
 
-/** De gegevens van een project, allemaal direct bewerkbaar (slaat per veld op). */
+/** De gegevens van een project, allemaal direct bewerkbaar (slaat per veld op). De status staat erboven (StatusStappen). */
 export function ProjectKop({ project }: { project: Project }) {
   const router = useRouter();
   const toast = useToast();
   const [naam, setNaam] = useState(project.naam);
-  const [status, setStatus] = useState(project.status);
   const [klant, setKlant] = useState<Klant>(project.klantId ? { id: project.klantId, naam: project.klantNaam ?? 'Klant' } : null);
   const [klantKiezen, setKlantKiezen] = useState(false);
   const [deadline, setDeadline] = useState(project.deadline ?? '');
@@ -57,23 +56,6 @@ export function ProjectKop({ project }: { project: Project }) {
             if (e.key === 'Escape') setNaam(project.naam);
           }}
         />
-      </label>
-      <label className="ag-label">
-        Status
-        <select
-          className={`ag-veld kp-status kp-status-${status}`}
-          value={status}
-          onChange={(e) => {
-            const oud = status;
-            const s = e.target.value as Project['status'];
-            setStatus(s);
-            void bewaar({ status: s }, () => setStatus(oud));
-          }}
-        >
-          <option value="gepland">Gepland</option>
-          <option value="bezig">Bezig</option>
-          <option value="afgerond">Afgerond</option>
-        </select>
       </label>
       <label className="ag-label">
         Deadline

@@ -11,8 +11,10 @@ import {
   type AgendaBron,
   type TaakDbRij
 } from '@/lib/agenda/repo';
-import type { Project, Taak } from '@/lib/agenda/types';
-import { kolomOntbreekt } from '@/lib/db/ontbreekt';
+import { projectStatusVan } from '@/lib/agenda/teaminvoer';
+import type { Project, ProjectStatus, Taak } from '@/lib/agenda/types';
+import { kolomOntbreekt, tabelOntbreekt } from '@/lib/db/ontbreekt';
+import { isRecentAfgerond } from './projectstatus';
 import { likeLetterlijk } from './invoer';
 import type { Klant, KlantNotitie, KlantRegel, KlantStatus } from './types';
 
@@ -63,13 +65,14 @@ export function isNietIngericht(e: unknown): boolean {
   return e instanceof AgendaFout && e.code === 'tabel_ontbreekt';
 }
 
-const LOPEND = ['gepland', 'bezig', 'actief'];
+// Alles wat niet afgerond is telt als lopend (ook de oude waarden gepland/actief).
+const AFGEROND = '(afgerond,gearchiveerd)';
 
 /** Het klantenoverzicht: alle klanten met het aantal lopende projecten (één ronde). */
 export async function klantenLijst(bron: AgendaBron): Promise<KlantRegel[]> {
   const [k, p] = await Promise.all([
     bron.sb.from('clients').select('id,company_name,contact_name,email,status').order('company_name').limit(2000),
-    bron.sb.from('projects').select('client_id').in('status', LOPEND).not('client_id', 'is', null).limit(5000)
+    bron.sb.from('projects').select('client_id').not('status', 'in', AFGEROND).not('client_id', 'is', null).limit(5000)
   ]);
   if (k.error) throw crmFout(k.error);
   if (p.error) throw crmFout(p.error);
@@ -202,4 +205,41 @@ export async function projectPagina(bron: AgendaBron, id: string): Promise<Proje
   const open = alle.filter((t) => !t.afgerond).sort(sorteerTaken);
   const af = alle.filter((t) => t.afgerond).sort((a, b) => ((a.afgerondOp ?? '') < (b.afgerondOp ?? '') ? 1 : -1));
   return { project, taken: [...open, ...af] };
+}
+
+export interface ProjectTellers {
+  /** Aantal per status; 'afgerond' = afgerond in de laatste 30 dagen (vóór 0023: alle). */
+  perStatus: Record<ProjectStatus, number>;
+  /** Lopende projecten met een verstreken deadline. */
+  teLaat: number;
+}
+
+/**
+ * Tellers voor de dashboardkaart "Projecten" in één kleine query (alleen status, deadline
+ * en status_sinds). Vóór 0023 zonder status_sinds; vóór 0022 een 503 'tabel_ontbreekt'.
+ */
+export async function projectTellers(bron: AgendaBron, vandaag: string, nu: Date = new Date()): Promise<ProjectTellers> {
+  if (!bron.team) throw new AgendaFout(503, CRM_NIET_INGERICHT, 'tabel_ontbreekt');
+  const haal = (k: string) => bron.sb.from('projects').select(k).limit(5000) as unknown as PromiseLike<{ data: TellerRij[] | null; error: unknown }>;
+  let r = await haal('status,deadline,status_sinds');
+  if (r.error && kolomOntbreekt(r.error) && !tabelOntbreekt(r.error)) r = await haal('status,deadline');
+  if (r.error) throw crmFout(r.error);
+  const perStatus: Record<ProjectStatus, number> = { voorbereiding: 0, bezig: 0, wachten: 0, afgerond: 0 };
+  let teLaat = 0;
+  for (const rij of r.data ?? []) {
+    const status = projectStatusVan(rij.status) ?? 'bezig';
+    if (status === 'afgerond') {
+      if (isRecentAfgerond(rij.status_sinds ?? null, nu)) perStatus.afgerond++;
+      continue;
+    }
+    perStatus[status]++;
+    if (rij.deadline && rij.deadline < vandaag) teLaat++;
+  }
+  return { perStatus, teLaat };
+}
+
+interface TellerRij {
+  status: string;
+  deadline: string | null;
+  status_sinds?: string | null;
 }

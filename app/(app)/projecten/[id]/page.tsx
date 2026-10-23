@@ -11,13 +11,15 @@ import { CrmNietIngericht } from '@/components/crm/CrmKop';
 import { CrmProviders } from '@/components/crm/CrmProviders';
 import { ProjectKop } from '@/components/crm/ProjectKop';
 import { ProjectNotitie } from '@/components/crm/ProjectNotitie';
+import { StatusStappen } from '@/components/crm/StatusStappen';
 import { Voortgang } from '@/components/crm/StatusPil';
 import { TakenBlok } from '@/components/crm/TakenBlok';
 
 export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'Project · Studio Levant' };
 
-// Projectpagina: gegevens (naam, status, klant, deadline, eigenaren; direct bewerkbaar),
+// Projectpagina: statusbalk (Voorbereiding → Bezig → Wachten op goedkeuring → Afgerond, met
+// sinds wanneer), gegevens (naam, klant, deadline, eigenaren; direct bewerkbaar),
 // alle taken van het project met voortgang (ook die van een ander: dit is de gedeelde
 // werkplek, niet "mijn lijst") en één notitieveld dat vanzelf opslaat.
 export default async function ProjectPage({ params }: { params: Promise<{ id: string }> }) {
@@ -44,6 +46,13 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
         <div className="kp-hoofd">
           <section className="db-kaart" aria-label="Projectgegevens">
             <div className="db-kaart-inhoud">
+              <StatusStappen
+                key={`${project.id}-${project.status}`}
+                projectId={project.id}
+                status={project.status}
+                statusSinds={project.statusSinds}
+                nu={new Date().toISOString()}
+              />
               <ProjectKop key={`${project.id}-${project.naam}`} project={project} />
             </div>
           </section>
