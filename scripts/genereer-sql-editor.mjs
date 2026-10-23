@@ -1,12 +1,13 @@
 // Bouwt de bestanden voor de Supabase SQL Editor:
-//   supabase/UITVOEREN_IN_SQL_EDITOR.sql  0014–0023 (social, agenda, mail, uitgaven, team, klanten)
-//   supabase/UITVOEREN_0020_UITGAVEN.sql  0020 + 0021 + 0022 + 0023 (voor wie 0014–0019 al heeft uitgevoerd)
-//   supabase/UITVOEREN_0021_TEAM.sql      0021 + 0022 + 0023 (team, toegang en taken op naam)
+//   supabase/UITVOEREN_IN_SQL_EDITOR.sql  0014–0024 (social, agenda, mail, uitgaven, team, klanten, Drive)
+//   supabase/UITVOEREN_0020_UITGAVEN.sql  0020 + 0021 + 0022 + 0023 + 0024 (voor wie 0014–0019 al heeft uitgevoerd)
+//   supabase/UITVOEREN_0021_TEAM.sql      0021 + 0022 + 0023 + 0024 (team, toegang en taken op naam)
 //   supabase/UITVOEREN_0022.sql           alleen 0022 (welkomstflow, wie-ziet-welke-taak,
 //                                         klanten & projecten, snelheid) — vereist 0021
 //   supabase/UITVOEREN_0023.sql           alleen 0023 (projectstatus voor het bord) — vereist 0022
+//   supabase/UITVOEREN_0024.sql           alleen 0024 (Google Drive / module Bestanden) — vereist 0022
 //
-// 0021 + 0022 (+ 0023, alleen projectstatus) sluiten ELK groot bestand af: 0014–0020 maken nog policies "auth.uid() is not null"
+// 0021 + 0022 (+ 0023 projectstatus en 0024 Drive, alleen nieuwe tabellen met teamcheck) sluiten ELK groot bestand af: 0014–0020 maken nog policies "auth.uid() is not null"
 // (open voor elk account) en 0021 laat elk teamlid alle taken lezen. Wie een ouder bestand
 // opnieuw uitvoert, zou zonder 0021/0022 erachter die open regels terugzetten; nu eindigt
 // elk bestand met alleen-teamleden en de afgeschermde taken van 0022.
@@ -31,6 +32,7 @@ const DOEL_UITGAVEN = path.join(ROOT, "supabase", "UITVOEREN_0020_UITGAVEN.sql")
 const DOEL_TEAM = path.join(ROOT, "supabase", "UITVOEREN_0021_TEAM.sql");
 const DOEL_0022 = path.join(ROOT, "supabase", "UITVOEREN_0022.sql");
 const DOEL_0023 = path.join(ROOT, "supabase", "UITVOEREN_0023.sql");
+const DOEL_0024 = path.join(ROOT, "supabase", "UITVOEREN_0024.sql");
 
 const MIGRATIES = [
   "0014_social.sql",
@@ -43,6 +45,7 @@ const MIGRATIES = [
   "0021_team_en_taken.sql",
   "0022_team_crm.sql",
   "0023_projectstatus.sql",
+  "0024_drive.sql",
 ];
 
 // Controle-regels per onderdeel (onderaan elk bestand; elke regel hoort "ok" te tonen).
@@ -113,6 +116,19 @@ const CONTROLE_0023 = [
   "  ('trigger status_sinds',    exists (select 1 from pg_trigger where tgname = 'projects_status_sinds' and tgrelid = 'public.projects'::regclass))",
   "  ('RLS projects ongewijzigd (teamlid)', not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'projects' and (coalesce(qual, '') || ' ' || coalesce(with_check, '')) !~ 'is_teamlid\\('))",
   "  ('indexen 0023',            (select count(*) from pg_class where relname in ('projects_status_sinds_idx', 'projects_deadline_idx')) = 2)",
+];
+
+// Google Drive / module Bestanden (0024).
+const CONTROLE_0024 = [
+  "  ('tabel drive_koppeling',   to_regclass('public.drive_koppeling') is not null)",
+  "  ('tabel drive_mappen',      to_regclass('public.drive_mappen') is not null)",
+  "  ('tabel drive_bestanden',   to_regclass('public.drive_bestanden') is not null)",
+  "  ('tabel drive_kopieen',     to_regclass('public.drive_kopieen') is not null)",
+  "  ('RLS op de drive-tabellen', (select count(*) from pg_class where relnamespace = 'public'::regnamespace and relname in ('drive_koppeling', 'drive_mappen', 'drive_bestanden', 'drive_kopieen') and relrowsecurity) = 4)",
+  "  ('drive_koppeling zonder policies', not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'drive_koppeling'))",
+  "  ('drive_koppeling onleesbaar voor de app', not has_table_privilege('authenticated', 'public.drive_koppeling', 'select') and not has_table_privilege('anon', 'public.drive_koppeling', 'select'))",
+  "  ('drive-tabellen alleen voor teamleden', (select count(*) from pg_policies where schemaname = 'public' and tablename in ('drive_mappen', 'drive_bestanden', 'drive_kopieen') and (coalesce(qual, '') || ' ' || coalesce(with_check, '')) ~ 'is_teamlid\\(') = 3)",
+  "  ('drive_mappen en drive_kopieen alleen door de server te schrijven', not has_table_privilege('authenticated', 'public.drive_kopieen', 'insert') and not has_table_privilege('authenticated', 'public.drive_mappen', 'insert'))",
 ];
 
 // Onder de controle: wie er nu toegang heeft (zo zie je meteen of er iemand tussen staat
@@ -186,6 +202,8 @@ function bouw() {
 --                            projecten (status, notities, eigenaren), snelheid
 --   0023       Projectenbord projectstatus voorbereiding / bezig / wachten / afgerond
 --                            en sinds wanneer (status_sinds)
+--   0024       Bestanden     Google Drive-koppeling (drive_koppeling, alleen server),
+--                            mappen-cache, uploads en kopieën van facturen/bonnetjes
 -- Van de facturen-tabellen (0001–0013) veranderen alleen de toegangsregels (0021) en
 -- komen er bij clients drie kolommen met standaardwaarden bij (0022).
 --
@@ -202,7 +220,8 @@ function bouw() {
 -- Al eerder 0014–0019 uitgevoerd? Dan volstaat supabase/UITVOEREN_0020_UITGAVEN.sql.
 -- Al eerder 0014–0020 uitgevoerd? Dan volstaat supabase/UITVOEREN_0021_TEAM.sql.
 -- Al eerder 0014–0021 uitgevoerd? Dan volstaat supabase/UITVOEREN_0022.sql (+ 0023).
--- Al eerder 0014–0022 uitgevoerd? Dan volstaat supabase/UITVOEREN_0023.sql.
+-- Al eerder 0014–0022 uitgevoerd? Dan volstaat supabase/UITVOEREN_0023.sql (+ 0024).
+-- Al eerder 0014–0023 uitgevoerd? Dan volstaat supabase/UITVOEREN_0024.sql.
 --
 -- Daarna: importeer de oude social-projecten met
 --   scripts/importeer-social-projecten.mjs (zie README).
@@ -236,6 +255,7 @@ ${controle([
   ...CONTROLE_TEAM,
   ...CONTROLE_0022,
   ...CONTROLE_0023,
+  ...CONTROLE_0024,
 ], TEAMLEDEN)}`;
 }
 
@@ -248,7 +268,8 @@ function bouwUitgaven() {
 -- de privé-buckets "uitgaven" (bonnetjes, max. 25 MB, jpeg/png/webp/heic/pdf) en
 -- "uitgaven-export" (tijdelijke ZIP's voor de boekhouder, max. 50 MB).
 -- Daarna migratie 0021 (team): alleen actieve teamleden mogen nog iets, overal, 0022
--- (taken alleen voor betrokkenen, klanten & projecten) en 0023 (projectstatus).
+-- (taken alleen voor betrokkenen, klanten & projecten), 0023 (projectstatus) en 0024
+-- (Google Drive / module Bestanden).
 --
 -- Zo voer je het uit:
 --   1. Supabase-dashboard -> je project -> SQL Editor -> "New query".
@@ -261,7 +282,7 @@ function bouwUitgaven() {
 ${TEAM_STAPPEN}
 --
 -- Gegenereerd met scripts/genereer-sql-editor.mjs uit supabase/migrations/0020_uitgaven.sql,
--- 0021_team_en_taken.sql, 0022_team_crm.sql en 0023_projectstatus.sql. Niet met de hand
+-- 0021_team_en_taken.sql, 0022_team_crm.sql, 0023_projectstatus.sql en 0024_drive.sql. Niet met de hand
 -- aanpassen; pas de migratie aan en genereer opnieuw.
 -- ============================================================================
 
@@ -271,12 +292,13 @@ ${deel("0020_uitgaven.sql")}
 ${deel("0021_team_en_taken.sql")}
 ${deel("0022_team_crm.sql")}
 ${deel("0023_projectstatus.sql")}
+${deel("0024_drive.sql")}
 commit;
 
 -- PostgREST (de API van Supabase) direct laten weten dat er nieuwe tabellen zijn.
 notify pgrst, 'reload schema';
 
-${controle([...CONTROLE_UITGAVEN, ...CONTROLE_TEAM, ...CONTROLE_0022, ...CONTROLE_0023], TEAMLEDEN)}`;
+${controle([...CONTROLE_UITGAVEN, ...CONTROLE_TEAM, ...CONTROLE_0022, ...CONTROLE_0023, ...CONTROLE_0024], TEAMLEDEN)}`;
 }
 
 function bouwTeam() {
@@ -295,7 +317,8 @@ function bouwTeam() {
 --     deelnemers aan afspraken en een eigen mailbox per gebruiker. Bestaande taken en
 --     afspraken gaan naar hun maker (of de eigenaar). Er wordt niets verwijderd.
 --   - Daarna 0022 (zie UITVOEREN_0022.sql), zodat dit bestand nooit de open leesregels
---     voor taken van 0021 terugzet, en 0023 (projectstatus, zie UITVOEREN_0023.sql).
+--     voor taken van 0021 terugzet, 0023 (projectstatus, zie UITVOEREN_0023.sql) en 0024
+--     (Google Drive, zie UITVOEREN_0024.sql).
 --
 -- Vereist 0014–0019 (zie UITVOEREN_IN_SQL_EDITOR.sql). Uitgaven (0020) nog niet uitgevoerd?
 -- Dan worden die onderdelen overgeslagen; voer dit bestand na 0020 gewoon nog eens uit.
@@ -311,8 +334,8 @@ function bouwTeam() {
 ${TEAM_STAPPEN}
 --
 -- Gegenereerd met scripts/genereer-sql-editor.mjs uit supabase/migrations/0021_team_en_taken.sql,
--- 0022_team_crm.sql en 0023_projectstatus.sql. Niet met de hand aanpassen; pas de migratie
--- aan en genereer opnieuw.
+-- 0022_team_crm.sql, 0023_projectstatus.sql en 0024_drive.sql. Niet met de hand aanpassen;
+-- pas de migratie aan en genereer opnieuw.
 -- ============================================================================
 
 begin;
@@ -320,12 +343,13 @@ begin;
 ${deel("0021_team_en_taken.sql")}
 ${deel("0022_team_crm.sql")}
 ${deel("0023_projectstatus.sql")}
+${deel("0024_drive.sql")}
 commit;
 
 -- PostgREST (de API van Supabase) direct laten weten dat er nieuwe tabellen zijn.
 notify pgrst, 'reload schema';
 
-${controle([...CONTROLE_TEAM, ...CONTROLE_0022, ...CONTROLE_0023], TEAMLEDEN)}`;
+${controle([...CONTROLE_TEAM, ...CONTROLE_0022, ...CONTROLE_0023, ...CONTROLE_0024], TEAMLEDEN)}`;
 }
 
 function bouw0022() {
@@ -413,12 +437,55 @@ notify pgrst, 'reload schema';
 ${controle(CONTROLE_0023, TEAMLEDEN)}`;
 }
 
+function bouw0024() {
+  return `-- ============================================================================
+-- Studio Levant-backoffice — Google Drive / module Bestanden (migratie 0024)
+-- ============================================================================
+--
+-- Wat dit doet (alleen nieuwe tabellen; facturen, klanten en projecten ongewijzigd):
+--   - drive_koppeling: de ene koppeling met het Google-account van Studio Levant
+--     (e-mailadres, versleuteld refresh token, id van de rootmap "Studio Levant").
+--     Geen policies en geen rechten voor de app-rollen: alleen de server leest hem.
+--   - drive_mappen: cache van map-id's (Boekhouding/Facturen/<jaar>, klant- en
+--     projectmappen); teamleden lezen, alleen de server schrijft.
+--   - drive_bestanden: wie welk bestand via het dashboard uploadde (teamleden).
+--   - drive_kopieen: welke facturen, prijsopgaven en bonnetjes al naar Drive zijn
+--     gekopieerd (teamleden lezen, alleen de server schrijft).
+--
+-- Vereist 0022 (klanten & projecten). Nog niet uitgevoerd? Gebruik dan het grote
+-- UITVOEREN_0021_TEAM.sql (bevat 0021 t/m 0024).
+--
+-- Zo voer je het uit:
+--   1. Supabase-dashboard -> je project -> SQL Editor -> "New query".
+--   2. Plak dit hele bestand en klik op "Run".
+--   3. Onderaan: elke regel moet "ok" tonen, en daaronder staat wie er toegang heeft.
+--
+-- Veilig om nogmaals uit te voeren; alles draait in één transactie (gaat er iets mis, dan
+-- wordt niets half doorgevoerd). De app werkt vóór en na dit bestand: vóór 0024 toont
+-- Bestanden een nette melding en gaan facturen gewoon door zonder Drive.
+--
+-- Gegenereerd met scripts/genereer-sql-editor.mjs uit supabase/migrations/0024_drive.sql.
+-- Niet met de hand aanpassen; pas de migratie aan en genereer opnieuw.
+-- ============================================================================
+
+begin;
+
+${deel("0024_drive.sql")}
+commit;
+
+-- PostgREST (de API van Supabase) direct laten weten dat er nieuwe tabellen zijn.
+notify pgrst, 'reload schema';
+
+${controle(CONTROLE_0024, TEAMLEDEN)}`;
+}
+
 const bestanden = [
   [DOEL, bouw()],
   [DOEL_UITGAVEN, bouwUitgaven()],
   [DOEL_TEAM, bouwTeam()],
   [DOEL_0022, bouw0022()],
   [DOEL_0023, bouw0023()],
+  [DOEL_0024, bouw0024()],
 ];
 if (process.argv.includes("--controleer")) {
   let verouderd = false;
@@ -430,10 +497,10 @@ if (process.argv.includes("--controleer")) {
     }
   }
   if (verouderd) process.exit(1);
-  console.log("UITVOEREN_IN_SQL_EDITOR.sql, UITVOEREN_0020_UITGAVEN.sql, UITVOEREN_0021_TEAM.sql, UITVOEREN_0022.sql en UITVOEREN_0023.sql zijn actueel.");
+  console.log("UITVOEREN_IN_SQL_EDITOR.sql, UITVOEREN_0020_UITGAVEN.sql, UITVOEREN_0021_TEAM.sql, UITVOEREN_0022.sql, UITVOEREN_0023.sql en UITVOEREN_0024.sql zijn actueel.");
 } else {
   for (const [doel, inhoud] of bestanden) fs.writeFileSync(doel, inhoud);
   console.log(
-    `Geschreven: ${path.relative(ROOT, DOEL)} (${MIGRATIES.length} migraties), ${path.relative(ROOT, DOEL_UITGAVEN)}, ${path.relative(ROOT, DOEL_TEAM)}, ${path.relative(ROOT, DOEL_0022)} en ${path.relative(ROOT, DOEL_0023)}`,
+    `Geschreven: ${path.relative(ROOT, DOEL)} (${MIGRATIES.length} migraties), ${path.relative(ROOT, DOEL_UITGAVEN)}, ${path.relative(ROOT, DOEL_TEAM)}, ${path.relative(ROOT, DOEL_0022)}, ${path.relative(ROOT, DOEL_0023)} en ${path.relative(ROOT, DOEL_0024)}`,
   );
 }

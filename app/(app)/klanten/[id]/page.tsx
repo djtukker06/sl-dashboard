@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { vereisTeamlidPagina } from '@/lib/auth/team';
+import { vereisTeamlidPagina, type Teamlid } from '@/lib/auth/team';
 import { bronVan } from '@/lib/agenda/api';
 import { dagTekst, vandaag as vandaagNL } from '@/lib/agenda/datum';
 import { isUuid } from '@/lib/agenda/invoer';
@@ -9,6 +9,9 @@ import { BORD_STATUSSEN, deadlineStand, opDeadline } from '@/lib/crm/projectstat
 import { isNietIngericht, klantPagina } from '@/lib/crm/repo';
 import { korteDatum } from '@/lib/dashboard/tijd';
 import { formatEuro } from '@/lib/format';
+import { driveStatus } from '@/lib/drive/koppeling';
+import type { DriveStatus } from '@/lib/drive/types';
+import { BestandenBlok } from '@/components/bestanden/BestandenBlok';
 import { ModuleKop } from '@/components/shell/ModuleKop';
 import { CrmNietIngericht } from '@/components/crm/CrmKop';
 import { CrmProviders } from '@/components/crm/CrmProviders';
@@ -22,6 +25,15 @@ import { TakenBlok } from '@/components/crm/TakenBlok';
 export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'Klant · Studio Levant' };
 
+async function bestandenStatus(lid: Teamlid): Promise<DriveStatus | null> {
+  try {
+    return await driveStatus(lid);
+  } catch (e) {
+    console.error('[bestanden] status', (e as Error)?.message ?? e);
+    return null;
+  }
+}
+
 // Klantpagina: contact, status, notities, projecten, open taken, en de laatste facturen
 // en prijsopgaven (links naar de bestaande pagina's in Boekhouding, die ongewijzigd zijn).
 export default async function KlantPage({ params }: { params: Promise<{ id: string }> }) {
@@ -31,6 +43,7 @@ export default async function KlantPage({ params }: { params: Promise<{ id: stri
   if (!isUuid(id)) notFound();
 
   let data;
+  const drive = bestandenStatus(lid);
   try {
     data = await klantPagina(bronVan(lid), id);
   } catch (e) {
@@ -40,6 +53,7 @@ export default async function KlantPage({ params }: { params: Promise<{ id: stri
   if (!data) notFound();
   const { klant, notities, projecten, taken, facturen, aantalFacturen, prijsopgaven } = data;
   const vandaag = vandaagNL();
+  const driveSt = await drive;
   const lopend = projecten.filter((p) => p.status !== 'afgerond').sort((a, b) => BORD_STATUSSEN.indexOf(a.status) - BORD_STATUSSEN.indexOf(b.status) || opDeadline(a, b));
   const afgerond = projecten.filter((p) => p.status === 'afgerond').sort(opDeadline);
 
@@ -207,6 +221,7 @@ export default async function KlantPage({ params }: { params: Promise<{ id: stri
               <KlantNotities klantId={klant.id} notities={notities} />
             </div>
           </section>
+          <BestandenBlok status={driveSt} start={{ klant: klant.id }} />
         </aside>
       </div>
     </CrmProviders>

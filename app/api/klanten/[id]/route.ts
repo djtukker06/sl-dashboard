@@ -4,6 +4,7 @@ import { crmFout, klantOphalen } from '@/lib/crm/repo';
 import type { KlantInvoer } from '@/lib/crm/types';
 import { CRM_NIET_INGERICHT } from '@/lib/agenda/repo';
 import { fout, foutAntwoord, json, leesBody, metSessie } from '@/lib/agenda/api';
+import { naKlantWijziging } from '@/lib/drive/na';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -34,6 +35,8 @@ export async function PATCH(request: Request, ctx: Ctx) {
     if (!data) return fout(404, 'Klant niet gevonden.');
     const klant = await klantOphalen(s.bron, id);
     if (!klant) return fout(404, 'Klant niet gevonden.');
+    // Nieuwe naam: de klantmap in Google Drive meenemen (ná het antwoord, best effort).
+    if (k.waarde.company_name !== undefined) naKlantWijziging(s.lid, id);
     return json({ klant });
   } catch (e) {
     return foutAntwoord(e);

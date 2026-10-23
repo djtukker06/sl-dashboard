@@ -10,6 +10,7 @@ import { isBestandsType, MAX_BESTAND_BYTES, schoon, snuffelType, typeUitNaam } f
 import { nieuwPad, upload, verwijder } from '@/lib/uitgaven/opslag';
 import { heeftSoortKolom, kolomOntbreekt, moetUitgave } from '@/lib/uitgaven/repo';
 import { leesUitgaveUit } from '@/lib/uitgaven/uitlezen';
+import { naDrive } from '@/lib/drive/kopieen';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -64,18 +65,24 @@ export const POST = uitgavenRoute(async (request, _ctx, sb, lid) => {
     await verwijder([pad]);
     throw dbFout(nieuw.error);
   }
-  const bestand = await sb.from('expense_files').insert({
-    expense_id: id,
-    storage_path: pad,
-    file_name: schoon(bijlage.naam, 200) || pad.split('/').pop(),
-    mime_type: type,
-    size_bytes: bijlage.inhoud.length
-  });
+  const bestand = await sb
+    .from('expense_files')
+    .insert({
+      expense_id: id,
+      storage_path: pad,
+      file_name: schoon(bijlage.naam, 200) || pad.split('/').pop(),
+      mime_type: type,
+      size_bytes: bijlage.inhoud.length
+    })
+    .select('id')
+    .maybeSingle();
   if (bestand.error) {
     await sb.from('expenses').delete().eq('id', id);
     await verwijder([pad]);
     throw dbFout(bestand.error);
   }
+  // Kopie naar Google Drive (Boekhouding/Bonnetjes/<jaar>), ná het antwoord en best effort.
+  naDrive(lid, 'bonnetje', (bestand.data as { id?: string } | null)?.id);
 
   // Uitlezen mislukt nooit hard: dan blijft het een concept om zelf in te vullen.
   try {

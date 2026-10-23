@@ -25,6 +25,10 @@
 //               mag, oude waarden niet; status_sinds behoudt de laatste wijziging en de
 //               trigger zet hem alleen bij een statuswijziging; opnieuw uitvoeren van 0022
 //               of 0023 laat statussen en status_sinds staan; RLS ongewijzigd.
+//             → UITVOEREN_0024.sql (2x): Google Drive. drive_koppeling (refresh token) is voor
+//               niemand behalve de service-role te lezen of te schrijven; drive_mappen en
+//               drive_kopieen lezen teamleden, alleen de server schrijft; drive_bestanden
+//               alleen teamleden; een verwijderde klant laat de uploadregistratie staan.
 //             Daarna de toegangsmatrix:
 //               - niet-teamleden (ingelogd zonder lidmaatschap, onbevestigd, gedeactiveerd,
 //                 en anon zonder sessie): op ELKE tabel in public en in ELKE bucket niets
@@ -354,6 +358,7 @@ async function scenarioA() {
   await zaaiNa0021(db);
   await crm0022(db);
   await projectstatus0023(db);
+  await drive0024(db);
   await zichtbaarheid0022(db);
   await matrix(db);
 
@@ -462,8 +467,8 @@ async function matrix(db) {
   for (const wie of ["daniel", "mark"]) {
     for (const t of tabellen) {
       const sel = await als(db, wie, `select count(*)::int as n from public.${t}`);
-      if (t === "user_mailboxes") {
-        check(geweigerd(sel), `${wie}: user_mailboxes niet leesbaar (alleen server)`, uitleg(sel));
+      if (t === "user_mailboxes" || t === "drive_koppeling") {
+        check(geweigerd(sel), `${wie}: ${t} niet leesbaar (alleen server)`, uitleg(sel));
       } else if (ZICHTBAAR[t]) {
         const echt = (await db.query(ZICHTBAAR[t], [U[wie]])).rows[0].n;
         check(sel.ok && sel.rows[0].n === echt, `${wie}: leest alleen eigen/betrokken rijen uit ${t}`, `${uitleg(sel)} verwacht ${echt}`);
@@ -955,6 +960,88 @@ async function projectstatus0023(db) {
   const idx = (await db.query("select count(*)::int as n from pg_class where relname in ('projects_status_sinds_idx', 'projects_deadline_idx')")).rows[0].n;
   check(idx === 2, "0023: indexen aanwezig", `${idx}`);
   if (fouten === fouten0) console.log("  0023 projectstatus: ok");
+}
+
+// ---------------------------------------------------------------------------------
+// 0024: Google Drive
+// ---------------------------------------------------------------------------------
+async function drive0024(db) {
+  const fouten0 = fouten;
+  const sql0024 = lees("supabase/UITVOEREN_0024.sql");
+  checkControle(await voerUit(db, sql0024, "UITVOEREN_0024.sql"), "A: UITVOEREN_0024 (1e keer)");
+  checkControle(await voerUit(db, sql0024, "UITVOEREN_0024.sql (2x)"), "A: UITVOEREN_0024 (2e keer)");
+  await voerUit(db, lees("supabase/migrations/0024_drive.sql"), "0024_drive.sql (los, 3x)");
+
+  // Testdata (als superuser = zoals de server met de service-role).
+  await db.query(
+    `insert into public.drive_koppeling (id, google_email, refresh_token_enc, root_id, gekoppeld_door)
+       values (1, 'studio@gmail.com', 'v1:aaa.bbb.ccc', 'root0001', $1)
+     on conflict (id) do nothing`,
+    [U.daniel],
+  );
+  await db.exec(`
+    insert into public.drive_mappen (root_id, soort, sleutel, drive_id, naam) values
+      ('root0001', 'pad', 'Boekhouding/Facturen/2026', 'map00001', '2026'),
+      ('root0001', 'klant', 'aaaaaaaa-0000-4000-8000-000000000001', 'map00002', 'Bakkerij')
+    on conflict do nothing;
+    insert into public.drive_bestanden (drive_file_id, naam, geupload_door, client_id, project_id) values
+      ('file00001', 'logo.png', '${U.mark}', 'aaaaaaaa-0000-4000-8000-000000000001', 'dddddddd-0000-4000-8000-000000000001')
+    on conflict do nothing;
+    insert into public.drive_kopieen (root_id, bron, bron_id, bron_pad, drive_file_id) values
+      ('root0001', 'factuur', '${"cccccccc-0000-4000-8000-000000000001"}', 'x/2026-001.pdf', 'file00002')
+    on conflict do nothing;
+  `);
+
+  // Het refresh token: voor niemand behalve de service-role.
+  for (const wie of ["daniel", "mark", "indringer", "anon"]) {
+    let r = await als(db, wie, "select * from public.drive_koppeling");
+    check(geweigerd(r), `0024: ${wie} leest drive_koppeling niet`, uitleg(r));
+    r = await als(db, wie, "update public.drive_koppeling set root_id = 'gekaapt'");
+    check(geweigerd(r), `0024: ${wie} wijzigt drive_koppeling niet`, uitleg(r));
+    r = await als(db, wie, "insert into public.drive_koppeling (id, refresh_token_enc, root_id) values (1, 'v1:x', 'x') on conflict (id) do update set root_id = 'x'");
+    check(geweigerd(r), `0024: ${wie} schrijft geen eigen koppeling`, uitleg(r));
+    r = await als(db, wie, "delete from public.drive_koppeling");
+    check(geweigerd(r), `0024: ${wie} verwijdert de koppeling niet`, uitleg(r));
+  }
+  let r = await als(db, "service", "select refresh_token_enc from public.drive_koppeling");
+  check(r.ok && r.rows.length === 1, "0024: service-role leest de koppeling", uitleg(r));
+
+  // Mappen-cache en kopieën: teamleden lezen, alleen de server schrijft.
+  r = await als(db, "mark", "select drive_id from public.drive_mappen");
+  check(r.ok && r.rows.length === 2, "0024: lid leest de mappen-cache", uitleg(r));
+  r = await als(db, "mark", "insert into public.drive_mappen (root_id, soort, sleutel, drive_id) values ('root0001', 'pad', 'Buiten', 'anderedrive')");
+  check(geweigerd(r), "0024: lid kan geen map-id als 'binnen de root' laten gelden", uitleg(r));
+  r = await als(db, "mark", "update public.drive_mappen set drive_id = 'anderedrive'");
+  check(geweigerd(r), "0024: lid wijzigt de mappen-cache niet", uitleg(r));
+  r = await als(db, "mark", "select * from public.drive_kopieen");
+  check(r.ok && r.rows.length === 1, "0024: lid ziet welke kopieën er zijn", uitleg(r));
+  r = await als(db, "mark", "delete from public.drive_kopieen");
+  check(geweigerd(r), "0024: lid wist de kopie-administratie niet", uitleg(r));
+  // Uploadregistratie: teamleden.
+  r = await als(db, "mark", "insert into public.drive_bestanden (drive_file_id, naam) values ('file00003', 'brief.pdf') returning geupload_door");
+  check(r.ok && r.rows[0].geupload_door === U.mark, "0024: lid registreert een upload (door = zichzelf)", uitleg(r));
+  r = await als(db, "indringer", "insert into public.drive_bestanden (drive_file_id, naam) values ('file00004', 'x')");
+  check(geweigerd(r), "0024: niet-teamlid registreert niets", uitleg(r));
+  r = await als(db, "mark", "insert into public.drive_mappen (root_id, soort, sleutel, drive_id) values ('root0001', 'onzin', 'x', 'y')");
+  check(!r.ok, "0024: onbekende soort geweigerd", uitleg(r));
+  // Klant weg: de registratie blijft (klant leeg), het bestand in Drive blijft staan.
+  await db.exec("begin");
+  await db.exec(`
+    insert into public.clients (id, company_name) values ('aaaaaaaa-0000-4000-8000-0000000000ff', 'Weg BV');
+    insert into public.drive_bestanden (drive_file_id, naam, client_id) values ('file00099', 'x', 'aaaaaaaa-0000-4000-8000-0000000000ff');
+    delete from public.clients where id = 'aaaaaaaa-0000-4000-8000-0000000000ff';
+  `);
+  const na = (await db.query("select client_id from public.drive_bestanden where drive_file_id = 'file00099'")).rows[0];
+  await db.exec("rollback");
+  check(na && na.client_id === null, "0024: klant verwijderen laat de uploadregistratie staan", JSON.stringify(na));
+  // Policies: alleen teamleden; drive_koppeling zonder policies.
+  const pol = (await db.query("select tablename, qual, with_check from pg_policies where tablename like 'drive_%'")).rows;
+  check(pol.length === 3 && pol.every((p) => /is_teamlid\(/.test(`${p.qual} ${p.with_check}`)), "0024: drive-policies vereisen teamlid", JSON.stringify(pol.map((p) => p.tablename)));
+  check(!pol.some((p) => p.tablename === "drive_koppeling"), "0024: drive_koppeling zonder policies");
+  // De drive-tabellen raken geen buckets en geen factuurtabellen.
+  const m24 = lees("supabase/migrations/0024_drive.sql").replace(/--[^\n]*/g, "");
+  check(!/storage\.|invoices|quotes|expenses/.test(m24), "0024: geen buckets of facturen/uitgaven aangeraakt");
+  if (fouten === fouten0) console.log("  0024 drive: ok");
 }
 
 // ---------------------------------------------------------------------------------

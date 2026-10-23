@@ -1,0 +1,142 @@
+/* ==========================================================
+   Studio Levant — Bestanden (bs-): de gedeelde Google Drive, en het blok "Bestanden" op de
+   klant- en projectpagina. Bouwt voort op app.css (db-kaart, db-knop, db-melding),
+   agenda.css (ag-veld, ag-segment) en klanten.css (kp-leeg, kp-linkknop).
+   Tokens: shell.css (--sl-*).
+   ========================================================== */
+
+.bs { display: grid; gap: 24px; padding: 24px 40px 56px; max-width: 1280px; align-content: start; }
+.bs-hoofd { padding: 20px; }
+.bs-uitleg { margin: 0; font-size: 13.5px; line-height: 1.6; color: var(--sl-muted); max-width: 72ch; }
+.bs-uitleg strong { color: var(--sl-text); font-weight: 600; }
+.bs-fouttekst { margin: 0; font-size: 13.5px; color: var(--sl-danger); }
+.bs-koppelmelding { padding: 14px 18px; border: 1px solid var(--sl-line); border-radius: var(--sl-r); background: var(--sl-panel); }
+.bs-koppelmelding.is-goed .db-melding-titel { color: var(--sl-text); }
+
+.bs-verkenner { position: relative; display: grid; gap: 16px; min-width: 0; }
+
+/* Balk: broodkruimel + acties */
+.bs-balk { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 20px; }
+.bs-kruimels { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; min-width: 0; font-size: 15px; }
+.bs-kruimel { display: inline-flex; align-items: center; gap: 2px; min-width: 0; }
+.bs-kruimel button {
+  padding: 4px 6px; border: 0; border-radius: var(--sl-r); background: none; cursor: pointer;
+  color: var(--sl-muted); font: inherit; transition: color .15s var(--sl-ease), background-color .15s var(--sl-ease);
+}
+.bs-kruimel button:hover { color: var(--sl-text); background: var(--sl-raise); }
+.bs-kruimel [aria-current] { padding: 4px 6px; color: var(--sl-text); font-weight: 700; }
+.bs-kruimel-scheiding { color: var(--sl-faint); }
+.bs-balk-acties { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.bs-zoek { position: relative; display: flex; align-items: center; }
+.bs-zoek svg { position: absolute; left: 10px; color: var(--sl-faint); pointer-events: none; }
+.bs-zoek input { width: 240px; padding-left: 32px; }
+.bs-weergave button { display: inline-flex; align-items: center; justify-content: center; padding: 6px 10px; }
+
+/* Lijst */
+.bs-tabel { width: 100%; border-collapse: collapse; font-size: 13.5px; table-layout: auto; }
+.bs-tabel th {
+  padding: 8px 10px; border-bottom: 1px solid var(--sl-line); text-align: left;
+  font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--sl-faint);
+}
+.bs-tabel td { padding: 6px 10px; border-bottom: 1px solid var(--sl-line-soft); vertical-align: middle; }
+.bs-tabel tbody tr { transition: background-color .15s var(--sl-ease); }
+.bs-tabel tbody tr:hover { background: var(--sl-raise); }
+.bs-kol-naam { width: 100%; max-width: 0; }
+.bs-kol-grootte, .bs-kol-datum { white-space: nowrap; color: var(--sl-muted); }
+.bs-kol-grootte { text-align: right; }
+th.bs-kol-grootte { text-align: right; }
+.bs-kol-acties { white-space: nowrap; text-align: right; }
+.bs-naam {
+  display: inline-flex; align-items: center; gap: 10px; max-width: 100%; padding: 4px 0; border: 0; background: none;
+  color: var(--sl-text); font: inherit; text-align: left; cursor: pointer;
+}
+.bs-naam:hover .bs-naam-tekst { text-decoration: underline; text-underline-offset: 3px; }
+.bs-naam-tekst { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bs-type { flex: none; color: var(--sl-muted); }
+.bs-type.is-map { color: var(--sl-sand); }
+.bs-door { display: block; margin: -2px 0 2px 28px; font-size: 12px; color: var(--sl-faint); }
+.bs-door .sl-persoon-avatar { width: 16px; height: 16px; font-size: 8px; }
+
+.bs-acties { display: inline-flex; gap: 2px; opacity: .55; transition: opacity .15s var(--sl-ease); }
+tr:hover .bs-acties, .bs-kaartje:hover .bs-acties, .bs-acties:focus-within { opacity: 1; }
+.bs-icoonknop {
+  display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; padding: 0;
+  border: 0; border-radius: var(--sl-r); background: none; color: var(--sl-muted); cursor: pointer;
+  transition: background-color .15s var(--sl-ease), color .15s var(--sl-ease);
+}
+.bs-icoonknop:hover { background: var(--sl-hover); color: var(--sl-text); }
+.bs-icoonknop.bs-gevaar:hover, .db-knop.bs-gevaar:hover { color: var(--sl-danger); }
+.bs-icoonknop:focus-visible, .bs-naam:focus-visible, .bs-kruimel button:focus-visible, .bs-kaartje-open:focus-visible { outline: none; box-shadow: var(--sl-focus); }
+.db-knop.bs-gevaar-vol { background: var(--sl-danger); border-color: var(--sl-danger); color: var(--sl-dark); font-weight: 600; }
+
+/* Raster */
+.bs-raster { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; margin: 0; padding: 0; list-style: none; }
+.bs-kaartje { position: relative; display: grid; border: 1px solid var(--sl-line-soft); border-radius: 6px; background: var(--sl-bg); overflow: hidden; }
+.bs-kaartje-open { display: grid; gap: 0; padding: 0; border: 0; background: none; color: var(--sl-text); font: inherit; text-align: left; cursor: pointer; }
+.bs-kaartje-beeld { display: grid; place-items: center; aspect-ratio: 4 / 3; background: var(--sl-raise); color: var(--sl-muted); overflow: hidden; }
+.bs-kaartje-beeld.is-map { color: var(--sl-sand); }
+.bs-kaartje-beeld img { width: 100%; height: 100%; object-fit: cover; }
+.bs-kaartje-naam { padding: 8px 10px 4px; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bs-kaartje .bs-acties { padding: 0 6px 6px; }
+
+/* Leeg, uploads, slepen */
+.bs-leeg { display: grid; gap: 6px; justify-items: start; padding: 18px 0; }
+.bs-uploads { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.bs-upload {
+  position: relative; display: flex; justify-content: space-between; gap: 12px; padding: 8px 12px 10px;
+  border: 1px solid var(--sl-line-soft); border-radius: var(--sl-r); background: var(--sl-bg); font-size: 13px; overflow: hidden;
+}
+.bs-upload-naam { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bs-upload-stand { flex: none; color: var(--sl-muted); }
+.bs-upload.is-fout .bs-upload-stand { color: var(--sl-danger); }
+.bs-upload-balk { position: absolute; left: 0; bottom: 0; height: 2px; width: var(--bs-voortgang, 0%); background: var(--sl-sand); transition: width .2s linear; }
+.bs-upload.is-fout .bs-upload-balk { background: var(--sl-danger); }
+.bs-sleepvlak {
+  position: absolute; inset: -8px; z-index: 5; display: grid; place-content: center; justify-items: center; gap: 10px;
+  border: 1.5px dashed var(--sl-sand); border-radius: 8px; background: rgba(35, 35, 35, .88);
+  color: var(--sl-text); font-size: 14px; font-weight: 600; pointer-events: none;
+}
+
+/* Blok op de klant-/projectpagina */
+.bs-verkenner.is-compact { gap: 10px; }
+.bs-blok-acties { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.bs-blok-acties .db-knop { margin-left: auto; }
+.is-compact .bs-tabel td { padding: 4px 4px; }
+.is-compact .bs-tabel tr:last-child td { border-bottom: 0; }
+.is-compact .bs-kol-datum { font-size: 12px; }
+.is-compact .bs-leeg { padding: 4px 0; }
+
+/* Instellingen */
+.bs-instellingen-acties { display: flex; flex-wrap: wrap; gap: 8px; }
+
+/* Dialogen */
+.bs-dialoog {
+  width: min(460px, calc(100vw - 32px)); padding: 0; border: 1px solid var(--sl-line); border-radius: 8px;
+  background: var(--sl-panel); color: var(--sl-text); font-family: var(--sl-font); box-shadow: 0 32px 80px rgba(0, 0, 0, .6);
+}
+.bs-dialoog::backdrop { background: rgba(0, 0, 0, .55); }
+.bs-dialoog-inhoud { display: grid; gap: 14px; padding: 22px; }
+.bs-dialoog-titel { margin: 0; font-size: 18px; font-weight: 700; }
+.bs-dialoog-acties { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
+.bs-veldlabel { display: grid; gap: 6px; font-size: 12.5px; color: var(--sl-muted); }
+.bs-voorbeeld { width: min(1100px, calc(100vw - 32px)); height: calc(100dvh - 48px); max-height: none; overflow: hidden; }
+.bs-voorbeeld[open] { display: flex; flex-direction: column; }
+.bs-voorbeeld-kop { display: flex; align-items: center; gap: 8px; padding: 12px 12px 12px 18px; border-bottom: 1px solid var(--sl-line); }
+.bs-voorbeeld-naam { flex: 1; min-width: 0; margin: 0; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bs-voorbeeld-vlak { flex: 1; min-height: 0; display: grid; place-items: center; background: var(--sl-bg); }
+.bs-voorbeeld-vlak img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.bs-voorbeeld-vlak iframe { width: 100%; height: 100%; border: 0; background: #fff; }
+.bs-voorbeeld-voet { padding: 8px 18px; }
+
+@media (max-width: 760px) {
+  .bs { padding: 16px 16px 40px; }
+  .bs-hoofd { padding: 14px; }
+  .bs-zoek input { width: 100%; }
+  .bs-zoek { flex: 1 1 100%; }
+  .bs-kol-grootte { display: none; }
+  .bs-acties { opacity: 1; }
+  .bs-voorbeeld-kop .db-knop { padding: 8px; font-size: 0; gap: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .bs-upload-balk, .bs-acties, .bs-tabel tbody tr { transition: none; }
+}

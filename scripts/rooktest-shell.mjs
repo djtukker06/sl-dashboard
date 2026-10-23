@@ -56,7 +56,7 @@
 //    - 0022: leesregels op taken/toewijzingen/subtaken/afspraken/deelnemers, met teamcheck.
 // Live: /agenda?wie=team zonder sessie -> /login; /api/taken?filter=uitgezet -> 401.
 // 9. Statisch, team van twee — stap 3 (klanten & projecten):
-//    - één rail-tab "Klanten" (/klanten + /projecten), 6 items; /agenda/projecten stuurt door;
+//    - één rail-tab "Klanten" (/klanten + /projecten), toen 6 items (nu 7, met Bestanden); /agenda/projecten stuurt door;
 //    - nieuwe routes via de teamcheck; 0022: clients-kolommen, client_notes, project_eigenaren
 //      met RLS (is_teamlid), projectstatus gepland/bezig/afgerond.
 // Live: /klanten, /projecten, /klanten/<id>, /projecten/<id> en /agenda/projecten zonder
@@ -64,6 +64,12 @@
 // 11. Statisch, projectenbord (0023): bord + lijst, stappenbalk, dashboardkaart, oude
 //     statussen nergens meer als keuze; UITVOEREN_0023.sql in één transactie.
 // Live: /projecten?weergave=bord|lijst zonder sessie -> /login; PATCH /api/projecten/<id> -> 401.
+// 12. Statisch, Bestanden (Google Drive, 0024): module in de rail (7 items), elke /api/drive-
+//     route via de teamcheck, koppelen/ontkoppelen/kopiëren alleen voor de eigenaar, tokens
+//     alleen server-side, upload rechtstreeks naar Google, kopieën na het antwoord (after),
+//     blok op klant- en projectpagina; UITVOEREN_0024.sql in één transactie.
+// Live: /bestanden (ook ?map=…) zonder sessie -> /login; /api/drive/* (ook de callback en
+//       het koppelen) -> 401.
 //
 // Gebruik:  node scripts/rooktest-shell.mjs [http://localhost:3107]
 //           node scripts/rooktest-shell.mjs --alleen-statisch
@@ -126,7 +132,7 @@ function bestandenIn(map, filter) {
   return uit;
 }
 {
-  const WRAPPERS = /\b(teamlidRoute|controleerRoute|metSessie|mailRoute|uitgavenRoute|route)\(/;
+  const WRAPPERS = /\b(teamlidRoute|controleerRoute|metSessie|mailRoute|uitgavenRoute|driveRoute|route)\(/;
   for (const f of bestandenIn("app/api", (n) => n === "route.ts")) {
     check(WRAPPERS.test(lees(f)), `${f} gebruikt de teamlidcontrole`);
   }
@@ -179,12 +185,13 @@ function bestandenIn(map, filter) {
     const sql = lees(`supabase/${f}`);
     const delen = [...sql.matchAll(/^-- (\d{4}_[\w]+\.sql)$/gm)].map((m) => m[1]);
     // 0021 (alleen teamleden) en daarna 0022 (taken alleen voor betrokkenen) sluiten af;
-    // in de grote bestanden volgt alleen nog 0023 (projectstatus, geen policies).
+    // in de grote bestanden volgen alleen nog 0023 (projectstatus, geen policies) en 0024
+    // (nieuwe Drive-tabellen, policies met teamcheck).
     const ok =
       f === "UITVOEREN_0022.sql"
         ? delen.join(",") === "0022_team_crm.sql"
-        : delen.slice(-3).join(",") === "0021_team_en_taken.sql,0022_team_crm.sql,0023_projectstatus.sql";
-    check(ok, `${f} eindigt met 0021 + 0022 (+ 0023)`, delen.slice(-3).join(", ") || "geen");
+        : delen.slice(-4).join(",") === "0021_team_en_taken.sql,0022_team_crm.sql,0023_projectstatus.sql,0024_drive.sql";
+    check(ok, `${f} eindigt met 0021 + 0022 (+ 0023 + 0024)`, delen.slice(-4).join(", ") || "geen");
   }
   {
     const delen = [...lees("supabase/UITVOEREN_0023.sql").matchAll(/^-- (\d{4}_[\w]+\.sql)$/gm)].map((m) => m[1]);
@@ -410,7 +417,7 @@ console.log("Team van twee, stap 3 (klanten & projecten)");
 {
   const modules = lees("lib/modules.ts");
   const ids = [...modules.matchAll(/^\s{4}id: '([a-z]+)'/gm)].map((m) => m[1]);
-  check(ids.length === 6 && ids.includes("klanten"), "rail: 6 items, waaronder Klanten", ids.join(","));
+  check(ids.length === 7 && ids.includes("klanten") && ids.includes("bestanden"), "rail: 7 items, waaronder Klanten en Bestanden", ids.join(","));
   check(/paden: \['\/klanten', '\/projecten'\]/.test(modules), "Klanten is actief op /klanten en /projecten");
   check(/redirect\('\/projecten'\)/.test(lees("app/(app)/agenda/projecten/page.tsx")), "/agenda/projecten stuurt door naar /projecten");
   for (const f of ["app/(app)/klanten/page.tsx", "app/(app)/klanten/[id]/page.tsx", "app/(app)/projecten/page.tsx", "app/(app)/projecten/[id]/page.tsx"]) {
@@ -472,6 +479,45 @@ console.log("Projectenbord (0023)");
   const ui = ["components/crm/NieuwProject.tsx", "components/crm/ProjectKop.tsx", "components/crm/ProjectenBord.tsx", "components/crm/StatusStappen.tsx"].map(lees).join("\n");
   check(!/'gepland'|"gepland"/.test(ui), "UI biedt 'gepland' nergens meer als keuze");
   check(/Wachten op goedkeuring/.test(lees("lib/crm/projectstatus.ts")), "label 'Wachten op goedkeuring'");
+}
+
+// ---------------------------------------------------------------------------------
+// 12. Bestanden (Google Drive, 0024, statisch)
+// ---------------------------------------------------------------------------------
+console.log("Bestanden (Google Drive, 0024)");
+{
+  const sql = lees("supabase/UITVOEREN_0024.sql");
+  const tx = sql.slice(0, sql.lastIndexOf("-- Controle:"));
+  check((tx.match(/^begin;$/gm) || []).length === 1 && (tx.match(/^commit;$/gm) || []).length === 1, "UITVOEREN_0024.sql: alles in één transactie");
+  const delen = [...sql.matchAll(/^-- (\d{4}_[\w]+\.sql)$/gm)].map((m) => m[1]);
+  check(delen.join(",") === "0024_drive.sql", "UITVOEREN_0024.sql bevat alleen 0024", delen.join(", "));
+  for (const regel of ["drive_koppeling zonder policies", "drive_koppeling onleesbaar voor de app", "drive-tabellen alleen voor teamleden"]) {
+    check(sql.includes(`('${regel}'`), `controletabel 0024: '${regel}'`);
+  }
+  const modules = lees("lib/modules.ts");
+  check(/id: 'bestanden',[\s\S]*?href: '\/bestanden',[\s\S]*?icoon: 'bestanden'/.test(modules), "module Bestanden in het register (eigen icoon)");
+  check(/bestanden:/.test(lees("lib/shell/iconen.ts")), "icoon 'bestanden' bestaat");
+  const pagina = lees("app/(app)/bestanden/page.tsx");
+  check(pagina.indexOf("vereisTeamlidPagina(") > 0 && pagina.indexOf("vereisTeamlidPagina(") < pagina.indexOf("driveStatus("), "/bestanden: teamcheck vóór de koppeling");
+  for (const f of ["app/(app)/klanten/[id]/page.tsx", "app/(app)/projecten/[id]/page.tsx"]) {
+    check(/<BestandenBlok /.test(lees(f)), `${f}: blok Bestanden`);
+  }
+  for (const f of bestandenIn("app/api/drive", (n) => n === "route.ts")) {
+    check(/\b(driveRoute|controleerRoute)\(/.test(lees(f)), `${f}: teamcheck`);
+  }
+  for (const f of ["app/api/drive/koppelen/route.ts", "app/api/drive/ontkoppelen/route.ts", "app/api/drive/kopieer-bestaande/route.ts"]) {
+    check(/alleenEigenaar: true/.test(lees(f)), `${f}: alleen de eigenaar`);
+  }
+  check(/lid\.rol !== 'eigenaar'/.test(lees("app/api/drive/callback/route.ts")), "callback: alleen de eigenaar");
+  check(/httpOnly: true/.test(lees("app/api/drive/koppelen/route.ts")) && /createHmac\('sha256'/.test(lees("lib/drive/state.ts")), "state: ondertekende httpOnly-cookie");
+  check(/^import 'server-only';/m.test(lees("lib/drive/config.ts")) && /^import 'server-only';/m.test(lees("lib/drive/koppeling.ts")), "Drive-config en -koppeling zijn server-only");
+  const clientCode = [...bestandenIn("components", (n) => /\.tsx?$/.test(n)), ...bestandenIn("app", (n) => /\.tsx?$/.test(n))].filter((f) => /^['"]use client['"]/m.test(lees(f)));
+  const lek = clientCode.filter((f) => /refresh_token|GOOGLE_CLIENT|DRIVE_ENCRYPTION_KEY|drive\/config|drive\/koppeling/.test(lees(f)));
+  check(lek.length === 0, "geen client-code met Drive-tokens of -sleutels", lek.join(", "));
+  check(/xhr\.open\('PUT', uploadUrl\)/.test(lees("components/bestanden/driveApi.ts")), "upload gaat rechtstreeks naar Google (niet via Vercel)");
+  check(/uploadType=resumable/.test(lees("lib/drive/kern.ts")), "resumable upload-sessie");
+  check(/naDrive\(lid, 'factuur', resultaat\.id\)/.test(lees("app/api/invoices/route.ts")), "nieuwe factuur → kopie naar Drive (na het antwoord)");
+  check(/after\(async/.test(lees("lib/drive/kopieen.ts")), "kopieën via next/server after()");
 }
 
 if (ALLEEN_STATISCH) eindig();
@@ -570,6 +616,33 @@ for (const url of ["/social-files/brand/logo-licht.png", "/social-files/projects
   const res = await vraag("/agenda?wie=team&project=00000000-0000-0000-0000-000000000000");
   check(naarLogin(res), "/agenda?wie=team -> /login", `status ${res.status}`);
 }
+{
+  // Bestanden (Google Drive): geen enkele Drive-route zonder sessie, ook niet de callback.
+  for (const url of [
+    "/api/drive/status",
+    "/api/drive/map",
+    "/api/drive/map?id=1AbCdEfGh",
+    "/api/drive/map?klant=00000000-0000-4000-8000-000000000000",
+    "/api/drive/map?project=00000000-0000-4000-8000-000000000000",
+    "/api/drive/zoeken?q=offerte",
+    "/api/drive/callback?code=x&state=y",
+    "/api/drive/bestanden/1AbCdEfGh/inhoud",
+    "/api/drive/bestanden/1AbCdEfGh/inhoud?download=1",
+  ]) {
+    const res = await vraag(url);
+    check(res.status === 401, `GET ${url} zonder sessie -> 401`, `status ${res.status}`);
+  }
+  for (const [m, url] of [
+    ["POST", "/api/drive/koppelen"],
+    ["POST", "/api/drive/ontkoppelen"],
+    ["POST", "/api/drive/upload"],
+    ["POST", "/api/drive/kopieer-bestaande"],
+    ["DELETE", "/api/drive/bestanden/1AbCdEfGh"],
+  ]) {
+    const res = await vraag(url, { method: m, headers: { origin: BASIS, "content-type": "application/json" }, body: m === "DELETE" ? undefined : "{}" });
+    check(res.status === 401, `${m} ${url} zonder sessie -> 401`, `status ${res.status}`);
+  }
+}
 
 console.log("Openbare pagina's en bestanden");
 for (const url of ["/login", "/wachtwoord-vergeten", "/geen-toegang"]) {
@@ -603,7 +676,7 @@ for (const url of ["/login", "/geen-toegang", "/api/taken"]) {
 }
 
 console.log("Kernpagina's: precies 307 naar /login");
-for (const url of ["/", "/boekhouding", "/boekhouding/bonnetjes", "/account", "/facturen", "/agenda/projecten", "/welkom", "/klanten", "/klanten?nieuw=1", "/projecten", "/projecten?weergave=bord", "/projecten?weergave=lijst", "/klanten/00000000-0000-4000-8000-000000000000", "/projecten/00000000-0000-4000-8000-000000000000"]) {
+for (const url of ["/", "/boekhouding", "/boekhouding/bonnetjes", "/account", "/facturen", "/agenda/projecten", "/welkom", "/klanten", "/klanten?nieuw=1", "/projecten", "/projecten?weergave=bord", "/projecten?weergave=lijst", "/klanten/00000000-0000-4000-8000-000000000000", "/projecten/00000000-0000-4000-8000-000000000000", "/bestanden", "/bestanden?map=1AbCdEfGh", "/bestanden?drive=gekoppeld"]) {
   const res = await vraag(url);
   check(res.status === 307 && naarLogin(res), url, `status ${res.status} ${res.headers.get("location") || ""}`);
 }

@@ -77,6 +77,17 @@ export const MODULES: Module[] = [
     actief: true
   },
   {
+    // Gedeelde bestanden in de Google Drive van Studio Levant (één koppeling door de
+    // eigenaar; teamleden hebben zelf geen Google-toegang nodig). Zie README "Google Drive".
+    id: 'bestanden',
+    naam: 'Bestanden',
+    kort: 'Bestanden',
+    beschrijving: 'Gedeelde bestanden in Google Drive: per klant en project, boekhouding en algemeen',
+    href: '/bestanden',
+    icoon: 'bestanden',
+    actief: true
+  },
+  {
     // Eén tab voor de administratie: facturen (/facturen/**, ongewijzigd) en bonnetjes &
     // inkoopfacturen (/boekhouding/bonnetjes; /uitgaven stuurt daarheen door).
     id: 'boekhouding',

@@ -3,6 +3,7 @@ import { CRM_NIET_INGERICHT, dbFout, metStatusTerugval, NIET_INGERICHT, projectO
 import { kolomOntbreekt } from '@/lib/db/ontbreekt';
 import type { ProjectInvoer } from '@/lib/agenda/types';
 import { fout, foutAntwoord, json, leesBody, metSessie } from '@/lib/agenda/api';
+import { naProjectWijziging } from '@/lib/drive/na';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -72,6 +73,8 @@ export async function PATCH(request: Request, ctx: Ctx) {
     if (p.eigenaren !== undefined) await zetProjectEigenaren(s.bron, id, p.eigenaren);
     const project = await projectOphalen(s.bron, id);
     if (!project) return fout(404, 'Project niet gevonden.');
+    // Andere naam of klant: de projectmap in Google Drive meenemen (ná het antwoord, best effort).
+    if ('naam' in p.waarde || 'client_id' in p.waarde) naProjectWijziging(s.lid, id);
     return json({ project });
   } catch (e) {
     return foutAntwoord(e);

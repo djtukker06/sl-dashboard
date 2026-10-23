@@ -6,6 +6,7 @@ import { computeTotals } from '@/lib/invoice/calculations';
 import { parseFactuurInvoer, type FactuurInvoerBody } from '@/lib/invoice/invoer';
 import { bewaarFactuurPdf, upsertKlant } from '@/lib/invoice/opslag';
 import { bedrijf } from '@/lib/config';
+import { naDrive } from '@/lib/drive/kopieen';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -144,6 +145,8 @@ export async function PUT(
   revalidatePath('/facturen');
   revalidatePath(`/facturen/klanten/${clientId}`);
   revalidatePath(`/facturen/${id}/bewerken`);
+  // De nieuwe PDF ook in Google Drive (ná het antwoord, best effort; lib/drive/kopieen.ts).
+  naDrive(lid, 'factuur', factuur.id);
 
   return NextResponse.json({ id: factuur.id, invoiceNumber: factuur.invoice_number });
 }

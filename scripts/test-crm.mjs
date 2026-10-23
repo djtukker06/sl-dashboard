@@ -2,7 +2,7 @@
 //   - lib/crm/invoer.ts: klant aanmaken/wijzigen (bedrijfsnaam verplicht, status standaard
 //     lead, e-mail/telefoon gecontroleerd), notities en de ilike-escape voor prijsopgaven;
 //   - bronbewaking: elke nieuwe route en pagina gaat via de centrale teamcheck, klanten
-//     verwijderen kan hier niet, de rail heeft één tab "Klanten" (6 items) en de
+//     verwijderen kan hier niet, de rail heeft één tab "Klanten" (7 items, met Bestanden) en de
 //     facturen-routes zijn niet aangeraakt.
 //   - lib/crm/projectstatus.ts (0023): deadlinekleur, dagen in een status, afgerond in de
 //     laatste 30 dagen, sorteren op deadline, buurstatus (Alt + ←/→);
@@ -173,7 +173,8 @@ test("UITVOEREN_0023.sql: één transactie, controle per onderdeel, actueel", ()
   for (const r of ["projectstatus voorbereiding/bezig/wachten/afgerond", "kolom projects.status_sinds", "trigger status_sinds", "RLS projects ongewijzigd (teamlid)", "indexen 0023"]) assert.ok(sql.includes(`('${r}'`), r);
   for (const f of ["UITVOEREN_IN_SQL_EDITOR.sql", "UITVOEREN_0020_UITGAVEN.sql", "UITVOEREN_0021_TEAM.sql"]) {
     const delen = [...lees(`supabase/${f}`).matchAll(/^-- (\d{4}_[\w]+\.sql)$/gm)].map((m) => m[1]);
-    assert.deepEqual(delen.slice(-3), ["0021_team_en_taken.sql", "0022_team_crm.sql", "0023_projectstatus.sql"], f);
+    // Na 0023 volgt alleen nog 0024 (nieuwe Drive-tabellen met teamcheck).
+    assert.deepEqual(delen.slice(-4), ["0021_team_en_taken.sql", "0022_team_crm.sql", "0023_projectstatus.sql", "0024_drive.sql"], f);
   }
   const r = spawnSync(process.execPath, [path.join(ROOT, "scripts/genereer-sql-editor.mjs"), "--controleer"], { encoding: "utf8" });
   assert.equal(r.status, 0, r.stderr);
@@ -262,10 +263,10 @@ test("pagina's tonen 'nog niet ingericht' zonder 0022", () => {
   for (const f of PAGINAS.slice(0, 4)) assert.match(lees(f), /CrmNietIngericht/, f);
 });
 
-test("rail: één tab Klanten (/klanten + /projecten), 6 items", () => {
+test("rail: één tab Klanten (/klanten + /projecten), 7 items (met Bestanden)", () => {
   const src = lees("lib/modules.ts");
   const ids = [...src.matchAll(/^\s{4}id: '([a-z]+)'/gm)].map((m) => m[1]);
-  assert.deepEqual(ids, ["dashboard", "mail", "agenda", "klanten", "boekhouding", "social"]);
+  assert.deepEqual(ids, ["dashboard", "mail", "agenda", "klanten", "bestanden", "boekhouding", "social"]);
   assert.match(src, /paden: \['\/klanten', '\/projecten'\]/);
   assert.match(lees("lib/shell/iconen.ts"), /klanten:/);
 });

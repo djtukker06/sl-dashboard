@@ -5,6 +5,7 @@ import { createServiceRoleClient } from '@/lib/supabase/service-role';
 import { parseFactuurInvoer, type FactuurInvoerBody } from '@/lib/invoice/invoer';
 import { upsertKlant } from '@/lib/invoice/opslag';
 import { maakFactuurAan } from '@/lib/invoice/aanmaken';
+import { naDrive } from '@/lib/drive/kopieen';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -45,6 +46,8 @@ export async function POST(request: Request) {
   if (makerFout) console.error('[facturen] maker vastleggen mislukt', makerFout.code ?? '', makerFout.message);
 
   revalidatePath('/facturen');
+  // Kopie van de PDF naar Google Drive, ná het antwoord en best effort (lib/drive/kopieen.ts).
+  naDrive(lid, 'factuur', resultaat.id);
 
   return NextResponse.json({ id: resultaat.id, invoiceNumber: resultaat.invoiceNumber });
 }

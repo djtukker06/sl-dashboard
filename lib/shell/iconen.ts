@@ -2,7 +2,7 @@
 // de rail in de social-HTML (railHtml) en het dashboard. Elke waarde is de
 // binnenkant van een <svg viewBox="0 0 24 24">.
 
-export type IcoonNaam = 'dashboard' | 'mail' | 'agenda' | 'factuur' | 'uitgaven' | 'social' | 'klanten' | 'map' | 'pijl';
+export type IcoonNaam = 'dashboard' | 'mail' | 'agenda' | 'factuur' | 'uitgaven' | 'social' | 'klanten' | 'bestanden' | 'map' | 'pijl';
 
 export const ICONEN: Record<IcoonNaam, string> = {
   dashboard:
@@ -23,6 +23,10 @@ export const ICONEN: Record<IcoonNaam, string> = {
   klanten:
     '<circle cx="9" cy="8.5" r="3.5"/><path d="M2.5 20c.6-3.6 3.2-5.5 6.5-5.5s5.9 1.9 6.5 5.5"/>' +
     '<path d="M15.5 5.2a3.3 3.3 0 0 1 0 6.6M18 14.8c2 .7 3.2 2.5 3.5 5.2"/>',
+  // Map met een document erin (gedeelde bestanden, Google Drive).
+  bestanden:
+    '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>' +
+    '<path d="M9.5 16.5v-5h3.2l1.8 1.8v3.2z"/>',
   map: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
   pijl: '<path d="M5 12h14M13 6l6 6-6 6"/>'
 };

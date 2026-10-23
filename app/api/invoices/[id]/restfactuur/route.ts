@@ -6,6 +6,7 @@ import { maakFactuurAan } from '@/lib/invoice/aanmaken';
 import { standaardNaam } from '@/lib/invoice/formulier';
 import type { FactuurRegelInvoer } from '@/lib/invoice/calculations';
 import { vandaagNL, volgendFactuurnummer } from '@/lib/invoice/nummer';
+import { naDrive } from '@/lib/drive/kopieen';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -125,6 +126,8 @@ export async function POST(
 
   revalidatePath('/facturen');
   revalidatePath(`/facturen/klanten/${aanbetaling.client_id}`);
+  // Kopie van de PDF naar Google Drive (ná het antwoord, best effort).
+  naDrive(lid, 'factuur', resultaat.id);
 
   return NextResponse.json({ id: resultaat.id, invoiceNumber: resultaat.invoiceNumber });
 }

@@ -13,6 +13,7 @@ je vanuit elke module terug naar het dashboard.
 | Mail | `/mail` | Je eigen mailbox (Private Email): lezen, beantwoorden, doorsturen, nieuwe mail, mail → taak |
 | Agenda | `/agenda` | Taken op naam (popup: voor wie, deadline, urgentie, klant, project, subtaken) en afspraken in één agenda (week/maand), alleen wat op jouw naam staat; tab Uitgezet voor wat je bij een ander hebt uitgezet |
 | Klanten & projecten | `/klanten`, `/projecten` | Simpel CRM/PM: klanten (lead/actief/afgerond) met contact, notities, projecten, open taken, facturen en prijsopgaven; projecten als bord of lijst (voorbereiding/bezig/wachten op goedkeuring/afgerond) met klant, deadline, eigenaar(s), taken met voortgang en een notitieveld |
+| Bestanden | `/bestanden` | De gedeelde Google Drive van Studio Levant: bladeren, slepen-uploaden (ook grote bestanden), mappen, hernoemen, prullenbak, zoeken, voorbeeld; een blok "Bestanden" op elke klant- en projectpagina; facturen, prijsopgaven en bonnetjes gaan er automatisch heen (zie "Google Drive") |
 | Boekhouding | `/boekhouding` | Keuze tussen **Facturen** (`/facturen`: facturen, prijsopgaven, klanten en PDF's, ongewijzigd) en **Bonnetjes & inkoopfacturen** (`/boekhouding/bonnetjes`: foto/PDF uploaden en snel terugvinden) |
 | Account & mail | `/account` | Je profiel (naam, initialen, kleur), je eigen mailbox koppelen, wachtwoord wijzigen |
 | Social | `/social` | De social-media-tool (voorheen lokaal), met dezelfde schermen en werking |
@@ -29,8 +30,10 @@ je vanuit elke module terug naar het dashboard.
    Al eerder uitgevoerd (0014–0019)? Dan `supabase/UITVOEREN_0020_UITGAVEN.sql`.
    Al eerder uitgevoerd (0014–0020)? Dan `supabase/UITVOEREN_0021_TEAM.sql`.
    Al eerder uitgevoerd (0014–0021)? Dan alleen `supabase/UITVOEREN_0022.sql` en daarna
-   `supabase/UITVOEREN_0023.sql`. Al eerder uitgevoerd (0014–0022, de huidige situatie)? Dan
-   alleen `supabase/UITVOEREN_0023.sql` (projectstatus voor het bord).
+   `supabase/UITVOEREN_0023.sql`. Al eerder uitgevoerd (0014–0022)? Dan
+   `supabase/UITVOEREN_0023.sql` (projectstatus voor het bord) en daarna
+   `supabase/UITVOEREN_0024.sql` (Google Drive). Al eerder uitgevoerd (0014–0023)? Dan alleen
+   `supabase/UITVOEREN_0024.sql`.
    Alleen de oudste bestaande gebruiker (Daniel) wordt automatisch lid (eigenaar); controleer
    onderaan het aantal leden en wie het zijn.
 3. **Oude social-posts importeren** met `scripts/importeer-social-projecten.mjs`
@@ -39,7 +42,9 @@ je vanuit elke module terug naar het dashboard.
    inclusief `MAIL_ENCRYPTION_KEY` (eigen mailboxen koppelen via `/account`), eventueel
    `MAIL_USER`/`MAIL_PASSWORD` (standaard-mailbox van de eigenaar) en `NEXT_PUBLIC_SITE_URL`.
 5. Deployen op Vercel (zie "Deployen op Vercel").
-6. **Compagnon toevoegen** met `scripts/teamlid-toevoegen.mjs` (zie "Bram toevoegen in 3 stappen").
+6. **Google Drive koppelen** (module Bestanden): Google Cloud-project, env-vars en één keer
+   koppelen als eigenaar (zie "Google Drive").
+7. **Compagnon toevoegen** met `scripts/teamlid-toevoegen.mjs` (zie "Bram toevoegen in 3 stappen").
 
 ## Lokaal draaien
 
@@ -55,12 +60,13 @@ je vanuit elke module terug naar het dashboard.
 ## Database inrichten: één SQL-bestand
 
 Alles wat de nieuwe modules nodig hebben staat in **`supabase/UITVOEREN_IN_SQL_EDITOR.sql`**:
-de migraties 0014–0023 achter elkaar, in één transactie. Wie 0014–0019 al heeft uitgevoerd,
+de migraties 0014–0024 achter elkaar, in één transactie. Wie 0014–0019 al heeft uitgevoerd,
 draait **`supabase/UITVOEREN_0020_UITGAVEN.sql`** (uitgaven + team); wie 0014–0020 al heeft,
 **`supabase/UITVOEREN_0021_TEAM.sql`**; wie 0014–0021 al heeft, **`supabase/UITVOEREN_0022.sql`**
-en daarna **`supabase/UITVOEREN_0023.sql`**; wie 0014–0022 al heeft (de huidige situatie),
-alleen **`supabase/UITVOEREN_0023.sql`**. Elk groot bestand eindigt met 0021 + 0022 (+ 0023,
-alleen de projectstatus), zodat opnieuw uitvoeren nooit de oude open policies of de open
+en daarna **`supabase/UITVOEREN_0023.sql`**; wie 0014–0022 al heeft (de huidige situatie: 0023
+is nog niet uitgevoerd), **`supabase/UITVOEREN_0023.sql`** en daarna
+**`supabase/UITVOEREN_0024.sql`**; wie 0014–0023 al heeft, alleen **`supabase/UITVOEREN_0024.sql`**. Elk groot bestand eindigt met 0021 + 0022 (+ 0023,
+alleen de projectstatus, en 0024, alleen nieuwe Drive-tabellen met teamcheck), zodat opnieuw uitvoeren nooit de oude open policies of de open
 leesregels voor taken terugzet. 0022 opnieuw uitvoeren na 0023 laat de nieuwe projectstatussen
 staan. Onderaan elk
 bestand staat een controletabel (elke regel `ok`) en wie er toegang heeft.
@@ -76,6 +82,7 @@ bestand staat een controletabel (elke regel `ok`) en wie er toegang heeft.
 | `0020_uitgaven.sql` | tabellen `expenses` en `expense_files` (RLS, `updated_at`-trigger), privé-buckets `uitgaven` (25 MB, jpeg/png/webp/heic/pdf) en `uitgaven-export` (50 MB, ZIP) |
 | `0021_team_en_taken.sql` | `team_members` (allowlist) + `profiles`, `is_teamlid()` in **alle** policies (ook facturen en Storage), `create_invoice`/`update_invoice` alleen nog voor de service-role, `projects`, `task_assignees`, `task_subtasks`, `event_attendees`, `user_mailboxes`; zaait het lidmaatschap van de oudste bestaande gebruiker (Daniel, eigenaar); andere bestaande accounts worden niet automatisch lid |
 | `0022_team_crm.sql` | team van twee: `profiles.welkom_klaar_op` (welkomstflow), taken/afspraken alleen leesbaar voor betrokkenen (`taak_zichtbaar()`), klanten (`email`, `telefoon`, `status`, `client_notes`), projecten (status gepland/bezig/afgerond, `deadline`, `project_eigenaren`), tellers in één query (`taak_tellingen`, `project_taak_tellingen`) en indexen. Alleen toevoegend; de facturen werken ongewijzigd |
+| `0024_drive.sql` | Google Drive (module Bestanden): `drive_koppeling` (één rij: Google-account, versleuteld refresh token, rootmap; RLS aan, **geen policies en geen rechten** voor `anon`/`authenticated`, alleen de server), `drive_mappen` (cache van map-id's; teamleden lezen, alleen de server schrijft), `drive_bestanden` (wie wat uploadde; teamleden), `drive_kopieen` (welke factuur/prijsopgave/bonnetje al in Drive staat; teamleden lezen, alleen de server schrijft). Alleen nieuwe tabellen |
 | `0023_projectstatus.sql` | projectenbord: status `voorbereiding`/`bezig`/`wachten`/`afgerond` (`gepland` → `voorbereiding`, standaard `voorbereiding`), kolom `status_sinds` met trigger (zet "nu" bij elke statuswijziging; bestaande projecten krijgen hun laatste wijziging), indexen op status + status_sinds en deadline. RLS ongewijzigd |
 
 **Uitvoeren:** Supabase-dashboard → je project → **SQL Editor** → *New query* → plak het hele
@@ -151,6 +158,8 @@ onder **Project Settings → Environment Variables** (Production én Preview):
 | `MAIL_ENV_USER_ID` | nee | User-id (uuid) van het account dat de standaard-mailbox krijgt, als dat niet het account met het adres uit `MAIL_USER` is. Leeg = de oudste actieve eigenaar |
 | `MAIL_IMAP_HOST`, `MAIL_IMAP_PORT`, `MAIL_SMTP_HOST`, `MAIL_SMTP_PORT` | nee | Standaard `mail.privateemail.com`, 993 en 465 |
 | `MAIL_FROM_NAME`, `MAIL_HANDTEKENING` | nee | Afzendernaam (standaard "Studio Levant") en handtekening (`\n` = nieuwe regel) |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | voor Bestanden | OAuth-client (type "Web application") uit Google Cloud Console, voor de koppeling met de Google Drive van Studio Levant (zie "Google Drive"). Het secret is geheim |
+| `DRIVE_ENCRYPTION_KEY` | nee | Eigen sleutel (32 bytes, base64) voor het Drive-refresh token. Leeg = `MAIL_ENCRYPTION_KEY` wordt gebruikt. Wijzigen = Drive opnieuw koppelen |
 | `CHROME_PATH` | nee, alleen lokaal | Eigen Chrome/Chromium voor social-exports tijdens `npm run dev` |
 
 Na het wijzigen van een variabele in Vercel: opnieuw deployen (Deployments → … → Redeploy),
@@ -517,6 +526,98 @@ bonnetjes*; in mail: **Bij bonnetjes** naast een PDF- of fotobijlage.
   Tests zonder database/netwerk: `node scripts/test-uitgaven.mjs`; één echte Claude-aanroep
   met een gegenereerd testbonnetje: `ANTHROPIC_API_KEY=… node scripts/test-uitgaven.mjs --claude`.
 
+## Google Drive (Bestanden)
+
+Eén gratis Google-account van Studio Levant (15 GB) is de gezamenlijke bestandsopslag. De
+eigenaar koppelt het **één keer**; daarna ziet en gebruikt iedereen in het team de bestanden
+via het dashboard. Teamleden hebben zelf **geen** Google-account of -toegang nodig.
+
+**Eenmalig in Google Cloud** (ingelogd met het Google-account van Studio Levant):
+
+1. [console.cloud.google.com](https://console.cloud.google.com) → nieuw project, bv.
+   "Studio Levant backoffice".
+2. *APIs & Services → Library* → **Google Drive API** → *Enable*.
+3. *APIs & Services → OAuth consent screen* (Google Auth Platform): type **External**,
+   app-naam "Studio Levant backoffice", support-e-mail; bij *Audience* het Google-account
+   van Studio Levant als **test user** toevoegen. Bij *Data access* de scope
+   `https://www.googleapis.com/auth/drive` toevoegen.
+   *Let op:* zolang de app in "Testing" staat, verloopt de toestemming na **7 dagen** (dan
+   vraagt Bestanden om "Drive opnieuw koppelen"). Zet de app daarom op **In production**
+   ("Publish app"); voor één eigen account is geen Google-verificatie nodig, je klikt bij het
+   koppelen eenmalig door de melding "Google heeft deze app niet geverifieerd".
+4. *APIs & Services → Credentials → Create credentials → OAuth client ID*, type
+   **Web application**. *Authorized redirect URIs* (exact zo):
+   - `http://localhost:3000/api/drive/callback` (lokaal)
+   - `https://<jouw domein>/api/drive/callback` (bv.
+     `https://backoffice.studio-levant.nl/api/drive/callback`; gelijk aan
+     `NEXT_PUBLIC_SITE_URL` + `/api/drive/callback`)
+5. Kopieer *Client ID* en *Client secret* naar `GOOGLE_CLIENT_ID` en `GOOGLE_CLIENT_SECRET`
+   in `.env.local` en in Vercel (Production en Preview), en deploy opnieuw.
+
+**Sleutel.** Het refresh token wordt versleuteld opgeslagen (AES-256-GCM, dezelfde kluis als
+de mailboxen, `lib/mail/kluis-kern.ts`, met een eigen AAD `drive-koppeling`). Standaard met
+`MAIL_ENCRYPTION_KEY`; wil je de sleutels scheiden, zet dan `DRIVE_ENCRYPTION_KEY` (staat die
+er, dan wordt alleen die gebruikt). Een andere sleutel = Drive opnieuw koppelen.
+
+**Koppelen.** Voer eerst `supabase/UITVOEREN_0024.sql` uit. Ga als **eigenaar** naar
+**Bestanden** → *Google Drive koppelen* → log in met het Google-account van Studio Levant →
+geef toegang tot "alle bestanden in Google Drive". De volledige `drive`-scope is bewust: zo
+zie je in het dashboard ook bestanden die iemand rechtstreeks in Drive zet. Terug in
+Bestanden staat de map klaar. Onderaan Bestanden staan het gekoppelde account,
+**Bestaande facturen, prijsopgaven en bonnetjes naar Drive kopiëren** (veilig om vaker te
+gebruiken: wat er al staat wordt overgeslagen) en **Ontkoppelen** (trekt de toestemming in;
+de bestanden in Drive blijven staan). Een lid ziet alleen uitleg, geen knoppen.
+
+- Beveiliging: `state` is een willekeurige nonce die ook in een ondertekende (HMAC),
+  httpOnly-cookie van 10 minuten staat, samen met het user-id en de redirect-URI
+  (`lib/drive/state.ts`); de callback controleert die en of je eigenaar bent. Redirect-URI:
+  `${NEXT_PUBLIC_SITE_URL of localhost}/api/drive/callback`.
+- Het access token blijft in het geheugen van de server tot vlak voor het verlopen. Trekt
+  iemand de toegang in (of verloopt die), dan toont Bestanden "Drive opnieuw koppelen".
+- Alle Drive-aanroepen gaan rechtstreeks via `fetch` naar de Drive REST API v3
+  (`lib/drive/kern.ts`), zonder extra dependency.
+
+**Mappenstructuur** (wordt vanzelf aangemaakt; een map die al bestaat wordt hergebruikt):
+
+```
+Studio Levant/
+  Boekhouding/
+    Facturen/<jaar>/       automatisch: elke nieuwe of bijgewerkte factuur (PDF, naam = download)
+    Prijsopgaven/<jaar>/   automatisch: elke prijsopgave
+    Bonnetjes/<jaar>/      automatisch: elk geüpload bonnetje of inkoopfactuur ("<datum> <bestand>")
+  Klanten/
+    <klantnaam>/           blok "Bestanden" op de klantpagina
+      <projectnaam>/       blok "Bestanden" op de projectpagina (zonder klant: Klanten/Zonder klant/…)
+  Algemeen/
+```
+
+- Map-id's staan in `drive_mappen`, per rootmap. Een klant of project hernoemen (of een
+  project bij een andere klant zetten) hernoemt/verplaatst de map in Drive mee (na het
+  opslaan, best effort; anders bij het volgende gebruik). De map van een klant/project
+  ontstaat pas bij de eerste upload (of met "Map nu aanmaken").
+- **Automatisch naar Drive:** na het aanmaken of bewerken van een factuur (ook een
+  restfactuur) of prijsopgave, en na het uploaden van een bonnetje (ook "uit mail"), plant de
+  route met `next/server` `after()` een kopie, **ná** het antwoord. De factuurflow wacht er
+  nooit op en kan er niet door mislukken; zonder koppeling gebeurt er niets. De
+  facturenlogica (`lib/invoice`) is niet aangepast. `drive_kopieen` onthoudt per bron welk
+  PDF-pad er staat: een bewerkte factuur vervangt de inhoud van hetzelfde Drive-bestand.
+- **Uploaden** gaat niet via de server (Vercel laat maximaal 4,5 MB per verzoek door): de
+  server maakt bij Google een *resumable upload-sessie* voor precies dat ene bestand in die
+  map, en de browser zet het bestand daar rechtstreeks neer (met voortgang). Daarna legt de
+  server vast wie het uploadde (`drive_bestanden`: "door <naam>"). Max. 5 GB per bestand.
+- **Bekijken en downloaden** gaat via een proxy-route met de teamcheck
+  (`/api/drive/bestanden/<id>/inhoud`), zodat niemand een Google-account nodig heeft.
+  Inline alleen afbeeldingen en PDF (Google Docs/Sheets/Slides als PDF); al het andere,
+  ook SVG/HTML, als download. "Open in Google Drive" werkt alleen voor wie met het
+  Google-account van Studio Levant is ingelogd.
+- **Alleen binnen "Studio Levant":** elke route die een bestand- of map-id krijgt, loopt de
+  parents-keten na tot de rootmap; iets daarbuiten bestaat voor het dashboard niet. Zoeken
+  gebeurt met een Drive-zoekopdracht en toont alleen wat binnen de rootmap ligt. De vaste
+  mappen (root, Boekhouding, …) kun je niet hernoemen of verwijderen; verwijderen gaat
+  altijd naar de prullenbak van Drive (30 dagen terug te halen).
+- **Vóór 0024 of zonder env-vars** tonen Bestanden en de blokken een nette melding (welke
+  variabelen ontbreken, of welk SQL-bestand nog moet); facturen en bonnetjes werken gewoon.
+
 ## Mail per gebruiker (Account & mail)
 
 Mail is **persoonlijk**: elk teamlid ziet in Mail en in de inbox op het dashboard alleen zijn
@@ -656,6 +757,8 @@ sinds Klanten & projecten de nieuwe klantpagina (met een link naar de facturen v
 | `/boekhouding/bonnetjes` | Bonnetjes & inkoopfacturen (`?uitgave=<id>` opent het paneel, `?toevoegen=1`, `?tab=btw`) |
 | `/uitgaven` | Oud adres: tijdelijke redirect naar `/boekhouding/bonnetjes` (query gaat mee) |
 | `/api/uitgaven/…` | Bonnetjes-API, o.a. `GET ?q=&jaar=&maand=&soort=&door=` (503 `tabel_ontbreekt`/`opslag_ontbreekt` vóór de SQL) |
+| `/bestanden` | Bestanden (Google Drive; `?map=<id>` opent een map, `?drive=<uitkomst>` na het koppelen) |
+| `/api/drive/…` | Drive-API: `status`, `map` (GET `?id=`/`?klant=`/`?project=`, POST maakt een klant-/projectmap), `mappen`, `bestanden/<id>` (PATCH hernoemen, DELETE prullenbak), `bestanden/<id>/inhoud` (proxy), `upload` + `upload/klaar`, `zoeken?q=`, en voor de eigenaar `koppelen`, `callback`, `ontkoppelen`, `kopieer-bestaande` (503 `tabel_ontbreekt`/`niet_ingericht`, 409 `niet_gekoppeld`/`opnieuw_koppelen`) |
 | `/account` | Account & mail |
 | `/api/account/profiel`, `/api/account/mailbox` | Eigen profiel wijzigen; eigen mailbox ophalen/koppelen/ontkoppelen (nooit het wachtwoord terug) |
 | `/social` | Social-media-tool (`#p=<id>` opent een project, `#nieuw` een nieuwe post) |
@@ -685,6 +788,7 @@ node scripts/test-team.mjs                            # herkomst (CSRF), basis-U
 node scripts/test-account.mjs                         # mailkluis (AES-GCM), SSRF-controle, profiel/mailbox-invoer, zoeken
 node scripts/test-brand-guard-parity.mjs              # social-port gelijk aan het origineel
 node scripts/test-rls.mjs                             # RLS van 0021 op lokale Postgres (PGlite): per tabel/bucket wie wat mag
+node scripts/test-drive.mjs                           # Google Drive: paden, namen, state (CSRF), token-kluis, Drive-API (nagebootst)
 node scripts/genereer-sql-editor.mjs --controleer     # SQL-bestanden actueel
 node scripts/teamlid-toevoegen.mjs --help             # teambeheer (niet uitvoeren zonder reden)
 node --experimental-strip-types scripts/rooktest-render.mjs   # social-renderer (lokale Chrome nodig)
@@ -715,6 +819,9 @@ node --experimental-strip-types scripts/rooktest-render.mjs   # social-renderer 
   niet-teamleden; alleen het eigen profiel (niet het e-mailadres), nooit de eigen rol;
   `uitgaven`, `uitgaven-export` en `mail-tmp` alleen via de service-role; na deactiveren
   direct niets meer; een account verwijderen laat facturen staan (maker wordt leeg);
+- 0024 (Google Drive): `drive_koppeling` voor niemand behalve de service-role (ook niet voor
+  de eigenaar), `drive_mappen`/`drive_kopieen` alleen door de server te schrijven,
+  `drive_bestanden` alleen teamleden;
 - de controletabel slaat alarm bij een policy zonder teamcheck of een openbare bucket.
 
 ## Een module toevoegen
@@ -792,3 +899,7 @@ git push -u origin dashboard
   meeste browsers niet als voorbeeld getoond (Safari/iPhone levert bij "Foto maken" gewoon
   JPEG). Bedragen in andere valuta worden niet omgerekend. Het btw-overzicht is een indicatie.
 - **Social op de telefoon** is net als het origineel niet geoptimaliseerd voor kleine schermen.
+- **Bestanden:** bekijken/downloaden loopt via de server (gestreamd); heel grote downloads
+  kunnen tegen de tijdslimiet van een Vercel-functie (60 s) aanlopen. Uploaden heeft die
+  grens niet (rechtstreeks naar Google). Mappen slepen (een hele map uploaden) en bestanden
+  verplaatsen tussen mappen kan (nog) niet in het dashboard; doe dat in Google Drive zelf.

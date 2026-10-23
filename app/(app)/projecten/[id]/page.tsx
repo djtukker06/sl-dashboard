@@ -1,11 +1,14 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { vereisTeamlidPagina } from '@/lib/auth/team';
+import { vereisTeamlidPagina, type Teamlid } from '@/lib/auth/team';
 import { bronVan } from '@/lib/agenda/api';
 import { vandaag as vandaagNL } from '@/lib/agenda/datum';
 import { isUuid } from '@/lib/agenda/invoer';
 import { isNietIngericht, projectPagina } from '@/lib/crm/repo';
+import { driveStatus } from '@/lib/drive/koppeling';
+import type { DriveStatus } from '@/lib/drive/types';
+import { BestandenBlok } from '@/components/bestanden/BestandenBlok';
 import { ModuleKop } from '@/components/shell/ModuleKop';
 import { CrmNietIngericht } from '@/components/crm/CrmKop';
 import { CrmProviders } from '@/components/crm/CrmProviders';
@@ -18,6 +21,15 @@ import { TakenBlok } from '@/components/crm/TakenBlok';
 export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'Project · Studio Levant' };
 
+async function bestandenStatus(lid: Teamlid): Promise<DriveStatus | null> {
+  try {
+    return await driveStatus(lid);
+  } catch (e) {
+    console.error('[bestanden] status', (e as Error)?.message ?? e);
+    return null;
+  }
+}
+
 // Projectpagina: statusbalk (Voorbereiding → Bezig → Wachten op goedkeuring → Afgerond, met
 // sinds wanneer), gegevens (naam, klant, deadline, eigenaren; direct bewerkbaar),
 // alle taken van het project met voortgang (ook die van een ander: dit is de gedeelde
@@ -29,6 +41,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
   if (!isUuid(id)) notFound();
 
   let data;
+  const drive = bestandenStatus(lid);
   try {
     data = await projectPagina(bronVan(lid), id);
   } catch (e) {
@@ -38,6 +51,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
   if (!data) notFound();
   const { project, taken } = data;
   const vandaag = vandaagNL();
+  const driveSt = await drive;
 
   return (
     <CrmProviders>
@@ -84,6 +98,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
               <ProjectNotitie projectId={project.id} start={project.notitie} />
             </div>
           </section>
+          <BestandenBlok status={driveSt} start={{ project: project.id }} />
         </aside>
       </div>
     </CrmProviders>

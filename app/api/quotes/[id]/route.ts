@@ -7,6 +7,7 @@ import { parsePrijsopgaveInvoer, type FactuurInvoerBody } from '@/lib/invoice/in
 import { bewaarPrijsopgavePdf } from '@/lib/invoice/opslag';
 import { prijsopgaveKolommen } from '@/lib/invoice/prijsopgave';
 import { bedrijf } from '@/lib/config';
+import { naDrive } from '@/lib/drive/kopieen';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -75,6 +76,8 @@ export async function PUT(
 
   revalidatePath('/facturen/prijsopgaven');
   revalidatePath(`/facturen/prijsopgaven/${id}/bewerken`);
+  // De nieuwe PDF ook in Google Drive (ná het antwoord, best effort).
+  naDrive(lid, 'prijsopgave', id);
 
   return NextResponse.json({ id });
 }
