@@ -85,3 +85,39 @@ export function naarMailFout(e: unknown, context: 'imap' | 'smtp' = 'imap'): Mai
 
   return new MailFout(502, 'onbereikbaar', 'De mailserver gaf een onverwachte fout. Probeer het opnieuw.');
 }
+
+// ---------------------------------------------------------------------------------
+// Mailbox koppelen (welkomstflow, /mail, dashboard en /account): meldingen in gewone taal.
+// Nooit een stacktrace, servernaam-dump of technische code in de tekst.
+// ---------------------------------------------------------------------------------
+export const KOPPEL_MELDING = {
+  inloggen:
+    'Het e-mailadres of wachtwoord klopt niet. Let op: dit is het wachtwoord van je mailbox, niet van het dashboard.',
+  appWachtwoord: {
+    gmail: 'Gmail vraagt hiervoor een app-wachtwoord (Google-account → Beveiliging → App-wachtwoorden).',
+    icloud: 'iCloud vraagt hiervoor een app-specifiek wachtwoord (Apple ID → Inloggen en beveiliging → App-specifieke wachtwoorden).'
+  },
+  onbekend:
+    'We herkennen je mailprovider niet. Vul hieronder de servergegevens in; die staan in de hulppagina van je provider.',
+  microsoft: 'Outlook en Hotmail laten koppelen met alleen een wachtwoord niet meer toe. Gebruik je @studio-levant.nl-adres.',
+  onbereikbaar: 'De mailserver reageert nu niet. Probeer het over een minuut opnieuw.',
+  verzenden: 'Ontvangen lukt, versturen niet. Controleer of verzenden (SMTP) aan staat bij je provider.',
+  teVaak: 'Te veel pogingen achter elkaar. Probeer het over 10 minuten opnieuw.'
+} as const;
+
+export type AppWachtwoordHint = keyof typeof KOPPEL_MELDING.appWachtwoord;
+
+/**
+ * Een fout tijdens het testen van een nieuwe koppeling als MailFout met een melding uit
+ * KOPPEL_MELDING. fase 'smtp' = IMAP (ontvangen) lukte al, alleen verzenden niet.
+ */
+export function koppelFout(e: unknown, fase: 'imap' | 'smtp', hint: AppWachtwoordHint | null = null): MailFout {
+  if (e instanceof MailFout && e.code !== 'inloggen_mislukt' && e.code !== 'onbereikbaar') return e;
+  if (fase === 'smtp') return new MailFout(400, 'verzenden_mislukt', KOPPEL_MELDING.verzenden);
+  const f = naarMailFout(e, 'imap');
+  if (f.code === 'inloggen_mislukt') {
+    const extra = hint ? ` ${KOPPEL_MELDING.appWachtwoord[hint]}` : '';
+    return new MailFout(400, 'inloggen_mislukt', KOPPEL_MELDING.inloggen + extra);
+  }
+  return new MailFout(504, 'onbereikbaar', KOPPEL_MELDING.onbereikbaar);
+}

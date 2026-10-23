@@ -42,6 +42,13 @@
 //    - README: aanmelden uit in Supabase, teamlid-scripts, rollen, controletabel, test-rls;
 //      .env.local.example: MAIL_ENCRYPTION_KEY met uitleg, nergens een ingevulde waarde.
 // Live (stap 4): /, /boekhouding en /account geven precies 307 naar /login.
+// 7. Statisch, team van twee — stap 1 (welkomstflow en mailbox met één knop):
+//    - /welkom controleert het lidmaatschap, de layout stuurt alleen bij welkomKlaar=false door;
+//    - /api/account/welkom via teamlidRoute, alleen het eigen profiel;
+//    - POST /api/account/mailbox leidt servers af (providers + MX), houdt SSRF-controle,
+//      rate limit en versleuteling; één koppelcomponent op welkom, /mail, dashboard en /account;
+//    - migratie 0022: alleen kolom + grant voor welkom_klaar_op (idempotent).
+// Live: /welkom zonder sessie -> 307 naar /login.
 //
 // Gebruik:  node scripts/rooktest-shell.mjs [http://localhost:3107]
 //           node scripts/rooktest-shell.mjs --alleen-statisch
@@ -293,6 +300,37 @@ console.log("Afronding (SQL, documentatie, RLS-test)");
   check(!/^[A-Z_]+=\S/m.test(env), ".env.local.example: geen ingevulde waarden");
 }
 
+// ---------------------------------------------------------------------------------
+// 7. Team van twee, stap 1: welkomstflow en mailbox met één knop (statisch)
+// ---------------------------------------------------------------------------------
+console.log("Welkomstflow en mailbox met één knop");
+{
+  const welkom = lees("app/welkom/page.tsx");
+  check(/vereisTeamlidPagina\('\/welkom'\)/.test(welkom), "/welkom begint met vereisTeamlidPagina()");
+  check(/if \(lid\.welkomKlaar\) redirect\('\/'\)/.test(welkom), "/welkom stuurt door als de flow al klaar is");
+  const layout = lees("app/(app)/layout.tsx");
+  check(/if \(!lid\.welkomKlaar\) redirect\('\/welkom'\)/.test(layout), "layout stuurt een nieuw teamlid naar /welkom");
+  const team = lees("lib/auth/team.ts");
+  check(/welkomKlaar: true,\s*overgang: true/.test(team) && /welkomKlaar: welkomKlaarVan\(/.test(team), "team.ts: welkomKlaar (overgang = klaar)");
+  const api = lees("app/api/account/welkom/route.ts");
+  check(/teamlidRoute\(/.test(api) && /\.eq\('id', lid\.userId\)/.test(api) && !/createServiceRoleClient/.test(api), "/api/account/welkom: teamcheck, eigen profiel, geen service-role");
+  const mb = lees("app/api/account/mailbox/route.ts");
+  check(/instellingenVoor\(invoer\.email, zoekMx\)/.test(mb), "mailbox: servers afgeleid uit het adres");
+  check(/provider_microsoft/.test(mb) && /provider_onbekend/.test(mb), "mailbox: Outlook en onbekende provider netjes geweigerd");
+  check(/magProberen\(lid\.userId\)/.test(mb) && /testMailbox\(invoer, hint\)/.test(mb) && /versleutel\(invoer\.wachtwoord, lid\.userId\)/.test(mb), "mailbox: rate limit, test en versleuteling blijven");
+  const koppel = lees("lib/mail/koppelen.ts");
+  check(/isPubliekAdres/.test(koppel) && /servername: m\.imapHost/.test(koppel), "koppelen: SSRF-controle ongewijzigd (openbaar IP + SNI)");
+  check(!/from '\.\/|from "@\//.test(lees("lib/mail/providers.ts")), "providers.ts zonder imports (ook in de browser)");
+  check(/import 'server-only'/.test(lees("lib/mail/mx.ts")), "MX-lookup alleen op de server");
+  for (const f of ["components/welkom/WelkomFlow.tsx", "components/mail/NietGekoppeld.tsx", "components/account/AccountApp.tsx"]) {
+    check(/MailboxSnelKoppelen/.test(lees(f)), `${f} gebruikt MailboxSnelKoppelen`);
+  }
+  check(!/wachtwoord_enc|MAIL_ENCRYPTION_KEY/.test(lees("components/account/MailboxSnelKoppelen.tsx")), "koppelcomponent kent geen versleuteld wachtwoord of sleutel");
+  const m22 = lees("supabase/migrations/0022_team_crm.sql");
+  check(/add column if not exists welkom_klaar_op/.test(m22) && /grant update \(welkom_klaar_op\) on public\.profiles to authenticated/.test(m22), "0022: kolom en grant voor welkom_klaar_op");
+  check(!/grant update on public\.profiles|grant all/i.test(m22), "0022: geen brede grant op profiles");
+}
+
 if (ALLEEN_STATISCH) eindig();
 
 // ---------------------------------------------------------------------------------
@@ -420,7 +458,7 @@ for (const url of ["/login", "/geen-toegang", "/api/taken"]) {
 }
 
 console.log("Kernpagina's: precies 307 naar /login");
-for (const url of ["/", "/boekhouding", "/boekhouding/bonnetjes", "/account", "/facturen", "/agenda/projecten"]) {
+for (const url of ["/", "/boekhouding", "/boekhouding/bonnetjes", "/account", "/facturen", "/agenda/projecten", "/welkom"]) {
   const res = await vraag(url);
   check(res.status === 307 && naarLogin(res), url, `status ${res.status} ${res.headers.get("location") || ""}`);
 }

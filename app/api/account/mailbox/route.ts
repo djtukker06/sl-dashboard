@@ -4,7 +4,9 @@ import { createServiceRoleClient } from '@/lib/supabase/service-role';
 import { mailboxStatus } from '@/lib/account/mailbox';
 import { valideerMailbox } from '@/lib/account/types';
 import { eigenMailboxRij } from '@/lib/mail/config';
-import { MailFout } from '@/lib/mail/fout';
+import { KOPPEL_MELDING, MailFout, type AppWachtwoordHint } from '@/lib/mail/fout';
+import { instellingenVoor, vasteInstellingen } from '@/lib/mail/providers';
+import { zoekMx } from '@/lib/mail/mx';
 import { kluisBeschikbaar, ontsleutel, SLEUTEL_VERSIE, versleutel } from '@/lib/mail/kluis';
 import { magProberen, testMailbox } from '@/lib/mail/koppelen';
 
@@ -15,7 +17,11 @@ export const maxDuration = 60;
 // Je EIGEN mailbox (Account & mail). Elke handeling gaat alleen over het record van de
 // ingelogde gebruiker (user_id = eigen sessie-id); het wachtwoord gaat er alleen in, nooit uit.
 //   GET     → MailboxStatus (zonder wachtwoord)
-//   POST    { email, wachtwoord?, imapHost, imapPort, smtpHost, smtpPort, fromName, handtekening }
+//   POST    { email, wachtwoord }  (koppelen met één knop: servers en poorten bepaalt de
+//           server uit het adres, lib/mail/providers.ts; Outlook/onbekend → 400 met code)
+//           of { email, wachtwoord?, imapHost, imapPort, smtpHost, smtpPort } (zelf ingevuld)
+//           plus optioneel fromName en handtekening (weggelaten = bewaarde waarde, anders
+//           afzendernaam = je profielnaam en geen handtekening)
 //           → eerst echt inloggen (IMAP + SMTP), dan versleuteld opslaan → MailboxStatus
 //           Leeg wachtwoord = het opgeslagen wachtwoord houden, ALLEEN als adres, servers en
 //           poorten ongewijzigd zijn (anders 400 'wachtwoord_nodig').
@@ -58,12 +64,34 @@ export const POST = teamlidRoute(
     } catch {
       body = {};
     }
-    const v = valideerMailbox(body);
+    const o = (body && typeof body === 'object' ? body : {}) as Record<string, unknown>;
+    const v = valideerMailbox(o);
     if (!v.ok) return fout(400, v.fout);
     const invoer = v.waarde;
 
+    // Servers zelf ingevuld, of (één knop) afleiden uit het adres.
+    const gevuld = (x: unknown) => typeof x === 'string' && x.trim() !== '';
+    const handmatig = gevuld(o.imapHost) || gevuld(o.smtpHost);
+    const vast = vasteInstellingen(invoer.email);
+    let hint: AppWachtwoordHint | null =
+      vast.soort === 'bekend' && vast.appWachtwoord && vast.provider !== 'privateemail' ? vast.provider : null;
+    if (!handmatig) {
+      const p = await instellingenVoor(invoer.email, zoekMx);
+      if (p.soort === 'microsoft') return fout(400, KOPPEL_MELDING.microsoft, 'provider_microsoft');
+      if (p.soort === 'onbekend') return fout(400, KOPPEL_MELDING.onbekend, 'provider_onbekend');
+      invoer.imapHost = p.imapHost;
+      invoer.imapPort = p.imapPort;
+      invoer.smtpHost = p.smtpHost;
+      invoer.smtpPort = p.smtpPort;
+      hint = p.appWachtwoord && p.provider !== 'privateemail' ? p.provider : null;
+    }
+
     const { rij, ingericht } = await eigenMailboxRij(lid);
     if (!ingericht) return fout(409, NIET_INGERICHT, 'niet_ingericht');
+    // Afzendernaam en handtekening: niet meegestuurd (welkomstflow, snelle koppeling) =
+    // de bewaarde waarde houden; bij een nieuwe koppeling je profielnaam en geen handtekening.
+    if (!('fromName' in o)) invoer.fromName = rij?.from_name || lid.profiel.naam;
+    if (!('handtekening' in o)) invoer.handtekening = rij?.handtekening ?? '';
     if (!invoer.wachtwoord) {
       // Wachtwoord leeg gelaten: het opgeslagen wachtwoord alleen hergebruiken als de HELE
       // verbinding (adres, servers en poorten) gelijk blijft. Anders zou een gestolen sessie
@@ -81,10 +109,10 @@ export const POST = teamlidRoute(
     }
 
     if (!magProberen(lid.userId)) {
-      return fout(429, 'Te veel pogingen. Probeer het over tien minuten opnieuw.', 'te_vaak');
+      return fout(429, KOPPEL_MELDING.teVaak, 'te_vaak');
     }
     try {
-      await testMailbox(invoer);
+      await testMailbox(invoer, hint);
     } catch (e) {
       if (e instanceof MailFout) return fout(e.status >= 500 ? 502 : e.status, e.message, e.code);
       throw e;

@@ -217,6 +217,14 @@ aangemaakt, bevestigd en laatst ingelogd. Opties: `--initialen`, `--kleur #rrggb
 `--rol lid|eigenaar` (eigenaar geeft géén toegang tot de standaard-mailbox), `--site https://…`,
 `--bestaand-account-vertrouwen`, `--dry-run`, `--help`.
 
+**Eerste login: de welkomstflow** (migratie `0022_team_crm.sql`). Na het kiezen van een
+wachtwoord komt een nieuw teamlid op `/welkom`: 1. naam, initialen en kleur bevestigen (al
+ingevuld door het script), 2. inbox koppelen met alleen e-mailadres + wachtwoord (*Later doen*
+kan), 3. klaar. Daarna verschijnt de flow nooit meer (`profiles.welkom_klaar_op`). Bestaande
+eigenaren slaan hem over; zolang 0022 niet is uitgevoerd slaat iedereen hem over. Facturen,
+prijsopgaven, klanten, bonnetjes en social posts zijn al gedeeld; daarvoor hoeft niemand iets
+in te stellen.
+
 **Teamlid de toegang ontnemen:**
 
 ```bash
@@ -377,15 +385,20 @@ bonnetjes*; in mail: **Bij bonnetjes** naast een PDF- of fotobijlage.
 Mail is **persoonlijk**: elk teamlid ziet in Mail en in de inbox op het dashboard alleen zijn
 eigen mailbox. Welke mailbox de app voor je gebruikt (`lib/mail/config.ts`):
 
-1. **Je eigen mailbox**, gekoppeld via **Account & mail** (`/account`, ook in het accountmenu
-   onder je avatar). Vul e-mailadres, wachtwoord, afzendernaam en eventueel een handtekening
-   in (servers en poorten staan onder *Geavanceerd*; standaard Private Email). **Verbinding
-   testen en opslaan** logt eerst echt in met IMAP en SMTP; pas als dat lukt wordt het
-   wachtwoord opgeslagen. *Ontkoppelen* verwijdert het record (en het wachtwoord).
+1. **Je eigen mailbox**, gekoppeld met één knop: alleen e-mailadres + wachtwoord, in de
+   welkomstflow, op `/mail`, in de inbox-kaart van het dashboard of op **Account & mail**
+   (`/account`). De server kiest servers en poorten uit het adres (`lib/mail/providers.ts`):
+   `@studio-levant.nl` → Private Email; Gmail en iCloud (met app-wachtwoord); Outlook/Hotmail
+   wordt netjes geweigerd (alleen wachtwoord kan daar niet meer); een onbekend domein met een
+   MX bij `privateemail.com` → Private Email; anders vul je zelf de servers in (*Andere
+   provider?*). **Koppelen** logt eerst echt in met IMAP en SMTP; pas als dat lukt wordt het
+   wachtwoord opgeslagen. Afzendernaam (standaard je naam) en handtekening pas je aan op
+   `/account`. *Ontkoppelen* verwijdert het record (en het wachtwoord).
 2. Anders, voor precies één account: hetzelfde adres als `MAIL_USER`, anders het account uit
    `MAIL_ENV_USER_ID`, anders de **oudste** actieve eigenaar (Daniel): de standaard-mailbox
    uit de omgevingsvariabelen (zie hieronder). Een tweede eigenaar krijgt hem nooit.
-3. Anders: "niet gekoppeld", met een link naar `/account`.
+3. Anders: "niet gekoppeld", met meteen het koppelformulier. Een gewoon teamlid (`lid`) valt
+   nooit terug op de standaard-mailbox (getest in `scripts/test-account.mjs`).
 
 **Zo is het beveiligd.**
 - Het wachtwoord staat versleuteld in `user_mailboxes.wachtwoord_enc` (migratie 0021):

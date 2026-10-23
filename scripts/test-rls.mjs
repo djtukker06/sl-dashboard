@@ -5,6 +5,8 @@
 //
 // Scenario A  0001–0020 → data → UITVOEREN_0021_TEAM.sql (2x) → UITVOEREN_IN_SQL_EDITOR.sql
 //             → UITVOEREN_0020_UITGAVEN.sql: elke controleregel "ok", niets heropend.
+//             → 0022_team_crm.sql (2x): welkom_klaar_op gezet voor de eigenaar, niet voor
+//               een lid; alleen je eigen welkom-vlag te zetten.
 //             Daarna de toegangsmatrix:
 //               - niet-teamleden (ingelogd zonder lidmaatschap, onbevestigd, gedeactiveerd,
 //                 en anon zonder sessie): op ELKE tabel in public en in ELKE bucket niets
@@ -284,6 +286,8 @@ async function scenarioA() {
   await db.query("insert into public.profiles (id, naam, initialen, email) values ($1, 'Mark', 'M', 'mark@studio-levant.nl')", [U.mark]);
   await db.query("insert into public.team_members (user_id, actief, rol) values ($1, true, 'lid')", [U.mark]);
 
+  await welkom0022(db);
+
   await zaaiNa0021(db);
   await matrix(db);
 
@@ -490,6 +494,34 @@ async function matrix(db) {
   await db.query("delete from auth.users where id = $1", [U.daniel]);
   const inv = (await db.query("select count(*)::int as n, count(created_by)::int as m from public.invoices")).rows[0];
   check(inv.n === 1 && inv.m === 0, "gebruiker verwijderen: factuur blijft, maker wordt leeg", JSON.stringify(inv));
+}
+
+// ---------------------------------------------------------------------------------
+// 0022: welkomstflow (stap 1)
+// ---------------------------------------------------------------------------------
+async function welkom0022(db) {
+  const sql = lees("supabase/migrations/0022_team_crm.sql");
+  await voerUit(db, sql, "0022_team_crm.sql");
+  await voerUit(db, sql, "0022_team_crm.sql (2x)");
+  const vlag = Object.fromEntries(
+    (await db.query("select id, welkom_klaar_op is not null as klaar from public.profiles")).rows.map((r) => [r.id, r.klaar]),
+  );
+  check(vlag[U.daniel] === true, "0022: eigenaar (Daniel) slaat de welkomstflow over");
+  check(vlag[U.mark] === false, "0022: lid (al uitgenodigd vóór 0022) krijgt de welkomstflow");
+  let r = await als(db, "mark", "update public.profiles set welkom_klaar_op = now() where id = $1", [U.mark]);
+  check(r.ok && r.n === 1, "0022: lid zet zijn eigen welkom-vlag", uitleg(r));
+  r = await als(db, "mark", "update public.profiles set welkom_klaar_op = null where id = $1", [U.daniel]);
+  check(nietsGeraakt(r), "0022: welkom-vlag van een ander niet te wijzigen", uitleg(r));
+  r = await als(db, "mark", "update public.profiles set email = 'x@y.nl', welkom_klaar_op = now() where id = $1", [U.mark]);
+  check(geweigerd(r), "0022: andere kolommen (e-mail) blijven dicht", uitleg(r));
+  r = await als(db, "indringer", "update public.profiles set welkom_klaar_op = now()");
+  check(nietsGeraakt(r), "0022: niet-teamlid zet geen enkele welkom-vlag", uitleg(r));
+  r = await als(db, "anon", "update public.profiles set welkom_klaar_op = now()");
+  check(nietsGeraakt(r), "0022: anon zet geen enkele welkom-vlag", uitleg(r));
+  // Tweede keer uitvoeren zet een lid niet alsnog op klaar (en laat bestaande waarden staan).
+  await voerUit(db, sql, "0022_team_crm.sql (3x)");
+  const mark = (await db.query("select welkom_klaar_op from public.profiles where id = $1", [U.mark])).rows[0];
+  check(mark.welkom_klaar_op === null, "0022: opnieuw uitvoeren raakt de vlag van een lid niet");
 }
 
 // ---------------------------------------------------------------------------------

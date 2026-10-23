@@ -1,29 +1,39 @@
 import Link from 'next/link';
 import { zetNieuwWachtwoord } from '@/app/actions/wachtwoord';
+import { huidigTeamlid } from '@/lib/auth/team';
 
 // Alleen bereikbaar met een sessie (proxy.ts): na de herstellink uit de mail, of
-// ingelogd vanuit het dashboard.
+// ingelogd vanuit het dashboard. Een nieuw teamlid (welkomstflow nog niet doorlopen, komt
+// hier via de uitnodigingsmail) krijgt een welkomsttekst, geen "Annuleren" (zonder
+// wachtwoord kan hij later niet inloggen) en gaat daarna door naar /welkom.
 export default async function NieuwWachtwoordPage({
   searchParams
 }: {
   searchParams: Promise<{ error?: string; gelukt?: string }>;
 }) {
   const { error, gelukt } = await searchParams;
+  const status = await huidigTeamlid();
+  const nieuw = status.soort === 'lid' && !status.lid.welkomKlaar;
 
   return (
     <div className="login-wrap">
       <div className="login-card">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img className="login-banner" src="/brand/banner-licht.png" alt="Studio Levant" width={800} height={297} />
-        <h1>Nieuw wachtwoord</h1>
+        <h1>{nieuw ? 'Welkom bij Studio Levant' : 'Nieuw wachtwoord'}</h1>
+        {nieuw && !gelukt && (
+          <p className="section-hint" style={{ marginBottom: 20 }}>
+            Kies een wachtwoord om voortaan mee in te loggen.
+          </p>
+        )}
         {error && <div className="foutmelding">{error}</div>}
         {gelukt ? (
           <>
             <div className="geluktmelding">
               Je nieuwe wachtwoord is opgeslagen. Gebruik het voortaan om in te loggen.
             </div>
-            <Link href="/" className="btn-primair">
-              Naar het dashboard
+            <Link href={nieuw ? '/welkom' : '/'} className="btn-primair">
+              {nieuw ? 'Verder' : 'Naar het dashboard'}
             </Link>
           </>
         ) : (
@@ -41,7 +51,7 @@ export default async function NieuwWachtwoordPage({
             </button>
           </form>
         )}
-        {!gelukt && (
+        {!gelukt && !nieuw && (
           <Link href="/" className="login-link">
             Annuleren
           </Link>

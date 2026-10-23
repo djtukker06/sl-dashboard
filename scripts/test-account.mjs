@@ -3,7 +3,9 @@
 //     andere sleutel of één veranderd teken laat ontsleutelen falen; elke keer een nieuwe IV;
 //   - lib/mail/netwerk.ts: alleen openbare adressen (geen loopback, privé, link-local, …);
 //   - lib/account/types.ts: profiel- en mailbox-invoer (geen wachtwoord in de status-vorm);
-//   - lib/uitgaven/model.ts: zoekwoorden (tekst + bedrag), periode uit jaar/maand, soort.
+//   - lib/uitgaven/model.ts: zoekwoorden (tekst + bedrag), periode uit jaar/maand, soort;
+//   - welkomstflow en mailbox met één knop (0022): providers uit het adres (vaste lijst + MX),
+//     meldingen in gewone taal, rate limit, de env-mailbox nooit voor een lid, welkom-vlag.
 //
 // Gebruik:  node scripts/test-account.mjs
 import path from "node:path";
@@ -16,8 +18,12 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const laad = (...p) => import(pathToFileURL(path.join(ROOT, ...p)).href);
 
 // TS laden vereist type-stripping (Node >= 22.6). Zo nodig opnieuw starten met de vlag.
-let kluis, netwerk, account, model;
+let kluis, netwerk, account, model, providers, fout, pogingen, envkeuze;
 try {
+  providers = await laad("lib", "mail", "providers.ts");
+  fout = await laad("lib", "mail", "fout.ts");
+  pogingen = await laad("lib", "mail", "pogingen.ts");
+  envkeuze = await laad("lib", "mail", "envkeuze.ts");
   kluis = await laad("lib", "mail", "kluis-kern.ts");
   netwerk = await laad("lib", "mail", "netwerk.ts");
   account = await laad("lib", "account", "types.ts");
@@ -167,6 +173,118 @@ test("soort afleiden uit bestanden", () => {
   assert.equal(model.afgeleideSoort([{ type: "image/jpeg" }]), "bonnetje");
   assert.equal(model.afgeleideSoort([]), null);
   assert.ok(model.isSoort("bonnetje") && !model.isSoort("factuur"));
+});
+
+// ---------- welkomstflow en mailbox met één knop ----------
+test("providers: vaste lijst", () => {
+  const sl = providers.vasteInstellingen("Bram@Studio-Levant.nl");
+  assert.equal(sl.soort, "bekend");
+  assert.deepEqual([sl.imapHost, sl.imapPort, sl.smtpHost, sl.smtpPort], ["mail.privateemail.com", 993, "mail.privateemail.com", 465]);
+  assert.equal(sl.appWachtwoord, false);
+  const g = providers.vasteInstellingen("iemand@gmail.com");
+  assert.deepEqual([g.imapHost, g.smtpHost, g.smtpPort, g.appWachtwoord], ["imap.gmail.com", "smtp.gmail.com", 465, true]);
+  assert.equal(providers.vasteInstellingen("x@googlemail.com").provider, "gmail");
+  const i = providers.vasteInstellingen("x@icloud.com");
+  assert.deepEqual([i.imapHost, i.smtpHost, i.smtpPort, i.appWachtwoord], ["imap.mail.me.com", "smtp.mail.me.com", 587, true]);
+  assert.equal(providers.vasteInstellingen("x@me.com").provider, "icloud");
+  for (const a of ["x@outlook.com", "x@hotmail.com", "x@live.nl", "x@hotmail.nl", "x@outlook.be"]) {
+    assert.equal(providers.vasteInstellingen(a).soort, "microsoft", a);
+  }
+  assert.equal(providers.vasteInstellingen("x@klant.nl").soort, "onbekend");
+  assert.equal(providers.vasteInstellingen("geen-adres").soort, "onbekend");
+});
+await (async () => {
+  try {
+    let gevraagd = [];
+    const mx = (hosts) => async (d) => {
+      gevraagd.push(d);
+      return hosts;
+    };
+    // Bekend domein: geen MX-lookup.
+    let r = await providers.instellingenVoor("bram@studio-levant.nl", mx([]));
+    assert.equal(r.provider, "privateemail");
+    assert.deepEqual(gevraagd, []);
+    // Onbekend domein met Private Email-MX.
+    r = await providers.instellingenVoor("info@klant.nl", mx(["mx1.privateemail.com", "mx2.privateemail.com."]));
+    assert.equal(r.soort, "bekend");
+    assert.equal(r.imapHost, "mail.privateemail.com");
+    assert.deepEqual(gevraagd, ["klant.nl"]);
+    // Andere MX (of geen): onbekend; nooit de MX-host zelf als server.
+    r = await providers.instellingenVoor("info@klant.nl", mx(["aspmx.l.google.com"]));
+    assert.equal(r.soort, "onbekend");
+    r = await providers.instellingenVoor("info@klant.nl", mx(["evilprivateemail.com", "privateemail.com.evil.nl"]));
+    assert.equal(r.soort, "onbekend");
+    r = await providers.instellingenVoor("info@klant.nl", mx([]));
+    assert.equal(r.soort, "onbekend");
+    // Ongeldig domein: geen lookup.
+    gevraagd = [];
+    r = await providers.instellingenVoor("x@localhost", mx(["mx.privateemail.com"]));
+    assert.equal(r.soort, "onbekend");
+    assert.deepEqual(gevraagd, []);
+    r = await providers.instellingenVoor("x@outlook.com", mx(["mx.privateemail.com"]));
+    assert.equal(r.soort, "microsoft");
+    goed++;
+  } catch (e) {
+    console.log(`  FOUT  providers: MX\n        ${e.message.split("\n")[0]}`);
+    process.exitCode = 1;
+  }
+})();
+
+const SCHOON = (t) => !/(error|exception|stack|\bat\s|\.ts:|EAUTH|ETIMEDOUT|ECONN|undefined|null)/i.test(t);
+test("koppelfouten: meldingen uit de tabel, zonder technische details", () => {
+  const authImap = Object.assign(new Error("Command failed"), { authenticationFailed: true, responseText: "AUTHENTICATIONFAILED Invalid credentials" });
+  let f = fout.koppelFout(authImap, "imap");
+  assert.equal(f.code, "inloggen_mislukt");
+  assert.equal(f.message, fout.KOPPEL_MELDING.inloggen);
+  assert.match(f.message, /wachtwoord van je mailbox, niet van het dashboard/);
+  f = fout.koppelFout(authImap, "imap", "gmail");
+  assert.match(f.message, /app-wachtwoord/);
+  assert.ok(f.message.startsWith(fout.KOPPEL_MELDING.inloggen));
+  f = fout.koppelFout(Object.assign(new Error("connect ETIMEDOUT 1.2.3.4:993"), { code: "ETIMEDOUT" }), "imap");
+  assert.equal(f.code, "onbereikbaar");
+  assert.equal(f.message, fout.KOPPEL_MELDING.onbereikbaar);
+  f = fout.koppelFout(Object.assign(new Error("Invalid login: 535"), { code: "EAUTH", responseCode: 535 }), "smtp");
+  assert.equal(f.code, "verzenden_mislukt");
+  assert.equal(f.message, fout.KOPPEL_MELDING.verzenden);
+  f = fout.koppelFout(new Error("rare fout met stack"), "imap");
+  assert.equal(f.message, fout.KOPPEL_MELDING.onbereikbaar);
+  for (const m of [
+    fout.KOPPEL_MELDING.inloggen, fout.KOPPEL_MELDING.onbekend, fout.KOPPEL_MELDING.microsoft, fout.KOPPEL_MELDING.onbereikbaar,
+    fout.KOPPEL_MELDING.verzenden, fout.KOPPEL_MELDING.teVaak, fout.KOPPEL_MELDING.appWachtwoord.gmail,
+  ]) {
+    assert.ok(SCHOON(m), m);
+  }
+  assert.match(fout.KOPPEL_MELDING.teVaak, /10 minuten/);
+  assert.match(fout.KOPPEL_MELDING.microsoft, /Outlook en Hotmail/);
+  assert.match(fout.KOPPEL_MELDING.onbekend, /servergegevens/);
+});
+test("rate limit: 5 pogingen per gebruiker, daarna geweigerd", () => {
+  const a = "aaaaaaaa-1111-4111-8111-" + Date.now().toString().padStart(12, "0").slice(-12);
+  for (let i = 0; i < 5; i++) assert.equal(pogingen.magProberen(a), true, `poging ${i + 1}`);
+  assert.equal(pogingen.magProberen(a), false);
+  assert.equal(pogingen.magProberen(a), false);
+  assert.equal(pogingen.magProberen(a + "-ander"), true);
+});
+test("env-mailbox: een lid krijgt hem nooit", () => {
+  const env = { mailUser: "info@studio-levant.nl", vastId: "" };
+  const bram = { userId: mark, email: "bram@studio-levant.nl", rol: "lid", overgang: false };
+  assert.equal(envkeuze.envMailboxKeuze(env, bram), "nee");
+  assert.equal(envkeuze.envMailboxKeuze({ mailUser: "info@studio-levant.nl", vastId: daniel }, bram), "nee");
+  assert.equal(envkeuze.envMailboxKeuze({ mailUser: "", vastId: "" }, bram), "nee");
+  // Alleen als het echt zijn adres of zijn id is.
+  assert.equal(envkeuze.envMailboxKeuze({ mailUser: "Bram@Studio-Levant.nl" }, bram), "ja");
+  assert.equal(envkeuze.envMailboxKeuze({ mailUser: "info@studio-levant.nl", vastId: mark }, bram), "ja");
+  // De eigenaar: via MAIL_ENV_USER_ID of als oudste eigenaar (route controleert).
+  const dan = { userId: daniel, email: "daniel@studio-levant.nl", rol: "eigenaar", overgang: false };
+  assert.equal(envkeuze.envMailboxKeuze(env, dan), "oudste_eigenaar");
+  assert.equal(envkeuze.envMailboxKeuze({ mailUser: "info@studio-levant.nl", vastId: daniel }, dan), "ja");
+  assert.equal(envkeuze.envMailboxKeuze({ mailUser: "info@studio-levant.nl", vastId: mark }, dan), "nee");
+});
+test("welkom-vlag: alleen een profiel met lege kolom gaat naar /welkom", () => {
+  assert.equal(account.welkomKlaarVan({ naam: "Bram", welkom_klaar_op: null }), false);
+  assert.equal(account.welkomKlaarVan({ naam: "Bram", welkom_klaar_op: "2026-10-23T10:00:00Z" }), true);
+  assert.equal(account.welkomKlaarVan({ naam: "Daniel" }), true); // 0022 nog niet uitgevoerd
+  assert.equal(account.welkomKlaarVan(null), true); // geen profiel: geen lus
 });
 
 console.log(`${goed} tests geslaagd${process.exitCode ? ", met fouten" : ""}`);

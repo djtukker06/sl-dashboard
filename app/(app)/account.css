@@ -110,3 +110,14 @@
 @media (max-width: 560px) {
   .ac-mailform .ag-velden-2 { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* ---------- mailbox koppelen met één knop (MailboxSnelKoppelen) ---------- */
+.ac-snel { width: 100%; }
+.ac-snel-uitleg { margin: -6px 0 0; font-size: 12.5px; line-height: 1.5; color: var(--sl-muted); }
+.ml-setup .ac-snel { max-width: 560px; }
+/* In de smalle dashboardkaart en op een telefoon de velden onder elkaar. */
+.db-melding .ac-snel-velden { grid-template-columns: 1fr; }
+.db-melding .ac-snel { gap: 12px; margin-top: 4px; }
+@media (max-width: 640px) {
+  .ac-snel-velden { grid-template-columns: 1fr; }
+}

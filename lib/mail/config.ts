@@ -3,6 +3,7 @@ import type { Teamlid } from '@/lib/auth/team';
 import { createServiceRoleClient } from '@/lib/supabase/service-role';
 import { tabelOntbreekt } from '@/lib/db/ontbreekt';
 import { ontsleutel } from './kluis';
+import { envMailboxKeuze } from './envkeuze';
 
 // Instellingen van de mailkoppeling (Namecheap Private Email). Alleen env-var-namen staan
 // in de code; de waarden komen uit .env.local / Vercel. Zonder mailbox is mail "nog niet
@@ -84,13 +85,8 @@ async function oudsteEigenaar(lid: Pick<Teamlid, 'sb'>): Promise<string | null> 
  *   3. anders de oudste actieve eigenaar (niet zomaar elke eigenaar).
  */
 export async function magEnvMailbox(lid: Pick<Teamlid, 'userId' | 'email' | 'rol' | 'overgang' | 'sb'>): Promise<boolean> {
-  const envUser = process.env.MAIL_USER?.trim().toLowerCase();
-  if (!envUser) return false;
-  if (lid.overgang) return true;
-  if (lid.email.trim().toLowerCase() === envUser) return true;
-  const vast = process.env.MAIL_ENV_USER_ID?.trim().toLowerCase();
-  if (vast) return lid.userId.toLowerCase() === vast;
-  if (lid.rol !== 'eigenaar') return false;
+  const keuze = envMailboxKeuze({ mailUser: process.env.MAIL_USER, vastId: process.env.MAIL_ENV_USER_ID }, lid);
+  if (keuze !== 'oudste_eigenaar') return keuze === 'ja';
   return (await oudsteEigenaar(lid)) === lid.userId;
 }
 

@@ -36,6 +36,16 @@ export function initialenUit(naam: string): string {
   return ((delen[0]?.[0] ?? '') + (delen.length > 1 ? delen[delen.length - 1][0] : '')).toUpperCase();
 }
 
+/**
+ * Is de welkomstflow (/welkom) klaar? Alleen een bestaand profiel MET de kolom
+ * welkom_klaar_op (migratie 0022) en waarde null betekent "nog niet". Zonder profiel of
+ * zonder kolom nooit doorsturen, zodat niemand in een lus naar /welkom belandt.
+ */
+export function welkomKlaarVan(rij: { welkom_klaar_op?: string | null } | null | undefined): boolean {
+  if (!rij || typeof rij !== 'object' || !('welkom_klaar_op' in rij)) return true;
+  return rij.welkom_klaar_op !== null && rij.welkom_klaar_op !== undefined;
+}
+
 export const IMAP_POORTEN = [993, 143] as const;
 export const SMTP_POORTEN = [465, 587] as const;
 export const STANDAARD_MAILSERVER = 'mail.privateemail.com';

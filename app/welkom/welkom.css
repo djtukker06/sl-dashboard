@@ -1,0 +1,56 @@
+/* ==========================================================
+   Studio Levant — welkomstflow (wk-). Tokens: public/shell/shell.css.
+   Velden en knoppen: agenda.css (ag-), app.css (db-), account.css (ac-).
+   ========================================================== */
+.wk {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: 32px 16px;
+  background: var(--sl-bg);
+  color: var(--sl-text);
+  font-family: var(--sl-font);
+}
+.wk-kaart {
+  width: 100%;
+  max-width: 560px;
+  display: grid;
+  gap: 22px;
+  padding: 32px;
+  border: 1px solid var(--sl-line);
+  border-radius: 8px;
+  background: var(--sl-panel);
+}
+.wk-logo { display: block; width: 100%; max-width: 200px; height: auto; margin: -6px 0 0 -4px; }
+.wk-stappen { display: flex; gap: 18px; margin: 0; padding: 0; list-style: none; }
+.wk-stappen li {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--sl-mono);
+  font-size: 11px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--sl-faint);
+}
+.wk-stappen li.is-nu { color: var(--sl-text); }
+.wk-stappen li.is-klaar { color: var(--sl-muted); }
+.wk-stap-nr {
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  font-size: 11px;
+}
+.wk-stappen li.is-nu .wk-stap-nr { background: var(--sl-sand); border-color: var(--sl-sand); color: var(--sl-dark); }
+.wk-blok { display: grid; gap: 16px; }
+.wk-titel { margin: 0; font-size: clamp(22px, 3vw, 28px); line-height: 1.15; font-weight: 700; text-transform: uppercase; }
+.wk-tekst { margin: 0; font-size: 14px; line-height: 1.6; color: var(--sl-muted); }
+.wk-klein { font-size: 13px; }
+@media (max-width: 520px) {
+  .wk-kaart { padding: 24px 18px; }
+  .wk .ag-velden-2 { grid-template-columns: 1fr; }
+}

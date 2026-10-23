@@ -1,4 +1,5 @@
 import Script from 'next/script';
+import { redirect } from 'next/navigation';
 import { vereisTeamlidPagina } from '@/lib/auth/team';
 import { teamProfielen } from '@/lib/team/profielen';
 import { Rail } from '@/components/shell/Rail';
@@ -20,6 +21,9 @@ import './taken.css';
 // altijd opnieuw, dus elke pagina controleert daarnaast zelf (vereisTeamlidPagina).
 export default async function AppLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   const lid = await vereisTeamlidPagina();
+  // Nieuw teamlid (bv. Bram bij zijn eerste login): eerst de welkomstflow. Alleen als
+  // profiles.welkom_klaar_op bestaat en leeg is (migratie 0022); zie lib/auth/team.ts.
+  if (!lid.welkomKlaar) redirect('/welkom');
   const leden = await teamProfielen(lid);
 
   return (

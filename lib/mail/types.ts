@@ -103,7 +103,10 @@ export type MailFoutCode =
   | 'te_groot'
   | 'opslag_ontbreekt'
   | 'verzenden_mislukt'
-  | 'niet_ingelogd';
+  | 'niet_ingelogd'
+  | 'provider_onbekend'
+  | 'provider_microsoft'
+  | 'te_vaak';
 
 /** De env-vars van de mailkoppeling, voor de uitleg op de "nog niet gekoppeld"-schermen. */
 export const MAIL_ENV_VARS: { naam: string; uitleg: string; verplicht: boolean }[] = [

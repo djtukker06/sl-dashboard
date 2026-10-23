@@ -25,7 +25,7 @@ export default async function MailPage({
     return (
       <>
         <ModuleKop label="Inbox" titel="Mail" />
-        <NietGekoppeld reden={(await magEnvMailbox(lid)) ? 'instellen' : 'eigen'} />
+        <NietGekoppeld email={lid.email} reden={(await magEnvMailbox(lid)) ? 'instellen' : 'eigen'} />
       </>
     );
   }

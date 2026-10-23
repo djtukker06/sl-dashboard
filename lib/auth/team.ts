@@ -7,6 +7,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { createClient } from '@/lib/supabase/server';
 import { tabelOntbreekt } from '@/lib/db/ontbreekt';
 import { veiligVervolg } from '@/lib/vervolg';
+import { welkomKlaarVan } from '@/lib/account/types';
 import { eigenHerkomst, isWijzigend } from './herkomst';
 
 // DE centrale toegangscontrole van de backoffice. Elke pagina, server action en API-route
@@ -84,6 +85,9 @@ export interface Teamlid {
   naam: string;
   profiel: Profiel;
   rol: Rol;
+  /** false = de welkomstflow (/welkom) nog doorlopen. true als hij klaar is, en ook zonder
+   *  kolom profiles.welkom_klaar_op (migratie 0022 nog niet uitgevoerd) of zonder profiel. */
+  welkomKlaar: boolean;
   /** true zolang migratie 0021 niet is uitgevoerd (zie boven). */
   overgang: boolean;
   /** Gebruikerscliënt (RLS geldt). */
@@ -140,7 +144,9 @@ async function bepaalStatus(): Promise<TeamStatus> {
 
   const [lidRes, profielRes] = await Promise.all([
     sb.from('team_members').select('actief, rol').eq('user_id', user.id).maybeSingle(),
-    sb.from('profiles').select('naam, initialen, kleur').eq('id', user.id).maybeSingle()
+    // select('*') i.p.v. losse kolommen: zo geeft een ontbrekende kolom welkom_klaar_op
+    // (0022 nog niet uitgevoerd) geen fout en blijft het profiel gewoon leesbaar.
+    sb.from('profiles').select('*').eq('id', user.id).maybeSingle()
   ]);
 
   if (lidRes.error) {
@@ -149,7 +155,17 @@ async function bepaalStatus(): Promise<TeamStatus> {
       const profiel = maakProfiel(null, email);
       return {
         soort: 'lid',
-        lid: { userId: user.id, email, naam: profiel.naam, profiel, rol: 'lid', overgang: true, sb, bewijs: maakBewijs() }
+        lid: {
+          userId: user.id,
+          email,
+          naam: profiel.naam,
+          profiel,
+          rol: 'lid',
+          welkomKlaar: true,
+          overgang: true,
+          sb,
+          bewijs: maakBewijs()
+        }
       };
     }
     console.error('[team] lidmaatschap controleren mislukt', lidRes.error.code ?? '', lidRes.error.message);
@@ -159,7 +175,8 @@ async function bepaalStatus(): Promise<TeamStatus> {
   const rij = lidRes.data as { actief: boolean; rol: string } | null;
   if (!rij || rij.actief !== true) return { soort: 'geen_toegang' };
 
-  const profiel = maakProfiel(profielRes.error ? null : (profielRes.data as Profiel | null), email);
+  const profielRij = profielRes.error ? null : (profielRes.data as (Partial<Profiel> & { welkom_klaar_op?: string | null }) | null);
+  const profiel = maakProfiel(profielRij, email);
   return {
     soort: 'lid',
     lid: {
@@ -168,6 +185,7 @@ async function bepaalStatus(): Promise<TeamStatus> {
       naam: profiel.naam,
       profiel,
       rol: rij.rol === 'eigenaar' ? 'eigenaar' : 'lid',
+      welkomKlaar: welkomKlaarVan(profielRij),
       overgang: false,
       sb,
       bewijs: maakBewijs()

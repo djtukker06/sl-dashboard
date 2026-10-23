@@ -3,17 +3,8 @@
 import { useId, useState, type CSSProperties } from 'react';
 import { useRouter } from 'next/navigation';
 import { ModuleKop } from '@/components/shell/ModuleKop';
-import {
-  IMAP_POORTEN,
-  initialenUit,
-  KLEUREN,
-  SMTP_POORTEN,
-  STANDAARD_MAILSERVER,
-  valideerMailbox,
-  valideerProfiel,
-  type MailboxStatus,
-  type ProfielInvoer
-} from '@/lib/account/types';
+import { initialenUit, KLEUREN, valideerProfiel, type MailboxStatus, type ProfielInvoer } from '@/lib/account/types';
+import { leegMailCache, MailboxSnelKoppelen } from './MailboxSnelKoppelen';
 
 type Melding = { soort: 'ok' | 'fout'; tekst: string } | null;
 
@@ -61,7 +52,7 @@ export function AccountApp({
       <ModuleKop label="Account" titel="Account & mail" />
       <div className="ac-inhoud">
         <ProfielBlok email={email} rol={rol} overgang={overgang} start={profiel} />
-        <MailboxBlok start={mailbox} />
+        <MailboxBlok start={mailbox} email={email} />
         <section className="ac-blok" aria-labelledby="ac-beveiliging">
           <header className="ac-blok-kop">
             <h2 id="ac-beveiliging" className="ac-blok-titel">Beveiliging</h2>
@@ -204,39 +195,12 @@ function ProfielBlok({ email, rol, overgang, start }: { email: string; rol: stri
 // ---------------------------------------------------------------------------------
 // Mailbox
 // ---------------------------------------------------------------------------------
-type MailForm = {
-  email: string;
-  wachtwoord: string;
-  fromName: string;
-  handtekening: string;
-  imapHost: string;
-  imapPort: number;
-  smtpHost: string;
-  smtpPort: number;
-};
-
-function naarForm(s: MailboxStatus | null): MailForm {
-  const e = s?.eigen;
-  return {
-    email: e?.email ?? '',
-    wachtwoord: '',
-    fromName: e?.fromName ?? '',
-    handtekening: e?.handtekening ?? '',
-    imapHost: e?.imapHost ?? STANDAARD_MAILSERVER,
-    imapPort: e?.imapPort ?? 993,
-    smtpHost: e?.smtpHost ?? STANDAARD_MAILSERVER,
-    smtpPort: e?.smtpPort ?? 465
-  };
-}
-
-function MailboxBlok({ start }: { start: MailboxStatus | null }) {
+function MailboxBlok({ start, email }: { start: MailboxStatus | null; email: string }) {
   const router = useRouter();
   const [status, setStatus] = useState(start);
-  const [f, setF] = useState<MailForm>(() => naarForm(start));
-  const [bezig, setBezig] = useState<'' | 'opslaan' | 'ontkoppelen'>('');
+  const [bezig, setBezig] = useState(false);
   const [zeker, setZeker] = useState(false);
   const [melding, setMelding] = useState<Melding>(null);
-  const zet = <K extends keyof MailForm>(k: K, v: MailForm[K]) => setF((x) => ({ ...x, [k]: v }));
 
   const eigen = status?.eigen ?? null;
   const uit = !status ? 'Je mailboxinstellingen konden niet worden geladen. Ververs de pagina.' : !status.ingericht
@@ -244,65 +208,21 @@ function MailboxBlok({ start }: { start: MailboxStatus | null }) {
     : !status.sleutel
       ? 'Koppelen staat nog uit: de server mist MAIL_ENCRYPTION_KEY (zie README, "Mail per gebruiker").'
       : '';
-  // Het opgeslagen wachtwoord geldt alleen voor precies dezelfde verbinding (adres, servers,
-  // poorten); wijzig je daar iets, dan moet je het opnieuw invullen (de server eist dat ook).
-  const gelijk = (x: string, y: string) => x.trim().toLowerCase() === y.trim().toLowerCase();
-  const zelfdeVerbinding = Boolean(
-    eigen &&
-      gelijk(eigen.email, f.email) &&
-      gelijk(eigen.imapHost, f.imapHost) &&
-      eigen.imapPort === f.imapPort &&
-      gelijk(eigen.smtpHost, f.smtpHost) &&
-      eigen.smtpPort === f.smtpPort
-  );
-  const wachtwoordBewaard = Boolean(eigen?.heeftWachtwoord && eigen.leesbaar && zelfdeVerbinding);
-  const wachtwoordOpnieuw = Boolean(eigen?.heeftWachtwoord && eigen.leesbaar && !zelfdeVerbinding);
-
-  async function opslaan(e: React.FormEvent) {
-    e.preventDefault();
-    setMelding(null);
-    const v = valideerMailbox(f);
-    if (!v.ok) {
-      setMelding({ soort: 'fout', tekst: v.fout });
-      return;
-    }
-    if (!v.waarde.wachtwoord && !wachtwoordBewaard) {
-      setMelding({
-        soort: 'fout',
-        tekst: wachtwoordOpnieuw ? 'Je wijzigt de server of het adres: vul je wachtwoord opnieuw in.' : 'Vul je wachtwoord in.'
-      });
-      return;
-    }
-    setBezig('opslaan');
-    try {
-      const s = await verstuur<MailboxStatus>('/api/account/mailbox', 'POST', v.waarde);
-      setStatus(s);
-      setF(naarForm(s));
-      setMelding({ soort: 'ok', tekst: 'Verbinding gelukt. Je mailbox is gekoppeld.' });
-      clearMailCache();
-      router.refresh();
-    } catch (err) {
-      setMelding({ soort: 'fout', tekst: err instanceof Error ? err.message : 'Koppelen mislukt.' });
-    } finally {
-      setBezig('');
-    }
-  }
 
   async function ontkoppel() {
-    setBezig('ontkoppelen');
+    setBezig(true);
     setMelding(null);
     try {
       const s = await verstuur<MailboxStatus>('/api/account/mailbox', 'DELETE');
       setStatus(s);
-      setF(naarForm(s));
       setZeker(false);
       setMelding({ soort: 'ok', tekst: 'Je mailbox is ontkoppeld en het wachtwoord is verwijderd.' });
-      clearMailCache();
+      leegMailCache();
       router.refresh();
     } catch (err) {
       setMelding({ soort: 'fout', tekst: err instanceof Error ? err.message : 'Ontkoppelen mislukt.' });
     } finally {
-      setBezig('');
+      setBezig(false);
     }
   }
 
@@ -341,101 +261,26 @@ function MailboxBlok({ start }: { start: MailboxStatus | null }) {
       {uit ? (
         <p className="ag-uitleg">{uit}</p>
       ) : (
-        <form className="ac-mailform" onSubmit={opslaan} autoComplete="off">
-          <div className="ag-velden-2">
-            <label className="ag-label">
-              E-mailadres
-              <input
-                className="ag-veld"
-                type="email"
-                inputMode="email"
-                value={f.email}
-                maxLength={320}
-                placeholder="naam@studio-levant.nl"
-                autoComplete="off"
-                required
-                onChange={(e) => zet('email', e.target.value)}
-              />
-            </label>
-            <label className="ag-label">
-              Wachtwoord
-              <input
-                className="ag-veld"
-                type="password"
-                value={f.wachtwoord}
-                maxLength={500}
-                required={!wachtwoordBewaard}
-                placeholder={
-                  wachtwoordBewaard
-                    ? '•••••••• (opgeslagen)'
-                    : wachtwoordOpnieuw
-                      ? 'Opnieuw invullen (server of adres gewijzigd)'
-                      : 'Wachtwoord van je mailbox'
-                }
-                autoComplete="new-password"
-                onChange={(e) => zet('wachtwoord', e.target.value)}
-              />
-            </label>
-          </div>
-          <label className="ag-label">
-            Afzendernaam
-            <input
-              className="ag-veld"
-              value={f.fromName}
-              maxLength={120}
-              placeholder="Bijv. Mark · Studio Levant"
-              onChange={(e) => zet('fromName', e.target.value)}
-            />
-          </label>
-          <label className="ag-label">
-            Handtekening (optioneel)
-            <textarea className="ag-veld" rows={3} value={f.handtekening} maxLength={5000} onChange={(e) => zet('handtekening', e.target.value)} />
-          </label>
-          <details className="ac-geavanceerd">
-            <summary>Geavanceerd: servers en poorten</summary>
-            <p className="ag-uitleg">Voor Namecheap Private Email hoef je hier niets te veranderen.</p>
-            <div className="ag-velden-2">
-              <label className="ag-label">
-                IMAP-server (ontvangen)
-                <input className="ag-veld" value={f.imapHost} maxLength={253} onChange={(e) => zet('imapHost', e.target.value)} />
-              </label>
-              <label className="ag-label">
-                IMAP-poort
-                <select className="ag-veld" value={f.imapPort} onChange={(e) => zet('imapPort', Number(e.target.value))}>
-                  {IMAP_POORTEN.map((p) => (
-                    <option key={p} value={p}>
-                      {p === 993 ? '993 (SSL)' : '143 (STARTTLS)'}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="ag-label">
-                SMTP-server (verzenden)
-                <input className="ag-veld" value={f.smtpHost} maxLength={253} onChange={(e) => zet('smtpHost', e.target.value)} />
-              </label>
-              <label className="ag-label">
-                SMTP-poort
-                <select className="ag-veld" value={f.smtpPort} onChange={(e) => zet('smtpPort', Number(e.target.value))}>
-                  {SMTP_POORTEN.map((p) => (
-                    <option key={p} value={p}>
-                      {p === 465 ? '465 (SSL)' : '587 (STARTTLS)'}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
-          </details>
-
-          <div className="ac-acties">
-            <button type="submit" className="db-knop db-knop-primair" disabled={!!bezig}>
-              {bezig === 'opslaan' ? 'Verbinding testen…' : 'Verbinding testen en opslaan'}
-            </button>
-            {eigen &&
-              (zeker ? (
+        <>
+          <MailboxSnelKoppelen
+            key={`${eigen?.email ?? ''}|${eigen?.geverifieerdOp ?? ''}`}
+            startEmail={email}
+            eigen={eigen}
+            uitgebreid
+            knopTekst={eigen ? 'Verbinding testen en opslaan' : 'Koppelen'}
+            onGekoppeld={(s) => {
+              setStatus(s);
+              setMelding(null);
+              router.refresh();
+            }}
+          />
+          {eigen && (
+            <div className="ac-acties">
+              {zeker ? (
                 <span className="ag-zeker">
                   <span>Mailbox ontkoppelen?</span>
-                  <button type="button" className="db-knop ag-knop-gevaar" disabled={!!bezig} onClick={ontkoppel}>
-                    {bezig === 'ontkoppelen' ? 'Bezig…' : 'Ja, ontkoppelen'}
+                  <button type="button" className="db-knop ag-knop-gevaar" disabled={bezig} onClick={ontkoppel}>
+                    {bezig ? 'Bezig…' : 'Ja, ontkoppelen'}
                   </button>
                   <button type="button" className="db-knop" onClick={() => setZeker(false)}>
                     Nee
@@ -445,22 +290,14 @@ function MailboxBlok({ start }: { start: MailboxStatus | null }) {
                 <button type="button" className="ag-link-knop ag-link-gevaar" onClick={() => setZeker(true)}>
                   Ontkoppelen
                 </button>
-              ))}
-          </div>
+              )}
+            </div>
+          )}
           <MeldingTekst melding={melding} />
-        </form>
+        </>
       )}
     </section>
   );
-}
-
-/** Na koppelen/ontkoppelen: de mailcache van deze tab (badge, inbox-widget) weggooien. */
-function clearMailCache() {
-  try {
-    for (const k of Object.keys(sessionStorage)) if (k.startsWith('sl-mail-')) sessionStorage.removeItem(k);
-  } catch {
-    /* geen opslag */
-  }
 }
 
 function MeldingTekst({ melding }: { melding: Melding }) {

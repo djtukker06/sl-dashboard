@@ -69,7 +69,7 @@ export default async function DashboardPage() {
             <InboxWidget />
           ) : (
             <Kaart label="Inbox" href="/mail" linkTekst="Mail" className="db-smal db-inbox">
-              <NietGekoppeld compact reden={(await magEnvMailbox(lid)) ? 'instellen' : 'eigen'} />
+              <NietGekoppeld email={lid.email} compact reden={(await magEnvMailbox(lid)) ? 'instellen' : 'eigen'} />
             </Kaart>
           )}
 
