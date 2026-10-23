@@ -11,7 +11,8 @@ je vanuit elke module terug naar het dashboard.
 |---|---|---|
 | Dashboard | `/` | Jouw eigen "Vandaag": begroeting, snelle acties, jouw dagplanning, taken en week, wat je uitdeelde, je eigen inbox; gedeeld: facturen, laatste bonnetjes en recente posts (met wie ze maakte) |
 | Mail | `/mail` | Je eigen mailbox (Private Email): lezen, beantwoorden, doorsturen, nieuwe mail, mail → taak |
-| Agenda | `/agenda` | Taken op naam (popup: voor wie, deadline, urgentie, klant, project, subtaken) en afspraken in één agenda (week/maand), alleen wat op jouw naam staat; tab Uitgezet voor wat je bij een ander hebt uitgezet; projecten op `/agenda/projecten` |
+| Agenda | `/agenda` | Taken op naam (popup: voor wie, deadline, urgentie, klant, project, subtaken) en afspraken in één agenda (week/maand), alleen wat op jouw naam staat; tab Uitgezet voor wat je bij een ander hebt uitgezet |
+| Klanten & projecten | `/klanten`, `/projecten` | Simpel CRM/PM: klanten (lead/actief/afgerond) met contact, notities, projecten, open taken, facturen en prijsopgaven; projecten (gepland/bezig/afgerond) met klant, deadline, eigenaar(s), taken met voortgang en een notitieveld |
 | Boekhouding | `/boekhouding` | Keuze tussen **Facturen** (`/facturen`: facturen, prijsopgaven, klanten en PDF's, ongewijzigd) en **Bonnetjes & inkoopfacturen** (`/boekhouding/bonnetjes`: foto/PDF uploaden en snel terugvinden) |
 | Account & mail | `/account` | Je profiel (naam, initialen, kleur), je eigen mailbox koppelen, wachtwoord wijzigen |
 | Social | `/social` | De social-media-tool (voorheen lokaal), met dezelfde schermen en werking |
@@ -323,13 +324,50 @@ aanbetaling zonder restfactuur).
   **+ Afspraak** (of `a`) opent het
   afsprakenpaneel met "Wie" (deelnemers, standaard jij). Klik op een leeg vak: kies
   afspraak of taak op die dag/tijd.
-- **Projecten** (`/agenda/projecten`): per klant gegroepeerd met het aantal open taken;
-  aanmaken, hernoemen, klant koppelen, archiveren/terugzetten. Een projectnaam opent je
-  takenlijst gefilterd op dat project (`/agenda?project=<id>`).
+- **Projecten** staan onder **Klanten & projecten** (`/projecten`, zie hieronder);
+  `/agenda/projecten` stuurt daarheen door. In de agenda filtert `?project=<id>` je eigen
+  takenlijst op een project.
 - Zolang 0021 niet is uitgevoerd werkt de agenda zoals voorheen (alle taken van iedereen,
   zonder toewijzing, subtaken of projecten).
 - Tests: `node scripts/test-taken.mjs` (toewijzing, subtaken, projecten, rechten) en
   `node scripts/test-snelinvoer.mjs` (herkenning, ook zomer-/wintertijd rond 25 okt 2026).
+
+## Klanten & projecten
+
+Eén tab in de rail (**Klanten**), met bovenin de schakelaar **Klanten | Projecten**. Een
+project hangt aan een klant, dus ze staan bij elkaar; de rail blijft op zes items. Alles
+hier is gedeeld met het team (RLS `is_teamlid()`), behalve losse taken: op de klant- en
+projectpagina zie je de taken die jij mag zien (projecttaken ziet het hele team, een losse
+taak alleen de maker en wie hem kreeg). Bewust simpel: geen pipeline, geen uren, geen
+tientallen velden.
+
+- **Klanten** (`/klanten`): zoeken, filter Alle · Lead · Actief · Afgerond, per klant het
+  aantal lopende projecten. **+ Klant** (of `/klanten?nieuw=1`): bedrijfsnaam (verplicht),
+  contactpersoon, e-mail en status (standaard Lead); daarna sta je op de klantpagina. Het
+  zijn dezelfde klanten als in de facturen: een klant die via een factuur ontstaat, krijgt
+  status Actief.
+- **Klantpagina** (`/klanten/<id>`): status (direct opgeslagen), contact (e-mail opent een
+  nieuwe mail, één knop Bewerken), notities als tijdlijn (alleen je eigen notitie kun je
+  verwijderen), projecten met voortgang en **+ Project**, open taken met **+ Taak** (klant al
+  ingevuld), en de laatste 5 facturen en prijsopgaven met links naar Boekhouding.
+  Prijsopgaven hebben geen klantkoppeling (0011); ze worden op klantnaam gevonden. Een
+  klant verwijderen kan alleen in Facturen (met de bestaande controle).
+- **Projecten** (`/projecten`): groepen Bezig, Gepland en (ingeklapt) Afgerond; per project
+  klant, eigenaar(s), deadline (rood als die verstreken is) en voortgang "3/7".
+  **+ Project**: naam, klant, status (standaard Bezig), deadline en eigenaar(s) (standaard
+  jij). Ook vanuit de taak-popup kun je een project maken.
+- **Projectpagina** (`/projecten/<id>`): naam, status, klant, deadline en eigenaren direct
+  bewerkbaar; alle taken met voortgang (afgeronde ingeklapt) en **+ Taak** (project al
+  ingevuld, "voor wie" standaard jij); één notitieveld dat vanzelf opslaat.
+- **Migratie 0022** (stap 3, alleen toevoegend): `clients.email`, `clients.telefoon`,
+  `clients.status` (standaard `actief`), tabel `client_notes`, `projects.deadline`, langere
+  `projects.notitie` (5000), status `gepland`/`bezig`/`afgerond` (oude waarden worden
+  omgezet: `actief` → `bezig`, `gearchiveerd` → `afgerond`) en tabel `project_eigenaren`
+  (bestaande projecten krijgen hun maker als eigenaar). Zolang 0022 niet is uitgevoerd
+  tonen `/klanten` en `/projecten` "nog niet ingericht"; de taak-popup en de facturen
+  werken gewoon.
+- Tests: `node scripts/test-crm.mjs` (invoer en bronbewaking) en `node scripts/test-rls.mjs`
+  (RLS van notities en eigenaren, omzetting van de status).
 
 ## Boekhouding
 
@@ -489,7 +527,8 @@ blijft op de server.
 
 De facturentool werkt precies zoals altijd, alleen onder `/facturen` en binnen de shell.
 Oude adressen blijven werken via tijdelijke redirects in `next.config.ts`: `/nieuwe-factuur`,
-`/klanten/…`, `/prijsopgaven/…` en `/?jaar=…` gaan naar dezelfde pagina onder `/facturen`.
+`/prijsopgaven/…` en `/?jaar=…` gaan naar dezelfde pagina onder `/facturen`. `/klanten/…` is
+sinds Klanten & projecten de nieuwe klantpagina (met een link naar de facturen van die klant).
 
 
 - **Nieuwe factuur** (`/facturen/nieuwe-factuur`): vul klantgegevens en factuurregels in. Typ je een klantnaam die al eerder is gebruikt, dan verschijnt een suggestie — kies die en de overige klantgegevens worden automatisch ingevuld. De middelste kolom (bv. "Periode" of "Aantal") is optioneel.
@@ -520,9 +559,12 @@ Oude adressen blijven werken via tijdelijke redirects in `next.config.ts`: `/nie
 | `/facturen…` | Facturen, prijsopgaven, klanten |
 | `/api/invoices…`, `/api/quotes…`, `/api/clients/search` | Facturen-API (inhoudelijk ongewijzigd; nu met teamlid- en herkomstcontrole) |
 | `/agenda` | Agenda & taken (`?dag=`, `?weergave=maand`, `?taak=`, `?afspraak=`, `?lijst=uitgezet`, `?project=<id>`) |
-| `/agenda/projecten` | Projecten beheren |
+| `/agenda/projecten` | Oud adres: doorverwijzing naar `/projecten` |
+| `/klanten`, `/klanten/<id>` | Klanten (`?nieuw=1` opent "Nieuwe klant") en de klantpagina |
+| `/projecten`, `/projecten/<id>` | Projecten en de projectpagina |
+| `/api/klanten`, `/api/klanten/<id>`, `/api/klanten/<id>/notities…` | Klant maken/wijzigen (niet verwijderen) en klantnotities (503 `tabel_ontbreekt` vóór 0022) |
 | `/api/agenda`, `/api/taken…` (incl. `?filter=uitgezet`, `/[id]/subtaken…`), `/api/afspraken…` | Agenda-API; alleen jouw taken/afspraken (geen parameter voor die van een ander) (503 `tabel_ontbreekt` vóór de SQL, 403 als je iets van een ander wilt wijzigen) |
-| `/api/projecten…`, `/api/team` | Projecten (gedeeld) en de actieve teamleden (alleen naam, initialen, kleur) |
+| `/api/projecten…`, `/api/team` | Projecten (gedeeld; `?status=lopend\|afgerond\|alle`, met deadline en eigenaren) en de actieve teamleden (alleen naam, initialen, kleur) |
 | `/mail` | Mail (`?map=`, `?uid=`, `?nieuw=1`) |
 | `/api/mail/…` | Mail-API (503 `niet_gekoppeld` zonder mail-variabelen) |
 | `/boekhouding` | Boekhouding: keuze tussen Facturen en Bonnetjes & inkoopfacturen |

@@ -50,6 +50,10 @@ export default async function KlantDetailPage({
           &larr; Alle klanten
         </Link>
         <h1>{klant.company_name}</h1>
+        {/* Klanten & projecten: contact, status, notities, projecten en taken van deze klant. */}
+        <Link href={`/klanten/${klant.id}`} className="terug">
+          Klantpagina (contact, notities, projecten) &rarr;
+        </Link>
       </div>
 
       <ClientEditForm klant={klant as KlantRecord} aantalFacturen={factuurLijst.length} />

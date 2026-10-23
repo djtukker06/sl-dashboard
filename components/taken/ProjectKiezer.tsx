@@ -36,7 +36,7 @@ export function ProjectKiezer({
   useEffect(() => {
     let weg = false;
     agendaApi
-      .projecten('actief')
+      .projecten('lopend')
       .then((r) => !weg && setAlle(r.projecten))
       .catch((e) => !weg && setLaadFout(e instanceof Error ? e.message : 'Projecten niet geladen.'));
     return () => {

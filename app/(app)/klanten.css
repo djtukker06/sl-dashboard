@@ -1,0 +1,165 @@
+/* ==========================================================
+   Studio Levant — Klanten & projecten (kp-): overzichten, klant- en projectpagina.
+   Bouwt voort op app.css (db-kaart, db-knop, db-melding), agenda.css (ag-veld,
+   ag-label, ag-segment, ag-taak) en taken.css (tk-dialoog). Tokens: shell.css (--sl-*).
+   ========================================================== */
+
+.kp { display: grid; gap: 24px; padding: 24px 40px 56px; max-width: 1180px; align-content: start; }
+.kp-detail { grid-template-columns: minmax(0, 1fr) minmax(280px, 360px); align-items: start; }
+.kp-hoofd, .kp-zij { display: grid; gap: 24px; min-width: 0; }
+
+/* Schakelaar Klanten | Projecten (links in de stijl van ag-segment) */
+.kp-segment a {
+  flex: 1;
+  padding: 6px 14px;
+  border-radius: 2px;
+  color: var(--sl-muted);
+  font-family: var(--sl-font);
+  font-size: 12.5px;
+  font-weight: 500;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background-color .2s var(--sl-ease), color .2s var(--sl-ease);
+}
+.kp-segment a:hover { color: var(--sl-text); }
+.kp-segment a.is-aan { background: var(--sl-raise); color: var(--sl-text); box-shadow: inset 0 0 0 1px var(--sl-line); }
+.kp-segment a:focus-visible { outline: none; box-shadow: var(--sl-focus); }
+
+.kp-balk { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
+.kp-zoek { max-width: 360px; }
+
+/* Lijsten */
+.kp-lijst { display: grid; margin: 0; padding: 0; list-style: none; border-top: 1px solid var(--sl-line-soft); }
+.kp-lijst-compact { border-top: 0; }
+.kp-rij {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 8px;
+  border-bottom: 1px solid var(--sl-line-soft);
+  color: var(--sl-text);
+  text-decoration: none;
+  transition: background-color .15s var(--sl-ease);
+}
+.kp-lijst-compact .kp-rij { padding: 9px 4px; }
+.kp-lijst-compact li:last-child .kp-rij { border-bottom: 0; }
+.kp-rij:hover { background: var(--sl-raise); }
+.kp-rij:focus-visible { outline: none; box-shadow: var(--sl-focus); }
+.kp-rij.is-af .kp-rij-titel { color: var(--sl-faint); }
+.kp-rij-hoofd { display: grid; gap: 2px; min-width: 0; }
+.kp-rij-titel { font-size: 14.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kp-rij-sub { font-size: 12.5px; color: var(--sl-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kp-rij-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+  font-family: var(--sl-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  color: var(--sl-muted);
+  white-space: nowrap;
+}
+.is-telaat { color: var(--sl-danger) !important; }
+.kp-leeg { margin: 0; font-size: 13.5px; color: var(--sl-muted); }
+.kp-zacht { color: var(--sl-muted); }
+.kp-eigenaren { display: inline-flex; gap: 2px; }
+
+/* Statuslabels */
+.kp-pil {
+  display: inline-flex;
+  padding: 2px 8px;
+  border: 1px solid var(--sl-line);
+  border-radius: 999px;
+  font-family: var(--sl-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--sl-muted);
+}
+.kp-pil-lead, .kp-pil-gepland { border-style: dashed; }
+.kp-pil-actief, .kp-pil-bezig { color: var(--sl-text); border-color: #5a5755; }
+.kp-pil-afgerond { color: var(--sl-faint); }
+.kp-status { width: auto; padding: 7px 10px; font-size: 13px; }
+
+/* Voortgang "3/7" */
+.kp-voortgang { display: inline-flex; align-items: center; gap: 8px; }
+.kp-voortgang-balk { position: relative; width: 56px; height: 4px; border-radius: 2px; background: var(--sl-line); overflow: hidden; }
+.kp-voortgang-balk > span { position: absolute; inset: 0 auto 0 0; background: var(--sl-sand); border-radius: 2px; }
+.kp-voortgang-tekst { min-width: 3ch; font-family: var(--sl-mono); font-size: 10.5px; color: var(--sl-muted); }
+
+/* Groepen op /projecten */
+.kp-groep { display: grid; gap: 6px; }
+.kp-groep-kop { display: flex; align-items: baseline; gap: 10px; margin: 0; font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }
+.kp-groep-kop span { font-family: var(--sl-mono); font-size: 10px; font-weight: 400; color: var(--sl-muted); }
+details.kp-klaar > summary { cursor: pointer; list-style: none; color: var(--sl-muted); font-size: 13px; padding: 4px 0; }
+details.kp-klaar > summary::-webkit-details-marker { display: none; }
+details.kp-klaar > summary::before { content: "▸ "; }
+details.kp-klaar[open] > summary::before { content: "▾ "; }
+details.kp-klaar > summary:focus-visible { outline: none; box-shadow: var(--sl-focus); border-radius: 2px; }
+
+/* Formulieren (popup, contact bewerken) */
+.kp-dialoog { width: min(480px, 100%); }
+.kp-form { display: grid; gap: 14px; margin: 0; }
+.kp-form-rij { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 14px; align-items: end; }
+.kp-form-acties { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
+.kp-linkknop {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--sl-muted);
+  font: inherit;
+  font-size: 12px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.kp-linkknop:hover { color: var(--sl-text); }
+
+/* Contact */
+.kp-contact { display: grid; gap: 14px; justify-items: start; }
+.kp-dl { display: grid; gap: 10px; margin: 0; width: 100%; }
+.kp-dl dt { font-family: var(--sl-mono); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--sl-muted); }
+.kp-dl dd { margin: 2px 0 0; font-size: 14px; overflow-wrap: anywhere; }
+.kp-dl a { color: var(--sl-text); text-underline-offset: 3px; }
+
+/* Notities (klant) */
+.kp-notities { display: grid; gap: 16px; }
+.kp-notitie-nieuw { display: grid; gap: 8px; justify-items: end; margin: 0; }
+.kp-tijdlijn { display: grid; gap: 14px; margin: 0; padding: 0 0 0 14px; list-style: none; border-left: 1px solid var(--sl-line); }
+.kp-tijdlijn-tekst { margin: 0; font-size: 13.5px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
+.kp-tijdlijn-meta { display: flex; align-items: center; gap: 10px; margin: 4px 0 0; font-family: var(--sl-mono); font-size: 10.5px; color: var(--sl-muted); }
+
+/* Notitie (project) */
+.kp-notitieveld { display: grid; gap: 6px; }
+.kp-opslagstand { margin: 0; font-family: var(--sl-mono); font-size: 10.5px; color: var(--sl-muted); }
+.kp-opslagstand.is-fout { color: var(--sl-danger); }
+
+/* Taken */
+.kp-taken { display: grid; gap: 12px; }
+.kp-taken-voet { display: flex; }
+
+/* Projectgegevens */
+.kp-velden { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.kp-veld-breed { grid-column: 1 / -1; }
+.kp-naamveld { font-size: 16px; font-weight: 600; }
+.kp-klantregel { display: flex; align-items: center; gap: 10px; min-height: 40px; font-family: var(--sl-font); font-size: 14px; text-transform: none; letter-spacing: 0; color: var(--sl-text); }
+.kp-klantregel a { color: var(--sl-text); text-underline-offset: 3px; }
+
+/* Facturen & prijsopgaven */
+.kp-kop-acties { display: flex; gap: 6px; }
+.kp-geld { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.kp-subkop { margin: 0 0 4px; font-size: 13px; font-weight: 700; }
+.kp-meer { display: inline-block; margin-top: 8px; }
+
+@media (max-width: 1080px) {
+  .kp-detail { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 760px) {
+  .kp { padding: 16px 16px 40px; }
+  .kp-velden, .kp-geld, .kp-form-rij { grid-template-columns: minmax(0, 1fr); }
+  .kp-rij { flex-wrap: wrap; }
+  .kp-rij-meta { flex-wrap: wrap; }
+  .kp-zoek { max-width: none; }
+}

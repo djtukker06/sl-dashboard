@@ -93,7 +93,7 @@ export const agendaApi = {
     api<{ event: Afspraak }>(`/api/afspraken/${id}`, { method: 'PATCH', body: body(b) }),
   verwijderAfspraak: (id: string) => api<{ ok: true }>(`/api/afspraken/${id}`, { method: 'DELETE' }),
   project: (id: string) => api<{ project: Project }>(`/api/projecten/${id}`),
-  projecten: (status: 'actief' | 'gearchiveerd' | 'alle' = 'actief') =>
+  projecten: (status: 'lopend' | 'afgerond' | 'alle' = 'lopend') =>
     api<{ projecten: Project[] }>(`/api/projecten${qs({ status })}`),
   maakProject: (b: ProjectInvoer) => api<{ project: Project }>('/api/projecten', { method: 'POST', body: body(b) }),
   wijzigProject: (id: string, b: ProjectInvoer) =>

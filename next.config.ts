@@ -47,7 +47,9 @@ const nextConfig: NextConfig = {
       // Oud jaaroverzicht (/?jaar=2025) → facturenoverzicht met hetzelfde jaar.
       { source: '/', has: [{ type: 'query', key: 'jaar' }], destination: '/facturen', permanent: false },
       { source: '/nieuwe-factuur', destination: '/facturen/nieuwe-factuur', permanent: false },
-      { source: '/klanten/:path*', destination: '/facturen/klanten/:path*', permanent: false },
+      // /klanten is sinds Klanten & projecten een eigen module (klantpagina /klanten/<id> met
+      // een link naar de facturen van die klant); de oude doorverwijzing naar
+      // /facturen/klanten/<id> is daarom weg.
       { source: '/prijsopgaven/:path*', destination: '/facturen/prijsopgaven/:path*', permanent: false },
       // Uitgaven is sinds de tab Boekhouding "Bonnetjes & inkoopfacturen" (?uitgave=, ?toevoegen=1
       // en ?tab=btw gaan vanzelf mee).

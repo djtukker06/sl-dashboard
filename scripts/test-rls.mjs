@@ -7,6 +7,10 @@
 //             → UITVOEREN_0020_UITGAVEN.sql: elke controleregel "ok", niets heropend.
 //             → 0022_team_crm.sql (2x): welkom_klaar_op gezet voor de eigenaar, niet voor
 //               een lid; alleen je eigen welkom-vlag te zetten.
+//             → 0022 klanten & projecten: oude projectstatussen omgezet (actief→bezig,
+//               gearchiveerd→afgerond), eigenaren gevuld (maker of team-eigenaar), klanten
+//               standaard 'actief'; notities alleen door de schrijver te verwijderen;
+//               project_eigenaren alleen actieve teamleden.
 //             → 0022 wie-ziet-welke-taak: een taak die Daniel alleen voor Mark maakt, ziet
 //               Mark wel en een derde niet; een losse taak van Mark bestaat voor Daniel
 //               niet (tasks, task_assignees, task_subtasks); projecttaken zijn voor het
@@ -239,6 +243,13 @@ async function zaaiNa0021(db) {
     insert into public.task_subtasks (task_id, titel) values ('bbbbbbbb-0000-4000-8000-000000000001', 'Stap 1');
     insert into public.user_mailboxes (user_id, email, wachtwoord_enc) values ('${U.daniel}', 'daniel@studio-levant.nl', 'v1:aaa.bbb.ccc');
   `);
+  if ((await db.query("select to_regclass('public.client_notes') as t")).rows[0].t) {
+    await db.exec(`
+      insert into public.client_notes (id, client_id, tekst, created_by)
+        values ('eeeeeeee-0000-4000-8000-000000000001', 'aaaaaaaa-0000-4000-8000-000000000001', 'Gebeld', '${U.mark}');
+      insert into public.project_eigenaren (project_id, user_id) values ('dddddddd-0000-4000-8000-000000000001', '${U.daniel}');
+    `);
+  }
 }
 
 // ---------------------------------------------------------------------------------
@@ -290,9 +301,18 @@ async function scenarioA() {
   await db.query("insert into public.profiles (id, naam, initialen, email) values ($1, 'Mark', 'M', 'mark@studio-levant.nl')", [U.mark]);
   await db.query("insert into public.team_members (user_id, actief, rol) values ($1, true, 'lid')", [U.mark]);
 
+  // Projecten van vóór 0022 (oude statussen), om de omzetting te testen.
+  await db.query(
+    `insert into public.projects (id, naam, status, created_by) values
+       ('dddddddd-0000-4000-8000-0000000000a1', 'Oud actief', 'actief', $1),
+       ('dddddddd-0000-4000-8000-0000000000a2', 'Oud archief', 'gearchiveerd', null)`,
+    [U.mark],
+  );
+
   await welkom0022(db);
 
   await zaaiNa0021(db);
+  await crm0022(db);
   await zichtbaarheid0022(db);
   await matrix(db);
 
@@ -688,6 +708,97 @@ async function zichtbaarheid0022(db) {
     await db.exec("rollback");
   }
   if (fouten === fouten0) console.log("  0022 zichtbaarheid: ok");
+}
+
+// ---------------------------------------------------------------------------------
+// 0022: klanten & projecten (stap 3)
+// ---------------------------------------------------------------------------------
+async function crm0022(db) {
+  const fouten0 = fouten;
+  // Omzetting van de projectstatus en eigenaren voor bestaande projecten (eenmalig).
+  const oud = Object.fromEntries(
+    (await db.query("select naam, status from public.projects where naam like 'Oud %'")).rows.map((r) => [r.naam, r.status]),
+  );
+  check(oud["Oud actief"] === "bezig" && oud["Oud archief"] === "afgerond", "0022: projectstatus omgezet (actief→bezig, gearchiveerd→afgerond)", JSON.stringify(oud));
+  const eig = Object.fromEntries(
+    (await db.query("select p.naam, e.user_id from public.project_eigenaren e join public.projects p on p.id = e.project_id where p.naam like 'Oud %'")).rows.map((r) => [r.naam, r.user_id]),
+  );
+  check(eig["Oud actief"] === U.mark, "0022: bestaand project krijgt de maker als eigenaar", JSON.stringify(eig));
+  check(eig["Oud archief"] === U.daniel, "0022: project zonder maker krijgt de team-eigenaar", JSON.stringify(eig));
+  const def = (await db.query("select column_default from information_schema.columns where table_name = 'projects' and column_name = 'status'")).rows[0].column_default;
+  check(/bezig/.test(def ?? ""), "0022: nieuwe projecten standaard 'bezig'", def);
+
+  // Opnieuw uitvoeren: een weggehaalde eigenaar komt niet terug, statussen blijven.
+  await db.query("delete from public.project_eigenaren where project_id = 'dddddddd-0000-4000-8000-0000000000a1'");
+  await voerUit(db, lees("supabase/migrations/0022_team_crm.sql"), "0022_team_crm.sql (na zaaien)");
+  const terug = (await db.query("select count(*)::int as n from public.project_eigenaren where project_id = 'dddddddd-0000-4000-8000-0000000000a1'")).rows[0].n;
+  check(terug === 0, "0022: opnieuw uitvoeren vult geen eigenaren opnieuw", `${terug}`);
+  const nogSteeds = (await db.query("select status from public.projects where naam = 'Oud actief'")).rows[0].status;
+  check(nogSteeds === "bezig", "0022: opnieuw uitvoeren laat de status staan", nogSteeds);
+
+  // Klanten: bestaande en nieuwe (zoals via een factuur, zonder de nieuwe kolommen) zijn 'actief'.
+  const kl = (await db.query("select status, email, telefoon from public.clients where id = 'aaaaaaaa-0000-4000-8000-000000000001'")).rows[0];
+  check(kl.status === "actief" && kl.email === "" && kl.telefoon === "", "0022: bestaande klant: status actief, lege contactvelden", JSON.stringify(kl));
+  let r = await als(db, "mark", "insert into public.clients (company_name) values ('Via factuur') returning status");
+  check(r.ok && r.rows[0].status === "actief", "0022: klant zonder status (facturen) wordt 'actief'", uitleg(r));
+  r = await als(db, "mark", "insert into public.clients (company_name, email, status) values ('Nieuwe lead', 'a@b.nl', 'lead') returning status");
+  check(r.ok && r.rows[0].status === "lead", "0022: teamlid maakt een lead", uitleg(r));
+  r = await als(db, "mark", "update public.clients set status = 'kans' where id = 'aaaaaaaa-0000-4000-8000-000000000001'");
+  check(!r.ok && r.code === "23514", "0022: onbekende klantstatus geweigerd", uitleg(r));
+  r = await als(db, "mark", "update public.projects set status = 'actief' where id = 'dddddddd-0000-4000-8000-000000000001'");
+  check(!r.ok && r.code === "23514", "0022: oude projectstatus niet meer te schrijven", uitleg(r));
+  r = await als(db, "mark", "update public.projects set status = 'gepland', deadline = '2026-12-01', notitie = repeat('x', 5000) where id = 'dddddddd-0000-4000-8000-000000000001'");
+  check(r.ok && r.n === 1, "0022: status, deadline en notitie (5000) wijzigen", uitleg(r));
+  r = await als(db, "mark", "update public.projects set notitie = repeat('x', 5001) where id = 'dddddddd-0000-4000-8000-000000000001'");
+  check(!r.ok && r.code === "23514", "0022: notitie langer dan 5000 geweigerd", uitleg(r));
+
+  // Klantnotities.
+  r = await als(db, "daniel", "insert into public.client_notes (client_id, tekst) values ('aaaaaaaa-0000-4000-8000-000000000001', 'Offerte gestuurd') returning created_by");
+  check(r.ok && r.rows[0].created_by === U.daniel, "0022: notitie toevoegen (schrijver = jij)", uitleg(r));
+  r = await als(db, "daniel", "insert into public.client_notes (client_id, tekst, created_by) values ('aaaaaaaa-0000-4000-8000-000000000001', 'Namens Mark', $1)", [U.mark]);
+  check(geweigerd(r), "0022: notitie namens een ander geweigerd", uitleg(r));
+  r = await als(db, "daniel", "insert into public.client_notes (client_id, tekst) values ('aaaaaaaa-0000-4000-8000-000000000001', '   ')");
+  check(!r.ok && r.code === "23514", "0022: lege notitie geweigerd", uitleg(r));
+  r = await als(db, "daniel", "select count(*)::int as n from public.client_notes");
+  check(r.ok && r.rows[0].n === 1, "0022: teamlid leest de notities van het team", uitleg(r));
+  r = await als(db, "daniel", "delete from public.client_notes where id = 'eeeeeeee-0000-4000-8000-000000000001'");
+  check(nietsGeraakt(r), "0022: notitie van een ander niet te verwijderen", uitleg(r));
+  r = await als(db, "mark", "delete from public.client_notes where id = 'eeeeeeee-0000-4000-8000-000000000001'");
+  check(r.ok && r.n === 1, "0022: eigen notitie verwijderen", uitleg(r));
+  r = await als(db, "mark", "update public.client_notes set tekst = 'Aangepast'");
+  check(geweigerd(r), "0022: notities zijn niet te wijzigen", uitleg(r));
+  r = await als(db, "service", "select count(*)::int as n from public.client_notes");
+  check(r.ok && r.rows[0].n === 1, "0022: service-role leest notities", uitleg(r));
+
+  // Projecteigenaren: alleen actieve teamleden.
+  const P = "dddddddd-0000-4000-8000-000000000001";
+  r = await als(db, "daniel", "insert into public.project_eigenaren (project_id, user_id) values ($1, $2)", [P, U.mark]);
+  check(r.ok && r.n === 1, "0022: teamlid als eigenaar toevoegen", uitleg(r));
+  r = await als(db, "daniel", "insert into public.project_eigenaren (project_id, user_id) values ($1, $2)", [P, U.indringer]);
+  check(geweigerd(r), "0022: niet-teamlid kan geen eigenaar zijn", uitleg(r));
+  r = await als(db, "daniel", "insert into public.project_eigenaren (project_id, user_id) values ($1, $2)", [P, U.oudlid]);
+  check(geweigerd(r), "0022: gedeactiveerd lid kan geen eigenaar zijn", uitleg(r));
+  r = await als(db, "mark", "delete from public.project_eigenaren where project_id = $1", [P]);
+  check(r.ok && r.n === 1, "0022: teamlid haalt een eigenaar weg", uitleg(r));
+  r = await als(db, "mark", "update public.project_eigenaren set user_id = $1", [U.mark]);
+  check(geweigerd(r), "0022: eigenaren niet te wijzigen (alleen toevoegen/weghalen)", uitleg(r));
+  for (const wie of ["indringer", "oudlid", "anon"]) {
+    for (const t of ["clients", "client_notes", "project_eigenaren", "projects"]) {
+      r = await als(db, wie, `select * from public.${t}`);
+      check(leeg(r), `0022: ${wie} ziet niets in ${t}`, uitleg(r));
+    }
+    r = await als(db, wie, "insert into public.client_notes (client_id, tekst) values ('aaaaaaaa-0000-4000-8000-000000000001', 'x')");
+    check(geweigerd(r), `0022: ${wie} kan geen notitie schrijven`, uitleg(r));
+  }
+
+  // Policies vereisen een teamlid (de controle uit UITVOEREN_0021_TEAM.sql).
+  const pol = (await db.query("select policyname, coalesce(qual, '') || ' ' || coalesce(with_check, '') as q from pg_policies where tablename in ('client_notes', 'project_eigenaren')")).rows;
+  check(pol.length === 6 && pol.every((p) => /is_teamlid\(/.test(p.q)), "0022: elke nieuwe policy vereist teamlid", JSON.stringify(pol.map((p) => p.policyname)));
+  const idx = (await db.query(
+    "select count(*)::int as n from pg_class where relname in ('clients_status_idx', 'client_notes_klant_idx', 'project_eigenaren_user_idx', 'projects_status_idx', 'tasks_client_idx')",
+  )).rows[0].n;
+  check(idx === 5, "0022: indexen voor klanten & projecten aanwezig", `${idx}`);
+  if (fouten === fouten0) console.log("  0022 klanten & projecten: ok");
 }
 
 // ---------------------------------------------------------------------------------

@@ -83,7 +83,40 @@ test("project: naam verplicht bij nieuw", () => assert.equal(inv.parseProject({}
 test("project: naam wordt opgeschoond", () => assert.equal(inv.parseProject({ naam: "  Huisstijl   2027 " }, true).waarde.naam, "Huisstijl 2027"));
 test("project: te lange naam", () => assert.equal(inv.parseProject({ naam: "x".repeat(121) }, true).ok, false));
 test("project: ongeldige klant", () => assert.equal(inv.parseProject({ naam: "A", klantId: "x" }, true).ok, false));
-test("project: archiveren", () => assert.deepEqual(inv.parseProject({ status: "gearchiveerd" }, false).waarde, { status: "gearchiveerd" }));
+test("project: afronden", () => assert.deepEqual(inv.parseProject({ status: "afgerond" }, false).waarde, { status: "afgerond" }));
+test("project: gepland en bezig", () => {
+  assert.equal(inv.parseProject({ status: "gepland" }, false).waarde.status, "gepland");
+  assert.equal(inv.parseProject({ status: "bezig" }, false).waarde.status, "bezig");
+});
+test("project: oude statussen worden omgezet (actief→bezig, gearchiveerd→afgerond)", () => {
+  assert.equal(inv.parseProject({ status: "actief" }, false).waarde.status, "bezig");
+  assert.equal(inv.parseProject({ status: "gearchiveerd" }, false).waarde.status, "afgerond");
+  assert.equal(inv.projectStatusVan("actief"), "bezig");
+  assert.equal(inv.projectStatusVan("gearchiveerd"), "afgerond");
+  assert.equal(inv.projectStatusVan("weg"), null);
+});
+test("project: deadline", () => {
+  assert.equal(inv.parseProject({ deadline: "2026-12-31" }, false).waarde.deadline, "2026-12-31");
+  assert.equal(inv.parseProject({ deadline: null }, false).waarde.deadline, null);
+  assert.equal(inv.parseProject({ deadline: "" }, false).waarde.deadline, null);
+  assert.equal(inv.parseProject({ deadline: "2026-02-31" }, false).ok, false);
+  assert.equal(inv.parseProject({ deadline: "31-12-2026" }, false).ok, false);
+});
+test("project: eigenaren (mag leeg, uniek, alleen uuid's)", () => {
+  const a = "11111111-1111-4111-8111-111111111111";
+  const r = inv.parseProject({ eigenaren: [a, a.toUpperCase()] }, false);
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.eigenaren, [a]);
+  assert.deepEqual(r.waarde, {});
+  assert.deepEqual(inv.parseProject({ eigenaren: [] }, false).eigenaren, []);
+  assert.equal(inv.parseProject({ eigenaren: ["x"] }, false).ok, false);
+  assert.equal(inv.parseProject({ eigenaren: "x" }, false).ok, false);
+  assert.equal(inv.parseProject({ naam: "A" }, true).eigenaren, undefined);
+});
+test("project: notitie tot 5000 tekens", () => {
+  assert.equal(inv.parseProject({ notitie: "x".repeat(5000) }, false).ok, true);
+  assert.equal(inv.parseProject({ notitie: "x".repeat(5001) }, false).ok, false);
+});
 test("project: onbekende status", () => assert.equal(inv.parseProject({ status: "weg" }, false).ok, false));
 test("project: lege wijziging geweigerd", () => assert.equal(inv.parseProject({}, false).ok, false));
 

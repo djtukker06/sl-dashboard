@@ -64,6 +64,19 @@ export const MODULES: Module[] = [
     actief: true
   },
   {
+    // Eén tab voor klanten en projecten (simpel CRM/PM): /klanten en /projecten, met
+    // bovenin een schakelaar Klanten | Projecten. Een project hangt aan een klant, dus
+    // één tab houdt de rail rustig (6 items).
+    id: 'klanten',
+    naam: 'Klanten & projecten',
+    kort: 'Klanten',
+    beschrijving: 'Klanten (lead, actief, afgerond) met notities, en projecten met taken en voortgang',
+    href: '/klanten',
+    paden: ['/klanten', '/projecten'],
+    icoon: 'klanten',
+    actief: true
+  },
+  {
     // Eén tab voor de administratie: facturen (/facturen/**, ongewijzigd) en bonnetjes &
     // inkoopfacturen (/boekhouding/bonnetjes; /uitgaven stuurt daarheen door).
     id: 'boekhouding',

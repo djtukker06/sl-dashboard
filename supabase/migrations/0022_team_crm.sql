@@ -5,6 +5,8 @@
 -- Dit bestand groeit per bouwstap:
 --   stap 1  profiles.welkom_klaar_op (welkomstflow bij de eerste login)
 --   stap 2  wie ziet welke taak/afspraak (leesregels), index voor "Uitgezet"
+--   stap 3  klanten & projecten: contact/status op clients, client_notes, projectstatus
+--           gepland/bezig/afgerond + deadline + project_eigenaren
 
 -- ---------------------------------------------------------------------------------
 -- Stap 1. Welkomstflow
@@ -106,3 +108,106 @@ create policy "betrokkenen lezen deelnemers" on public.event_attendees
 
 -- "Uitgezet": open taken die jij maakte (en waar je zelf niet op staat).
 create index if not exists tasks_maker_open_idx on public.tasks (created_by) where completed_at is null;
+
+-- ---------------------------------------------------------------------------------
+-- Stap 3. Klanten & projecten (simpel: weinig velden, geen pipeline, geen uren)
+-- ---------------------------------------------------------------------------------
+-- Klanten: e-mail, telefoon en een status (lead / actief / afgerond). Alleen kolommen
+-- erbij, met standaardwaarden: de facturen (formulieren, RPC's, PDF) sturen deze kolommen
+-- niet mee en werken ongewijzigd; een klant die via een factuur ontstaat is 'actief'.
+alter table public.clients
+  add column if not exists email text not null default '' check (length(email) <= 320),
+  add column if not exists telefoon text not null default '' check (length(telefoon) <= 40),
+  add column if not exists status text not null default 'actief' check (status in ('lead', 'actief', 'afgerond'));
+
+create index if not exists clients_status_idx on public.clients (status);
+
+-- Korte notities per klant (tijdlijn op de klantpagina). Gedeeld met het team; alleen de
+-- schrijver kan zijn notitie verwijderen. Wijzigen kan niet (geen update-policy).
+create table if not exists public.client_notes (
+  id uuid primary key default gen_random_uuid(),
+  client_id uuid not null references public.clients (id) on delete cascade,
+  tekst text not null check (length(btrim(tekst)) between 1 and 2000),
+  created_by uuid references auth.users (id) on delete set null default auth.uid(),
+  created_at timestamptz not null default now()
+);
+create index if not exists client_notes_klant_idx on public.client_notes (client_id, created_at desc);
+
+alter table public.client_notes enable row level security;
+drop policy if exists "teamleden lezen klantnotities" on public.client_notes;
+create policy "teamleden lezen klantnotities" on public.client_notes
+  for select to authenticated using ((select public.is_teamlid()));
+drop policy if exists "teamleden schrijven klantnotities" on public.client_notes;
+create policy "teamleden schrijven klantnotities" on public.client_notes
+  for insert to authenticated
+  with check ((select public.is_teamlid()) and created_by = (select auth.uid()));
+drop policy if exists "schrijver verwijdert klantnotitie" on public.client_notes;
+create policy "schrijver verwijdert klantnotitie" on public.client_notes
+  for delete to authenticated
+  using ((select public.is_teamlid()) and created_by = (select auth.uid()));
+revoke update on public.client_notes from anon, authenticated;
+
+-- Projecten: status gepland / bezig / afgerond (was actief / gearchiveerd), een optionele
+-- deadline en een langere notitie. Oude waarden worden omgezet; de app leest beide.
+do $$
+declare
+  c record;
+begin
+  for c in
+    select conname from pg_constraint
+    where conrelid = 'public.projects'::regclass and contype = 'c'
+      and (pg_get_constraintdef(oid) ilike '%status%' or pg_get_constraintdef(oid) ilike '%notitie%')
+  loop
+    execute format('alter table public.projects drop constraint %I', c.conname);
+  end loop;
+end
+$$;
+
+update public.projects set status = 'bezig' where status = 'actief';
+update public.projects set status = 'afgerond' where status = 'gearchiveerd';
+
+alter table public.projects alter column status set default 'bezig';
+alter table public.projects add constraint projects_status_check check (status in ('gepland', 'bezig', 'afgerond'));
+alter table public.projects add constraint projects_notitie_check check (length(notitie) <= 5000);
+alter table public.projects add column if not exists deadline date;
+
+create index if not exists projects_status_idx on public.projects (status);
+-- Klantpagina: taken van een klant (open taken, klantfilter in de agenda).
+create index if not exists tasks_client_idx on public.tasks (client_id) where client_id is not null;
+
+-- Eigenaar(s) van een project (wie het trekt). Gedeeld met het team; alleen actieve
+-- teamleden kunnen eigenaar zijn. Bestaande projecten krijgen bij de eerste keer hun
+-- maker (of de eigenaar van het team) als eigenaar.
+do $$
+declare
+  nieuw boolean := to_regclass('public.project_eigenaren') is null;
+begin
+  create table if not exists public.project_eigenaren (
+    project_id uuid not null references public.projects (id) on delete cascade,
+    user_id uuid not null references auth.users (id) on delete cascade,
+    created_at timestamptz not null default now(),
+    primary key (project_id, user_id)
+  );
+  if nieuw then
+    insert into public.project_eigenaren (project_id, user_id)
+    select p.id, coalesce(p.created_by, public.team_eigenaar())
+    from public.projects p
+    where coalesce(p.created_by, public.team_eigenaar()) is not null
+    on conflict do nothing;
+  end if;
+end
+$$;
+create index if not exists project_eigenaren_user_idx on public.project_eigenaren (user_id);
+
+alter table public.project_eigenaren enable row level security;
+drop policy if exists "teamleden lezen projecteigenaren" on public.project_eigenaren;
+create policy "teamleden lezen projecteigenaren" on public.project_eigenaren
+  for select to authenticated using ((select public.is_teamlid()));
+drop policy if exists "teamleden kiezen projecteigenaren" on public.project_eigenaren;
+create policy "teamleden kiezen projecteigenaren" on public.project_eigenaren
+  for insert to authenticated
+  with check ((select public.is_teamlid()) and public.is_actief_teamlid(user_id));
+drop policy if exists "teamleden halen projecteigenaren weg" on public.project_eigenaren;
+create policy "teamleden halen projecteigenaren weg" on public.project_eigenaren
+  for delete to authenticated using ((select public.is_teamlid()));
+revoke update on public.project_eigenaren from anon, authenticated;

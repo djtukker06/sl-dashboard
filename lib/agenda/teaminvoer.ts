@@ -29,11 +29,11 @@ export const MAX_SUBTAKEN = 50;
 /** Een lijst teamleden (user-id's): minstens één, uniek, maximaal 20. */
 export function parsePersonen(v: unknown, naam = 'persoon'): Resultaat<string[]> {
   if (!Array.isArray(v)) return { ok: false, fout: `Kies minstens één ${naam}.` };
-  const ids = [...new Set(v)];
+  const ids = [...new Set(v.map((x) => (typeof x === 'string' ? x.toLowerCase() : x)))];
   if (!ids.length) return { ok: false, fout: `Kies minstens één ${naam}.` };
   if (ids.length > MAX_PERSONEN) return { ok: false, fout: 'Te veel personen gekozen.' };
   if (!ids.every(isUuid)) return { ok: false, fout: 'Ongeldige persoon.' };
-  return { ok: true, waarde: (ids as string[]).map((x) => x.toLowerCase()) };
+  return { ok: true, waarde: ids as string[] };
 }
 
 /** Titel van een subtaak: 1–200 tekens, witruimte samengevoegd. */
@@ -89,13 +89,39 @@ export function parseSubtaakWijziging(
 export interface ProjectRij {
   naam?: string;
   client_id?: string | null;
-  status?: 'actief' | 'gearchiveerd';
+  status?: 'gepland' | 'bezig' | 'afgerond';
   notitie?: string;
+  deadline?: string | null;
 }
 
-export function parseProject(body: ProjectInvoer, nieuw: boolean): Resultaat<ProjectRij> {
+const DAG = /^\d{4}-\d{2}-\d{2}$/;
+
+/** 'YYYY-MM-DD' die echt bestaat (geen 31 februari). */
+export function isGeldigeDag(v: unknown): v is string {
+  if (typeof v !== 'string' || !DAG.test(v)) return false;
+  const d = new Date(`${v}T00:00:00Z`);
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === v;
+}
+
+/** Oude statuswaarden (vóór 0022) en nieuwe, naar de nieuwe. Onbekend: null. */
+export function projectStatusVan(v: unknown): 'gepland' | 'bezig' | 'afgerond' | null {
+  if (v === 'gepland' || v === 'bezig' || v === 'afgerond') return v;
+  if (v === 'actief') return 'bezig';
+  if (v === 'gearchiveerd') return 'afgerond';
+  return null;
+}
+
+/**
+ * Project aanmaken of wijzigen. `eigenaren` staat apart (eigen tabel project_eigenaren):
+ * undefined = niet wijzigen, anders de nieuwe set (mag leeg).
+ */
+export function parseProject(
+  body: ProjectInvoer,
+  nieuw: boolean
+): Resultaat<ProjectRij> & { eigenaren?: string[] } {
   if (!body || typeof body !== 'object') return { ok: false, fout: 'Ongeldige invoer.' };
   const rij: ProjectRij = {};
+  let eigenaren: string[] | undefined;
   if (nieuw || 'naam' in body) {
     const n = typeof body.naam === 'string' ? body.naam.replace(/\s+/g, ' ').trim() : '';
     if (!n) return { ok: false, fout: 'Geef het project een naam.' };
@@ -108,16 +134,31 @@ export function parseProject(body: ProjectInvoer, nieuw: boolean): Resultaat<Pro
     rij.client_id = k.waarde;
   }
   if ('status' in body) {
-    if (body.status !== 'actief' && body.status !== 'gearchiveerd') return { ok: false, fout: 'Ongeldige status.' };
-    rij.status = body.status;
+    const s = projectStatusVan(body.status);
+    if (!s) return { ok: false, fout: 'Ongeldige status.' };
+    rij.status = s;
   }
   if ('notitie' in body) {
-    const n = tekstVan(body.notitie, 2000, 'notitie');
+    const n = tekstVan(body.notitie, 5000, 'notitie');
     if (!n.ok) return n;
     rij.notitie = n.waarde;
   }
-  if (!nieuw && !Object.keys(rij).length) return { ok: false, fout: 'Niets om te wijzigen.' };
-  return { ok: true, waarde: rij };
+  if ('deadline' in body) {
+    if (body.deadline === null || body.deadline === '') rij.deadline = null;
+    else if (isGeldigeDag(body.deadline)) rij.deadline = body.deadline;
+    else return { ok: false, fout: 'Ongeldige deadline.' };
+  }
+  if ('eigenaren' in body) {
+    const v = body.eigenaren;
+    if (!Array.isArray(v)) return { ok: false, fout: 'Ongeldige eigenaren.' };
+    if (v.length) {
+      const p = parsePersonen(v, 'eigenaar');
+      if (!p.ok) return p;
+      eigenaren = p.waarde;
+    } else eigenaren = [];
+  }
+  if (!nieuw && !Object.keys(rij).length && eigenaren === undefined) return { ok: false, fout: 'Niets om te wijzigen.' };
+  return eigenaren === undefined ? { ok: true, waarde: rij } : { ok: true, waarde: rij, eigenaren };
 }
 
 /**

@@ -1,5 +1,6 @@
 import { isUuid, parseProject } from '@/lib/agenda/invoer';
-import { dbFout, NIET_INGERICHT, projectOphalen } from '@/lib/agenda/repo';
+import { CRM_NIET_INGERICHT, dbFout, NIET_INGERICHT, projectOphalen, zetProjectEigenaren } from '@/lib/agenda/repo';
+import { kolomOntbreekt } from '@/lib/db/ontbreekt';
 import type { ProjectInvoer } from '@/lib/agenda/types';
 import { fout, foutAntwoord, json, leesBody, metSessie } from '@/lib/agenda/api';
 
@@ -25,9 +26,9 @@ export async function GET(request: Request, ctx: Ctx) {
   }
 }
 
-// PATCH /api/projecten/[id]  { naam?, klantId?, status?, notitie? } → { project }
-// Hernoemen, klant koppelen, archiveren of terugzetten. (Verwijderen kan bewust niet:
-// archiveren houdt de koppeling met oude taken intact.)
+// PATCH /api/projecten/[id]  { naam?, klantId?, status?, deadline?, notitie?, eigenaren? } → { project }
+// Alles op de projectpagina slaat direct op via deze route. (Verwijderen kan bewust niet:
+// 'afgerond' houdt de koppeling met oude taken intact.)
 export async function PATCH(request: Request, ctx: Ctx) {
   const s = await metSessie(request);
   if ('antwoord' in s) return s.antwoord;
@@ -54,12 +55,20 @@ export async function PATCH(request: Request, ctx: Ctx) {
         return fout(400, `Er ${count === 1 ? 'hoort 1 taak' : `horen ${count} taken`} bij dit project voor een andere klant. Pas die eerst aan.`);
       }
     }
-    const { data, error } = await s.sb.from('projects').update(p.waarde).eq('id', id).select('id').maybeSingle();
-    if (error) {
-      if (error.code === '23505') return fout(409, 'Er bestaat al een project met die naam (bij deze klant).');
-      throw dbFout(error);
+    if (Object.keys(p.waarde).length) {
+      const { data, error } = await s.sb.from('projects').update(p.waarde).eq('id', id).select('id').maybeSingle();
+      if (error) {
+        if (error.code === '23505') return fout(409, 'Er bestaat al een project met die naam (bij deze klant).');
+        if (kolomOntbreekt(error) || error.code === '23514') return fout(503, CRM_NIET_INGERICHT, 'tabel_ontbreekt');
+        throw dbFout(error);
+      }
+      if (!data) return fout(404, 'Project niet gevonden.');
+    } else {
+      const { data, error } = await s.sb.from('projects').select('id').eq('id', id).maybeSingle();
+      if (error) throw dbFout(error);
+      if (!data) return fout(404, 'Project niet gevonden.');
     }
-    if (!data) return fout(404, 'Project niet gevonden.');
+    if (p.eigenaren !== undefined) await zetProjectEigenaren(s.bron, id, p.eigenaren);
     const project = await projectOphalen(s.bron, id);
     if (!project) return fout(404, 'Project niet gevonden.');
     return json({ project });

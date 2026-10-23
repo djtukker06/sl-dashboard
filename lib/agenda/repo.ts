@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { tabelOntbreekt } from '@/lib/db/ontbreekt';
+import { kolomOntbreekt, tabelOntbreekt } from '@/lib/db/ontbreekt';
+import { projectStatusVan } from './teaminvoer';
 import { bereikMomenten, normTijd, plusDagen } from './datum';
 import type { Afspraak, Project, Subtaak, Taak, TaakDetail, TakenFilter, Tellingen } from './types';
 
@@ -482,7 +483,11 @@ export async function dashboardPlanning(bron: AgendaBron, vandaag: string): Prom
 // ---------------------------------------------------------------------------------
 // Projecten
 // ---------------------------------------------------------------------------------
-const PROJECT_KOLOMMEN = 'id,naam,client_id,status,notitie,created_by,client:clients(company_name)';
+// Met migratie 0022: status gepland/bezig/afgerond, deadline en eigenaren. Daarvóór
+// (oude modus) bestaan deadline en project_eigenaren niet en is de status actief/
+// gearchiveerd; dan lezen we de oude kolommen en tonen we 'bezig'/'afgerond'.
+const PROJECT_KOLOMMEN_OUD = 'id,naam,client_id,status,notitie,created_by,client:clients(company_name)';
+const PROJECT_KOLOMMEN = `${PROJECT_KOLOMMEN_OUD},deadline,eigenaren:project_eigenaren(user_id)`;
 
 interface ProjectDbRij {
   id: string;
@@ -490,58 +495,129 @@ interface ProjectDbRij {
   client_id: string | null;
   status: string;
   notitie: string | null;
+  deadline?: string | null;
   created_by: string | null;
   client?: Join<{ company_name: string | null }>;
+  eigenaren?: { user_id: string }[] | null;
 }
 
-export function naarProject(r: ProjectDbRij, openTaken = 0): Project {
+export function naarProject(r: ProjectDbRij, taken: { open: number; totaal: number } = { open: 0, totaal: 0 }): Project {
   return {
     id: r.id,
     naam: r.naam,
     klantId: r.client_id,
     klantNaam: eerste(r.client)?.company_name ?? null,
-    status: r.status === 'gearchiveerd' ? 'gearchiveerd' : 'actief',
+    status: projectStatusVan(r.status) ?? 'bezig',
     notitie: r.notitie ?? '',
-    openTaken,
+    deadline: r.deadline ?? null,
+    eigenaren: [...new Set((r.eigenaren ?? []).map((x) => x.user_id))],
+    openTaken: taken.open,
+    totaalTaken: taken.totaal,
     aangemaaktDoor: r.created_by
   };
 }
 
+/** Welke projecten: 'lopend' = gepland of bezig (de kiezer in de taak-popup). */
+export type ProjectSelectie = 'lopend' | 'afgerond' | 'alle';
+const AFGEROND = ['afgerond', 'gearchiveerd'];
+
+/**
+ * Voert een projectquery uit met de nieuwe kolommen, en zonder 0022 met de oude.
+ * strikt (de pagina's Klanten & projecten): zonder 0022 een 503 'tabel_ontbreekt'.
+ */
+async function metProjectKolommen<T>(
+  q: (kolommen: string) => PromiseLike<{ data: T | null; error: unknown }>,
+  strikt = false
+): Promise<T | null> {
+  const r = await q(PROJECT_KOLOMMEN);
+  if (!r.error) return r.data;
+  if (!kolomOntbreekt(r.error) || tabelOntbreekt(r.error)) throw dbFout(r.error);
+  if (strikt) throw new AgendaFout(503, CRM_NIET_INGERICHT, 'tabel_ontbreekt');
+  const oud = await q(PROJECT_KOLOMMEN_OUD);
+  if (oud.error) throw dbFout(oud.error);
+  return oud.data;
+}
+
+/** Open en totaal aantal taken per project (wat jij mag zien; projecttaken: het hele team). */
+export async function projectTaakTellingen(
+  bron: AgendaBron,
+  projectIds?: string[]
+): Promise<Map<string, { open: number; totaal: number }>> {
+  const uit = new Map<string, { open: number; totaal: number }>();
+  if (projectIds && !projectIds.length) return uit;
+  let q = bron.sb.from('tasks').select('project_id,completed_at').not('project_id', 'is', null).limit(10000);
+  if (projectIds) q = q.in('project_id', projectIds);
+  const { data, error } = await q;
+  if (error) throw dbFout(error);
+  for (const r of data ?? []) {
+    const id = r.project_id as string;
+    const t = uit.get(id) ?? { open: 0, totaal: 0 };
+    t.totaal++;
+    if (!r.completed_at) t.open++;
+    uit.set(id, t);
+  }
+  return uit;
+}
+
 export async function projectenLijst(
   bron: AgendaBron,
-  opties: { status?: 'actief' | 'gearchiveerd' | 'alle'; klantId?: string | null } = {}
+  opties: { selectie?: ProjectSelectie; klantId?: string | null; strikt?: boolean } = {}
 ): Promise<Project[]> {
   if (!bron.team) throw new AgendaFout(503, NIET_INGERICHT, 'tabel_ontbreekt');
-  let q = bron.sb.from('projects').select(PROJECT_KOLOMMEN).order('naam').limit(1000);
-  if (opties.status && opties.status !== 'alle') q = q.eq('status', opties.status);
-  if (opties.klantId) q = q.eq('client_id', opties.klantId);
-  const [p, t] = await Promise.all([
-    q,
-    bron.sb.from('tasks').select('project_id').not('project_id', 'is', null).is('completed_at', null).limit(5000)
+  const selectie = opties.selectie ?? 'alle';
+  const [rijen, tellingen] = await Promise.all([
+    metProjectKolommen<ProjectDbRij[]>((k) => {
+      let q = bron.sb.from('projects').select(k).order('naam').limit(1000);
+      if (selectie === 'lopend') q = q.not('status', 'in', `(${AFGEROND.join(',')})`);
+      if (selectie === 'afgerond') q = q.in('status', AFGEROND);
+      if (opties.klantId) q = q.eq('client_id', opties.klantId);
+      return q as unknown as PromiseLike<{ data: ProjectDbRij[] | null; error: unknown }>;
+    }, opties.strikt),
+    projectTaakTellingen(bron)
   ]);
-  if (p.error) throw dbFout(p.error);
-  if (t.error) throw dbFout(t.error);
-  const open = new Map<string, number>();
-  for (const r of t.data ?? []) {
-    const id = r.project_id as string;
-    open.set(id, (open.get(id) ?? 0) + 1);
-  }
-  return ((p.data ?? []) as unknown as ProjectDbRij[])
-    .map((r) => naarProject(r, open.get(r.id) ?? 0))
+  return (rijen ?? [])
+    .map((r) => naarProject(r, tellingen.get(r.id)))
     .sort((a, b) => a.naam.localeCompare(b.naam, 'nl'));
 }
 
-export async function projectOphalen(bron: AgendaBron, id: string): Promise<Project | null> {
-  const { data, error } = await bron.sb.from('projects').select(PROJECT_KOLOMMEN).eq('id', id).maybeSingle();
-  if (error) throw dbFout(error);
-  if (!data) return null;
-  const { count } = await bron.sb
-    .from('tasks')
-    .select('id', { count: 'exact', head: true })
-    .eq('project_id', id)
-    .is('completed_at', null);
-  return naarProject(data as unknown as ProjectDbRij, count ?? 0);
+export async function projectOphalen(bron: AgendaBron, id: string, strikt = false): Promise<Project | null> {
+  const [rij, tellingen] = await Promise.all([
+    metProjectKolommen<ProjectDbRij>(
+      (k) => bron.sb.from('projects').select(k).eq('id', id).maybeSingle() as unknown as PromiseLike<{ data: ProjectDbRij | null; error: unknown }>,
+      strikt
+    ),
+    projectTaakTellingen(bron, [id])
+  ]);
+  if (!rij) return null;
+  return naarProject(rij, tellingen.get(id));
 }
+
+/**
+ * Zet de eigenaren van een project op precies deze set (alleen met migratie 0022).
+ * RLS: alleen actieve teamleden kunnen eigenaar zijn.
+ */
+export async function zetProjectEigenaren(bron: AgendaBron, projectId: string, eigenaren: string[]): Promise<void> {
+  const weg = bron.sb.from('project_eigenaren').delete().eq('project_id', projectId);
+  const { error: e1 } = eigenaren.length
+    ? await weg.not('user_id', 'in', `(${eigenaren.join(',')})`)
+    : await weg;
+  if (e1) throw kolomOntbreekt(e1) ? new AgendaFout(503, CRM_NIET_INGERICHT, 'tabel_ontbreekt') : dbFout(e1);
+  if (!eigenaren.length) return;
+  const { error: e2 } = await bron.sb
+    .from('project_eigenaren')
+    .upsert(
+      eigenaren.map((u) => ({ project_id: projectId, user_id: u })),
+      { onConflict: 'project_id,user_id', ignoreDuplicates: true }
+    );
+  if (e2) {
+    if (kolomOntbreekt(e2)) throw new AgendaFout(503, CRM_NIET_INGERICHT, 'tabel_ontbreekt');
+    if ((e2 as { code?: string }).code === '42501') throw new AgendaFout(400, 'Alleen actieve teamleden kunnen eigenaar zijn.');
+    throw dbFout(e2);
+  }
+}
+
+/** Melding als migratie 0022 (klanten & projecten) nog niet is uitgevoerd. */
+export const CRM_NIET_INGERICHT = 'Klanten & projecten nog niet ingericht (migratie 0022).';
 
 export { PROJECT_KOLOMMEN };
 export type { ProjectDbRij };

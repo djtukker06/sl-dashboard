@@ -1,6 +1,5 @@
 'use client';
 
-import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { agendaApi, ApiFout, typtIn, useNu, useSmal } from '@/lib/agenda/client';
 import {
@@ -388,11 +387,6 @@ function Agenda({
         <button type="button" className="db-knop" title="Nieuwe afspraak (a)" aria-keyshortcuts="a" onClick={() => nieuweAfspraakOp(dagen.includes(vandaag) ? vandaag : focus, null)}>
           + Afspraak
         </button>
-        {!overgang && (
-          <Link className="db-knop" href="/agenda/projecten">
-            Projecten
-          </Link>
-        )}
         <div className="ag-mobiel-tabs" role="tablist" aria-label="Weergave">
           <button type="button" role="tab" aria-selected={mobielTab === 'taken'} onClick={() => setMobielTab('taken')}>
             Taken

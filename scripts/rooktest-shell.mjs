@@ -54,6 +54,12 @@
 //    - tab "Uitgezet" (anti-join in SQL), dashboard alleen met het aantal uitgezet;
 //    - 0022: leesregels op taken/toewijzingen/subtaken/afspraken/deelnemers, met teamcheck.
 // Live: /agenda?wie=team zonder sessie -> /login; /api/taken?filter=uitgezet -> 401.
+// 9. Statisch, team van twee — stap 3 (klanten & projecten):
+//    - één rail-tab "Klanten" (/klanten + /projecten), 6 items; /agenda/projecten stuurt door;
+//    - nieuwe routes via de teamcheck; 0022: clients-kolommen, client_notes, project_eigenaren
+//      met RLS (is_teamlid), projectstatus gepland/bezig/afgerond.
+// Live: /klanten, /projecten, /klanten/<id>, /projecten/<id> en /agenda/projecten zonder
+//       sessie -> /login; /api/klanten* -> 401.
 //
 // Gebruik:  node scripts/rooktest-shell.mjs [http://localhost:3107]
 //           node scripts/rooktest-shell.mjs --alleen-statisch
@@ -191,15 +197,27 @@ console.log("Boekhouding en Account & mail");
   check(/source: '\/uitgaven', destination: '\/boekhouding\/bonnetjes'/.test(lees("next.config.ts")), "next.config.ts: /uitgaven → /boekhouding/bonnetjes");
   check(/BoekhoudingKop/.test(lees("app/(app)/facturen/layout.tsx")), "facturen-layout toont de Boekhouding-kop met subnavigatie");
 
-  // Facturen inhoudelijk ongewijzigd t.o.v. stap 1 (alleen de layout mag anders).
+  // Facturen inhoudelijk ongewijzigd t.o.v. stap 1 (alleen de layout mag anders, en op de
+  // facturen-klantpagina staat alleen een extra link naar Klanten & projecten).
   const { spawnSync } = await import("node:child_process");
+  const KLANT = "app/(app)/facturen/klanten/[clientId]/page.tsx";
   const diff = spawnSync(
     "git",
-    ["diff", "--name-only", "4765da6", "--", "components/InvoiceForm.tsx", "components/InvoicesTable.tsx", "components/QuotesTable.tsx", "lib/invoice", "app/(app)/facturen", ":(exclude)app/(app)/facturen/layout.tsx"],
+    ["diff", "--name-only", "4765da6", "--", "components/InvoiceForm.tsx", "components/InvoicesTable.tsx", "components/QuotesTable.tsx", "lib/invoice", "app/(app)/facturen", ":(exclude)app/(app)/facturen/layout.tsx", `:(exclude)${KLANT}`],
     { cwd: ROOT, encoding: "utf8" }
   );
-  if (diff.status === 0) check(diff.stdout.trim() === "", "facturenschermen, -componenten en lib/invoice ongewijzigd", diff.stdout.trim().replace(/\n/g, ", "));
-  else console.log("  (git niet beschikbaar: facturen-diff overgeslagen)");
+  if (diff.status === 0) {
+    check(diff.stdout.trim() === "", "facturenschermen, -componenten en lib/invoice ongewijzigd", diff.stdout.trim().replace(/\n/g, ", "));
+    const k = spawnSync("git", ["diff", "-U0", "4765da6", "--", KLANT], { cwd: ROOT, encoding: "utf8" });
+    const regels = k.stdout.split("\n").filter((r) => /^[+-](?![+-])/.test(r));
+    const weg = regels.filter((r) => r.startsWith("-"));
+    const erbij = regels.filter((r) => r.startsWith("+")).join("\n");
+    check(
+      weg.length === 0 && /href=\{`\/klanten\/\$\{klant\.id\}`\}/.test(erbij) && !/supabase|from\(|await /.test(erbij),
+      "facturen-klantpagina: alleen een link naar de klantpagina toegevoegd",
+      regels.join(" | ")
+    );
+  } else console.log("  (git niet beschikbaar: facturen-diff overgeslagen)");
 
   const kern = lees("lib/mail/kluis-kern.ts");
   check(/'aes-256-gcm'/.test(kern) && /setAAD\(/.test(kern) && /randomBytes\(12\)/.test(kern), "kluis: AES-256-GCM, AAD en een nieuwe IV per keer");
@@ -299,7 +317,7 @@ console.log("Afronding (SQL, documentatie, RLS-test)");
   check(/teamlid-toevoegen\.mjs/.test(readme) && /teamlid-verwijderen\.mjs/.test(readme), "README: teamlid-scripts");
   check(/\*\*Rollen\*\*/.test(readme) && /`eigenaar`/.test(readme), "README: rollen uitgelegd");
   check(/test-rls\.mjs/.test(readme) && /elke policy vraagt om teamlidmaatschap/.test(readme), "README: RLS-test en controletabel");
-  check(/MAIL_ENCRYPTION_KEY/.test(readme) && /Boekhouding/.test(readme) && /\/agenda\/projecten/.test(readme), "README: mailsleutel, Boekhouding en projecten");
+  check(/MAIL_ENCRYPTION_KEY/.test(readme) && /Boekhouding/.test(readme) && /\/projecten/.test(readme) && /Klanten &amp; projecten|Klanten & projecten/.test(readme), "README: mailsleutel, Boekhouding en Klanten & projecten");
   const env = lees(".env.local.example");
   check(/^MAIL_ENCRYPTION_KEY=$/m.test(env) && /openssl rand -base64 32/.test(env), ".env.local.example: MAIL_ENCRYPTION_KEY met uitleg");
   check(!/^[A-Z_]+=\S/m.test(env), ".env.local.example: geen ingevulde waarden");
@@ -363,6 +381,30 @@ console.log("Team van twee, stap 2 (wie ziet welke taak)");
   }
   check(/create or replace function public\.taak_zichtbaar\(p_task uuid\)[\s\S]*?security definer/.test(m22), "0022: taak_zichtbaar() (security definer, geen recursie)");
   check(/create index if not exists tasks_maker_open_idx/.test(m22), "0022: index voor Uitgezet");
+}
+
+// ---------------------------------------------------------------------------------
+// 9. Team van twee, stap 3: klanten & projecten (statisch)
+// ---------------------------------------------------------------------------------
+console.log("Team van twee, stap 3 (klanten & projecten)");
+{
+  const modules = lees("lib/modules.ts");
+  const ids = [...modules.matchAll(/^\s{4}id: '([a-z]+)'/gm)].map((m) => m[1]);
+  check(ids.length === 6 && ids.includes("klanten"), "rail: 6 items, waaronder Klanten", ids.join(","));
+  check(/paden: \['\/klanten', '\/projecten'\]/.test(modules), "Klanten is actief op /klanten en /projecten");
+  check(/redirect\('\/projecten'\)/.test(lees("app/(app)/agenda/projecten/page.tsx")), "/agenda/projecten stuurt door naar /projecten");
+  for (const f of ["app/(app)/klanten/page.tsx", "app/(app)/klanten/[id]/page.tsx", "app/(app)/projecten/page.tsx", "app/(app)/projecten/[id]/page.tsx"]) {
+    check(/vereisTeamlidPagina\(/.test(lees(f)), `${f}: teamcheck`);
+  }
+  for (const f of ["app/api/klanten/route.ts", "app/api/klanten/[id]/route.ts", "app/api/klanten/[id]/notities/route.ts", "app/api/klanten/[id]/notities/[notitieId]/route.ts"]) {
+    check(/await metSessie\(request\)/.test(lees(f)), `${f}: teamcheck`);
+  }
+  const m22 = lees("supabase/migrations/0022_team_crm.sql");
+  for (const t of ["client_notes", "project_eigenaren"]) {
+    check(new RegExp(`alter table public\\.${t} enable row level security`).test(m22), `0022: RLS aan op ${t}`);
+  }
+  check(/check \(status in \('gepland', 'bezig', 'afgerond'\)\)/.test(m22) && /status = 'bezig' where status = 'actief'/.test(m22), "0022: projectstatus omgezet");
+  check(/add column if not exists status text not null default 'actief'/.test(m22), "0022: klantstatus standaard 'actief' (facturen ongewijzigd)");
 }
 
 if (ALLEEN_STATISCH) eindig();
@@ -452,7 +494,7 @@ for (const url of ["/social-files/brand/logo-licht.png", "/social-files/projects
 
 {
   // Taken op naam: ook met parameters geen gegevens zonder sessie.
-  for (const url of ["/api/taken?filter=uitgezet", "/api/taken?wie=team", "/api/agenda?van=2026-01-01&tot=2026-01-07&wie=team", "/api/projecten?status=alle", "/api/team"]) {
+  for (const url of ["/api/taken?filter=uitgezet", "/api/taken?wie=team", "/api/agenda?van=2026-01-01&tot=2026-01-07&wie=team", "/api/projecten?status=alle", "/api/projecten?status=afgerond", "/api/team"]) {
     const res = await vraag(url);
     check(res.status === 401, `GET ${url} zonder sessie -> 401`, `status ${res.status}`);
   }
@@ -492,7 +534,7 @@ for (const url of ["/login", "/geen-toegang", "/api/taken"]) {
 }
 
 console.log("Kernpagina's: precies 307 naar /login");
-for (const url of ["/", "/boekhouding", "/boekhouding/bonnetjes", "/account", "/facturen", "/agenda/projecten", "/welkom"]) {
+for (const url of ["/", "/boekhouding", "/boekhouding/bonnetjes", "/account", "/facturen", "/agenda/projecten", "/welkom", "/klanten", "/klanten?nieuw=1", "/projecten", "/klanten/00000000-0000-4000-8000-000000000000", "/projecten/00000000-0000-4000-8000-000000000000"]) {
   const res = await vraag(url);
   check(res.status === 307 && naarLogin(res), url, `status ${res.status} ${res.headers.get("location") || ""}`);
 }

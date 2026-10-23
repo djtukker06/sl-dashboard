@@ -45,7 +45,12 @@ export interface TaakDetail extends Taak {
   subtakenLijst: Subtaak[];
 }
 
-export type ProjectStatus = 'actief' | 'gearchiveerd';
+/**
+ * Status van een project (migratie 0022). Vóór 0022 kende de database 'actief' en
+ * 'gearchiveerd'; die worden bij het lezen getoond als 'bezig' en 'afgerond'.
+ */
+export type ProjectStatus = 'gepland' | 'bezig' | 'afgerond';
+export const PROJECT_STATUSSEN: ProjectStatus[] = ['bezig', 'gepland', 'afgerond'];
 
 export interface Project {
   id: string;
@@ -54,8 +59,14 @@ export interface Project {
   klantNaam: string | null;
   status: ProjectStatus;
   notitie: string;
-  /** Aantal open taken in dit project. */
+  /** 'YYYY-MM-DD' of null. */
+  deadline: string | null;
+  /** Wie het project trekt (user-id's); leeg vóór migratie 0022. */
+  eigenaren: string[];
+  /** Aantal open taken in dit project (die jij mag zien; projecttaken ziet het hele team). */
   openTaken: number;
+  /** Alle taken (open + afgerond), voor de voortgang "3/7". */
+  totaalTaken: number;
   aangemaaktDoor: string | null;
 }
 
@@ -119,6 +130,10 @@ export interface ProjectInvoer {
   klantId?: string | null;
   status?: ProjectStatus;
   notitie?: string;
+  /** 'YYYY-MM-DD' of null. */
+  deadline?: string | null;
+  /** Vervangt de hele set eigenaren (mag leeg). */
+  eigenaren?: string[];
 }
 
 /** Body voor POST/PATCH /api/afspraken. Tijden in Amsterdamse tijd. */
