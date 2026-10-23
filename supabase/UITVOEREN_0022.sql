@@ -163,6 +163,32 @@ alter table public.clients
 
 create index if not exists clients_status_idx on public.clients (status);
 
+-- Een lead met een factuur is een actieve klant. De facturen-code (upsertKlant, RPC's)
+-- raakt de status niet aan; deze trigger zet een lead op 'actief' zodra er een factuur
+-- voor de klant bestaat. SECURITY DEFINER zodat het ook lukt als de factuur via een RPC of
+-- de service-role ontstaat; hij wijzigt alleen 'lead' → 'actief' van díe klant.
+create or replace function public.klant_actief_na_factuur()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  update public.clients set status = 'actief' where id = new.client_id and status = 'lead';
+  return new;
+end;
+$$;
+revoke all on function public.klant_actief_na_factuur() from public, anon, authenticated;
+
+drop trigger if exists invoices_klant_actief on public.invoices;
+create trigger invoices_klant_actief
+  after insert or update of client_id on public.invoices
+  for each row execute function public.klant_actief_na_factuur();
+
+-- Eenmalig (en onschadelijk bij opnieuw uitvoeren): leads die al facturen hebben.
+update public.clients c set status = 'actief'
+where c.status = 'lead' and exists (select 1 from public.invoices i where i.client_id = c.id);
+
 -- Korte notities per klant (tijdlijn op de klantpagina). Gedeeld met het team; alleen de
 -- schrijver kan zijn notitie verwijderen. Wijzigen kan niet (geen update-policy).
 create table if not exists public.client_notes (

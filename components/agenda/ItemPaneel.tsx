@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { agendaApi, ApiFout } from '@/lib/agenda/client';
 import { amsterdamNaarMoment, inAmsterdam, langeDag, minutenNaarTijd, plusDagen, tijdNaarMinuten, type Dag } from '@/lib/agenda/datum';
-import { magAfspraakWijzigen } from '@/lib/agenda/rechten';
+import { magAfspraakWijzigen, namenLijst } from '@/lib/agenda/rechten';
 import { dagenVanAfspraak } from '@/lib/agenda/weergave';
 import type { Afspraak, Taak } from '@/lib/agenda/types';
 import { Persoon } from '@/components/team/Persoon';
@@ -210,7 +210,7 @@ function AfspraakFormulier({
   const [start, setStart] = useState(afspraak.heleDag ? '09:00' : s.tijd);
   const [eind, setEind] = useState(afspraak.heleDag ? '10:00' : e.tijd);
   const [klant, setKlant] = useState(afspraak.klantId ? { id: afspraak.klantId, naam: afspraak.klantNaam ?? 'Klant' } : null);
-  const { mijnId, overgang } = useTeam();
+  const { mijnId, overgang, perId } = useTeam();
   const [deelnemers, setDeelnemers] = useState<string[]>(afspraak.deelnemers.length ? afspraak.deelnemers : [mijnId]);
   const mag = nieuw || magAfspraakWijzigen(afspraak, mijnId, overgang);
   const { bezig, fout, doe } = useOpslaan();
@@ -223,9 +223,18 @@ function AfspraakFormulier({
       ? { titel, notitie, locatie, klantId: klant?.id ?? null, heleDag: true, datum, eindDatum: eindDatum || datum }
       : { titel, notitie, locatie, klantId: klant?.id ?? null, heleDag: false, datum, start, eind };
     const metWie = overgang ? b : { ...b, deelnemers };
+    // Een afspraak zonder jou erop staat alleen in de agenda van de anderen: zeg dat erbij.
+    const voorAnder = !overgang && !deelnemers.includes(mijnId);
+    const namen = namenLijst(deelnemers.map((id) => perId.get(id)?.voornaam || perId.get(id)?.naam || 'iemand'));
     const r = await doe(
       () => (nieuw ? agendaApi.maakAfspraak(metWie) : agendaApi.wijzigAfspraak(afspraak.id, metWie)),
-      nieuw ? 'Afspraak toegevoegd' : 'Afspraak opgeslagen'
+      nieuw
+        ? voorAnder
+          ? `Afspraak toegevoegd voor ${namen} (staat in hun agenda)`
+          : 'Afspraak toegevoegd'
+        : voorAnder
+          ? `Afspraak opgeslagen voor ${namen} (staat niet meer in jouw agenda)`
+          : 'Afspraak opgeslagen'
     );
     if (r) onOpgeslagen(r.event);
   }
@@ -278,6 +287,9 @@ function AfspraakFormulier({
           <div className="ag-label">
             <span>Wie</span>
             <VoorWieKiezer waarde={deelnemers} onChange={setDeelnemers} uitgeschakeld={!mag} label="Wie" />
+            {mag && !deelnemers.includes(mijnId) && (
+              <p className="ag-uitleg">Je ziet deze afspraak dan zelf niet meer in je agenda.</p>
+            )}
           </div>
         )}
 

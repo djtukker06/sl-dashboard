@@ -797,6 +797,22 @@ async function crm0022(db) {
   check(r.ok && r.rows[0].status === "actief", "0022: klant zonder status (facturen) wordt 'actief'", uitleg(r));
   r = await als(db, "mark", "insert into public.clients (company_name, email, status) values ('Nieuwe lead', 'a@b.nl', 'lead') returning status");
   check(r.ok && r.rows[0].status === "lead", "0022: teamlid maakt een lead", uitleg(r));
+  // Lead + factuur → actief (trigger), ook als de factuur de status niet meestuurt.
+  // Facturen ontstaan via de RPC (security definer, eigenaar postgres); hier als superuser.
+  const leadId = "aaaaaaaa-0000-4000-8000-0000000000c1";
+  await db.query("insert into public.clients (id, company_name, status) values ($1, 'Lead met factuur', 'lead')", [leadId]);
+  await db.query("insert into public.invoices (invoice_number, year, sequence_number, client_id, client_company_name, line_items, subtotal, revenue_subtotal, vat_amount, total, created_by) values ('26-901', 2026, 901, $1, 'Lead met factuur', '[]'::jsonb, 0, 0, 0, 0, null)", [leadId]);
+  const naFactuur = (await db.query("select status from public.clients where id = $1", [leadId])).rows[0].status;
+  check(naFactuur === "actief", "0022: lead met een factuur wordt 'actief'", naFactuur);
+  await db.query("update public.clients set status = 'lead' where id = $1", [leadId]);
+  await voerUit(db, lees("supabase/migrations/0022_team_crm.sql"), "0022_team_crm.sql (lead met factuur)");
+  const naHerhaal = (await db.query("select status from public.clients where id = $1", [leadId])).rows[0].status;
+  check(naHerhaal === "actief", "0022: bestaande lead met factuur wordt bij uitvoeren 'actief'", naHerhaal);
+  // Opruimen: latere tests rekenen op precies één factuur.
+  await db.query("delete from public.invoices where invoice_number = '26-901'");
+  await db.query("delete from public.clients where id = $1", [leadId]);
+  r = await als(db, "mark", "insert into public.clients (company_name, status) values ('Lead zonder factuur', 'lead') returning status");
+  check(r.ok && r.rows[0].status === "lead", "0022: lead zonder factuur blijft lead", uitleg(r));
   r = await als(db, "mark", "update public.clients set status = 'kans' where id = 'aaaaaaaa-0000-4000-8000-000000000001'");
   check(!r.ok && r.code === "23514", "0022: onbekende klantstatus geweigerd", uitleg(r));
   r = await als(db, "mark", "update public.projects set status = 'actief' where id = 'dddddddd-0000-4000-8000-000000000001'");

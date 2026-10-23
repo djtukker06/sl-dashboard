@@ -597,16 +597,24 @@ export async function projectenLijst(
 ): Promise<Project[]> {
   if (!bron.team) throw new AgendaFout(503, NIET_INGERICHT, 'tabel_ontbreekt');
   const selectie = opties.selectie ?? 'alle';
-  const [rijen, tellingen] = await Promise.all([
+  const haalRijen = () =>
     metProjectKolommen<ProjectDbRij[]>((k) => {
       let q = bron.sb.from('projects').select(k).order('naam').limit(1000);
       if (selectie === 'lopend') q = q.not('status', 'in', `(${AFGEROND.join(',')})`);
       if (selectie === 'afgerond') q = q.in('status', AFGEROND);
       if (opties.klantId) q = q.eq('client_id', opties.klantId);
       return q as unknown as PromiseLike<{ data: ProjectDbRij[] | null; error: unknown }>;
-    }, opties.strikt),
-    projectTaakTellingen(bron)
-  ]);
+    }, opties.strikt);
+  let rijen: ProjectDbRij[] | null;
+  let tellingen: Map<string, { open: number; totaal: number }>;
+  if (opties.klantId) {
+    // Klantpagina: alleen de taken van de projecten van deze klant tellen (meestal 0–3).
+    rijen = await haalRijen();
+    tellingen = await projectTaakTellingen(bron, (rijen ?? []).map((r) => r.id));
+  } else {
+    // Projectenoverzicht toont alles: rijen en tellingen parallel.
+    [rijen, tellingen] = await Promise.all([haalRijen(), projectTaakTellingen(bron)]);
+  }
   return (rijen ?? [])
     .map((r) => naarProject(r, tellingen.get(r.id)))
     .sort((a, b) => a.naam.localeCompare(b.naam, 'nl'));

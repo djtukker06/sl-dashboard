@@ -532,8 +532,12 @@ function Agenda({
           onOpgeslagen={(s) => {
             setSelectie(null);
             if (s.soort === 'afspraak') {
-              if (selectie.nieuw) setBereik((b) => (b ? { ...b, afspraken: [...b.afspraken, s.item] } : b));
-              else pasAfspraakAan(s.item);
+              // Alleen lokaal tonen als de afspraak (nog) op jouw naam staat; anders verdwijnt hij bij herladen toch.
+              const vanMij = overgang || s.item.deelnemers.includes(mijnId);
+              if (selectie.nieuw) {
+                if (vanMij) setBereik((b) => (b ? { ...b, afspraken: [...b.afspraken, s.item] } : b));
+              } else if (vanMij) pasAfspraakAan(s.item);
+              else setBereik((b) => (b ? { ...b, afspraken: b.afspraken.filter((x) => x.id !== s.item.id) } : b));
             }
             herlaad();
           }}
