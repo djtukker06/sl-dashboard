@@ -121,3 +121,79 @@
 @media (max-width: 640px) {
   .ac-snel-velden { grid-template-columns: 1fr; }
 }
+
+/* ---------- meerdere inboxen (Mailboxen.tsx) ---------- */
+.ac-sub { margin: 0 0 10px; font-size: 14px; font-weight: 700; }
+.ac-inboxen { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.ac-inbox {
+  --ml-inbox-kleur: var(--sl-sand);
+  display: grid;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--sl-line);
+  border-left: 3px solid var(--ml-inbox-kleur);
+  border-radius: 4px;
+  background: var(--sl-bg);
+}
+.ac-inbox-kop { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.ac-inbox-stip { flex: none; width: 10px; height: 10px; border-radius: 50%; background: var(--ml-inbox-kleur); }
+.ac-inbox-tekst { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.ac-inbox-tekst strong { font-size: 14.5px; font-weight: 700; }
+.ac-inbox-tekst span { font-size: 12.5px; color: var(--sl-muted); overflow-wrap: anywhere; }
+.ac-inbox-tag {
+  flex: none;
+  padding: 2px 8px;
+  border: 1px solid var(--sl-line);
+  border-radius: 999px;
+  font-family: var(--sl-mono);
+  font-size: 10.5px;
+  color: var(--sl-muted);
+}
+.ac-inbox-volgorde { display: inline-flex; gap: 2px; }
+.ac-pijl {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--sl-line);
+  border-radius: var(--sl-r);
+  background: transparent;
+  color: var(--sl-muted);
+  font-size: 13px;
+  cursor: pointer;
+}
+.ac-pijl:hover:not(:disabled) { color: var(--sl-text); background: var(--sl-hover); }
+.ac-pijl:disabled { opacity: .35; cursor: default; }
+.ac-pijl:focus-visible { outline: none; box-shadow: var(--sl-focus); }
+.ac-inbox-balk { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; }
+.ac-inbox-knoppen { display: inline-flex; flex-wrap: wrap; gap: 6px 14px; }
+.ac-inbox-form { padding-top: 12px; border-top: 1px solid var(--sl-line-soft); }
+.ac-zicht { margin: 0; padding: 0; border: 0; display: grid; gap: 8px; min-width: 0; }
+.ac-zicht-keuze {
+  display: inline-flex;
+  padding: 2px;
+  border: 1px solid var(--sl-line);
+  border-radius: 999px;
+  background: var(--sl-panel);
+}
+.ac-zicht-optie {
+  position: relative;
+  padding: 5px 14px;
+  border-radius: 999px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--sl-muted);
+  cursor: pointer;
+  transition: background-color .15s var(--sl-ease), color .15s var(--sl-ease);
+}
+.ac-zicht-optie input { position: absolute; inset: 0; opacity: 0; margin: 0; cursor: pointer; }
+.ac-zicht-optie.is-aan { background: var(--sl-sand); color: var(--sl-dark); }
+.ac-zicht-optie:has(input:focus-visible) { box-shadow: var(--sl-focus); }
+.ac-zicht-optie:has(input:disabled) { cursor: default; opacity: .7; }
+.ac-koppelen { display: grid; gap: 8px; padding: 16px; border: 1px dashed var(--sl-line); border-radius: 4px; }
+.ac-gedeeld { display: grid; gap: 0; }
+.ac-inbox-gedeeld { opacity: .9; }
+.ac-inbox-instellingen { display: grid; gap: 14px; }
+.ac-kleuren-veld { margin: 0; padding: 0; border: 0; display: grid; gap: 8px; min-width: 0; }
+.ac-kleuren-klein .ac-kleur-stip { width: 22px; height: 22px; }
+.ac-waarschuwing-zacht { color: var(--sl-muted); border-color: var(--sl-line); }

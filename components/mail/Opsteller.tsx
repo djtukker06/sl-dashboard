@@ -1,8 +1,8 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { adresNaam, adresVol, grootteTekst, mailApi, MailApiFout, volleDatum } from '@/lib/mail/client';
-import type { Adres, Bericht } from '@/lib/mail/types';
+import { adresNaam, adresVol, bewaarLaatsteVan, grootteTekst, mailApi, MailApiFout, volleDatum } from '@/lib/mail/client';
+import type { Adres, Bericht, InboxDto } from '@/lib/mail/types';
 import { useToast } from '@/components/agenda/Toast';
 import { AdresVeld } from './AdresVeld';
 import { Icoon } from './Iconen';
@@ -35,7 +35,7 @@ function uniek(lijst: Adres[], zonder: string[]): Adres[] {
   });
 }
 
-function beginWaarden(modus: OpstelModus, basis: Bericht | null, account: string, handtekening: string, startAan: string) {
+function beginWaarden(modus: OpstelModus, basis: Bericht | null, eigenAdressen: string[], handtekening: string, startAan: string) {
   const hand = handtekening ? `\n\n${handtekening}` : '';
   if (!basis || modus === 'nieuw') {
     return { aan: startAan ? `${startAan}, ` : '', cc: '', onderwerp: '', tekst: hand ? `\n${hand}` : '' };
@@ -57,8 +57,8 @@ function beginWaarden(modus: OpstelModus, basis: Bericht | null, account: string
     };
   }
   const ontvanger = basis.antwoordAan.length ? basis.antwoordAan : basis.van ? [basis.van] : [];
-  const aan = uniek(ontvanger, [account]);
-  const cc = modus === 'allen' ? uniek([...basis.aan, ...basis.cc], [account, ...aan.map((a) => a.adres)]) : [];
+  const aan = uniek(ontvanger, eigenAdressen);
+  const cc = modus === 'allen' ? uniek([...basis.aan, ...basis.cc], [...eigenAdressen, ...aan.map((a) => a.adres)]) : [];
   return {
     aan: aan.map(adresVol).join(', ') + (aan.length ? ', ' : ''),
     cc: cc.map(adresVol).join(', '),
@@ -74,27 +74,40 @@ const TITELS: Record<OpstelModus, string> = {
   doorsturen: 'Doorsturen'
 };
 
+// "Van": je kiest vanaf welke inbox je verstuurt (ook een met het team gedeelde). Bij
+// beantwoorden/doorsturen staat de inbox van het bericht vooraf ingesteld; bij een nieuwe mail
+// de inbox die je bekijkt, anders de laatst gebruikte. Handtekening en afzendernaam wisselen mee.
 export function Opsteller({
   modus,
   basis,
-  account,
-  handtekening,
+  basisMb,
+  inboxen,
+  startVan,
   startAan = '',
-  adressen,
+  adressenPer,
+  laadAdressen,
   onSluit,
   onVerzonden
 }: {
   modus: OpstelModus;
   basis: Bericht | null;
-  account: string;
-  handtekening: string;
+  /** De inbox waar het origineel in staat (bij beantwoorden/doorsturen). */
+  basisMb: string | null;
+  inboxen: InboxDto[];
+  startVan: string;
   startAan?: string;
-  adressen: Adres[];
+  adressenPer: Record<string, Adres[]>;
+  laadAdressen: (mb: string) => void;
   onSluit: () => void;
-  onVerzonden: (antwoordOp: { map: string; uid: number } | null) => void;
+  onVerzonden: (antwoordOp: { mb: string; map: string; uid: number } | null, van: string) => void;
 }) {
   const toast = useToast();
-  const [begin] = useState(() => beginWaarden(modus, basis, account, handtekening, startAan));
+  const kiesbaar = inboxen.filter((i) => i.leesbaar);
+  const [van, setVan] = useState(startVan);
+  const vanInbox = inboxen.find((i) => i.id === van) ?? kiesbaar[0] ?? inboxen[0];
+  const eigenAdressen = inboxen.map((i) => i.email);
+  const [begin] = useState(() => beginWaarden(modus, basis, eigenAdressen, vanInbox?.handtekening ?? '', startAan));
+  const adressen = adressenPer[van] ?? [];
   const [aan, setAan] = useState(begin.aan);
   const [cc, setCc] = useState(begin.cc);
   const [bcc, setBcc] = useState('');
@@ -120,6 +133,24 @@ export function Opsteller({
       }
     }
   }, [modus]);
+
+  // Adressuggesties uit de gekozen inbox (pas opgehaald als je opstelt).
+  useEffect(() => {
+    laadAdressen(van);
+  }, [van, laadAdressen]);
+
+  /** Andere afzender: de handtekening in de tekst wisselt mee. */
+  const wisselVan = (nieuw: string) => {
+    const oud = inboxen.find((i) => i.id === van)?.handtekening ?? '';
+    const nieuwe = inboxen.find((i) => i.id === nieuw)?.handtekening ?? '';
+    setVan(nieuw);
+    if (oud === nieuwe) return;
+    setTekst((t) => {
+      if (oud && t.includes(oud)) return t.replace(oud, nieuwe);
+      if (!oud && nieuwe && !t.trim()) return `\n\n\n${nieuwe}`;
+      return t;
+    });
+  };
 
   const gewijzigd =
     aan !== begin.aan || cc !== begin.cc || bcc !== '' || onderwerp !== begin.onderwerp || tekst !== begin.tekst || bestanden.length > 0;
@@ -159,7 +190,7 @@ export function Opsteller({
       tekst,
       origineel:
         basis && modus !== 'nieuw'
-          ? { map: basis.map, uid: basis.uid, modus: modus === 'doorsturen' ? 'doorsturen' : 'antwoord' }
+          ? { mb: basisMb ?? van, map: basis.map, uid: basis.uid, modus: modus === 'doorsturen' ? 'doorsturen' : 'antwoord' }
           : null,
       origineleBijlagen: modus === 'doorsturen' ? meeDelen : []
     };
@@ -173,9 +204,13 @@ export function Opsteller({
     }
     setBezig(true);
     try {
-      const res = await mailApi.verzend(body);
+      const res = await mailApi.verzend(van, body);
+      bewaarLaatsteVan(van);
       toast(res.waarschuwing ?? 'Verzonden', res.waarschuwing ? { fout: true } : undefined);
-      onVerzonden(basis && (modus === 'antwoord' || modus === 'allen') ? { map: basis.map, uid: basis.uid } : null);
+      onVerzonden(
+        basis && (modus === 'antwoord' || modus === 'allen') ? { mb: basisMb ?? van, map: basis.map, uid: basis.uid } : null,
+        van
+      );
     } catch (e) {
       setFout(e instanceof MailApiFout ? e.message : 'Verzenden is niet gelukt.');
       setBezig(false);
@@ -213,8 +248,26 @@ export function Opsteller({
       >
         <div className="ml-velden">
           <div className="ml-veld-rij ml-veld-rij-van">
-            <span className="ml-veld-label">Van</span>
-            <span className="ml-veld-statisch">{account}</span>
+            <label className="ml-veld-label" htmlFor="ml-van">
+              Van
+            </label>
+            {kiesbaar.length > 1 ? (
+              <span className="ml-van" style={{ '--ml-inbox-kleur': vanInbox?.kleur } as React.CSSProperties}>
+                <span className="ml-inbox-stip" aria-hidden="true" />
+                <select id="ml-van" className="ml-van-keuze" value={van} onChange={(e) => wisselVan(e.target.value)} disabled={bezig}>
+                  {kiesbaar.map((i) => (
+                    <option key={i.id} value={i.id}>
+                      {i.label} — {i.fromName ? `${i.fromName} <${i.email}>` : i.email}
+                      {!i.vanMij ? ' (gedeeld)' : ''}
+                    </option>
+                  ))}
+                </select>
+              </span>
+            ) : (
+              <span className="ml-veld-statisch" id="ml-van">
+                {vanInbox?.email}
+              </span>
+            )}
             {!ccOpen && (
               <button type="button" className="ml-link" onClick={() => setCcOpen(true)}>
                 Cc/Bcc

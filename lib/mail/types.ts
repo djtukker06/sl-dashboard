@@ -1,4 +1,6 @@
 // Vormen die de mail-API teruggeeft en die de client (/mail, dashboard, shell) gebruikt.
+import type { InboxDto } from './zichtbaarheid';
+export type { InboxDto } from './zichtbaarheid';
 
 /** Rol van een map; 'overig' = gewone (eigen) map. */
 export type MapRol = 'inbox' | 'verzonden' | 'concepten' | 'archief' | 'spam' | 'prullenbak' | 'overig';
@@ -32,6 +34,8 @@ export interface Envelop {
   gemarkeerd: boolean;
   beantwoord: boolean;
   heeftBijlagen: boolean;
+  /** Id van de inbox waar dit bericht in staat (meerdere inboxen). */
+  mb?: string;
 }
 
 export interface BerichtenPagina {
@@ -42,6 +46,8 @@ export interface BerichtenPagina {
   totaal: number;
   berichten: Envelop[];
   meer: boolean;
+  /** Bij "Alle inboxen": inboxen die nu niet bereikbaar waren. */
+  fouten?: { id: string; label: string }[];
 }
 
 export interface Bijlage {
@@ -76,16 +82,33 @@ export interface Bericht {
   ingekort: boolean;
 }
 
+/** Ongelezen in de inbox van één gekoppelde mailbox (of waarom dat niet lukte). */
+export interface InboxTeller {
+  id: string;
+  ongelezen: number;
+  /** Nederlandse melding als deze inbox nu niet bereikbaar is. */
+  fout?: string;
+}
+
+/** Een inbox met teller (GET /api/mail/inboxen). Nooit wachtwoord of servers. */
+export type InboxMetTeller = InboxDto & InboxTeller;
+
 export interface MailStatus {
   geconfigureerd: boolean;
+  /** Som over alle zichtbare inboxen. */
   ongelezen: number;
-  account?: string;
+  perInbox?: InboxTeller[];
 }
 
 export interface MailOverzicht {
   geconfigureerd: boolean;
   ongelezen: number;
+  /** De laatste berichten over alle inboxen (elk met `mb`). */
   berichten: Envelop[];
+  /** Naam en kleur per inbox, voor de chip bij elk bericht. */
+  inboxen?: Pick<InboxDto, 'id' | 'label' | 'email' | 'kleur'>[];
+  /** Inboxen die nu niet bereikbaar waren. */
+  fouten?: { id: string; label: string }[];
 }
 
 /** Wat de API stuurt bij een fout. */
@@ -106,7 +129,8 @@ export type MailFoutCode =
   | 'niet_ingelogd'
   | 'provider_onbekend'
   | 'provider_microsoft'
-  | 'te_vaak';
+  | 'te_vaak'
+  | 'mailbox_onbekend';
 
 /** De env-vars van de mailkoppeling, voor de uitleg op de "nog niet gekoppeld"-schermen. */
 export const MAIL_ENV_VARS: { naam: string; uitleg: string; verplicht: boolean }[] = [

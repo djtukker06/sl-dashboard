@@ -199,8 +199,8 @@ export function WelkomFlow({ email, profiel, mailbox }: { email: string; profiel
                 <p className="wk-tekst">Dan zie je je mail op je dashboard en in Mail. Alleen jij ziet je eigen mailbox.</p>
                 <MailboxSnelKoppelen
                   startEmail={email}
-                  onGekoppeld={(s) => {
-                    setGekoppeld(s.eigen?.email ?? email);
+                  onGekoppeld={(adres) => {
+                    setGekoppeld(adres || email);
                     naarKlaar();
                   }}
                   onLater={naarKlaar}

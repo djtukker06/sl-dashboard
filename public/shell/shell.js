@@ -19,7 +19,7 @@
     open.querySelector("summary")?.focus();
   });
 
-  // ---- mail-badge: aantal ongelezen in de inbox op het Mail-item van de rail.
+  // ---- mail-badge: aantal ongelezen (som over alle inboxen die je ziet) op het Mail-item van de rail.
   // /api/mail/status opent een IMAP-verbinding; daarom 60 s cache in sessionStorage
   // (gedeeld met de mailpagina en de dashboard-widget, die "sl-mail-ongelezen" sturen).
   // Per gebruiker (data-gebruiker op de rail): wie op dezelfde computer inlogt als een

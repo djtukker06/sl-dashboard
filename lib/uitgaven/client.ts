@@ -77,7 +77,7 @@ export const uitgavenApi = {
   btw: (jaar: number) => api<{ overzicht: BtwOverzicht }>(`/api/uitgaven/btw?jaar=${jaar}`),
   zipExport: (params: Record<string, string | undefined>) =>
     api<{ delen: { naam: string; url: string; aantal: number }[] }>(`/api/uitgaven/export?${qs({ ...params, formaat: 'zip' })}`),
-  uitMail: (b: { map: string; uid: number; deel: string; onderwerp?: string }) =>
+  uitMail: (b: { mb?: string; map: string; uid: number; deel: string; onderwerp?: string }) =>
     api<{ uitgave: Uitgave }>('/api/uitgaven/uit-mail', { method: 'POST', body: body(b) })
 };
 

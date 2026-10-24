@@ -711,8 +711,37 @@ Studio Levant/
 
 ## Mail per gebruiker (Account & mail)
 
-Mail is **persoonlijk**: elk teamlid ziet in Mail en in de inbox op het dashboard alleen zijn
-eigen mailbox. Welke mailbox de app voor je gebruikt (`lib/mail/config.ts`):
+### Meerdere inboxen (migratie 0026)
+
+Je kunt **meerdere inboxen** koppelen (max. 10). In Mail staan ze links onder elkaar, elk met
+een eigen kleur, naam en adres, een eigen teller en eigen mappen (openklappen). Bovenaan staat
+**Alle inboxen**: de inbox van alle inboxen samen, op datum, met per bericht een kleurstreep
+en de naam van de inbox. Bij beantwoorden staat **Van** op de inbox waar het bericht binnenkwam;
+bij een nieuwe mail op de inbox die je bekijkt (anders de laatst gebruikte). De rail-badge en
+de inbox op het dashboard tellen alle inboxen op.
+
+- **Koppelen**: Account & mail → *Inboxen* → **+ Inbox koppelen**: e-mailadres + wachtwoord
+  (servers worden herkend), een naam ("Info") en een kleur. Hetzelfde adres opnieuw koppelen
+  werkt de bestaande inbox bij (bv. nieuw wachtwoord).
+- **Gedeelde inbox** (bv. `info@studio-levant.nl`): zet hem op **Hele team**. Alle actieve
+  teamleden zien hem dan in Mail en kunnen er vanaf mailen; op *Alleen ik* ziet alleen jij
+  hem. Het wachtwoord blijft versleuteld op de server; anderen krijgen nooit wachtwoord of
+  servers te zien. Wordt de koppelaar gedeactiveerd, dan verdwijnt zijn gedeelde inbox voor
+  iedereen. Een adres dat een ander al met het team deelt, kun je niet nog eens koppelen.
+- Wie welke inbox ziet, bepaalt de server (`lib/mail/zichtbaarheid.ts`, `lib/mail/mailboxen.ts`);
+  elke mail-API krijgt `?mb=<inbox>` en geeft 404 bij een inbox die je niet mag zien.
+- Tabel `mailboxen` (0026): RLS aan, géén policies, geen rechten voor `anon`/`authenticated`.
+  Wachtwoord: AES-256-GCM met `MAIL_ENCRYPTION_KEY` en het user-id van de koppelaar als AAD
+  (zo blijven bestaande koppelingen geldig: 0026 zet `user_mailboxes` één keer over).
+- **Vóór 0026** werkt alles zoals eerder: één eigen inbox (`user_mailboxes`), of anders (alleen
+  voor Daniel) de standaard-mailbox uit de env. Na 0026 staat die standaard-mailbox als extra
+  inbox naast je eigen inboxen (tenzij je hetzelfde adres zelf hebt gekoppeld).
+- Elke verbinding met een mailserver gaat via een gecontroleerd openbaar IP-adres (ook na het
+  koppelen: geen DNS-rebinding naar interne adressen; `lib/mail/dns.ts`).
+
+### Welke inboxen je ziet
+
+Welke inboxen de app voor je gebruikt (`lib/mail/mailboxen.ts`):
 
 1. **Je eigen mailbox**, gekoppeld met één knop: alleen e-mailadres + wachtwoord, in de
    welkomstflow, op `/mail`, in de inbox-kaart van het dashboard of op **Account & mail**
@@ -728,6 +757,7 @@ eigen mailbox. Welke mailbox de app voor je gebruikt (`lib/mail/config.ts`):
    uit de omgevingsvariabelen (zie hieronder). Een tweede eigenaar krijgt hem nooit.
 3. Anders: "niet gekoppeld", met meteen het koppelformulier. Een gewoon teamlid (`lid`) valt
    nooit terug op de standaard-mailbox (getest in `scripts/test-account.mjs`).
+4. Daarnaast (0026): de inboxen die een ander actief teamlid op *Hele team* heeft gezet.
 
 **Zo is het beveiligd.**
 - Het wachtwoord staat versleuteld in `user_mailboxes.wachtwoord_enc` (migratie 0021):

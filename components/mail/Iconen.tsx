@@ -24,6 +24,7 @@ const PADEN = {
   plus: '<path d="M12 5v14M5 12h14"/>',
   pijlOmlaag: '<path d="m6 9 6 6 6-6"/>',
   beeld: '<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="1.8"/><path d="m21 16-5.5-5.5L5 20"/>',
+  gedeeld: '<circle cx="9" cy="8" r="3.2"/><path d="M3.5 19a5.5 5.5 0 0 1 11 0"/><path d="M16 5.2a3 3 0 0 1 0 5.6"/><path d="M17.5 14.2a5.5 5.5 0 0 1 3 4.8"/>',
   bestand: '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/>'
 } as const;
 

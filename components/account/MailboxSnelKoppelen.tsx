@@ -10,11 +10,15 @@ import {
   type MailboxStatus
 } from '@/lib/account/types';
 import { vasteInstellingen } from '@/lib/mail/providers';
+import { MAILBOX_KLEUREN, standaardLabel } from '@/lib/mail/zichtbaarheid';
 
 // Mailbox koppelen met één knop: e-mailadres + wachtwoord, de server bepaalt servers en
 // poorten (lib/mail/providers.ts), test de verbinding en slaat versleuteld op. Eén component
 // voor de welkomstflow, de lege staat van /mail, de dashboard-inbox en /account.
 //   uitgebreid  /account: ook afzendernaam, handtekening en servers (ingeklapt)
+//   inbox       /account (meerdere inboxen): ook naam, kleur en "Alleen ik / Hele team";
+//               stuurt naar /api/account/mailboxen (een extra inbox i.p.v. de eerste)
+//   vastEmail   het adres staat vast (wachtwoord vernieuwen van een bestaande inbox)
 //   onGekoppeld na succes (bv. de welkomstflow gaat door naar de volgende stap)
 //   onLater     toont de link "Later doen"
 
@@ -29,10 +33,12 @@ class KoppelFout extends Error {
   }
 }
 
-async function stuur(body: unknown): Promise<MailboxStatus> {
+type KoppelAntwoord = { eigen?: { email?: string } | null; email?: string };
+
+async function stuur(url: string, body: unknown): Promise<KoppelAntwoord> {
   let res: Response;
   try {
-    res = await fetch('/api/account/mailbox', {
+    res = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
@@ -47,7 +53,7 @@ async function stuur(body: unknown): Promise<MailboxStatus> {
   }
   const data = await res.json().catch(() => null);
   if (!res.ok) throw new KoppelFout((data && data.error) || 'Koppelen is niet gelukt. Probeer het opnieuw.', data?.code ?? '');
-  return data as MailboxStatus;
+  return (data ?? {}) as KoppelAntwoord;
 }
 
 /** Na koppelen: de mailcache van deze tab (rail-badge, inbox-widget) weggooien. */
@@ -65,6 +71,8 @@ export function MailboxSnelKoppelen({
   startEmail,
   eigen = null,
   uitgebreid = false,
+  inbox = null,
+  vastEmail = false,
   knopTekst = 'Koppelen',
   onGekoppeld,
   onLater
@@ -72,8 +80,11 @@ export function MailboxSnelKoppelen({
   startEmail: string;
   eigen?: Eigen | null;
   uitgebreid?: boolean;
+  /** Meerdere inboxen: naam, kleur en zichtbaarheid kiezen (standaardkleur, delen mogelijk?). */
+  inbox?: { standaardKleur: string; magDelen: boolean } | null;
+  vastEmail?: boolean;
   knopTekst?: string;
-  onGekoppeld?: (s: MailboxStatus) => void;
+  onGekoppeld?: (adres: string, data: unknown) => void;
   onLater?: () => void;
 }) {
   const router = useRouter();
@@ -91,6 +102,9 @@ export function MailboxSnelKoppelen({
   // Zelf servers invullen: alleen als de gebruiker dat openklapt, of als de server de
   // provider niet herkent. Anders bepaalt de server ze uit het adres.
   const [handmatig, setHandmatig] = useState(false);
+  const [label, setLabel] = useState('');
+  const [kleur, setKleur] = useState(inbox?.standaardKleur ?? MAILBOX_KLEUREN[0].kleur);
+  const [team, setTeam] = useState(false);
   const [bezig, setBezig] = useState(false);
   const [fout, setFout] = useState('');
   const [gelukt, setGelukt] = useState('');
@@ -126,6 +140,7 @@ export function MailboxSnelKoppelen({
     const body: Record<string, unknown> = { email, wachtwoord };
     if (stuurServers) Object.assign(body, servers);
     if (uitgebreid) Object.assign(body, { fromName, handtekening });
+    if (inbox && !vastEmail) Object.assign(body, { label: label.trim() || standaardLabel(email.trim()), kleur, zichtbaarheid: team ? 'team' : 'prive' });
     const v = valideerMailbox(body);
     if (!v.ok) {
       setFout(v.fout);
@@ -137,16 +152,18 @@ export function MailboxSnelKoppelen({
     }
     setBezig(true);
     try {
-      const s = await stuur(body);
+      const s = await stuur(inbox ? '/api/account/mailboxen' : '/api/account/mailbox', body);
       setWachtwoord('');
       setHandmatig(false);
-      if (s.eigen) {
-        setEmail(s.eigen.email);
-        setServers({ imapHost: s.eigen.imapHost, imapPort: s.eigen.imapPort, smtpHost: s.eigen.smtpHost, smtpPort: s.eigen.smtpPort });
+      const eigenNa = (s as { eigen?: Eigen | null }).eigen;
+      if (eigenNa) {
+        setEmail(eigenNa.email);
+        setServers({ imapHost: eigenNa.imapHost, imapPort: eigenNa.imapPort, smtpHost: eigenNa.smtpHost, smtpPort: eigenNa.smtpPort });
       }
-      setGelukt(`Gekoppeld: ${s.eigen?.email ?? v.waarde.email} ✓`);
+      const adres = eigenNa?.email ?? s.email ?? v.waarde.email;
+      setGelukt(`Gekoppeld: ${adres} ✓`);
       leegMailCache();
-      if (onGekoppeld) onGekoppeld(s);
+      if (onGekoppeld) onGekoppeld(adres, s);
       else router.refresh();
     } catch (err) {
       const f = err instanceof KoppelFout ? err : new KoppelFout('Koppelen is niet gelukt. Probeer het opnieuw.');
@@ -171,6 +188,7 @@ export function MailboxSnelKoppelen({
             placeholder="naam@studio-levant.nl"
             autoComplete="off"
             required
+            readOnly={vastEmail}
             onChange={(e) => setEmail(e.target.value)}
           />
         </label>
@@ -192,6 +210,53 @@ export function MailboxSnelKoppelen({
       <p className="ac-snel-uitleg" id={`${id}-uitleg`}>
         Het wachtwoord van je mailbox, niet van dit dashboard.{providerHint ? ` ${providerHint}` : ''}
       </p>
+
+      {inbox && !vastEmail && (
+        <div className="ac-inbox-instellingen">
+          <label className="ag-label">
+            Naam in Mail
+            <input
+              className="ag-veld"
+              value={label}
+              maxLength={40}
+              placeholder={email.includes('@') ? standaardLabel(email.trim()) : 'Bijvoorbeeld Info of Daniel'}
+              onChange={(e) => setLabel(e.target.value)}
+            />
+          </label>
+          <fieldset className="ac-kleuren-veld">
+            <legend className="ag-label">Kleur</legend>
+            <div className="ac-kleuren ac-kleuren-klein">
+              {MAILBOX_KLEUREN.map((k) => (
+                <label key={k.kleur} className="ac-kleur" title={k.naam}>
+                  <input type="radio" name={`${id}-kleur`} value={k.kleur} checked={kleur === k.kleur} onChange={() => setKleur(k.kleur)} />
+                  <span className="ac-kleur-stip" style={{ background: k.kleur }} />
+                  <span className="sr-only">{k.naam}</span>
+                </label>
+              ))}
+            </div>
+          </fieldset>
+          {inbox.magDelen && (
+            <fieldset className="ac-zicht">
+              <legend className="ag-label">Wie ziet deze inbox?</legend>
+              <div className="ac-zicht-keuze" role="radiogroup">
+                <label className={`ac-zicht-optie${!team ? ' is-aan' : ''}`}>
+                  <input type="radio" name={`${id}-zicht`} checked={!team} onChange={() => setTeam(false)} />
+                  Alleen ik
+                </label>
+                <label className={`ac-zicht-optie${team ? ' is-aan' : ''}`}>
+                  <input type="radio" name={`${id}-zicht`} checked={team} onChange={() => setTeam(true)} />
+                  Hele team
+                </label>
+              </div>
+              <p className="ac-snel-uitleg">
+                {team
+                  ? 'Alle actieve teamleden zien deze inbox in Mail en kunnen er vanaf mailen. Het wachtwoord blijft versleuteld op de server.'
+                  : 'Alleen jij ziet deze inbox.'}
+              </p>
+            </fieldset>
+          )}
+        </div>
+      )}
 
       {uitgebreid && (
         <details className="ac-geavanceerd">

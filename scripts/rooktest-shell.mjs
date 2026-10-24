@@ -70,6 +70,10 @@
 //     blok op klant- en projectpagina; UITVOEREN_0024.sql in één transactie.
 // Live: /bestanden (ook ?map=…) zonder sessie -> /login; /api/drive/* (ook de callback en
 //       het koppelen) -> 401.
+// 13. Statisch, meerdere inboxen (0026): tabel mailboxen alleen in lib/mail/mailboxen.ts en
+//     beheer.ts, wijzigen/ontkoppelen alleen eigen rijen, ontsleutelen met eigenaar_id,
+//     IMAP/SMTP via het gecontroleerde openbare IP, de koppelroutes via lib/mail/beheer.ts.
+// Live: /api/mail/inboxen en /api/account/mailboxen(/<id>) zonder sessie -> 401 (automatisch).
 //
 // Gebruik:  node scripts/rooktest-shell.mjs [http://localhost:3107]
 //           node scripts/rooktest-shell.mjs --alleen-statisch
@@ -262,7 +266,15 @@ console.log("Boekhouding en Account & mail");
     const eigen = (src.match(/(eq\('user_id', lid\.userId\)|user_id: lid\.userId)/g) || []).length;
     check(eigen >= aantal, `${f}: user_mailboxes alleen met het eigen user-id`);
   }
-  check(/doSTARTTLS/.test(lees("lib/mail/imap.ts")) && /isPubliekAdres/.test(lees("lib/mail/koppelen.ts")), "IMAP zonder TLS geweigerd; koppelen alleen naar openbare adressen");
+  check(/doSTARTTLS/.test(lees("lib/mail/imap.ts")) && /openbaarAdres/.test(lees("lib/mail/koppelen.ts")) && /isPubliekAdres/.test(lees("lib/mail/dns.ts")), "IMAP zonder TLS geweigerd; koppelen alleen naar openbare adressen");
+  check(/openbaarAdres\(cfg\.imapHost\)/.test(lees("lib/mail/imap.ts")) && /openbaarAdres\(cfg\.smtpHost\)/.test(lees("lib/mail/smtp.ts")), "IMAP en SMTP ook na het koppelen via het gecontroleerde openbare IP (geen DNS-rebinding)");
+  // Meerdere inboxen (0026): mailboxen alleen via de server; wijzigen/ontkoppelen alleen eigen rijen.
+  const beheer = lees("lib/mail/beheer.ts");
+  const wijzigMb = [...beheer.matchAll(/from\('mailboxen'\)\s*\.(update|delete)\([^)]*\)([^;]*);/g)];
+  check(wijzigMb.length >= 4 && wijzigMb.every((w) => /\.eq\('eigenaar_id', lid\.userId\)/.test(w[2])), "mailboxen: wijzigen en ontkoppelen alleen eigen rijen", `${wijzigMb.length}`);
+  check(/ontsleutel\(rij\.wachtwoord_enc, rij\.eigenaar_id\)/.test(lees("lib/mail/mailboxen.ts")) && /isZichtbaar\(/.test(lees("lib/mail/mailboxen.ts")), "mailboxen: ontsleutelen met eigenaar_id, zichtbaarheid server-side");
+  const metMailboxen = [...bestandenIn("app", (n) => /\.tsx?$/.test(n)), ...bestandenIn("lib", (n) => /\.tsx?$/.test(n)), ...bestandenIn("components", (n) => /\.tsx?$/.test(n))].filter((f) => /from\('mailboxen'\)/.test(lees(f)));
+  check(metMailboxen.every((f) => f === "lib/mail/mailboxen.ts" || f === "lib/mail/beheer.ts"), "tabel mailboxen alleen in lib/mail/mailboxen.ts en beheer.ts", metMailboxen.join(", "));
 }
 
 // ---------------------------------------------------------------------------------
@@ -364,15 +376,16 @@ console.log("Welkomstflow en mailbox met één knop");
   check(/welkomKlaar: true,\s*overgang: true/.test(team) && /welkomKlaar: welkomKlaarVan\(/.test(team), "team.ts: welkomKlaar (overgang = klaar)");
   const api = lees("app/api/account/welkom/route.ts");
   check(/teamlidRoute\(/.test(api) && /\.eq\('id', lid\.userId\)/.test(api) && !/createServiceRoleClient/.test(api), "/api/account/welkom: teamcheck, eigen profiel, geen service-role");
-  const mb = lees("app/api/account/mailbox/route.ts");
+  const mb = lees("lib/mail/beheer.ts");
+  check(/koppelMailbox\(lid, o, request\)/.test(lees("app/api/account/mailbox/route.ts")) && /koppelMailbox\(lid, /.test(lees("app/api/account/mailboxen/route.ts")), "mailbox-routes koppelen via lib/mail/beheer.ts");
   check(/instellingenVoor\(invoer\.email, zoekMx\)/.test(mb), "mailbox: servers afgeleid uit het adres");
   check(/provider_microsoft/.test(mb) && /provider_onbekend/.test(mb), "mailbox: Outlook en onbekende provider netjes geweigerd");
   check(/magProberen\(lid\.userId\)/.test(mb) && /testMailbox\(invoer, hint\)/.test(mb) && /versleutel\(invoer\.wachtwoord, lid\.userId\)/.test(mb), "mailbox: rate limit, test en versleuteling blijven");
   const koppel = lees("lib/mail/koppelen.ts");
-  check(/isPubliekAdres/.test(koppel) && /servername: m\.imapHost/.test(koppel), "koppelen: SSRF-controle ongewijzigd (openbaar IP + SNI)");
+  check(/openbaarAdres\(m\.imapHost\)/.test(koppel) && /servername: m\.imapHost/.test(koppel) && /isPubliekAdres/.test(lees("lib/mail/dns.ts")), "koppelen: SSRF-controle ongewijzigd (openbaar IP + SNI)");
   check(!/from '\.\/|from "@\//.test(lees("lib/mail/providers.ts")), "providers.ts zonder imports (ook in de browser)");
   check(/import 'server-only'/.test(lees("lib/mail/mx.ts")), "MX-lookup alleen op de server");
-  for (const f of ["components/welkom/WelkomFlow.tsx", "components/mail/NietGekoppeld.tsx", "components/account/AccountApp.tsx"]) {
+  for (const f of ["components/welkom/WelkomFlow.tsx", "components/mail/NietGekoppeld.tsx", "components/account/Mailboxen.tsx"]) {
     check(/MailboxSnelKoppelen/.test(lees(f)), `${f} gebruikt MailboxSnelKoppelen`);
   }
   check(!/wachtwoord_enc|MAIL_ENCRYPTION_KEY/.test(lees("components/account/MailboxSnelKoppelen.tsx")), "koppelcomponent kent geen versleuteld wachtwoord of sleutel");
@@ -455,7 +468,7 @@ console.log("Snelheid, UITVOEREN_0022.sql en README");
   const dash = lees("app/(app)/page.tsx");
   check(!/await (mailConfigVoor|magEnvMailbox|mailboxVoor)/.test(dash) && /<InboxKaart lid=\{lid\} \/>/.test(dash), "dashboard wacht niet op de mailcheck");
   check(/agendaApi\.dashboard\(\)/.test(lees("components/dashboard/Planning.tsx")), "dashboard ververst met één verzoek");
-  check(/vergeetMailbox\(lid\.userId\)/.test(lees("app/api/account/mailbox/route.ts")), "mailbox-cache wordt gewist bij koppelen/ontkoppelen");
+  check((lees("lib/mail/beheer.ts").match(/vergeetMailboxen\(\)/g) || []).length >= 4, "mailbox-cache wordt gewist bij koppelen/wijzigen/ontkoppelen");
   check(!/teamProfielen\(lid\)[\s\S]{0,40}from\('profiles'\)/.test(lees("app/(app)/layout.tsx")), "layout vraagt geen profielen extra op");
   const readme = lees("README.md");
   check(/### Bram toevoegen in 3 stappen/.test(readme) && /UITVOEREN_0022\.sql/.test(readme), "README: Bram toevoegen in 3 stappen en UITVOEREN_0022.sql");

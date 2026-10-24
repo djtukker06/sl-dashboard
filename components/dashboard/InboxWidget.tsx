@@ -8,7 +8,9 @@ import { Kaart, KaartMelding } from './Kaart';
 
 const CACHE = 'sl-mail-overzicht';
 
-// Inbox op het dashboard. Een client-component, zodat de IMAP-verbinding de eerste
+// Inbox op het dashboard: de laatste berichten over ALLE inboxen die je mag zien (eigen en
+// met het team gedeeld), met bij meerdere inboxen een kleurchip per inbox; het aantal
+// ongelezen is de som. Een client-component, zodat de IMAP-verbinding de eerste
 // weergave van het dashboard niet vertraagt. 60 s cache in sessionStorage: terug naar het
 // dashboard is meteen gevuld. Daarna ververst de widget net als de rail-badge: bij terugkeren
 // naar het tabblad en elke 2 minuten (alleen als het tabblad zichtbaar is), en zodra iets
@@ -78,14 +80,16 @@ export function InboxWidget() {
   }, [laad]);
 
   const ongelezen = data?.ongelezen ?? 0;
+  const inboxen = new Map((data?.inboxen ?? []).map((i) => [i.id, i]));
+  const meerdere = inboxen.size > 1;
   const label = data && data.geconfigureerd && ongelezen > 0 ? `Inbox · ${ongelezen} ongelezen` : 'Inbox';
 
   return (
     <Kaart label={label} href="/mail" linkTekst="Mail" className="db-smal db-inbox">
       {fout && !data ? (
         fout.nietGekoppeld ? (
-          <KaartMelding titel="Mail is nog niet gekoppeld" toon="setup">
-            Zet MAIL_USER en MAIL_PASSWORD in de omgevingsvariabelen.
+          <KaartMelding titel="Mail is nog niet gekoppeld" toon="setup" actie={<Link className="db-knop" href="/account#mailbox">Koppelen</Link>}>
+            Koppel je inbox via Account &amp; mail.
           </KaartMelding>
         ) : (
           <KaartMelding
@@ -110,19 +114,34 @@ export function InboxWidget() {
           ))}
         </div>
       ) : !data.geconfigureerd ? (
-        <KaartMelding titel="Mail is nog niet gekoppeld" toon="setup" actie={<Link className="db-knop" href="/mail">Uitleg</Link>}>
-          Zet MAIL_USER en MAIL_PASSWORD in de omgevingsvariabelen; de server staat al goed voor Private Email.
+        <KaartMelding titel="Mail is nog niet gekoppeld" toon="setup" actie={<Link className="db-knop" href="/account#mailbox">Koppelen</Link>}>
+          Koppel je inbox via Account &amp; mail; daarna zie je hier je nieuwste mail.
         </KaartMelding>
       ) : data.berichten.length === 0 ? (
         <KaartMelding titel="Inbox is leeg">Alles bijgewerkt.</KaartMelding>
       ) : (
         <ul className="db-lijst db-mails">
-          {data.berichten.map((b) => (
-            <li key={b.uid}>
-              <Link className={`db-rij db-mail${b.gelezen ? '' : ' db-mail-nieuw'}`} href={`/mail?uid=${b.uid}`}>
+          {(data.fouten?.length ?? 0) > 0 && (
+            <li className="db-mail-fout" role="status">
+              Nu niet bereikbaar: {data.fouten!.map((f) => f.label).join(', ')}
+            </li>
+          )}
+          {data.berichten.map((b) => {
+            const inbox = b.mb ? inboxen.get(b.mb) : undefined;
+            const href = b.mb ? `/mail?${new URLSearchParams({ mb: b.mb, uid: String(b.uid) })}` : `/mail?uid=${b.uid}`;
+            return (
+            <li key={`${b.mb ?? ''}:${b.uid}`}>
+              <Link className={`db-rij db-mail${b.gelezen ? '' : ' db-mail-nieuw'}`} href={href}>
                 <span className="db-mail-stip" aria-hidden="true" />
                 <span className="db-rij-hoofd">
-                  <span className="db-mail-van">{adresNaam(b.van)}</span>
+                  <span className="db-mail-van">
+                    {adresNaam(b.van)}
+                    {meerdere && inbox && (
+                      <span className="db-mail-inbox" style={{ '--ml-inbox-kleur': inbox.kleur } as React.CSSProperties} title={inbox.email}>
+                        {inbox.label}
+                      </span>
+                    )}
+                  </span>
                   <span className="db-mail-onderwerp">{b.onderwerp || '(geen onderwerp)'}</span>
                 </span>
                 <time className="db-mail-tijd" dateTime={b.datum ?? undefined}>
@@ -131,7 +150,8 @@ export function InboxWidget() {
                 {!b.gelezen && <span className="sr-only">ongelezen</span>}
               </Link>
             </li>
-          ))}
+            );
+          })}
         </ul>
       )}
     </Kaart>

@@ -5,7 +5,7 @@ import { MailboxSnelKoppelen } from '@/components/account/MailboxSnelKoppelen';
 // wachtwoord), zonder eerst naar Account & mail te hoeven. Bevat alleen env-namen, nooit waarden.
 //   reden 'eigen'      gewone situatie
 //   reden 'instellen'  de eigenaar: ook de standaard-mailbox uit de env kan nog (ingeklapt)
-// Mail is persoonlijk: je ziet nooit de mailbox van een ander teamlid.
+// Je ziet nooit een privé-inbox van een ander teamlid; alleen inboxen die met het team gedeeld zijn.
 export function NietGekoppeld({
   email,
   compact = false,
@@ -28,8 +28,9 @@ export function NietGekoppeld({
       <p className="db-label">Nog niet gekoppeld</p>
       <h2>Koppel je inbox</h2>
       <p className="ml-setup-tekst">
-        Mail is persoonlijk: je ziet alleen je eigen mailbox. Je wachtwoord wordt na een geslaagde test versleuteld op de
-        server bewaard en komt nooit terug in de browser.
+        Je ziet je eigen inboxen en inboxen die een teamlid met het hele team deelt. Je wachtwoord wordt na een geslaagde
+        test versleuteld op de server bewaard en komt nooit terug in de browser. Meer inboxen koppelen kan daarna via
+        Account &amp; mail.
       </p>
       <MailboxSnelKoppelen startEmail={email} />
       {reden === 'instellen' && (

@@ -1,15 +1,20 @@
 import { ImapFlow } from 'imapflow';
 import type { MailConfig } from './config';
 import { MailFout, naarMailFout, NIET_GEKOPPELD } from './fout';
+import { openbaarAdres } from './dns';
 
 // Eén IMAP-sessie per request: openen, werk doen, altijd netjes uitloggen. Geen IDLE en
 // geen verbindingen die blijven openstaan — dat past bij serverless (Vercel).
 
 export async function metImap<T>(cfg: MailConfig | null, fn: (client: ImapFlow) => Promise<T>): Promise<T> {
   if (!cfg) throw new MailFout(503, 'niet_gekoppeld', NIET_GEKOPPELD);
+  // Via het gecontroleerde openbare IP (geen DNS-rebinding naar interne adressen), met de
+  // hostnaam voor TLS/SNI en de certificaatcontrole.
+  const ip = await openbaarAdres(cfg.imapHost);
 
   const client = new ImapFlow({
-    host: cfg.imapHost,
+    host: ip,
+    servername: cfg.imapHost,
     port: cfg.imapPort,
     secure: cfg.imapPort === 993,
     // Poort 143: STARTTLS verplicht, zodat het wachtwoord nooit onversleuteld over de lijn gaat.

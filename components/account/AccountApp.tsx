@@ -3,8 +3,9 @@
 import { useId, useState, type CSSProperties } from 'react';
 import { useRouter } from 'next/navigation';
 import { ModuleKop } from '@/components/shell/ModuleKop';
-import { initialenUit, KLEUREN, valideerProfiel, type MailboxStatus, type ProfielInvoer } from '@/lib/account/types';
-import { leegMailCache, MailboxSnelKoppelen } from './MailboxSnelKoppelen';
+import { initialenUit, KLEUREN, valideerProfiel, type ProfielInvoer } from '@/lib/account/types';
+import type { MailboxenOverzicht } from '@/lib/mail/beheer';
+import { Mailboxen } from './Mailboxen';
 
 type Melding = { soort: 'ok' | 'fout'; tekst: string } | null;
 
@@ -29,30 +30,25 @@ async function verstuur<T>(url: string, method: string, body?: unknown): Promise
   return data as T;
 }
 
-const datumTijd = (iso: string | null) =>
-  iso
-    ? new Intl.DateTimeFormat('nl-NL', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Amsterdam' }).format(new Date(iso))
-    : '';
-
 export function AccountApp({
   email,
   rol,
   overgang,
   profiel,
-  mailbox
+  mailboxen
 }: {
   email: string;
   rol: 'eigenaar' | 'lid';
   overgang: boolean;
   profiel: ProfielInvoer;
-  mailbox: MailboxStatus | null;
+  mailboxen: MailboxenOverzicht | null;
 }) {
   return (
     <div className="ac">
       <ModuleKop label="Account" titel="Account & mail" />
       <div className="ac-inhoud">
         <ProfielBlok email={email} rol={rol} overgang={overgang} start={profiel} />
-        <MailboxBlok start={mailbox} email={email} />
+        <Mailboxen start={mailboxen} email={email} />
         <section className="ac-blok" aria-labelledby="ac-beveiliging">
           <header className="ac-blok-kop">
             <h2 id="ac-beveiliging" className="ac-blok-titel">Beveiliging</h2>
@@ -188,114 +184,6 @@ function ProfielBlok({ email, rol, overgang, start }: { email: string; rol: stri
           </div>
         )}
       </form>
-    </section>
-  );
-}
-
-// ---------------------------------------------------------------------------------
-// Mailbox
-// ---------------------------------------------------------------------------------
-function MailboxBlok({ start, email }: { start: MailboxStatus | null; email: string }) {
-  const router = useRouter();
-  const [status, setStatus] = useState(start);
-  const [bezig, setBezig] = useState(false);
-  const [zeker, setZeker] = useState(false);
-  const [melding, setMelding] = useState<Melding>(null);
-
-  const eigen = status?.eigen ?? null;
-  const uit = !status ? 'Je mailboxinstellingen konden niet worden geladen. Ververs de pagina.' : !status.ingericht
-    ? 'Een eigen mailbox koppelen kan zodra de teambeveiliging actief is (voer supabase/UITVOEREN_0021_TEAM.sql uit).'
-    : !status.sleutel
-      ? 'Koppelen staat nog uit: de server mist MAIL_ENCRYPTION_KEY (zie README, "Mail per gebruiker").'
-      : '';
-
-  async function ontkoppel() {
-    setBezig(true);
-    setMelding(null);
-    try {
-      const s = await verstuur<MailboxStatus>('/api/account/mailbox', 'DELETE');
-      setStatus(s);
-      setZeker(false);
-      setMelding({ soort: 'ok', tekst: 'Je mailbox is ontkoppeld en het wachtwoord is verwijderd.' });
-      leegMailCache();
-      router.refresh();
-    } catch (err) {
-      setMelding({ soort: 'fout', tekst: err instanceof Error ? err.message : 'Ontkoppelen mislukt.' });
-    } finally {
-      setBezig(false);
-    }
-  }
-
-  return (
-    <section className="ac-blok" id="mailbox" aria-labelledby="ac-mail-titel">
-      <header className="ac-blok-kop">
-        <h2 id="ac-mail-titel" className="ac-blok-titel">Mailbox</h2>
-        <p className="ac-blok-uitleg">
-          Mail is persoonlijk: Mail en de inbox op je dashboard tonen alleen je eigen mailbox. Je wachtwoord wordt na een
-          geslaagde test versleuteld op de server bewaard en komt nooit terug in de browser.
-        </p>
-      </header>
-
-      <div className={`ac-status is-${status?.bron ?? 'geen'}`} role="status">
-        <span className="ac-status-stip" aria-hidden="true" />
-        {status?.bron === 'eigen' && eigen ? (
-          <span>
-            Gekoppeld: <strong>{eigen.email}</strong>
-            {eigen.geverifieerdOp ? ` · getest op ${datumTijd(eigen.geverifieerdOp)}` : ''}
-          </span>
-        ) : status?.bron === 'standaard' ? (
-          <span>
-            Je gebruikt de standaard-mailbox <strong>{status.standaardAdres}</strong> (uit de serverinstellingen). Koppel hieronder
-            een eigen mailbox om die te vervangen.
-          </span>
-        ) : (
-          <span>Nog geen mailbox gekoppeld.</span>
-        )}
-      </div>
-      {eigen && !eigen.leesbaar && (
-        <p className="ac-waarschuwing" role="alert">
-          Je opgeslagen wachtwoord kan niet meer worden gelezen (de sleutel op de server is veranderd). Vul het opnieuw in.
-        </p>
-      )}
-
-      {uit ? (
-        <p className="ag-uitleg">{uit}</p>
-      ) : (
-        <>
-          <MailboxSnelKoppelen
-            key={`${eigen?.email ?? ''}|${eigen?.geverifieerdOp ?? ''}`}
-            startEmail={email}
-            eigen={eigen}
-            uitgebreid
-            knopTekst={eigen ? 'Verbinding testen en opslaan' : 'Koppelen'}
-            onGekoppeld={(s) => {
-              setStatus(s);
-              setMelding(null);
-              router.refresh();
-            }}
-          />
-          {eigen && (
-            <div className="ac-acties">
-              {zeker ? (
-                <span className="ag-zeker">
-                  <span>Mailbox ontkoppelen?</span>
-                  <button type="button" className="db-knop ag-knop-gevaar" disabled={bezig} onClick={ontkoppel}>
-                    {bezig ? 'Bezig…' : 'Ja, ontkoppelen'}
-                  </button>
-                  <button type="button" className="db-knop" onClick={() => setZeker(false)}>
-                    Nee
-                  </button>
-                </span>
-              ) : (
-                <button type="button" className="ag-link-knop ag-link-gevaar" onClick={() => setZeker(true)}>
-                  Ontkoppelen
-                </button>
-              )}
-            </div>
-          )}
-          <MeldingTekst melding={melding} />
-        </>
-      )}
     </section>
   );
 }

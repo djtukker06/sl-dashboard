@@ -54,13 +54,15 @@ export const STANDAARD_MAILSERVER = 'mail.privateemail.com';
 export interface MailboxStatus {
   /** Welke mailbox de app nu voor jou gebruikt. */
   bron: 'eigen' | 'standaard' | 'geen';
-  /** Tabel user_mailboxes bestaat (migratie 0021 uitgevoerd). */
+  /** Er kan een eigen inbox gekoppeld worden (migratie 0021 uitgevoerd). */
   ingericht: boolean;
   /** MAIL_ENCRYPTION_KEY staat (geldig) op de server. */
   sleutel: boolean;
   /** Het adres van de standaard-mailbox (alleen als die van jou is). */
   standaardAdres: string | null;
   eigen: null | {
+    /** Id van de inbox (uuid; 'eigen' vóór migratie 0026). */
+    id: string;
     email: string;
     imapHost: string;
     imapPort: number;

@@ -104,6 +104,8 @@ function ActieKnop({
 }
 
 export function Lezer({
+  mb,
+  inbox = null,
   bericht,
   rol,
   laden,
@@ -114,6 +116,10 @@ export function Lezer({
   onTerug,
   onOpnieuw
 }: {
+  /** De inbox waar dit bericht in staat (voor bijlagen en "bij bonnetjes"). */
+  mb: string;
+  /** Bij meerdere inboxen: op welke inbox het bericht binnenkwam. */
+  inbox?: { label: string; email: string; kleur: string } | null;
   bericht: Bericht | null;
   rol: MapRol;
   laden: boolean;
@@ -136,7 +142,7 @@ export function Lezer({
     if (bewaart) return;
     setBewaart(deel);
     try {
-      const { uitgave } = await uitgavenApi.uitMail({ map, uid, deel, onderwerp });
+      const { uitgave } = await uitgavenApi.uitMail({ mb, map, uid, deel, onderwerp });
       const wat = uitgave.leverancier ? `${uitgave.leverancier}${uitgave.totaal !== null ? ` · € ${uitgave.totaal.toLocaleString('nl-NL', { minimumFractionDigits: 2 })}` : ''}` : 'bijlage';
       // Kon Claude leverancier, datum of bedrag niet lezen, dan zegt de melding dat meteen.
       const ontbreekt = ontbrekendeVelden(uitgave);
@@ -159,7 +165,7 @@ export function Lezer({
     if (downloadt) return;
     setDownloadt(deel);
     try {
-      await downloadBijlage(bijlageUrl(map, uid, deel), naam);
+      await downloadBijlage(bijlageUrl(mb, map, uid, deel), naam);
     } catch (err) {
       toast(err instanceof MailApiFout ? err.message : 'Downloaden van de bijlage is mislukt.', { fout: true });
     } finally {
@@ -242,6 +248,14 @@ export function Lezer({
               </p>
               <AdresRegel label="Aan" adressen={b.aan} />
               <AdresRegel label="Cc" adressen={b.cc} />
+              {inbox && (
+                <p className="ml-lezer-regel ml-lezer-inbox" style={{ '--ml-inbox-kleur': inbox.kleur } as React.CSSProperties}>
+                  <span className="ml-lezer-regel-label">Ontvangen op</span>
+                  <span>
+                    <span className="ml-inbox-stip" aria-hidden="true" /> {inbox.label} ({inbox.email})
+                  </span>
+                </p>
+              )}
             </div>
             <time className="ml-lezer-datum" dateTime={b.datum ?? undefined}>
               {volleDatum(b.datum)}
@@ -255,7 +269,7 @@ export function Lezer({
               <li key={x.deel} className="ml-bijlage-rij">
                 <a
                   className="ml-bijlage"
-                  href={bijlageUrl(b.map, b.uid, x.deel)}
+                  href={bijlageUrl(mb, b.map, b.uid, x.deel)}
                   download={x.naam}
                   title={`${x.naam} downloaden`}
                   aria-busy={downloadt === x.deel || undefined}

@@ -31,6 +31,10 @@
 //               niemand behalve de service-role te lezen of te schrijven; drive_mappen en
 //               drive_kopieen lezen teamleden, alleen de server schrijft; drive_bestanden
 //               alleen teamleden; een verwijderde klant laat de uploadregistratie staan.
+//             → 0026_beveiliging_mailboxen_backups.sql (2x), deel mailboxen: bestaande
+//               user_mailboxes worden één keer overgezet (zelfde ciphertext, label, profielkleur,
+//               privé); opnieuw uitvoeren zet niets dubbel of terug; anon/authenticated lezen
+//               of schrijven niets (ook geen gedeelde inbox), alleen de service-role.
 //             Daarna de toegangsmatrix:
 //               - niet-teamleden (ingelogd zonder lidmaatschap, onbevestigd, gedeactiveerd,
 //                 en anon zonder sessie): op ELKE tabel in public en in ELKE bucket niets
@@ -373,6 +377,7 @@ async function scenarioA() {
   await projectstatus0023(db);
   await drive0024(db);
   await opvolging0025(db);
+  await mailboxen0026(db);
   await zichtbaarheid0022(db);
   await matrix(db);
 
@@ -481,7 +486,7 @@ async function matrix(db) {
   for (const wie of ["daniel", "mark"]) {
     for (const t of tabellen) {
       const sel = await als(db, wie, `select count(*)::int as n from public.${t}`);
-      if (t === "user_mailboxes" || t === "drive_koppeling") {
+      if (t === "user_mailboxes" || t === "drive_koppeling" || t === "mailboxen") {
         check(geweigerd(sel), `${wie}: ${t} niet leesbaar (alleen server)`, uitleg(sel));
       } else if (ZICHTBAAR[t]) {
         const echt = (await db.query(ZICHTBAAR[t], [U[wie]])).rows[0].n;
@@ -1110,6 +1115,73 @@ async function opvolging0025(db) {
   const m25 = lees("supabase/migrations/0025_crm_opvolging.sql").replace(/--[^\n]*/g, "");
   check(!/policy|grant |drop table|drop column|invoices|quotes|storage\./i.test(m25), "0025: geen policies, grants, facturen of buckets aangeraakt");
   if (fouten === fouten0) console.log("  0025 opvolgen: ok");
+}
+
+// ---------------------------------------------------------------------------------
+// 0026 deel 1: meerdere mailboxen
+// ---------------------------------------------------------------------------------
+async function mailboxen0026(db) {
+  const fouten0 = fouten;
+  const m26 = lees("supabase/migrations/0026_beveiliging_mailboxen_backups.sql");
+  check((await db.query("select to_regclass('public.mailboxen') as t")).rows[0].t === null, "vóór 0026: tabel mailboxen bestaat nog niet");
+  await voerUit(db, m26, "0026 (1e keer)");
+  await voerUit(db, m26, "0026 (2e keer)");
+
+  let rijen = (await db.query("select eigenaar_id, email, label, kleur, zichtbaarheid, wachtwoord_enc from public.mailboxen")).rows;
+  check(rijen.length === 1, "0026: bestaande koppeling één keer overgezet (ook na 2x uitvoeren)", `${rijen.length}`);
+  const oud = (await db.query("select wachtwoord_enc from public.user_mailboxes where user_id = $1", [U.daniel])).rows[0];
+  check(
+    rijen[0]?.eigenaar_id === U.daniel && rijen[0]?.wachtwoord_enc === oud?.wachtwoord_enc && rijen[0]?.zichtbaarheid === "prive",
+    "0026: zelfde eigenaar en ciphertext (AAD = eigenaar_id blijft geldig), standaard privé",
+    JSON.stringify(rijen[0])
+  );
+  check(rijen[0]?.label === "Daniel" && /^#[0-9a-f]{6}$/.test(rijen[0]?.kleur ?? ""), "0026: label uit het adres en een geldige kleur", JSON.stringify(rijen[0]));
+
+  // Een tweede (gedeelde) inbox voor Daniel en een privé-inbox voor Mark.
+  await db.exec(`
+    insert into public.mailboxen (eigenaar_id, email, label, kleur, zichtbaarheid, wachtwoord_enc)
+      values ('${U.daniel}', 'info@studio-levant.nl', 'Info', '#d39a7a', 'team', 'v1:aaa.bbb.ccc'),
+             ('${U.mark}', 'mark@studio-levant.nl', 'Mark', '#a9b38f', 'prive', 'v1:ddd.eee.fff');
+  `);
+  // Ontkoppeld in de app (rij weg) en daarna 0026 opnieuw: niet terug zolang user_mailboxes
+  // ook weg is (zo ruimt de app op); dubbel hetzelfde adres kan niet.
+  await db.exec(`delete from public.mailboxen where eigenaar_id = '${U.daniel}' and lower(email) = 'daniel@studio-levant.nl';
+                 delete from public.user_mailboxes where user_id = '${U.daniel}';`);
+  await voerUit(db, m26, "0026 (3e keer)");
+  rijen = (await db.query("select email from public.mailboxen order by email")).rows;
+  check(rijen.map((r) => r.email).join(",") === "info@studio-levant.nl,mark@studio-levant.nl", "0026: opnieuw uitvoeren zet een ontkoppelde inbox niet terug", rijen.map((r) => r.email).join(","));
+  let r = await db.query(`insert into public.mailboxen (eigenaar_id, email, label, wachtwoord_enc) values ('${U.daniel}', 'INFO@studio-levant.nl', 'X', 'v1:a') on conflict do nothing returning id`);
+  check(r.rows.length === 0, "0026: hetzelfde adres (andere hoofdletters) niet twee keer per eigenaar");
+  for (const [kolom, waarde] of [["kleur", "'rood'"], ["zichtbaarheid", "'iedereen'"], ["label", "''"], ["wachtwoord_enc", "'geheim'"]]) {
+    r = await als(db, "service", `update public.mailboxen set ${kolom} = ${waarde} where email = 'info@studio-levant.nl'`);
+    check(!r.ok && r.code === "23514", `0026: ongeldige ${kolom} geweigerd`, uitleg(r));
+  }
+
+  // Niemand behalve de service-role: ook een gedeelde inbox is via de API onleesbaar (de
+  // server filtert en geeft geen wachtwoorden door).
+  for (const wie of ["daniel", "mark", "indringer", "anon"]) {
+    r = await als(db, wie, "select * from public.mailboxen");
+    check(geweigerd(r), `0026: ${wie} leest mailboxen niet`, uitleg(r));
+    r = await als(db, wie, `insert into public.mailboxen (eigenaar_id, email, label, wachtwoord_enc) values ('${U[wie] ?? U.daniel}', 'x@x.nl', 'X', 'v1:a')`);
+    check(geweigerd(r), `0026: ${wie} schrijft geen mailbox`, uitleg(r));
+    r = await als(db, wie, "update public.mailboxen set zichtbaarheid = 'team'");
+    check(geweigerd(r), `0026: ${wie} wijzigt geen mailbox`, uitleg(r));
+    r = await als(db, wie, "delete from public.mailboxen");
+    check(geweigerd(r), `0026: ${wie} verwijdert geen mailbox`, uitleg(r));
+  }
+  r = await als(db, "service", "select count(*)::int as n from public.mailboxen");
+  check(r.ok && r.rows[0].n === 2, "0026: service-role leest mailboxen", uitleg(r));
+  const pol = (await db.query("select count(*)::int as n from pg_policies where tablename = 'mailboxen'")).rows[0].n;
+  check(pol === 0, "0026: mailboxen zonder policies", `${pol}`);
+  const rls = (await db.query("select relrowsecurity as r from pg_class where oid = 'public.mailboxen'::regclass")).rows[0].r;
+  check(rls === true, "0026: RLS aan op mailboxen");
+
+  // Een gebruiker verwijderen ruimt zijn inboxen op (on delete cascade).
+  const n0 = (await db.query(`select count(*)::int as n from public.mailboxen where eigenaar_id = '${U.mark}'`)).rows[0].n;
+  check(n0 === 1, "0026: Mark heeft één inbox");
+  // Voor de toegangsmatrix hierna: de oude rij weer terug (code vóór 0026 blijft werken).
+  await db.query("insert into public.user_mailboxes (user_id, email, wachtwoord_enc) values ($1, 'daniel@studio-levant.nl', $2)", [U.daniel, oud.wachtwoord_enc]);
+  if (fouten === fouten0) console.log("  0026 mailboxen: ok");
 }
 
 // ---------------------------------------------------------------------------------

@@ -114,6 +114,154 @@
 .ml-mappen-fout { display: grid; gap: 10px; justify-items: start; padding: 8px 12px; font-size: 13px; color: var(--sl-danger); }
 .ml-mappen-fout p { margin: 0; line-height: 1.5; }
 
+/* ---------- meerdere inboxen (Inboxen.tsx): kleurstip, naam, adres, eigen mappen ---------- */
+.ml-inboxen { display: grid; gap: 6px; }
+.ml-alle { margin-bottom: 6px; }
+.ml-inbox { --ml-inbox-kleur: var(--sl-sand); }
+.ml-inbox + .ml-inbox { padding-top: 6px; border-top: 1px solid var(--sl-line-soft); }
+.ml-inbox-kop { display: flex; align-items: center; gap: 2px; }
+.ml-inbox-knop {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 8px 8px 12px;
+  border: 0;
+  border-radius: var(--sl-r);
+  background: transparent;
+  color: var(--sl-text);
+  font-family: var(--sl-font);
+  text-align: left;
+  cursor: pointer;
+  position: relative;
+  transition: background-color .15s var(--sl-ease);
+}
+.ml-inbox-knop:hover { background: var(--sl-panel); }
+.ml-inbox-knop[aria-current="true"] { background: var(--sl-raise); }
+.ml-inbox-knop[aria-current="true"]::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 8px;
+  bottom: 8px;
+  width: 2px;
+  background: var(--ml-inbox-kleur);
+}
+.ml-inbox-knop:focus-visible, .ml-inbox-klap:focus-visible { outline: none; box-shadow: var(--sl-focus); }
+.ml-inbox-stip {
+  display: inline-block;
+  flex: 0 0 auto;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--ml-inbox-kleur, var(--sl-sand));
+  vertical-align: middle;
+}
+.ml-inbox-tekst { flex: 1; min-width: 0; display: grid; gap: 1px; }
+.ml-inbox-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ml-inbox-gedeeld { flex: 0 0 auto; color: var(--sl-muted); }
+.ml-inbox-adres { font-size: 11.5px; color: var(--sl-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ml-inbox-fout {
+  flex: 0 0 auto;
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1px solid var(--sl-danger);
+  color: var(--sl-danger);
+  font-size: 11px;
+  font-weight: 800;
+}
+.ml-inbox-klap {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: var(--sl-r);
+  background: transparent;
+  color: var(--sl-muted);
+  cursor: pointer;
+}
+.ml-inbox-klap:hover { background: var(--sl-panel); color: var(--sl-text); }
+.ml-inbox-mappen { padding: 2px 0 4px 10px; }
+.ml-inbox-mappen .ml-map { font-size: 13.5px; padding-top: 7px; padding-bottom: 7px; }
+.ml-inbox-mappen .ml-mappen-sectie { margin-top: 8px; }
+
+/* "Alle inboxen": kleurstreep en naam van de inbox per bericht */
+.ml-rijen > li.ml-rij-metinbox::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 10px;
+  bottom: 10px;
+  width: 3px;
+  border-radius: 0 2px 2px 0;
+  background: var(--ml-inbox-kleur);
+  pointer-events: none;
+}
+.ml-rij-inbox {
+  max-width: 110px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--ml-inbox-kleur) 55%, transparent);
+  color: var(--ml-inbox-kleur);
+  font-family: var(--sl-mono);
+  font-size: 10px;
+  line-height: 1.5;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ml-lijst-waarschuwing { color: var(--sl-danger); text-transform: none; letter-spacing: 0; font-family: var(--sl-font); font-size: 12px; }
+.ml-lezer-inbox .ml-inbox-stip { width: 8px; height: 8px; margin-right: 2px; }
+
+/* Opsteller: afzender kiezen */
+.ml-van { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; }
+.ml-van-keuze {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 4px;
+  border: 0;
+  background: transparent;
+  color: var(--sl-text);
+  font-family: var(--sl-font);
+  font-size: 14px;
+  color-scheme: dark;
+  cursor: pointer;
+}
+.ml-van-keuze:focus-visible { outline: none; box-shadow: var(--sl-focus); border-radius: var(--sl-r); }
+.ml-van-keuze option { background: var(--sl-bg); color: var(--sl-text); }
+
+/* Dashboard-widget: kleurchip per inbox */
+.db-mail-inbox {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 0 6px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--ml-inbox-kleur) 55%, transparent);
+  color: var(--ml-inbox-kleur);
+  font-family: var(--sl-mono);
+  font-size: 9.5px;
+  font-weight: 400;
+  line-height: 1.6;
+  vertical-align: 1px;
+}
+.db-mail-fout { padding: 6px 0; font-size: 12px; color: var(--sl-danger); }
+.ml-mapkeuze-knop .ml-inbox-stip { margin-right: 2px; }
+
 .ml-toetsen { margin-top: auto; padding: 16px 12px 0; font-size: 12px; color: var(--sl-muted); }
 .ml-toetsen summary {
   cursor: pointer;

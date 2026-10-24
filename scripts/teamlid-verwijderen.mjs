@@ -4,7 +4,8 @@
 //     - team_members.actief = false → de database (RLS via is_teamlid()) en de app laten
 //       hem direct nergens meer bij, ook niet met een nog geldige sessie;
 //     - het account wordt geblokkeerd (ban), zodat ook verversen van de sessie niet meer lukt;
-//     - zijn gekoppelde mailbox (user_mailboxes) wordt verwijderd.
+//     - zijn gekoppelde inboxen (mailboxen, 0026; en user_mailboxes) worden verwijderd —
+//       ook inboxen die hij met het team deelde (die verdwijnen voor iedereen).
 //   --definitief --ja: daarna ook het account zelf verwijderen. Toewijzingen verdwijnen mee;
 //     bij facturen, taken enz. wordt "aangemaakt door" leeg. Niet terug te draaien.
 //
@@ -72,7 +73,13 @@ const ban = await sb.auth.admin.updateUserById(gebruiker.id, { ban_duration: "87
 if (ban.error) console.error(`Waarschuwing: blokkeren mislukt (${ban.error.message}); het lidmaatschap staat wel uit.`);
 else console.log("Account geblokkeerd.");
 
-// 3. Eigen mailbox ontkoppelen (versleuteld wachtwoord weg).
+// 3. Eigen inboxen ontkoppelen (versleutelde wachtwoorden weg). Gedeelde inboxen van hem
+//    verdwijnen daarmee ook voor de rest van het team (de app toont ze al niet meer zodra
+//    hij gedeactiveerd is). Wijzig daarna het wachtwoord van zo'n gedeelde inbox en koppel
+//    hem opnieuw vanaf een actief account.
+const mbs = await sb.from("mailboxen").delete().eq("eigenaar_id", gebruiker.id).select("email");
+if (mbs.error && !tabelFout(mbs.error)) console.error(`Waarschuwing: inboxen ontkoppelen mislukt (${mbs.error.message}).`);
+else if (!mbs.error && mbs.data?.length) console.log(`${mbs.data.length} inbox(en) ontkoppeld.`);
 const mb = await sb.from("user_mailboxes").delete().eq("user_id", gebruiker.id);
 if (mb.error && !tabelFout(mb.error)) console.error(`Waarschuwing: mailbox ontkoppelen mislukt (${mb.error.message}).`);
 

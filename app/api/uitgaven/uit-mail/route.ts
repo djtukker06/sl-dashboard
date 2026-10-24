@@ -2,7 +2,9 @@ import { randomUUID } from 'node:crypto';
 import { vandaag as vandaagNL } from '@/lib/agenda/datum';
 import { haalBijlage } from '@/lib/mail/berichten';
 import { MailFout } from '@/lib/mail/fout';
-import { mailConfigVoor } from '@/lib/mail/config';
+import { mailboxVoor } from '@/lib/mail/mailboxen';
+import type { MailConfig } from '@/lib/mail/config';
+import { isMailboxId } from '@/lib/mail/zichtbaarheid';
 import { metImap } from '@/lib/mail/imap';
 import { controleerMap, parseUid } from '@/lib/mail/mappen';
 import { dbFout, fout, json, leesJson, uitgavenRoute } from '@/lib/uitgaven/api';
@@ -17,7 +19,7 @@ export const dynamic = 'force-dynamic';
 // IMAP + HEIC omzetten + Sonnet + zo nodig een tweede poging met Opus.
 export const maxDuration = 120;
 
-// POST /api/uitgaven/uit-mail  { map, uid, deel, onderwerp? } → { uitgave }
+// POST /api/uitgaven/uit-mail  { mb?, map, uid, deel, onderwerp? } → { uitgave }
 // "Opslaan als uitgave" in de mail-lezer: haalt de bijlage server-side op via IMAP (zoals de
 // download-route), zet hem in de bucket uitgaven, maakt een concept en leest het uit.
 export const POST = uitgavenRoute(async (request, _ctx, sb, lid) => {
@@ -26,11 +28,14 @@ export const POST = uitgavenRoute(async (request, _ctx, sb, lid) => {
   const mapNaam = typeof b.map === 'string' ? b.map : 'INBOX';
 
   let bijlage: { naam: string; type: string; inhoud: Buffer };
-  let cfg: Awaited<ReturnType<typeof mailConfigVoor>> = null;
+  let cfg: MailConfig | null = null;
   try {
     const uid = parseUid(String(b.uid ?? ''));
-    // Altijd de eigen mailbox van dit teamlid (nooit die van een ander).
-    cfg = await mailConfigVoor(lid);
+    // Alleen een inbox die dit teamlid mag zien (eigen of met het team gedeeld).
+    if (b.mb !== undefined && b.mb !== null && !isMailboxId(b.mb)) return fout(400, 'Onbekende inbox.');
+    const mailbox = await mailboxVoor(lid, isMailboxId(b.mb) ? b.mb : null);
+    if (isMailboxId(b.mb) && !mailbox) return fout(404, 'Deze inbox bestaat niet (meer) of je hebt er geen toegang toe.', 'mailbox_onbekend');
+    cfg = mailbox?.cfg ?? null;
     bijlage = await metImap(cfg, async (c) => {
       const map = await controleerMap(c, mapNaam);
       return haalBijlage(c, map.pad, uid, deel, MAX_BESTAND_BYTES);

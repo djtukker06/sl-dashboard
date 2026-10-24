@@ -15,17 +15,20 @@ const ICOON: Record<MapRol, MailIcoonNaam> = {
   overig: 'map'
 };
 
-// Mappenlijst: speciale mappen bovenaan, eigen mappen ingeklapt eronder.
+// Mappenlijst van één inbox: speciale mappen bovenaan, eigen mappen ingeklapt eronder.
+// De inbox zelf staat als kop erboven (Inboxen.tsx), dus die map hier niet nog eens.
 export function Mappen({
+  label = 'Mappen',
   mappen,
   fout,
   actief,
   onKies,
   onOpnieuw
 }: {
+  label?: string;
   mappen: MailMap[] | null;
   fout: MailApiFout | null;
-  actief: string;
+  actief: string | null;
   onKies: (pad: string) => void;
   onOpnieuw: () => void;
 }) {
@@ -45,7 +48,7 @@ export function Mappen({
     }
     return (
       <ul className="ml-mappen-lijst" aria-busy="true">
-        {Array.from({ length: 6 }, (_, i) => (
+        {Array.from({ length: 4 }, (_, i) => (
           <li key={i} className="ml-map ml-map-skelet">
             <div className="db-skelet" style={{ width: `${70 - i * 6}%` }} />
           </li>
@@ -54,7 +57,7 @@ export function Mappen({
     );
   }
 
-  const speciaal = mappen.filter((m) => m.rol !== 'overig');
+  const speciaal = mappen.filter((m) => m.rol !== 'overig' && m.rol !== 'inbox');
   const knop = (m: MailMap) => (
     <li key={m.pad}>
       <button
@@ -77,7 +80,7 @@ export function Mappen({
   );
 
   return (
-    <nav aria-label="Mappen">
+    <nav aria-label={label}>
       <ul className="ml-mappen-lijst">{speciaal.map(knop)}</ul>
       {overige.length > 0 && (
         <>

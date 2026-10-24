@@ -3,6 +3,7 @@ import MailComposer from 'nodemailer/lib/mail-composer';
 import addressparser from 'nodemailer/lib/addressparser';
 import type { MailConfig } from './config';
 import { MailFout, naarMailFout, NIET_GEKOPPELD } from './fout';
+import { openbaarAdres } from './dns';
 import type { Adres } from './types';
 
 // Verzenden via SMTP (465, SSL). Het bericht wordt eerst als ruwe MIME opgebouwd, zodat
@@ -91,11 +92,14 @@ export async function verstuur(
   envelope: { from: string; to: string[] }
 ): Promise<void> {
   if (!cfg) throw new MailFout(503, 'niet_gekoppeld', NIET_GEKOPPELD);
+  // Via het gecontroleerde openbare IP, met de hostnaam voor TLS (zie lib/mail/dns.ts).
+  const ip = await openbaarAdres(cfg.smtpHost);
   const transport = createTransport({
-    host: cfg.smtpHost,
+    host: ip,
     port: cfg.smtpPort,
     secure: cfg.smtpPort === 465,
     requireTLS: cfg.smtpPort !== 465,
+    tls: { servername: cfg.smtpHost },
     auth: { user: cfg.user, pass: cfg.password },
     connectionTimeout: 10_000,
     greetingTimeout: 8_000,

@@ -1,4 +1,5 @@
-import { mailRoute, json } from '@/lib/mail/api';
+import type { ImapFlow } from 'imapflow';
+import { mailRoute, json, MAILBOX_ONBEKEND } from '@/lib/mail/api';
 import { MailFout } from '@/lib/mail/fout';
 import { metImap } from '@/lib/mail/imap';
 import { controleerMap, mapVoorRol, parseUid } from '@/lib/mail/mappen';
@@ -19,7 +20,8 @@ type Gegevens = {
   bcc?: unknown;
   onderwerp?: unknown;
   tekst?: unknown;
-  origineel?: { map?: unknown; uid?: unknown; modus?: unknown } | null;
+  /** Het bericht waarop je antwoordt of dat je doorstuurt; `mb` = de inbox waar het in staat. */
+  origineel?: { mb?: unknown; map?: unknown; uid?: unknown; modus?: unknown } | null;
   /** Bij doorsturen: welke originele bijlagen mee moeten (deelnummers). */
   origineleBijlagen?: unknown;
 };
@@ -59,12 +61,15 @@ async function leesVerzoek(request: Request): Promise<{ g: Gegevens; bijlagen: U
   return { g, bijlagen: [] };
 }
 
-// POST /api/mail/verzenden
+// POST /api/mail/verzenden?mb=<inbox waarvandaan je verstuurt>
 //   JSON of multipart (veld "gegevens" = JSON, velden "bijlagen" = bestanden):
-//   { aan, cc?, bcc?, onderwerp, tekst, origineel?: { map, uid, modus: 'antwoord' | 'doorsturen' },
-//     origineleBijlagen?: string[] }
-// Verstuurt via SMTP, zet een kopie in Verzonden (IMAP APPEND) en markeert bij een antwoord
-// het origineel als beantwoord. Antwoorden krijgen In-Reply-To/References (threading).
+//   { aan, cc?, bcc?, onderwerp, tekst,
+//     origineel?: { mb?, map, uid, modus: 'antwoord' | 'doorsturen' }, origineleBijlagen?: string[] }
+// Verstuurt via SMTP van de gekozen inbox (ook een met het team gedeelde), zet een kopie in
+// Verzonden van DIE inbox (IMAP APPEND) en markeert bij een antwoord het origineel als
+// beantwoord. Antwoorden krijgen In-Reply-To/References (threading). Staat het origineel in
+// een andere inbox dan waarvandaan je verstuurt (origineel.mb), dan worden koppen en
+// bijlagen daar opgehaald en wordt het daar als beantwoord gemarkeerd.
 export const POST = mailRoute(
   async (request: Request, _ctx: unknown, mail) => {
     const { g, bijlagen } = await leesVerzoek(request);
@@ -81,52 +86,77 @@ export const POST = mailRoute(
     const modus = orig?.modus === 'antwoord' || orig?.modus === 'doorsturen' ? orig.modus : null;
     const gewensteDelen = Array.isArray(g.origineleBijlagen) ? g.origineleBijlagen.map(String).slice(0, 30) : [];
 
-    const resultaat = await metImap(mail.cfg, async (c) => {
-      let inReplyTo: string | null = null;
-      let references: string[] = [];
-      let origMap: string | null = null;
-      let origUid: number | null = null;
-      const alleBijlagen = [...bijlagen];
+    // In welke inbox staat het origineel? Standaard dezelfde als waarvandaan je verstuurt;
+    // anders alleen een inbox die jij mag zien.
+    const origMb = orig && modus && typeof orig.mb === 'string' && orig.mb ? orig.mb : null;
+    const andereInbox = origMb !== null && origMb !== mail.mailbox?.id;
+    let origCfg = mail.cfg;
+    if (andereInbox) {
+      const m = mail.mailboxen.find((x) => x.id === origMb);
+      if (!m) throw new MailFout(404, 'mailbox_onbekend', MAILBOX_ONBEKEND);
+      origCfg = m.cfg;
+    }
 
-      if (orig && modus) {
-        origMap = (await controleerMap(c, String(orig.map ?? ''))).pad;
-        origUid = parseUid(String(orig.uid ?? ''));
-        if (modus === 'antwoord') {
-          const t = await threadKoppen(c, origMap, origUid);
-          inReplyTo = t.messageId;
-          references = [...t.references, ...(t.messageId ? [t.messageId] : [])].slice(-20);
-        } else if (gewensteDelen.length) {
-          // Doorsturen: de gekozen originele bijlagen gaan mee.
-          const lock = await c.getMailboxLock(origMap, { readOnly: true });
-          let delen: string[] = [];
-          try {
-            const kop = await c.fetchOne(String(origUid), { uid: true, bodyStructure: true }, { uid: true });
-            const beschikbaar = kop ? bijlagenUitStructuur(kop.bodyStructure) : [];
-            delen = beschikbaar.filter((b) => gewensteDelen.includes(b.deel)).map((b) => b.deel);
-          } finally {
-            lock.release();
+    type Origineel = { inReplyTo: string | null; references: string[]; map: string; uid: number; bijlagen: UitgaandeBijlage[] };
+
+    // Koppen (threading) en, bij doorsturen, de gekozen originele bijlagen.
+    const haalOrigineel = async (c: ImapFlow): Promise<Origineel | null> => {
+      if (!orig || !modus) return null;
+      const origMap = (await controleerMap(c, String(orig.map ?? ''))).pad;
+      const origUid = parseUid(String(orig.uid ?? ''));
+      const uit: Origineel = { inReplyTo: null, references: [], map: origMap, uid: origUid, bijlagen: [] };
+      if (modus === 'antwoord') {
+        const t = await threadKoppen(c, origMap, origUid);
+        uit.inReplyTo = t.messageId;
+        uit.references = [...t.references, ...(t.messageId ? [t.messageId] : [])].slice(-20);
+      } else if (gewensteDelen.length) {
+        const lock = await c.getMailboxLock(origMap, { readOnly: true });
+        let delen: string[] = [];
+        try {
+          const kop = await c.fetchOne(String(origUid), { uid: true, bodyStructure: true }, { uid: true });
+          const beschikbaar = kop ? bijlagenUitStructuur(kop.bodyStructure) : [];
+          delen = beschikbaar.filter((b) => gewensteDelen.includes(b.deel)).map((b) => b.deel);
+        } finally {
+          lock.release();
+        }
+        let totaal = 0;
+        for (const deel of delen) {
+          const b = await haalBijlage(c, origMap, origUid, deel, MAX_DOORSTUREN);
+          totaal += b.inhoud.length;
+          if (totaal > MAX_DOORSTUREN) {
+            throw new MailFout(413, 'te_groot', 'De originele bijlagen zijn samen te groot om door te sturen (max. 20 MB).');
           }
-          let totaal = 0;
-          for (const deel of delen) {
-            const b = await haalBijlage(c, origMap, origUid, deel, MAX_DOORSTUREN);
-            totaal += b.inhoud.length;
-            if (totaal > MAX_DOORSTUREN) {
-              throw new MailFout(413, 'te_groot', 'De originele bijlagen zijn samen te groot om door te sturen (max. 20 MB).');
-            }
-            alleBijlagen.push({ naam: b.naam, type: b.type, inhoud: b.inhoud });
-          }
+          uit.bijlagen.push({ naam: b.naam, type: b.type, inhoud: b.inhoud });
         }
       }
+      return uit;
+    };
 
+    const markeerBeantwoord = async (c: ImapFlow, o: Origineel | null) => {
+      if (modus !== 'antwoord' || !o) return;
+      try {
+        const lock = await c.getMailboxLock(o.map);
+        try {
+          await c.messageFlagsAdd(String(o.uid), ['\\Answered'], { uid: true });
+        } finally {
+          lock.release();
+        }
+      } catch (e) {
+        console.error('[mail] markeren als beantwoord mislukt', (e as Error)?.message ?? e);
+      }
+    };
+
+    // Verstuurt en bewaart een kopie in Verzonden van de verzendende inbox.
+    const verstuurEnBewaar = async (c: ImapFlow, o: Origineel | null) => {
       const { raw, envelope } = await bouwBericht(mail.cfg, {
         aan,
         cc,
         bcc,
         onderwerp,
         tekst,
-        inReplyTo,
-        references,
-        bijlagen: alleBijlagen
+        inReplyTo: o?.inReplyTo ?? null,
+        references: o?.references ?? [],
+        bijlagen: [...bijlagen, ...(o?.bijlagen ?? [])]
       });
 
       await verstuur(mail.cfg, raw, envelope);
@@ -141,24 +171,30 @@ export const POST = mailRoute(
         bewaard = false;
         console.error('[mail] kopie in Verzonden mislukt', (e as Error)?.message ?? e);
       }
-      if (modus === 'antwoord' && origMap && origUid) {
-        try {
-          const lock = await c.getMailboxLock(origMap);
-          try {
-            await c.messageFlagsAdd(String(origUid), ['\\Answered'], { uid: true });
-          } finally {
-            lock.release();
-          }
-        } catch (e) {
-          console.error('[mail] markeren als beantwoord mislukt', (e as Error)?.message ?? e);
-        }
+      return bewaard;
+    };
+
+    let bewaard: boolean;
+    if (!andereInbox) {
+      bewaard = await metImap(mail.cfg, async (c) => {
+        const o = await haalOrigineel(c);
+        const b = await verstuurEnBewaar(c, o);
+        await markeerBeantwoord(c, o);
+        return b;
+      });
+    } else {
+      const o = await metImap(origCfg, haalOrigineel);
+      bewaard = await metImap(mail.cfg, (c) => verstuurEnBewaar(c, o));
+      try {
+        await metImap(origCfg, (c) => markeerBeantwoord(c, o));
+      } catch (e) {
+        console.error('[mail] markeren als beantwoord mislukt', (e as Error)?.message ?? e);
       }
-      return { bewaard };
-    });
+    }
 
     return json({
       ok: true,
-      waarschuwing: resultaat.bewaard ? undefined : 'Verzonden, maar er kon geen kopie in Verzonden worden bewaard.'
+      waarschuwing: bewaard ? undefined : 'Verzonden, maar er kon geen kopie in Verzonden worden bewaard.'
     });
   }
 );

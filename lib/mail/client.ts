@@ -1,7 +1,8 @@
 'use client';
 
 import { DAGNAMEN_KORT, inAmsterdam, MAANDNAMEN_KORT, plusDagen, vandaag } from '@/lib/agenda/datum';
-import type { Adres, Bericht, BerichtenPagina, MailMap, MailOverzicht, MailStatus } from './types';
+import type { Adres, Bericht, BerichtenPagina, InboxMetTeller, MailMap, MailOverzicht, MailStatus } from './types';
+import { ALLE_INBOXEN } from './zichtbaarheid';
 
 // Browser-kant van de mail: fetch-hulpjes, korte cache in sessionStorage (badge, dashboard)
 // en opmaak van datums/adressen. Mail-inhoud zelf blijft alleen in het geheugen van de tab.
@@ -46,27 +47,35 @@ const q = (o: Record<string, string | number | undefined>) =>
     .map(([k, v]) => `${k}=${encodeURIComponent(String(v))}`)
     .join('&');
 
+// Elke inbox-gebonden aanroep krijgt het id van de inbox mee (?mb=…); de server controleert
+// dat jij die inbox mag zien. `mb` = ALLE_INBOXEN bij berichten = de INBOX van alle inboxen.
 export const mailApi = {
+  inboxen: () => api<{ inboxen: InboxMetTeller[]; ongelezen: number }>('/api/mail/inboxen'),
   status: () => api<MailStatus>('/api/mail/status'),
   overzicht: () => api<MailOverzicht>('/api/mail/overzicht'),
-  mappen: () => api<{ mappen: MailMap[] }>('/api/mail/mappen'),
-  berichten: (map: string, pagina: number, zoek = '', per = 40) =>
-    api<BerichtenPagina>(`/api/mail/berichten?${q({ map, pagina, per, zoek })}`),
-  bericht: (map: string, uid: number) => api<{ bericht: Bericht }>(`/api/mail/berichten/${uid}?${q({ map })}`),
-  vlaggen: (map: string, uid: number, v: { gelezen?: boolean; gemarkeerd?: boolean }) =>
-    api<{ ok: true }>(`/api/mail/berichten/${uid}/vlaggen?${q({ map })}`, { method: 'POST', body: JSON.stringify(v) }),
-  verplaats: (map: string, uid: number, naar: { naar?: string; naarMap?: string }) =>
-    api<{ naar: string; uid: number | null }>(`/api/mail/berichten/${uid}/verplaatsen?${q({ map })}`, {
+  mappen: (mb: string) => api<{ mappen: MailMap[] }>(`/api/mail/mappen?${q({ mb })}`),
+  berichten: (mb: string, map: string, pagina: number, zoek = '', per = 40) =>
+    api<BerichtenPagina>(
+      mb === ALLE_INBOXEN
+        ? `/api/mail/berichten?${q({ alle: 1, pagina, per, zoek })}`
+        : `/api/mail/berichten?${q({ mb, map, pagina, per, zoek })}`
+    ),
+  bericht: (mb: string, map: string, uid: number) => api<{ bericht: Bericht }>(`/api/mail/berichten/${uid}?${q({ mb, map })}`),
+  vlaggen: (mb: string, map: string, uid: number, v: { gelezen?: boolean; gemarkeerd?: boolean }) =>
+    api<{ ok: true }>(`/api/mail/berichten/${uid}/vlaggen?${q({ mb, map })}`, { method: 'POST', body: JSON.stringify(v) }),
+  verplaats: (mb: string, map: string, uid: number, naar: { naar?: string; naarMap?: string }) =>
+    api<{ naar: string; uid: number | null }>(`/api/mail/berichten/${uid}/verplaatsen?${q({ mb, map })}`, {
       method: 'POST',
       body: JSON.stringify(naar)
     }),
-  adressen: () => api<{ adressen: Adres[] }>('/api/mail/adressen'),
-  verzend: (body: FormData | string) =>
-    api<{ ok: true; waarschuwing?: string }>('/api/mail/verzenden', { method: 'POST', body })
+  adressen: (mb: string) => api<{ adressen: Adres[] }>(`/api/mail/adressen?${q({ mb })}`),
+  /** Verzenden vanaf inbox `van` (ook een met het team gedeelde inbox). */
+  verzend: (van: string, body: FormData | string) =>
+    api<{ ok: true; waarschuwing?: string }>(`/api/mail/verzenden?${q({ mb: van })}`, { method: 'POST', body })
 };
 
-export const bijlageUrl = (map: string, uid: number, deel: string) =>
-  `/api/mail/berichten/${uid}/bijlagen/${encodeURIComponent(deel)}?${q({ map })}`;
+export const bijlageUrl = (mb: string, map: string, uid: number, deel: string) =>
+  `/api/mail/berichten/${uid}/bijlagen/${encodeURIComponent(deel)}?${q({ mb, map })}`;
 
 /** Header waarmee de lezer laat weten dat hij via fetch downloadt (zie bijlagen-route). */
 export const DOWNLOAD_HEADER = 'X-SL-Download';
@@ -153,10 +162,27 @@ export function schrijfCache(sleutel: string, v: unknown) {
   }
 }
 
-/** Laat de rail-badge (public/shell/shell.js) het nieuwe aantal ongelezen weten. */
+/** Laat de rail-badge (public/shell/shell.js) het nieuwe aantal ongelezen weten (som over alle inboxen). */
 export function meldOngelezen(aantal: number) {
   schrijfCache('sl-mail-status', { geconfigureerd: true, ongelezen: aantal });
   window.dispatchEvent(new CustomEvent('sl-mail-ongelezen', { detail: aantal }));
+}
+
+/** Laatst gekozen afzender-inbox (per gebruiker, alleen in deze browser). */
+export function leesLaatsteVan(): string | null {
+  try {
+    return localStorage.getItem(perGebruiker('sl-mail-van'));
+  } catch {
+    return null;
+  }
+}
+
+export function bewaarLaatsteVan(id: string) {
+  try {
+    localStorage.setItem(perGebruiker('sl-mail-van'), id);
+  } catch {
+    /* geen opslag */
+  }
 }
 
 // ---------- opmaak ----------
