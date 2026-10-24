@@ -9,6 +9,9 @@ import { isImportFormaat, type Boeking, type BoekingWaarde, type Grootboekrekeni
 import { bronExtraUitRij, factuurUitRij, isKoppelBron, uitgaveUitRij, type BronExtra, type FactuurBron, type KoppelBron, type Koppeling, type UitgaveBron } from '../kern/bronnen';
 import type { ImportBoeking, Kolommapping } from '../kern/bankimport';
 import { BoekhoudFout, type BoekhoudRepo, type RekeningInvoer, type RekeningWijziging } from './types';
+import { leesSnapshot, type Aangifte, type AangifteBetaling, type AangifteSnapshot } from '../kern/aangifte';
+import { isActivumCategorie, type Activum, type ActivumWaarde } from '../kern/afschrijving';
+import type { Kwartaal } from '../kern/periode';
 
 // De echte opslag: tabellen bk_* (migratie 0027) via de gebruikerscliënt van het teamlid,
 // dus met RLS (is_teamlid() + 2FA). Nooit de service-role. Bedragen komen als bigint
@@ -135,6 +138,64 @@ function naarRij(w: BoekingWaarde): Rij {
     grootboek_code: w.grootboek,
     vennoot_id: w.vennootId,
     status: w.status,
+    notities: w.notities
+  };
+}
+
+const AANGIFTE_KOLOMMEN = 'id, jaar, kwartaal, rubrieken, te_betalen_centen, ingediend_op, ingediend_door, kenmerk, opmerking';
+
+function naarAangifte(r: Rij): Aangifte | null {
+  const q = Number(r.kwartaal);
+  if (!isKwartaal(q)) return null;
+  return {
+    id: String(r.id),
+    jaar: Number(r.jaar),
+    kwartaal: q,
+    ingediendOp: String(r.ingediend_op),
+    ingediendDoor: (r.ingediend_door as string | null) ?? null,
+    kenmerk: (r.kenmerk as string | null) ?? null,
+    opmerking: (r.opmerking as string | null) ?? null,
+    snapshot: leesSnapshot(r.rubrieken),
+    teBetalen: centen(r.te_betalen_centen)
+  };
+}
+
+const ACTIVUM_KOLOMMEN =
+  'id, omschrijving, categorie_grootboek, aanschafdatum, ingebruikname, aanschaf_centen, restwaarde_centen, looptijd_maanden, uitgave_id, boeking_id, desinvestering_datum, desinvestering_centen, notities, created_at';
+
+function naarActivum(r: Rij): Activum | null {
+  if (!isActivumCategorie(r.categorie_grootboek)) return null;
+  return {
+    id: String(r.id),
+    omschrijving: String(r.omschrijving),
+    categorie: r.categorie_grootboek,
+    aanschafdatum: String(r.aanschafdatum),
+    ingebruikname: String(r.ingebruikname),
+    aanschaf: centen(r.aanschaf_centen),
+    restwaarde: centen(r.restwaarde_centen),
+    looptijdMaanden: Number(r.looptijd_maanden),
+    uitgaveId: (r.uitgave_id as string | null) ?? null,
+    boekingId: (r.boeking_id as string | null) ?? null,
+    desinvesteringDatum: (r.desinvestering_datum as string | null) ?? null,
+    desinvesteringOpbrengst: r.desinvestering_centen === null || r.desinvestering_centen === undefined ? null : centen(r.desinvestering_centen),
+    notities: (r.notities as string | null) ?? null,
+    aangemaakt: String(r.created_at)
+  };
+}
+
+function activumRij(w: ActivumWaarde): Rij {
+  return {
+    omschrijving: w.omschrijving,
+    categorie_grootboek: w.categorie,
+    aanschafdatum: w.aanschafdatum,
+    ingebruikname: w.ingebruikname,
+    aanschaf_centen: w.aanschaf,
+    restwaarde_centen: w.restwaarde,
+    looptijd_maanden: w.looptijdMaanden,
+    uitgave_id: w.uitgaveId,
+    boeking_id: w.boekingId,
+    desinvestering_datum: w.desinvesteringDatum,
+    desinvestering_centen: w.desinvesteringOpbrengst,
     notities: w.notities
   };
 }
@@ -357,5 +418,91 @@ export class SupabaseRepo implements BoekhoudRepo {
     if (error) throw bkDbFout(error);
     const d = (data ?? {}) as Rij;
     return { nieuw: Number(d.nieuw ?? 0), dubbel: Number(d.dubbel ?? 0) };
+  }
+
+  // ------------------------------------------------------------------ btw-aangiften
+  async aangiften(): Promise<Aangifte[]> {
+    const { data, error } = await this.sb.from('bk_aangiften').select(AANGIFTE_KOLOMMEN).order('jaar').order('kwartaal');
+    if (error) throw bkDbFout(error);
+    return ((data ?? []) as Rij[]).map(naarAangifte).filter((x): x is Aangifte => x !== null);
+  }
+
+  async aangifteIndienen(a: { jaar: number; kwartaal: Kwartaal; snapshot: AangifteSnapshot; teBetalen: number; kenmerk: string | null; opmerking: string | null }): Promise<Aangifte> {
+    const { data, error } = await this.sb
+      .from('bk_aangiften')
+      .insert({ jaar: a.jaar, kwartaal: a.kwartaal, rubrieken: a.snapshot, te_betalen_centen: a.teBetalen, kenmerk: a.kenmerk, opmerking: a.opmerking })
+      .select(AANGIFTE_KOLOMMEN)
+      .single();
+    if (error) {
+      if ((error as { code?: string }).code === '23505') throw new BoekhoudFout(409, 'Dit kwartaal is al ingediend.', 'bestaat_al');
+      throw bkDbFout(error);
+    }
+    const uit = naarAangifte(data as Rij);
+    if (!uit) throw new BoekhoudFout(500, 'Er ging iets mis bij het opslaan van de aangifte.');
+    return uit;
+  }
+
+  async aangifteIntrekken(id: string): Promise<void> {
+    // RLS staat het verwijderen van een aangifte alleen de eigenaar toe. Daarna de
+    // betaalkoppelingen (geen foreign key naar bk_aangiften); blijft er toch een over, dan
+    // negeert laadAlles die (de aangifte bestaat niet meer).
+    const { data, error } = await this.sb.from('bk_aangiften').delete().eq('id', id).select('id');
+    if (error) throw bkDbFout(error);
+    if (!data?.length) throw new BoekhoudFout(403, 'Alleen de eigenaar kan een ingediende aangifte intrekken.', 'geen_eigenaar');
+    const k = await this.sb.from('bk_koppelingen').delete().eq('bron', 'aangifte').eq('bron_id', id);
+    if (k.error) throw bkDbFout(k.error);
+  }
+
+  async aangifteBetalingen(): Promise<AangifteBetaling[]> {
+    const { data, error } = await this.sb.from('bk_koppelingen').select('id, boeking_id, bron_id, bedrag_centen').eq('bron', 'aangifte').limit(5000);
+    if (error) throw bkDbFout(error);
+    return ((data ?? []) as Rij[]).map((r) => ({ id: String(r.id), boekingId: String(r.boeking_id), aangifteId: String(r.bron_id), bedrag: centen(r.bedrag_centen) }));
+  }
+
+  async aangifteBetalingKoppelen(k: { boekingId: string; aangifteId: string; bedrag: number }): Promise<AangifteBetaling> {
+    const { data, error } = await this.sb
+      .from('bk_koppelingen')
+      .insert({ boeking_id: k.boekingId, bron: 'aangifte', bron_id: k.aangifteId, bedrag_centen: k.bedrag })
+      .select('id')
+      .single();
+    if (error) throw bkDbFout(error);
+    const st = await this.sb.from('bk_boekingen').update({ status: 'geboekt' }).eq('id', k.boekingId).eq('status', 'te_verwerken');
+    if (st.error) throw bkDbFout(st.error);
+    return { id: String((data as Rij).id), ...k };
+  }
+
+  async aangifteBetalingOntkoppelen(id: string): Promise<void> {
+    const { data, error } = await this.sb.from('bk_koppelingen').delete().eq('id', id).eq('bron', 'aangifte').select('id');
+    if (error) throw bkDbFout(error);
+    if (!data?.length) throw new BoekhoudFout(404, 'Deze koppeling bestaat niet (meer).', 'onbekend');
+  }
+
+  // ------------------------------------------------------------------ activa
+  async activa(): Promise<Activum[]> {
+    const { data, error } = await this.sb.from('bk_activa').select(ACTIVUM_KOLOMMEN).order('aanschafdatum').limit(5000);
+    if (error) throw bkDbFout(error);
+    return ((data ?? []) as Rij[]).map(naarActivum).filter((x): x is Activum => x !== null);
+  }
+
+  async activumToevoegen(w: ActivumWaarde): Promise<Activum> {
+    const { data, error } = await this.sb.from('bk_activa').insert(activumRij(w)).select(ACTIVUM_KOLOMMEN).single();
+    if (error) throw bkDbFout(error);
+    const a = naarActivum(data as Rij);
+    if (!a) throw new BoekhoudFout(500, 'Er ging iets mis bij het opslaan van het activum.');
+    return a;
+  }
+
+  async activumWijzigen(id: string, w: ActivumWaarde): Promise<Activum> {
+    const { data, error } = await this.sb.from('bk_activa').update(activumRij(w)).eq('id', id).select(ACTIVUM_KOLOMMEN).maybeSingle();
+    if (error) throw bkDbFout(error);
+    const a = data ? naarActivum(data as Rij) : null;
+    if (!a) throw new BoekhoudFout(404, 'Dit activum bestaat niet (meer).', 'onbekend');
+    return a;
+  }
+
+  async activumVerwijderen(id: string): Promise<void> {
+    const { data, error } = await this.sb.from('bk_activa').delete().eq('id', id).select('id');
+    if (error) throw bkDbFout(error);
+    if (!data?.length) throw new BoekhoudFout(404, 'Dit activum bestaat niet (meer).', 'onbekend');
   }
 }

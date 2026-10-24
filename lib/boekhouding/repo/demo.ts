@@ -16,6 +16,9 @@ import { vergrendelFout, type Boeking, type BoekingWaarde, type ImportFormaat, t
 import { demoSeed, type DemoData } from './demo-seed';
 import { voorbeeldAfschriften } from './demo-voorbeeld';
 import { BoekhoudFout, type BoekhoudRepo, type RekeningInvoer, type RekeningWijziging } from './types';
+import type { Aangifte, AangifteBetaling, AangifteSnapshot } from '../kern/aangifte';
+import { activumVergrendelFout, type Activum, type ActivumWaarde } from '../kern/afschrijving';
+import { isVergrendeld, type Kwartaal } from '../kern/periode';
 
 const TTL_MS = 4 * 60 * 60 * 1000;
 const MAX_MUTATIES = 1000;
@@ -300,6 +303,108 @@ export class DemoRepo implements BoekhoudRepo {
     }
     data.importSleutels[rekeningId] = [...bestaand];
     return { nieuw, dubbel: regels.length - nieuw };
+  }
+
+  // ------------------------------------------------------------------ btw-aangiften
+  async aangiften(): Promise<Aangifte[]> {
+    return kopie(this.s.data.aangiften);
+  }
+
+  async aangifteIndienen(a: { jaar: number; kwartaal: Kwartaal; snapshot: AangifteSnapshot; teBetalen: Centen; kenmerk: string | null; opmerking: string | null }): Promise<Aangifte> {
+    const d = this.s.data;
+    if (d.aangiften.some((x) => x.jaar === a.jaar && x.kwartaal === a.kwartaal)) throw new BoekhoudFout(409, 'Dit kwartaal is al ingediend.', 'bestaat_al');
+    if (d.stamdata.vergrendeling.boekjaren.includes(a.jaar)) throw new BoekhoudFout(409, `Boekjaar ${a.jaar} is afgesloten.`, 'periode_vergrendeld');
+    const data = this.muteer();
+    const nieuw: Aangifte = {
+      id: crypto.randomUUID(),
+      jaar: a.jaar,
+      kwartaal: a.kwartaal,
+      ingediendOp: new Date().toISOString(),
+      ingediendDoor: this.userId,
+      kenmerk: a.kenmerk,
+      opmerking: a.opmerking,
+      snapshot: structuredClone(a.snapshot),
+      teBetalen: a.teBetalen
+    };
+    data.aangiften.push(nieuw);
+    data.stamdata.vergrendeling.aangiften.push({ jaar: a.jaar, kwartaal: a.kwartaal });
+    return kopie(nieuw);
+  }
+
+  async aangifteIntrekken(id: string): Promise<void> {
+    const d = this.s.data;
+    const a = d.aangiften.find((x) => x.id === id);
+    if (!a) throw new BoekhoudFout(404, 'Deze aangifte bestaat niet (meer).', 'onbekend');
+    if (d.stamdata.vergrendeling.boekjaren.includes(a.jaar)) throw new BoekhoudFout(409, `Boekjaar ${a.jaar} is afgesloten.`, 'periode_vergrendeld');
+    const data = this.muteer();
+    data.aangiften = data.aangiften.filter((x) => x.id !== id);
+    data.aangifteBetalingen = data.aangifteBetalingen.filter((x) => x.aangifteId !== id);
+    data.stamdata.vergrendeling.aangiften = data.stamdata.vergrendeling.aangiften.filter((x) => !(x.jaar === a.jaar && x.kwartaal === a.kwartaal));
+  }
+
+  async aangifteBetalingen(): Promise<AangifteBetaling[]> {
+    const d = this.s.data;
+    const ids = new Set(d.boekingen.map((b) => b.id));
+    return kopie(d.aangifteBetalingen.filter((k) => ids.has(k.boekingId)));
+  }
+
+  async aangifteBetalingKoppelen(k: { boekingId: string; aangifteId: string; bedrag: Centen }): Promise<AangifteBetaling> {
+    const d = this.s.data;
+    const b = d.boekingen.find((x) => x.id === k.boekingId);
+    if (!b) throw new BoekhoudFout(404, 'Deze boeking bestaat niet (meer).', 'onbekend');
+    if (b.soort !== 'btw') throw new BoekhoudFout(400, 'Deze koppeling past niet bij de boeking (soort of verwijderd).', 'koppeling_ongeldig');
+    if (!d.aangiften.some((a) => a.id === k.aangifteId)) throw new BoekhoudFout(404, 'Deze aangifte bestaat niet (meer).', 'onbekend');
+    if (d.aangifteBetalingen.some((x) => x.boekingId === k.boekingId && x.aangifteId === k.aangifteId)) throw new BoekhoudFout(409, 'Dat bestaat al (zelfde naam of nummer).', 'bestaat_al');
+    const data = this.muteer();
+    const nieuw: AangifteBetaling = { id: crypto.randomUUID(), ...k };
+    data.aangifteBetalingen.push(nieuw);
+    if (b.status === 'te_verwerken') b.status = 'geboekt';
+    return kopie(nieuw);
+  }
+
+  async aangifteBetalingOntkoppelen(id: string): Promise<void> {
+    const d = this.s.data;
+    if (!d.aangifteBetalingen.some((x) => x.id === id)) throw new BoekhoudFout(404, 'Deze koppeling bestaat niet (meer).', 'onbekend');
+    const data = this.muteer();
+    data.aangifteBetalingen = data.aangifteBetalingen.filter((x) => x.id !== id);
+  }
+
+  // ------------------------------------------------------------------ activa
+  async activa(): Promise<Activum[]> {
+    return kopie(this.s.data.activa);
+  }
+
+  private activumSlot(oud: Activum | null, nieuw: ActivumWaarde | null) {
+    const v = this.s.data.stamdata.vergrendeling;
+    const fout = activumVergrendelFout(oud, nieuw, { boekjaren: v.boekjaren, open: (dt) => !isVergrendeld(dt, v) });
+    if (fout) throw new BoekhoudFout(409, fout, 'periode_vergrendeld');
+  }
+
+  async activumToevoegen(w: ActivumWaarde): Promise<Activum> {
+    this.activumSlot(null, w);
+    const data = this.muteer();
+    const a: Activum = { id: crypto.randomUUID(), ...w, aangemaakt: new Date().toISOString() };
+    data.activa.push(a);
+    return kopie(a);
+  }
+
+  async activumWijzigen(id: string, w: ActivumWaarde): Promise<Activum> {
+    const d = this.s.data;
+    const i = d.activa.findIndex((x) => x.id === id);
+    if (i < 0) throw new BoekhoudFout(404, 'Dit activum bestaat niet (meer).', 'onbekend');
+    this.activumSlot(d.activa[i], w);
+    const data = this.muteer();
+    data.activa[i] = { ...data.activa[i], ...w };
+    return kopie(data.activa[i]);
+  }
+
+  async activumVerwijderen(id: string): Promise<void> {
+    const d = this.s.data;
+    const a = d.activa.find((x) => x.id === id);
+    if (!a) throw new BoekhoudFout(404, 'Dit activum bestaat niet (meer).', 'onbekend');
+    this.activumSlot(a, null);
+    const data = this.muteer();
+    data.activa = data.activa.filter((x) => x.id !== id);
   }
 
   /** Voorbeeld-CSV's (RegioBank en Revolut) om de import in de demo te proberen. */

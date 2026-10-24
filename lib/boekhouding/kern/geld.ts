@@ -177,3 +177,12 @@ export function som(lijst: Centen[]): Centen {
   for (const c of lijst) t += moetCenten(c);
   return moetCenten(t, 'som');
 }
+
+const NL_HEEL = new Intl.NumberFormat('nl-NL', { maximumFractionDigits: 0 });
+
+/** Hele euro's zoals op het btw-formulier: 17800 → "€ 17.800"; −12 → "−€ 12". */
+export function formatHeleEuro(euro: number): string {
+  if (!Number.isSafeInteger(euro)) throw new Error(`geen heel aantal euro's: ${euro}`);
+  const t = NL_HEEL.format(Math.abs(euro));
+  return euro < 0 ? `−€ ${t}` : `€ ${t}`;
+}

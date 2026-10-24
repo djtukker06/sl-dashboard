@@ -17,7 +17,11 @@ import {
   type Kolommapping
 } from './kern/bankimport';
 import { kiesbareCategorieen } from './model';
-import { laadAlles, type BoekhoudRepo } from './repo/types';
+import { BoekhoudFout, journaalVan, laadAlles, type BoekhoudRepo } from './repo/types';
+import { aangifteRubrieken, betalingFout, naarSnapshot, teBetalenCenten } from './kern/aangifte';
+import { activumAlsInvoer, activumVergrendelFout, parseActivumInvoer, type ActivumWaarde } from './kern/afschrijving';
+import { activumBronFout, herkomstVan } from './kern/activeren';
+import { isKwartaal, isVergrendeld, kwartaalGrenzen, kwartaalLabel, type Kwartaal } from './kern/periode';
 
 // De acties achter de boekhoud-API (stap 2), los van de route-wrapper: de routes in
 // app/api/boekhouding/** doen eerst de teamcheck en herkomstcontrole (bkRoute) en roepen dan
@@ -119,6 +123,9 @@ export async function koppelActie(request: Request, repo: BoekhoudRepo): Promise
   const data = await laadAlles(repo);
   const boeking = data.boekingen.find((b) => b.id === body.boekingId);
   if (!boeking) return fout(404, 'Deze boeking bestaat niet (meer).');
+  if (data.activa.some((a) => a.boekingId === boeking.id)) {
+    return fout(409, 'Deze bankregel is geactiveerd. Verwijder eerst het activum en activeer daarna het bonnetje (daar komen de kosten dan vandaan).', 'geactiveerd');
+  }
   const vandaag = vandaagNL();
   const post =
     body.bron === 'factuur'
@@ -184,3 +191,154 @@ export async function bronExtraActie(request: Request, repo: BoekhoudRepo): Prom
   if (slot) return fout(409, slot, 'periode_vergrendeld');
   const bronExtra = await repo.bronExtraOpslaan(nieuw);
   return json({ bronExtra });}
+
+
+// ---------------------------------------------------------------------------------
+// Stap 3: btw-aangifte (indienen, intrekken, betaling koppelen) en activa
+// ---------------------------------------------------------------------------------
+/** Jaar en kwartaal uit de route; null als ze ongeldig zijn. */
+export function leesKwartaal(jaar: string, kw: string): { jaar: number; kwartaal: Kwartaal } | null {
+  const j = Number(jaar);
+  const q = Number(kw);
+  if (!/^\d{4}$/.test(jaar) || j < 2000 || j > 2999 || !isKwartaal(q)) return null;
+  return { jaar: j, kwartaal: q };
+}
+
+const vrijeTekst = (v: unknown, max: number): string | null => (typeof v === 'string' ? v.replace(/\s+/g, ' ').trim().slice(0, max) || null : null);
+
+/**
+ * Markeer een kwartaal als ingediend. De server rekent de aangifte zelf uit (nooit de cijfers
+ * van de browser overnemen) en bewaart die als snapshot; daarmee is het kwartaal vergrendeld.
+ */
+export async function indienenActie(request: Request, repo: BoekhoudRepo, kw: { jaar: number; kwartaal: Kwartaal }): Promise<Response> {
+  const body = await leesJson(request);
+  const { tot } = kwartaalGrenzen(kw.jaar, kw.kwartaal);
+  if (vandaagNL() <= tot) return fout(400, `${kwartaalLabel(kw.jaar, kw.kwartaal)} loopt nog; je kunt pas na afloop aangifte doen.`, 'kwartaal_loopt');
+  const data = await laadAlles(repo);
+  if (data.aangiften.some((a) => a.jaar === kw.jaar && a.kwartaal === kw.kwartaal)) return fout(409, 'Dit kwartaal is al ingediend.', 'bestaat_al');
+  if (data.stam.vergrendeling.boekjaren.includes(kw.jaar)) return fout(409, `Boekjaar ${kw.jaar} is afgesloten.`, 'periode_vergrendeld');
+  const ber = aangifteRubrieken(journaalVan(data), kw.jaar, kw.kwartaal);
+  // De browser stuurt mee wat de gebruiker zag; is er intussen iets veranderd, dan eerst opnieuw bekijken.
+  if (body.verwacht !== undefined && body.verwacht !== null && Number(body.verwacht) !== teBetalenCenten(ber)) {
+    return fout(409, 'De cijfers zijn intussen veranderd. Bekijk de aangifte opnieuw en dien dan in.', 'gewijzigd');
+  }
+  const aangifte = await repo.aangifteIndienen({
+    jaar: kw.jaar,
+    kwartaal: kw.kwartaal,
+    snapshot: naarSnapshot(ber),
+    teBetalen: teBetalenCenten(ber),
+    kenmerk: vrijeTekst(body.kenmerk, 120),
+    opmerking: vrijeTekst(body.opmerking, 2000)
+  });
+  return json({ aangifte }, 201);
+}
+
+/** Intrekken = het kwartaal weer openzetten (alleen de eigenaar; de route controleert dat). */
+export async function intrekkenActie(repo: BoekhoudRepo, kw: { jaar: number; kwartaal: Kwartaal }): Promise<Response> {
+  const [aangiften, stam] = await Promise.all([repo.aangiften(), repo.stamdata()]);
+  const a = aangiften.find((x) => x.jaar === kw.jaar && x.kwartaal === kw.kwartaal);
+  if (!a) return fout(404, 'Dit kwartaal is niet ingediend.');
+  if (stam.vergrendeling.boekjaren.includes(kw.jaar)) return fout(409, `Boekjaar ${kw.jaar} is afgesloten; heropen eerst het boekjaar.`, 'periode_vergrendeld');
+  await repo.aangifteIntrekken(a.id);
+  return json({ ok: true });
+}
+
+/** Een btw-betaling (of teruggaaf) op de bank koppelen aan de ingediende aangifte. */
+export async function aangifteBetalingActie(request: Request, repo: BoekhoudRepo, kw: { jaar: number; kwartaal: Kwartaal }): Promise<Response> {
+  const body = await leesJson(request);
+  if (!isUuid(body.boekingId)) return fout(400, 'Kies een bankregel.');
+  const data = await laadAlles(repo);
+  const a = data.aangiften.find((x) => x.jaar === kw.jaar && x.kwartaal === kw.kwartaal);
+  if (!a) return fout(404, 'Dit kwartaal is niet ingediend.');
+  const b = data.boekingen.find((x) => x.id === body.boekingId);
+  if (!b) return fout(404, 'Deze boeking bestaat niet (meer).');
+  if (data.aangifteBetalingen.some((x) => x.boekingId === b.id && x.aangifteId === a.id)) return fout(409, 'Deze betaling is al gekoppeld.', 'bestaat_al');
+  const alGekoppeld = data.aangifteBetalingen.filter((x) => x.boekingId === b.id).reduce((t, x) => t + Math.abs(x.bedrag), 0);
+  const betaald = data.aangifteBetalingen.filter((x) => x.aangifteId === a.id).reduce((t, x) => t + x.bedrag, 0);
+  const teken = a.teBetalen < 0 ? -1 : 1;
+  let bedrag: number | null;
+  if (body.bedrag === undefined || body.bedrag === null || body.bedrag === '') {
+    bedrag = teken * Math.min(b.bedrag - alGekoppeld, Math.max(0, Math.abs(a.teBetalen) - Math.abs(betaald)));
+  } else bedrag = typeof body.bedrag === 'number' ? body.bedrag : naarCenten(body.bedrag);
+  if (bedrag === null) return json({ error: 'Ongeldig bedrag.', veld: 'bedrag' }, 400);
+  const f = betalingFout({ soort: b.soort, richting: b.richting, bankBedrag: b.bedrag, alGekoppeld, aangifte: a, bedrag });
+  if (f) return fout(400, f, 'koppeling_ongeldig');
+  const betaling = await repo.aangifteBetalingKoppelen({ boekingId: b.id, aangifteId: a.id, bedrag });
+  return json({ betaling }, 201);
+}
+
+export async function aangifteBetalingLosActie(request: Request, repo: BoekhoudRepo): Promise<Response> {
+  const id = new URL(request.url).searchParams.get('id');
+  if (!isUuid(id)) return fout(404, 'Deze koppeling bestaat niet (meer).');
+  await repo.aangifteBetalingOntkoppelen(id);
+  return json({ ok: true });
+}
+
+/** Controleert een activum (invoer, bron, vergrendeling); gooit een nette fout of geeft de waarde. */
+async function controleerActivum(repo: BoekhoudRepo, body: Record<string, unknown>, eigenId: string | null): Promise<ActivumWaarde> {
+  const data = await laadAlles(repo);
+  const ctx = { boekingen: data.boekingen, uitgaven: data.uitgaven, koppelingen: data.koppelingen, bronExtra: data.bronExtra, activa: data.activa };
+  const oud = eigenId ? data.activa.find((a) => a.id === eigenId) ?? null : null;
+  if (eigenId && !oud) throw new BoekhoudFout(404, 'Dit activum bestaat niet (meer).', 'onbekend');
+  const invoer = oud ? { ...activumAlsInvoer(oud), ...body } : { ...body };
+  // Bij een bron: de aanschafdatum is de datum van de aankoop (zo valt de investering in het
+  // juiste jaar); de ingebruikname mag later liggen.
+  const h = herkomstVan({ boekingId: typeof invoer.boekingId === 'string' ? invoer.boekingId : null, uitgaveId: typeof invoer.uitgaveId === 'string' ? invoer.uitgaveId : null }, ctx);
+  if (!h.ok) throw new BoekhoudFout(400, h.fout, 'herkomst');
+  if (h.herkomst) {
+    invoer.aanschafdatum = h.herkomst.datum;
+    if (!invoer.ingebruikname) invoer.ingebruikname = h.herkomst.datum;
+  }
+  const p = parseActivumInvoer(invoer, { vandaag: vandaagNL() });
+  if (!p.ok) throw Object.assign(new BoekhoudFout(400, p.fout, 'ongeldig'), { veld: p.veld });
+  const bronFout = activumBronFout(p.waarde, ctx, eigenId);
+  if (bronFout) throw new BoekhoudFout(400, bronFout, 'herkomst');
+  const v = data.stam.vergrendeling;
+  const slot = activumVergrendelFout(oud, p.waarde, { boekjaren: v.boekjaren, open: (d) => !isVergrendeld(d, v) });
+  if (slot) throw new BoekhoudFout(409, slot, 'periode_vergrendeld');
+  return p.waarde;
+}
+
+function activumFout(e: unknown): Response {
+  if (e instanceof BoekhoudFout) {
+    const veld = (e as BoekhoudFout & { veld?: string }).veld;
+    return json(veld ? { error: e.message, code: e.code, veld } : { error: e.message, code: e.code }, e.status);
+  }
+  throw e;
+}
+
+export async function activumToevoegenActie(request: Request, repo: BoekhoudRepo): Promise<Response> {
+  const body = await leesJson(request);
+  try {
+    const w = await controleerActivum(repo, body, null);
+    const activum = await repo.activumToevoegen(w);
+    return json({ activum }, 201);
+  } catch (e) {
+    return activumFout(e);
+  }
+}
+
+export async function activumWijzigenActie(request: Request, repo: BoekhoudRepo, id: string): Promise<Response> {
+  const body = await leesJson(request);
+  // De bron (bonnetje/bankregel) ligt vast na het aanmaken.
+  delete body.uitgaveId;
+  delete body.boekingId;
+  try {
+    const w = await controleerActivum(repo, body, id);
+    const activum = await repo.activumWijzigen(id, w);
+    return json({ activum });
+  } catch (e) {
+    return activumFout(e);
+  }
+}
+
+export async function activumVerwijderenActie(repo: BoekhoudRepo, id: string): Promise<Response> {
+  const [activa, stam] = await Promise.all([repo.activa(), repo.stamdata()]);
+  const a = activa.find((x) => x.id === id);
+  if (!a) return fout(404, 'Dit activum bestaat niet (meer).');
+  const v = stam.vergrendeling;
+  const slot = activumVergrendelFout(a, null, { boekjaren: v.boekjaren, open: (d) => !isVergrendeld(d, v) });
+  if (slot) return fout(409, slot, 'periode_vergrendeld');
+  await repo.activumVerwijderen(id);
+  return json({ ok: true });
+}

@@ -5,10 +5,14 @@
 // Schermen, API-routes en rapporten praten alleen met deze interface en de pure kern.
 
 import type { Centen } from '../kern/geld';
+import { journaal, type JournaalPost } from '../kern/journaal';
 import type { Datum } from '../kern/periode';
 import type { Boeking, BoekingWaarde, ImportFormaat, Rekening, Stamdata } from '../model';
 import type { BronExtra, FactuurBron, KoppelBron, Koppeling, UitgaveBron } from '../kern/bronnen';
 import type { ImportBoeking, Kolommapping } from '../kern/bankimport';
+import type { Aangifte, AangifteBetaling, AangifteSnapshot } from '../kern/aangifte';
+import type { Activum, ActivumWaarde } from '../kern/afschrijving';
+import type { Kwartaal } from '../kern/periode';
 
 export type BoekhoudModus = 'live' | 'demo';
 
@@ -57,6 +61,23 @@ export interface BoekhoudRepo {
   importSleutels(rekeningId: string): Promise<Set<string>>;
   /** Nieuwe regels (status te_verwerken) in één keer; dubbele sleutels worden overgeslagen. */
   importeer(rekeningId: string, meta: { bestandsnaam: string; formaat: ImportFormaat }, regels: ImportBoeking[]): Promise<{ nieuw: number; dubbel: number }>;
+
+  /** Ingediende btw-aangiften (een rij = het kwartaal is vergrendeld). */
+  aangiften(): Promise<Aangifte[]>;
+  /** Markeert een kwartaal als ingediend met de berekening op dat moment (vergrendelt het kwartaal). */
+  aangifteIndienen(a: { jaar: number; kwartaal: Kwartaal; snapshot: AangifteSnapshot; teBetalen: Centen; kenmerk: string | null; opmerking: string | null }): Promise<Aangifte>;
+  /** Intrekken (= ontgrendelen); alleen de eigenaar (de route controleert dat, RLS ook). */
+  aangifteIntrekken(id: string): Promise<void>;
+  /** Btw-betalingen/-teruggaven gekoppeld aan een aangifte (bk_koppelingen, bron 'aangifte'). */
+  aangifteBetalingen(): Promise<AangifteBetaling[]>;
+  aangifteBetalingKoppelen(k: { boekingId: string; aangifteId: string; bedrag: Centen }): Promise<AangifteBetaling>;
+  aangifteBetalingOntkoppelen(id: string): Promise<void>;
+
+  /** Vaste activa (afschrijvingen worden daaruit afgeleid). */
+  activa(): Promise<Activum[]>;
+  activumToevoegen(w: ActivumWaarde): Promise<Activum>;
+  activumWijzigen(id: string, w: ActivumWaarde): Promise<Activum>;
+  activumVerwijderen(id: string): Promise<void>;
 }
 
 export interface BoekhoudData {
@@ -66,14 +87,50 @@ export interface BoekhoudData {
   facturen: FactuurBron[];
   uitgaven: UitgaveBron[];
   bronExtra: BronExtra[];
+  activa: Activum[];
+  aangiften: Aangifte[];
+  aangifteBetalingen: AangifteBetaling[];
 }
 
 /** Alles wat de schermen en het journaal nodig hebben, in één keer. */
 export async function laadAlles(repo: BoekhoudRepo): Promise<BoekhoudData> {
-  const [stam, boekingen, koppelingen, bronnen, bronExtra] = await Promise.all([repo.stamdata(), repo.boekingen(), repo.koppelingen(), repo.bronnen(), repo.bronExtra()]);
-  // Alleen koppelingen van bestaande (niet-verwijderde) boekingen.
+  const [stam, boekingen, koppelingen, bronnen, bronExtra, activa, aangiften, betalingen] = await Promise.all([
+    repo.stamdata(),
+    repo.boekingen(),
+    repo.koppelingen(),
+    repo.bronnen(),
+    repo.bronExtra(),
+    repo.activa(),
+    repo.aangiften(),
+    repo.aangifteBetalingen()
+  ]);
+  // Alleen koppelingen van bestaande (niet-verwijderde) boekingen en bestaande aangiften.
   const ids = new Set(boekingen.map((b) => b.id));
-  return { stam, boekingen, koppelingen: koppelingen.filter((k) => ids.has(k.boekingId)), facturen: bronnen.facturen, uitgaven: bronnen.uitgaven, bronExtra };
+  const aIds = new Set(aangiften.map((a) => a.id));
+  return {
+    stam,
+    boekingen,
+    koppelingen: koppelingen.filter((k) => ids.has(k.boekingId)),
+    facturen: bronnen.facturen,
+    uitgaven: bronnen.uitgaven,
+    bronExtra,
+    activa,
+    aangiften,
+    aangifteBetalingen: betalingen.filter((b) => ids.has(b.boekingId) && aIds.has(b.aangifteId))
+  };
+}
+
+/** Het volledige journaal van alle bronnen (zelfde kern voor live en demo). */
+export function journaalVan(d: BoekhoudData): JournaalPost[] {
+  return journaal(d.stam, {
+    boekingen: d.boekingen,
+    facturen: d.facturen,
+    uitgaven: d.uitgaven,
+    koppelingen: d.koppelingen,
+    bronExtra: d.bronExtra,
+    activa: d.activa,
+    aangiften: d.aangiften.map((a) => ({ id: a.id, jaar: a.jaar, kwartaal: a.kwartaal, snapshot: a.snapshot }))
+  });
 }
 
 /** Fout met een HTTP-status en een nette melding voor de gebruiker. */

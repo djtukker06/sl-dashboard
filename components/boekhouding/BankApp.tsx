@@ -1,6 +1,8 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import Link from 'next/link';
+import { DREMPEL_ACTIVEREN } from '@/lib/boekhouding/kern/constanten';
 import { formatCenten } from '@/lib/boekhouding/kern/geld';
 import { BTW_LABELS } from '@/lib/boekhouding/kern/btw';
 import { aangifteDeadline, isVergrendeld, jaarVan, korteDatum, kwartaalLabel, kwartaalVan, type Datum, type Kwartaal } from '@/lib/boekhouding/kern/periode';
@@ -46,6 +48,7 @@ export function BankApp({
   facturen,
   uitgaven,
   bronBtw,
+  activa = [],
   openId: beginOpen
 }: {
   stam: Stamdata;
@@ -57,8 +60,11 @@ export function BankApp({
   uitgaven: UitgaveBron[];
   /** Btw uit facturen en bonnetjes per kwartaal ("JJJJ-Q"). */
   bronBtw: Record<string, { verschuldigd: Centen; voorbelasting: Centen }>;
+  /** Activa met een bankregel als bron (voor het label en de link in het paneel). */
+  activa?: { id: string; boekingId: string; omschrijving: string }[];
   openId?: string | null;
 }) {
+  const activumVan = useMemo(() => new Map(activa.map((a) => [a.boekingId, a])), [activa]);
   const [lijst, setLijst] = useState<Boeking[]>(begin);
   const [koppel, setKoppel] = useState<Koppeling[]>(beginKoppelingen);
   const [form, setForm] = useState<Formulier>(() => leegFormulier(stam, vandaag));
@@ -291,7 +297,7 @@ export function BankApp({
             <span className="bh-saldo-sub">{r.iban ? formatIban(r.iban) : 'Saldo volgens de boekingen'}</span>
           </button>
         ))}
-        <div className="bh-saldo is-info">
+        <Link className="bh-saldo is-info" href={`/boekhouding/btw/${btwKw.jaar}/${btwKw.kw}`}>
           <span className="bh-saldo-naam">
             Btw {kwartaalLabel(btwKw.jaar, btwKw.kw)}
             {vorigOpen && <span className="bh-pil is-let-op">aangifte doen</span>}
@@ -300,7 +306,7 @@ export function BankApp({
           <span className="bh-saldo-sub">
             {btwNu >= 0 ? 'te betalen' : 'terug te vragen'} · uiterlijk {korteDatum(aangifteDeadline(btwKw.jaar, btwKw.kw))}
           </span>
-        </div>
+        </Link>
         <button type="button" className={`bh-saldo is-info${filter.status ? ' is-aan' : ''}`} onClick={() => zetFilter({ status: filter.status ? '' : 'te_verwerken', jaar: 'alle', kw: 0 })} aria-pressed={Boolean(filter.status)}>
           <span className="bh-saldo-naam">Te verwerken</span>
           <span className={`bh-saldo-bedrag${teVerwerken ? ' is-let-op' : ''}`}>{teVerwerken}</span>
@@ -460,6 +466,7 @@ export function BankApp({
                       {b.status === 'te_verwerken' && <span className="bh-pil is-let-op">te verwerken</span>}
                       {metSuggestie.has(b.id) && <span className="bh-pil is-koppel">koppelen?</span>}
                       {ks && <span className="bh-pil is-zacht">gekoppeld</span>}
+                      {activumVan.has(b.id) && <span className="bh-pil is-zacht">activum</span>}
                     </span>
                     <span className="bh-rij-meta">
                       {meta}
@@ -507,6 +514,14 @@ export function BankApp({
           naamBank={naamVan.get(open.rekeningId ?? '') ?? 'Kas'}
           onSluit={() => setOpenId(null)}
           koppel={koppelInfo}
+          activum={activumVan.get(open.id) ?? null}
+          kanActiveren={
+            !activumVan.has(open.id) &&
+            open.soort === 'uitgave' &&
+            open.richting === 'af' &&
+            !gekoppeld.has(open.id) &&
+            (berekenBoeking(open).btw.excl >= DREMPEL_ACTIVEREN || open.grootboek === '0200' || open.grootboek === '0210')
+          }
           onKoppel={koppelen}
           onOntkoppel={ontkoppelen}
           onOpgeslagen={(b) => {

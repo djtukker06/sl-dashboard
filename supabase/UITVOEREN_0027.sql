@@ -571,7 +571,8 @@ create trigger bk_grootboek_bewaken
 -- Koppelingen (afletteren): een gekoppelde bankregel telt niet meer zelf voor de btw (die komt
 -- uit de factuur of het bonnetje). (Ont)koppelen in een vergrendeld kwartaal mag daarom alleen
 -- als de regel zelf geen btw-effect heeft (btw-code 'geen'); in een afgesloten boekjaar nooit.
--- Een factuur hoort bij een inkomst, een bonnetje bij een uitgave.
+-- Een factuur hoort bij een inkomst, een bonnetje bij een uitgave, een (ingediende) btw-aangifte
+-- bij een bankregel van de soort btw.
 create or replace function public.bk_koppelingen_controle()
 returns trigger
 language plpgsql
@@ -591,8 +592,13 @@ begin
     if b.verwijderd_op is not null then
       raise exception using errcode = 'P0001', message = 'koppeling_ongeldig: de boeking is verwijderd';
     end if;
-    if (new.bron = 'factuur' and b.soort <> 'inkomst') or (new.bron = 'uitgave' and b.soort <> 'uitgave') then
+    if (new.bron = 'factuur' and b.soort <> 'inkomst') or (new.bron = 'uitgave' and b.soort <> 'uitgave')
+       or (new.bron = 'aangifte' and b.soort <> 'btw') then
       raise exception using errcode = 'P0001', message = 'koppeling_ongeldig: soort past niet bij het document';
+    end if;
+    -- Een btw-betaling hoort bij een ingediende aangifte.
+    if new.bron = 'aangifte' and not exists (select 1 from public.bk_aangiften a where a.id = new.bron_id) then
+      raise exception using errcode = 'P0001', message = 'koppeling_ongeldig: de aangifte bestaat niet';
     end if;
   end if;
   if not public.bk_periode_open(b.datum)

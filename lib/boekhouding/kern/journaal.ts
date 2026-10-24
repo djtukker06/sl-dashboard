@@ -3,17 +3,20 @@
 // gekopieerd: zo kloppen bewerken en verwijderen vanzelf. Pure module.
 //
 // Bronnen: boekingsregels (bk_boekingen), beginsaldi van de rekeningen, memoriaalposten,
-// facturen (invoices, alleen lezen) en bonnetjes (expenses, alleen lezen). Afschrijvingen en
-// de btw-afsluiting komen er in stap 3 bij.
+// facturen (invoices, alleen lezen), bonnetjes (expenses, alleen lezen), activa (aanschaf bij
+// inbreng, afschrijving per maand, desinvestering) en per ingediende btw-aangifte de
+// afsluitpost (btw-rekeningen van dat kwartaal naar 1530 "af te dragen btw (aangifte)").
 //
 // Dubbeltelling voorkomen: een bankregel die gekoppeld is aan een factuur of bonnetje is
 // alleen een BETALING (bank tegen debiteuren/crediteuren, zonder btw). Omzet, kosten en btw
 // komen dan uit de factuur of het bonnetje zelf.
 
 import { moetCenten, type Centen } from './geld';
-import { GB } from './constanten';
+import { ACTIVA_KIESBAAR, GB } from './constanten';
+import { ACTIVA_CATEGORIEEN, boekwaardeBijDesinvestering, schema, type Activum } from './afschrijving';
+import { afrondingsverschil, type AangifteSnapshot } from './aangifte';
 import { btwUitExcl, isVerlegd, rubriekVoor, VERLEGD_TARIEF, type Rubriek } from './btw';
-import type { Datum } from './periode';
+import { kwartaalGrenzen, type Datum, type Kwartaal } from './periode';
 import {
   factuurBtwCode,
   uitgaveBtw,
@@ -42,7 +45,7 @@ export interface JournaalBtw {
   voorbelasting: Centen;
 }
 
-export type JournaalBron = 'boeking' | 'beginsaldo' | 'memoriaal' | 'factuur' | 'uitgave';
+export type JournaalBron = 'boeking' | 'beginsaldo' | 'memoriaal' | 'factuur' | 'uitgave' | 'activum' | 'afschrijving' | 'btw_afsluiting';
 
 export interface JournaalPost {
   id: string;
@@ -85,6 +88,24 @@ function zonderNul(regels: JournaalRegel[]): JournaalRegel[] {
   return regels.filter((r) => r.debet !== 0 || r.credit !== 0);
 }
 
+/** Het deel van een aankoop dat als activum is geactiveerd (zie bk_activa.uitgave_id/boeking_id). */
+export interface Activering {
+  categorie: string;
+  aanschaf: Centen;
+}
+
+/**
+ * De kostenkant van een aankoop. Is (een deel van) de aankoop geactiveerd, dan gaat de
+ * aanschafprijs naar de activarekening (0200/0210) en alleen een eventueel restant naar de
+ * kosten (bij een activarekening als categorie: kleine hardware). Zo wordt een investering
+ * nooit én als kosten én via de afschrijving geboekt.
+ */
+function kostenRegels(kosten: string, bedrag: Centen, activering?: Activering | null): JournaalRegel[] {
+  if (!activering || bedrag <= 0) return [regel(kosten, bedrag, 'debet')];
+  const rest = bedrag - activering.aanschaf;
+  return [regel(activering.categorie, activering.aanschaf, 'debet'), regel(ACTIVA_KIESBAAR.has(kosten) ? '4010' : kosten, rest, 'debet')];
+}
+
 export interface JournaalContext {
   /** Grootboekrekening van een bankrekening (id → code). */
   bankGrootboek: (rekeningId: string | null) => string;
@@ -115,7 +136,7 @@ export function contextUit(stam: Stamdata): JournaalContext {
  *   btw:           D/C 1530 af te dragen btw tegen bank
  * Een terugbetaling (andere richting) keert alle bedragen om.
  */
-export function boekingNaarPost(b: Boeking, ctx: JournaalContext, koppelingen: readonly Koppeling[] = []): JournaalPost {
+export function boekingNaarPost(b: Boeking, ctx: JournaalContext, koppelingen: readonly Koppeling[] = [], activering?: Activering | null): JournaalPost {
   const r = berekenBoeking(b);
   const bank = ctx.bankGrootboek(b.rekeningId);
   const t = r.teken;
@@ -140,7 +161,7 @@ export function boekingNaarPost(b: Boeking, ctx: JournaalContext, koppelingen: r
   switch (b.soort) {
     case 'uitgave': {
       const kosten = b.grootboek ?? GB.vraagposten;
-      regels = [regel(kosten, t * x.excl, 'debet'), regel(bank, t * x.bank, 'credit')];
+      regels = [...(t === 1 ? kostenRegels(kosten, x.excl, activering) : [regel(kosten, t * x.excl, 'debet')]), regel(bank, t * x.bank, 'credit')];
       if (isVerlegd(x.code)) {
         // verlegd (2a/4a/4b): verschuldigd én aftrekbaar, niet in het bankbedrag
         regels.push(regel(GB.voorbelasting, t * x.voorbelasting, 'debet'), regel(GB.btwVerlegd, t * x.verschuldigd, 'credit'));
@@ -261,7 +282,7 @@ export function factuurNaarPost(f: FactuurBron, extra?: BronExtra | null): Journ
  * privé voorgeschoten → privé van de vennoot, contant → 1000 kas.
  * null als het bonnetje (nog) niet meetelt (concept, andere valuta).
  */
-export function uitgaveNaarPost(u: UitgaveBron, ctx: JournaalContext, extra?: BronExtra | null): JournaalPost | null {
+export function uitgaveNaarPost(u: UitgaveBron, ctx: JournaalContext, extra?: BronExtra | null, activering?: Activering | null): JournaalPost | null {
   if (uitgaveTeltNiet(u) || !u.datum || u.totaal === null) return null;
   const code = uitgaveBtwCode(u, extra);
   const kosten = uitgaveGrootboek(u, extra);
@@ -277,7 +298,7 @@ export function uitgaveNaarPost(u: UitgaveBron, ctx: JournaalContext, extra?: Br
   if (isVerlegd(code)) {
     const v = btwUitExcl(u.totaal, VERLEGD_TARIEF);
     regels = [
-      regel(kosten, u.totaal, 'debet'),
+      ...kostenRegels(kosten, u.totaal, activering),
       regel(tegen, u.totaal, 'credit', vennootId),
       regel(GB.voorbelasting, v, 'debet'),
       regel(GB.btwVerlegd, v, 'credit')
@@ -285,7 +306,7 @@ export function uitgaveNaarPost(u: UitgaveBron, ctx: JournaalContext, extra?: Br
     btw = { rubriek: rubriekVoor('uitgave', code), grondslag: u.totaal, verschuldigd: v, voorbelasting: v };
   } else {
     const b = uitgaveBtw(u, code);
-    regels = [regel(kosten, u.totaal - b, 'debet'), regel(GB.voorbelasting, b, 'debet'), regel(tegen, u.totaal, 'credit', vennootId)];
+    regels = [...kostenRegels(kosten, u.totaal - b, activering), regel(GB.voorbelasting, b, 'debet'), regel(tegen, u.totaal, 'credit', vennootId)];
     btw = { rubriek: rubriekVoor('uitgave', code), grondslag: u.totaal - b, verschuldigd: 0, voorbelasting: b };
   }
   return assertSluit({
@@ -299,6 +320,116 @@ export function uitgaveNaarPost(u: UitgaveBron, ctx: JournaalContext, extra?: Br
   });
 }
 
+// ---------------------------------------------------------------------------------
+// Activa en afschrijvingen (afgeleid uit bk_activa)
+// ---------------------------------------------------------------------------------
+/**
+ * De posten van een activum:
+ *   - ingebracht/bestaand (geen bonnetje of bankregel als bron): D 0200/0210 / C 0900 op de
+ *     aanschafdatum (komt dan uit de beginbalans);
+ *   - per maand: D 4800 afschrijvingen / C cum. afschrijving (0209/0219), op de laatste dag;
+ *   - desinvestering: de aanschaf en de cumulatieve afschrijving gaan af; de resterende
+ *     boekwaarde gaat ten laste van 8900 (overige opbrengsten). De verkoopopbrengst boek je als
+ *     inkomst (categorie Overige opbrengsten, 21% btw); per saldo staat dan het boekresultaat
+ *     (opbrengst − boekwaarde) op 8900.
+ */
+export function activumPosten(a: Activum): JournaalPost[] {
+  const cum = ACTIVA_CATEGORIEEN[a.categorie].cum;
+  const uit: JournaalPost[] = [];
+  if (!a.uitgaveId && !a.boekingId) {
+    uit.push(
+      assertSluit({
+        id: `activum:${a.id}`,
+        bron: 'activum',
+        bronId: a.id,
+        datum: a.aanschafdatum,
+        omschrijving: `Activum ingebracht: ${a.omschrijving}`,
+        regels: [regel(a.categorie, a.aanschaf, 'debet'), regel(GB.beginbalans, a.aanschaf, 'credit')]
+      })
+    );
+  }
+  const s = schema(a);
+  for (const r of s) {
+    if (!r.afschrijving) continue;
+    uit.push(
+      assertSluit({
+        id: `afschrijving:${a.id}:${r.maand}`,
+        bron: 'afschrijving',
+        bronId: a.id,
+        datum: r.datum,
+        omschrijving: `Afschrijving ${a.omschrijving}`,
+        regels: [regel(GB.afschrijvingen, r.afschrijving, 'debet'), regel(cum, r.afschrijving, 'credit')]
+      })
+    );
+  }
+  if (a.desinvesteringDatum) {
+    const cumulatief = s.length ? s[s.length - 1].cumulatief : 0;
+    const boekwaarde = boekwaardeBijDesinvestering(a) ?? 0;
+    uit.push(
+      assertSluit({
+        id: `desinvestering:${a.id}`,
+        bron: 'activum',
+        bronId: a.id,
+        datum: a.desinvesteringDatum,
+        omschrijving: `Desinvestering ${a.omschrijving} (boekwaarde)`,
+        regels: zonderNul([regel(cum, cumulatief, 'debet'), regel('8900', boekwaarde, 'debet'), regel(a.categorie, a.aanschaf, 'credit')])
+      })
+    );
+  }
+  return uit;
+}
+
+// ---------------------------------------------------------------------------------
+// Afsluiting van een ingediende btw-aangifte
+// ---------------------------------------------------------------------------------
+export interface AangifteInJournaal {
+  id: string;
+  jaar: number;
+  kwartaal: Kwartaal;
+  snapshot: AangifteSnapshot | null;
+}
+
+const BTW_REKENINGEN = [GB.btwHoog, GB.btwLaag, GB.btwVerlegd, GB.voorbelasting] as const;
+
+/**
+ * Bij een ingediende aangifte, op de laatste dag van het kwartaal: de btw-rekeningen van dat
+ * kwartaal (1500/1505/1510 en 1520) gaan naar 1530 "af te dragen btw (aangifte)"; het
+ * afrondingsverschil van het formulier (hele euro's, in je voordeel) gaat naar 8900. Daarna
+ * staat op 1530 precies het aangegeven bedrag; de btw-betaling (soort btw) boekt dat weer af.
+ * Wijzigt er na indiening nog iets in het kwartaal (bv. een factuur), dan blijft dat verschil
+ * op 1530 staan (zie vergelijkMetIngediend).
+ */
+export function btwAfsluitPost(posten: readonly JournaalPost[], a: AangifteInJournaal): JournaalPost | null {
+  const { van, tot } = kwartaalGrenzen(a.jaar, a.kwartaal);
+  const saldo = new Map<string, Centen>();
+  for (const p of posten) {
+    if (p.bron === 'btw_afsluiting' || p.datum < van || p.datum > tot) continue;
+    for (const r of p.regels) {
+      if ((BTW_REKENINGEN as readonly string[]).includes(r.grootboek)) saldo.set(r.grootboek, (saldo.get(r.grootboek) ?? 0) + r.debet - r.credit);
+    }
+  }
+  const regels: JournaalRegel[] = [];
+  let totaal = 0;
+  for (const g of BTW_REKENINGEN) {
+    const s = saldo.get(g) ?? 0;
+    regels.push(regel(g, s, 'credit'));
+    totaal += s;
+  }
+  regels.push(regel(GB.btwAangifte, totaal, 'debet'));
+  const afronding = a.snapshot ? afrondingsverschil(a.snapshot) : 0;
+  regels.push(regel(GB.btwAangifte, afronding, 'debet'), regel('8900', afronding, 'credit'));
+  const schoon = zonderNul(regels);
+  if (!schoon.length) return null;
+  return assertSluit({
+    id: `btw:${a.jaar}-${a.kwartaal}`,
+    bron: 'btw_afsluiting',
+    bronId: a.id,
+    datum: tot,
+    omschrijving: `Btw-aangifte Q${a.kwartaal} ${a.jaar} (naar af te dragen)`,
+    regels: schoon
+  });
+}
+
 export interface JournaalInvoer {
   boekingen: Boeking[];
   memoriaal?: Memoriaal[];
@@ -306,6 +437,8 @@ export interface JournaalInvoer {
   uitgaven?: UitgaveBron[];
   koppelingen?: Koppeling[];
   bronExtra?: BronExtra[];
+  activa?: Activum[];
+  aangiften?: AangifteInJournaal[];
 }
 
 /** Koppelingen per boeking (alleen van boekingen die bestaan). */
@@ -328,14 +461,35 @@ export function journaal(stam: Stamdata, invoer: JournaalInvoer): JournaalPost[]
   const ctx = contextUit(stam);
   const perBoeking = koppelingenPerBoeking(invoer.koppelingen ?? []);
   const extra = new Map((invoer.bronExtra ?? []).map((e) => [extraSleutel(e.bron, e.bronId), e]));
+  const { perBoeking: actBoeking, perUitgave: actUitgave } = activeringen(invoer.activa ?? []);
   const posten: JournaalPost[] = [
     ...beginsaldoPosten(stam),
-    ...invoer.boekingen.map((b) => boekingNaarPost(b, ctx, perBoeking.get(b.id))),
+    ...invoer.boekingen.map((b) => boekingNaarPost(b, ctx, perBoeking.get(b.id), actBoeking.get(b.id))),
     ...(invoer.memoriaal ?? []).map(memoriaalNaarPost),
     ...(invoer.facturen ?? []).map((f) => factuurNaarPost(f, extra.get(extraSleutel('factuur', f.id)))),
-    ...(invoer.uitgaven ?? []).flatMap((u) => uitgaveNaarPost(u, ctx, extra.get(extraSleutel('uitgave', u.id))) ?? [])
+    ...(invoer.uitgaven ?? []).flatMap((u) => uitgaveNaarPost(u, ctx, extra.get(extraSleutel('uitgave', u.id)), actUitgave.get(u.id)) ?? []),
+    ...(invoer.activa ?? []).flatMap(activumPosten)
   ];
+  for (const a of invoer.aangiften ?? []) {
+    const p = btwAfsluitPost(posten, a);
+    if (p) posten.push(p);
+  }
   return posten.sort((a, b) => (a.datum < b.datum ? -1 : a.datum > b.datum ? 1 : a.id < b.id ? -1 : 1));
+}
+
+/** Per bankregel en per bonnetje: het geactiveerde deel (som als er meerdere activa uit één aankoop komen). */
+export function activeringen(activa: readonly Activum[]): { perBoeking: Map<string, Activering>; perUitgave: Map<string, Activering> } {
+  const perBoeking = new Map<string, Activering>();
+  const perUitgave = new Map<string, Activering>();
+  for (const a of activa) {
+    const m = a.boekingId ? perBoeking : a.uitgaveId ? perUitgave : null;
+    const k = a.boekingId ?? a.uitgaveId;
+    if (!m || !k) continue;
+    const oud = m.get(k);
+    // Meerdere activa uit één aankoop: alleen als ze dezelfde soort hebben samen te tellen.
+    m.set(k, oud && oud.categorie === a.categorie ? { categorie: a.categorie, aanschaf: oud.aanschaf + a.aanschaf } : oud ?? { categorie: a.categorie, aanschaf: a.aanschaf });
+  }
+  return { perBoeking, perUitgave };
 }
 
 /** Btw per kwartaal uit het journaal ("JJJJ-Q" → verschuldigd en voorbelasting). */

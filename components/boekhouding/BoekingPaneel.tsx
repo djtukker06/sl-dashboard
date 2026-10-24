@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import Link from 'next/link';
 import { langeDatum, vergrendeldReden } from '@/lib/boekhouding/kern/periode';
 import { BkApiFout, bkApi } from '@/lib/boekhouding/client';
 import type { Boeking, Stamdata } from '@/lib/boekhouding/model';
@@ -22,7 +23,9 @@ export function BoekingPaneel({
   onVerwijderd,
   koppel,
   onKoppel,
-  onOntkoppel
+  onOntkoppel,
+  activum = null,
+  kanActiveren = false
 }: {
   stam: Stamdata;
   boeking: Boeking;
@@ -33,6 +36,10 @@ export function BoekingPaneel({
   koppel?: KoppelInfo;
   onKoppel?: (bron: KoppelBron, bronId: string, bedrag?: Centen) => Promise<void>;
   onOntkoppel?: (id: string) => Promise<void>;
+  /** Het activum dat uit deze bankregel komt (investering). */
+  activum?: { id: string; omschrijving: string } | null;
+  /** Uitgave die je als investering kunt activeren (vanaf € 450 excl. btw of op een activarekening). */
+  kanActiveren?: boolean;
 }) {
   const [form, setForm] = useState<Formulier>(() => formulierUit(boeking));
   const [fouten, setFouten] = useState<Record<string, string>>({});
@@ -129,6 +136,17 @@ export function BoekingPaneel({
                 {koppel?.bron === 'factuur' ? ' factuurdatum' : ' bondatum'}). Soort, bedrag en bank liggen vast zolang hij gekoppeld is.
               </p>
             )}
+            {activum ? (
+              <p className="bh-slot-melding">
+                <strong>Geactiveerd.</strong> Deze aankoop staat als activum <Link href={`/boekhouding/activa/${activum.id}`}>{activum.omschrijving}</Link> op de balans en wordt
+                afgeschreven; de aanschafprijs telt niet als kosten.
+              </p>
+            ) : kanActiveren ? (
+              <p className="bh-uitkomst-noot">
+                Investering? Vanaf € 450 excl. btw kun je deze aankoop activeren en over een paar jaar afschrijven.{' '}
+                <Link href={`/boekhouding/activa?activeer=boeking:${boeking.id}`}>Activeren →</Link>
+              </p>
+            ) : null}
             <BoekingFormulier stam={stam} waarde={form} onWijzig={setForm} layout="paneel" fouten={fouten} alleenLezen={Boolean(slot)} />
             {slot && (
               <label className="bh-veld">

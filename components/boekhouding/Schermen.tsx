@@ -39,7 +39,7 @@ export function Demo({ repo, reden }: { repo: BoekhoudRepo; reden: 'env' | 'migr
 }
 
 export async function BankScherm({ repo, sp, demoReden }: { repo: BoekhoudRepo; sp: Zoekparams; demoReden: 'env' | 'migratie' }) {
-  const { stam, boekingen, koppelingen, facturen, uitgaven, bronExtra } = await laadAlles(repo);
+  const { stam, boekingen, koppelingen, facturen, uitgaven, bronExtra, activa } = await laadAlles(repo);
   const vandaag = vandaagNL();
   // Btw uit facturen en bonnetjes per kwartaal (de losse bankregels telt de pagina zelf mee).
   const bronBtw = Object.fromEntries(btwPerKwartaal(journaal({ ...stam, rekeningen: [] }, { boekingen: [], facturen, uitgaven, bronExtra })));
@@ -70,6 +70,7 @@ export async function BankScherm({ repo, sp, demoReden }: { repo: BoekhoudRepo; 
         facturen={facturen}
         uitgaven={uitgaven}
         bronBtw={bronBtw}
+        activa={activa.flatMap((a) => (a.boekingId ? [{ id: a.id, boekingId: a.boekingId, omschrijving: a.omschrijving }] : []))}
         openId={boekingen.some((b) => b.id === openId) ? openId : null}
       />
     </div>

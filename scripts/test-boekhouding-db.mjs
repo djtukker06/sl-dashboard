@@ -19,6 +19,10 @@
 //     vergrendeld kwartaal alleen bij regels zonder btw), verfijning van facturen/bonnetjes
 //     alleen in een open periode, bk_importeer: in één transactie, dubbele sleutels overgeslagen
 //     (2e keer 0 nieuw), alleen voor teamleden.
+//   - stap 3: aangifte indienen met snapshot (jsonb), btw-betaling koppelen (alleen soort btw,
+//     alleen aan een bestaande aangifte), intrekken alleen de eigenaar; activa: checks
+//     (restwaarde, looptijd), alleen teamleden, afgesloten boekjaar legt aanschaf/termijn vast
+//     (notities mogen), desinvestering alleen in een open periode.
 //
 // Gebruik:  node scripts/test-boekhouding-db.mjs
 import fs from "node:fs";
@@ -332,6 +336,70 @@ let B1;
   const impSlot = await als(db, "bram", [[`select public.bk_importeer($1, 'x', 'regiobank', $2::jsonb)`, [REK, regelsQ4]]]);
   check(vergrendeld(impSlot) && (await db.query("select count(*)::int as n from public.bk_imports")).rows[0].n === 2, "import in een vergrendeld kwartaal: alles teruggedraaid", uitleg(impSlot));
   await db.exec("delete from public.bk_aangiften where jaar = 2026 and kwartaal = 4");
+}
+
+
+// ---- btw-aangifte en activa (stap 3) ----
+{
+  const snapshot = JSON.stringify({ versie: 1, jaar: 2026, kwartaal: 3, saldo: { centen: 358365, euro: 3582 } });
+  const ag = await als(db, "bram", [[`insert into public.bk_aangiften (jaar, kwartaal, rubrieken, te_betalen_centen, kenmerk) values (2026, 3, $1::jsonb, 358200, 'K1') returning id, ingediend_door`, [snapshot]]], { commit: true });
+  check(ag.ok && ag.rows[0].ingediend_door === U.bram, "lid dient een aangifte in (met snapshot en ingediend_door)", uitleg(ag));
+  const AG = ag.rows?.[0]?.id;
+  const dubbel = await als(db, "bram", "insert into public.bk_aangiften (jaar, kwartaal) values (2026, 3)");
+  check(!dubbel.ok && dubbel.code === "23505", "zelfde kwartaal niet twee keer indienen", uitleg(dubbel));
+  const geenObject = await als(db, "bram", "insert into public.bk_aangiften (jaar, kwartaal, rubrieken) values (2026, 1, '[]'::jsonb)");
+  check(!geenObject.ok && geenObject.code === "23514", "snapshot moet een object zijn", uitleg(geenObject));
+  const btwRegel = (await db.query(`insert into public.bk_boekingen (rekening_id, datum, omschrijving, soort, richting, bedrag_centen, btw_code, btw_centen) values ('${REK}', '2026-10-27', 'Belastingdienst btw Q3', 'btw', 'af', 358200, 'geen', 0) returning id`)).rows[0].id;
+  const uitgave = (await db.query(`insert into public.bk_boekingen (rekening_id, datum, omschrijving, soort, richting, bedrag_centen, btw_code, btw_centen, grootboek_code) values ('${REK}', '2026-10-27', 'Iets', 'uitgave', 'af', 1000, 'geen', 0, '4990') returning id`)).rows[0].id;
+  const kb = await als(db, "bram", `insert into public.bk_koppelingen (boeking_id, bron, bron_id, bedrag_centen) values ('${btwRegel}', 'aangifte', '${AG}', 358200)`, { commit: true });
+  check(kb.ok, "btw-betaling koppelen aan de aangifte", uitleg(kb));
+  const kf = await als(db, "bram", `insert into public.bk_koppelingen (boeking_id, bron, bron_id, bedrag_centen) values ('${uitgave}', 'aangifte', '${AG}', 1000)`);
+  check(!kf.ok && /koppeling_ongeldig/.test(kf.msg || ""), "een uitgave kan niet aan een aangifte", uitleg(kf));
+  const kn = await als(db, "bram", `insert into public.bk_koppelingen (boeking_id, bron, bron_id, bedrag_centen) values ('${btwRegel}', 'aangifte', 'abababab-0000-4000-8000-000000000001', 1)`);
+  check(!kn.ok && /koppeling_ongeldig/.test(kn.msg || ""), "koppelen aan een niet-bestaande aangifte geweigerd", uitleg(kn));
+  const kind = await als(db, "indringer", `select count(*)::int as n from public.bk_koppelingen where bron = 'aangifte'`);
+  check(kind.ok && kind.rows[0].n === 0, "buitenstaander ziet geen btw-koppelingen", uitleg(kind));
+  const inBram = await als(db, "bram", `delete from public.bk_aangiften where id = '${AG}'`);
+  check(inBram.ok && inBram.n === 0, "lid kan een aangifte niet intrekken (RLS)", uitleg(inBram));
+  const inDaniel = await als(db, "daniel", [`delete from public.bk_aangiften where id = '${AG}'`, `delete from public.bk_koppelingen where bron = 'aangifte' and bron_id = '${AG}'`], { commit: true });
+  check(inDaniel.ok, "eigenaar trekt de aangifte in (en de koppeling vervalt)", uitleg(inDaniel));
+  check((await db.query("select count(*)::int as n from public.bk_koppelingen where bron = 'aangifte'")).rows[0].n === 0 && (await db.query("select count(*)::int as n from public.bk_aangiften where jaar = 2026 and kwartaal = 3")).rows[0].n === 0, "na intrekken: geen aangifte en geen koppeling meer");
+
+  // Activa
+  const camera = (await db.query(`insert into public.bk_boekingen (rekening_id, datum, omschrijving, soort, richting, bedrag_centen, btw_code, btw_centen, grootboek_code) values ('${REK}', '2026-05-19', 'Sony A7 IV', 'uitgave', 'af', 223850, '21', 38850, '0210') returning id`)).rows[0].id;
+  const a1 = await als(db, "bram", `insert into public.bk_activa (omschrijving, categorie_grootboek, aanschafdatum, ingebruikname, aanschaf_centen, looptijd_maanden, boeking_id) values ('Sony A7 IV', '0210', '2026-05-19', '2026-05-19', 185000, 36, '${camera}') returning id, created_by`, { commit: true });
+  check(a1.ok && a1.rows[0].created_by === U.bram, "lid activeert een aankoop (3 jaar)", uitleg(a1));
+  const AID = a1.rows?.[0]?.id;
+  for (const [sql, label] of [
+    ["insert into public.bk_activa (omschrijving, categorie_grootboek, aanschafdatum, ingebruikname, aanschaf_centen, restwaarde_centen, looptijd_maanden) values ('x', '0210', '2026-01-01', '2026-01-01', 1000, 1000, 36)", "restwaarde ≥ aanschaf geweigerd"],
+    ["insert into public.bk_activa (omschrijving, categorie_grootboek, aanschafdatum, ingebruikname, aanschaf_centen, looptijd_maanden) values ('x', '0210', '2026-01-01', '2026-01-01', 1000, 6)", "looptijd onder 12 maanden geweigerd"],
+    ["insert into public.bk_activa (omschrijving, categorie_grootboek, aanschafdatum, ingebruikname, aanschaf_centen, looptijd_maanden) values ('x', '0210', '2026-02-01', '2026-01-01', 1000, 36)", "ingebruikname vóór aanschaf geweigerd"],
+  ]) {
+    const r = await als(db, "bram", sql);
+    check(!r.ok && r.code === "23514", label, uitleg(r));
+  }
+  const aInd = await als(db, "indringer", "insert into public.bk_activa (omschrijving, categorie_grootboek, aanschafdatum, ingebruikname, aanschaf_centen, looptijd_maanden) values ('x', '0210', '2026-01-01', '2026-01-01', 1000, 36)");
+  check(geweigerd(aInd), "buitenstaander voegt geen activum toe", uitleg(aInd));
+  // Afgesloten boekjaar 2026: aanschaf/termijn liggen vast, notities niet.
+  await db.exec("insert into public.bk_boekjaren (jaar) values (2026)");
+  const termijn = await als(db, "bram", `update public.bk_activa set looptijd_maanden = 60 where id = '${AID}'`);
+  check(vergrendeld(termijn), "afgesloten boekjaar: termijn wijzigen geweigerd", uitleg(termijn));
+  const notitie = await als(db, "bram", `update public.bk_activa set notities = 'serienummer 123' where id = '${AID}'`);
+  check(notitie.ok && notitie.n === 1, "afgesloten boekjaar: notities mogen", uitleg(notitie));
+  const nieuwIn26 = await als(db, "bram", "insert into public.bk_activa (omschrijving, categorie_grootboek, aanschafdatum, ingebruikname, aanschaf_centen, looptijd_maanden) values ('x', '0200', '2026-03-01', '2026-03-01', 100000, 60)");
+  check(vergrendeld(nieuwIn26), "afgesloten boekjaar: geen nieuw activum in dat jaar", uitleg(nieuwIn26));
+  const weg = await als(db, "bram", `delete from public.bk_activa where id = '${AID}'`);
+  check(vergrendeld(weg), "afgesloten boekjaar: activum niet te verwijderen", uitleg(weg));
+  await db.exec("delete from public.bk_boekjaren where jaar = 2026");
+  // Desinvestering in een vergrendeld kwartaal: geweigerd; in een open kwartaal: goed.
+  await db.exec("insert into public.bk_aangiften (jaar, kwartaal) values (2026, 3)");
+  const desQ3 = await als(db, "bram", `update public.bk_activa set desinvestering_datum = '2026-08-01', desinvestering_centen = 50000 where id = '${AID}'`);
+  check(vergrendeld(desQ3), "desinvestering in een vergrendeld kwartaal geweigerd", uitleg(desQ3));
+  const desQ4 = await als(db, "bram", `update public.bk_activa set desinvestering_datum = '2026-10-10', desinvestering_centen = 50000 where id = '${AID}'`);
+  check(desQ4.ok && desQ4.n === 1, "desinvestering in een open kwartaal kan", uitleg(desQ4));
+  await db.exec("delete from public.bk_aangiften where jaar = 2026 and kwartaal = 3");
+  const verw = await als(db, "bram", `delete from public.bk_activa where id = '${AID}'`, { commit: true });
+  check(verw.ok && verw.n === 1, "activum verwijderen in een open jaar kan", uitleg(verw));
 }
 
 // ---- grootboek ----

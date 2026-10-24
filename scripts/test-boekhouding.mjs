@@ -24,6 +24,21 @@
 //                       kolomkeuze, unieke sleutels, voorstel uit de geschiedenis;
 //   - demo              facturen/bonnetjes/koppelingen: debiteuren = open facturen, opnieuw
 //                       importeren geeft 0 nieuwe regels.
+//   Stap 3:
+//   - kern/afschrijving lineair per maand (laatste maand corrigeert), vrije termijn, restwaarde,
+//                       boekwaarde op datum, desinvestering (boekwinst/-verlies), activastaat
+//                       sluit, invoercontrole, hints (€ 450, fiscaal 5 jaar), vergrendeling;
+//   - journaal          activa: inbreng, afschrijving per maand, desinvestering; een
+//                       geactiveerde aankoop gaat naar de balans (niet dubbel als kosten);
+//                       btw-afsluitpost per ingediende aangifte (1530 = aangegeven bedrag,
+//                       afronding naar 8900, betaling maakt 1530 nul, drift blijft staan);
+//   - kern/aangifte     rubrieken 1a–4b uit het journaal, hele euro's in je voordeel, 5a/5b/5c,
+//                       vergelijking met de ingediende versie (volgende aangifte/suppletie),
+//                       kwartaalstatus, betaalcontrole;
+//   - kern/activeren    bron van een activum (bankregel/bonnetje), bedrag ≤ excl., voorstellen;
+//   - kern/btw-controles  te verwerken, bon ontbreekt, ICP, verlegd 1e, eerdere kwartalen;
+//   - demo              ingediende aangiften = herberekening, betalingen gekoppeld, 1530 = 0;
+//                       indienen/intrekken/betaling/activa in de demo-opslag.
 //
 // Gebruik:  node scripts/test-boekhouding.mjs
 import fs from "node:fs";
@@ -50,9 +65,9 @@ export async function resolve(spec, ctx, next) {
 );
 
 const laad = (p) => import(pathToFileURL(path.join(ROOT, "lib", "boekhouding", p)).href);
-let geld, btw, periode, model, journaal, constanten, seed, demo, bronnen, afl, imp, voorbeeld;
+let geld, btw, periode, model, journaal, constanten, seed, demo, bronnen, afl, imp, voorbeeld, afs, ag, act, ctl;
 try {
-  [geld, btw, periode, model, journaal, constanten, seed, demo, bronnen, afl, imp, voorbeeld] = await Promise.all([
+  [geld, btw, periode, model, journaal, constanten, seed, demo, bronnen, afl, imp, voorbeeld, afs, ag, act, ctl] = await Promise.all([
     laad("kern/geld.ts"),
     laad("kern/btw.ts"),
     laad("kern/periode.ts"),
@@ -65,6 +80,10 @@ try {
     laad("kern/afletteren.ts"),
     laad("kern/bankimport.ts"),
     laad("repo/demo-voorbeeld.ts"),
+    laad("kern/afschrijving.ts"),
+    laad("kern/aangifte.ts"),
+    laad("kern/activeren.ts"),
+    laad("kern/btw-controles.ts"),
   ]);
 } catch (err) {
   if (process.env.BK_CHILD) throw err;
@@ -427,7 +446,7 @@ await test("demo-seed: realistisch, niets in de toekomst, alle soorten", () => {
   // Elke opgeslagen btw = de berekende btw.
   for (const x of b) assert.equal(x.btw, model.berekenBoeking(x).btw.btw, x.omschrijving);
 });
-const alles = (d) => ({ boekingen: d.boekingen, facturen: d.facturen, uitgaven: d.uitgaven, koppelingen: d.koppelingen, bronExtra: d.bronExtra });
+const alles = (d) => ({ boekingen: d.boekingen, facturen: d.facturen, uitgaven: d.uitgaven, koppelingen: d.koppelingen, bronExtra: d.bronExtra, activa: d.activa });
 await test("demo-seed: journaal sluit, saldi = grootboek, kruisposten 0, saldo nooit negatief", () => {
   const posten = journaal.journaal(data.stamdata, alles(data));
   const pb = journaal.proefbalans(posten);
@@ -439,28 +458,32 @@ await test("demo-seed: journaal sluit, saldi = grootboek, kruisposten 0, saldo n
   const lopend = model.lopendSaldo(data.boekingen, data.stamdata.rekeningen);
   assert.ok(Math.min(...lopend.values()) >= 0, `laagste saldo ${Math.min(...lopend.values())}`);
 });
-await test("demo-seed: ingediende kwartalen vergrendeld en betaald (btw-saldo = betaling)", () => {
+await test("demo-seed: ingediende kwartalen vergrendeld, aangifte = herberekening, betaling gekoppeld", () => {
   const a = data.aangiften.map((x) => `Q${x.kwartaal} ${x.jaar}`);
   assert.deepEqual(a, ["Q3 2025", "Q4 2025", "Q1 2026", "Q2 2026"]);
   assert.equal(periode.isVergrendeld("2026-06-30", data.stamdata.vergrendeling), true);
   assert.equal(periode.isVergrendeld("2026-07-01", data.stamdata.vergrendeling), false);
-  const perKw = journaal.btwPerKwartaal(journaal.journaal(data.stamdata, alles(data)));
-  for (const ag of data.aangiften) {
-    const t = perKw.get(`${ag.jaar}-${ag.kwartaal}`);
-    assert.equal(ag.teBetalen, t.verschuldigd - t.voorbelasting);
-    // Zelfde uitkomst via losse bankregels (zonder gekoppelde) + facturen + bonnetjes.
-    const { van, tot } = periode.kwartaalGrenzen(ag.jaar, ag.kwartaal);
-    const gek = new Set(data.koppelingen.map((k) => k.boekingId));
-    const los = model.totalen(data.boekingen.filter((x) => x.datum >= van && x.datum <= tot), gek);
-    const bron = journaal.btwPerKwartaal(journaal.journaal(data.stamdata, { ...alles(data), boekingen: [] })).get(`${ag.jaar}-${ag.kwartaal}`) ?? { verschuldigd: 0, voorbelasting: 0 };
-    assert.equal(ag.teBetalen, los.verschuldigd + bron.verschuldigd - los.voorbelasting - bron.voorbelasting);
-    const betaling = data.boekingen.find((x) => x.soort === "btw" && x.omschrijving === `Belastingdienst btw Q${ag.kwartaal} ${ag.jaar}`);
-    assert.ok(betaling && betaling.bedrag === Math.abs(ag.teBetalen) && betaling.richting === (ag.teBetalen > 0 ? "af" : "bij"));
-    assert.ok(betaling.datum <= periode.aangifteDeadline(ag.jaar, ag.kwartaal));
+  const posten = journaal.journaal(data.stamdata, alles(data));
+  for (const x of data.aangiften) {
+    const ber = ag.aangifteRubrieken(posten, x.jaar, x.kwartaal);
+    assert.deepEqual(ag.naarSnapshot(ber), x.snapshot, `snapshot ${x.jaar}-${x.kwartaal}`);
+    assert.equal(x.teBetalen, ber.saldo.euro * 100);
+    assert.ok(x.teBetalen % 100 === 0, "hele euro's");
+    // Exacte btw (cent) en het formulier verschillen alleen door afronding in het voordeel.
+    assert.ok(ber.saldo.centen - x.teBetalen >= 0 && ber.saldo.centen - x.teBetalen < 100 * 12);
+    const bet = data.aangifteBetalingen.filter((b) => b.aangifteId === x.id);
+    assert.equal(bet.reduce((t, b) => t + b.bedrag, 0), x.teBetalen);
+    const b = data.boekingen.find((y) => y.id === bet[0].boekingId);
+    assert.ok(b.soort === "btw" && b.bedrag === Math.abs(x.teBetalen) && b.richting === (x.teBetalen > 0 ? "af" : "bij"));
+    assert.ok(b.datum > periode.kwartaalGrenzen(x.jaar, x.kwartaal).tot && b.datum <= periode.aangifteDeadline(x.jaar, x.kwartaal));
   }
+  // Met de afsluitposten en de betalingen staat er niets meer op 1530 (af te dragen btw).
+  const pb = journaal.proefbalans(journaal.journaal(data.stamdata, { ...alles(data), aangiften: data.aangiften }));
+  assert.equal(pb.get("1530") ?? 0, 0);
+  assert.equal([...pb.values()].reduce((x, y) => x + y, 0), 0);
 });
 await test("demo-opslag: importeert geen Supabase en schrijft niets naar het netwerk", () => {
-  for (const f of ["repo/demo.ts", "repo/demo-seed.ts", "repo/demo-voorbeeld.ts", "model.ts", "kern/geld.ts", "kern/btw.ts", "kern/periode.ts", "kern/journaal.ts", "kern/constanten.ts", "kern/bronnen.ts", "kern/afletteren.ts", "kern/bankimport.ts"]) {
+  for (const f of ["repo/demo.ts", "repo/demo-seed.ts", "repo/demo-voorbeeld.ts", "model.ts", "kern/geld.ts", "kern/btw.ts", "kern/periode.ts", "kern/journaal.ts", "kern/constanten.ts", "kern/bronnen.ts", "kern/afletteren.ts", "kern/bankimport.ts", "kern/afschrijving.ts", "kern/aangifte.ts", "kern/activeren.ts", "kern/btw-controles.ts"]) {
     const src = fs.readFileSync(path.join(ROOT, "lib", "boekhouding", f), "utf8");
     assert.ok(!/supabase|@\/|fetch\(|node:fs/.test(src.replace(/\/\/[^\n]*/g, "")), `${f} importeert iets buiten de kern`);
   }
@@ -861,6 +884,349 @@ await test("demo-opslag: koppelen, ontkoppelen, verfijnen, importeren (2x = 0 ni
   const nieuweInk = boek2.filter((b) => b.importId && b.soort === "inkomst");
   assert.ok(nieuweInk.length >= 1 && nieuweInk.every((b) => afl.koppelSuggesties(b, fp2, [], [], 1)[0]?.score >= 90));
   demo.demoHerstellen("test-k");
+});
+
+
+// ---------------------------------------------------------------------------------- stap 3: afschrijving
+const A = (o = {}) => ({
+  id: "a0000000-0000-4000-8000-000000000001", omschrijving: "MacBook", categorie: "0210", aanschafdatum: "2026-03-15", ingebruikname: "2026-03-15",
+  aanschaf: 249900, restwaarde: 0, looptijdMaanden: 60, uitgaveId: null, boekingId: null, desinvesteringDatum: null, desinvesteringOpbrengst: null, notities: null, aangemaakt: "", ...o,
+});
+await test("afschrijving: € 2.499 in 5 jaar vanaf half maart — exact, eerste en laatste maand", () => {
+  const s = afs.schema(A());
+  assert.equal(s.length, 60);
+  assert.ok(s.every((r) => r.afschrijving === 4165));
+  assert.equal(s.reduce((t, r) => t + r.afschrijving, 0), 249900);
+  assert.deepEqual([s[0].datum, s[59].datum, s[59].boekwaarde], ["2026-03-31", "2031-02-28", 0]);
+  assert.deepEqual(afs.maandbedrag(A()), { gewoon: 4165, laatste: 4165 });
+  // Per jaar: 2026 = 10 maanden (maart t/m december).
+  assert.deepEqual(afs.perJaar(A()).map((r) => [r.jaar, r.afschrijving]), [[2026, 41650], [2027, 49980], [2028, 49980], [2029, 49980], [2030, 49980], [2031, 8330]]);
+  assert.equal(afs.eindeAfschrijving(A()), "2031-02");
+});
+await test("afschrijving: 3 jaar en vrije termijn, laatste maand corrigeert, restwaarde", () => {
+  const drie = A({ aanschaf: 200000, looptijdMaanden: 36 });
+  const s = afs.schema(drie);
+  assert.deepEqual(afs.maandbedrag(drie), { gewoon: 5555, laatste: 5575 });
+  assert.equal(s.reduce((t, r) => t + r.afschrijving, 0), 200000);
+  assert.equal(s.at(-1).boekwaarde, 0);
+  const vrij = A({ aanschaf: 100001, looptijdMaanden: 48 });
+  assert.equal(afs.schema(vrij).reduce((t, r) => t + r.afschrijving, 0), 100001);
+  const rw = A({ aanschaf: 100000, restwaarde: 10000, looptijdMaanden: 36 });
+  assert.equal(afs.schema(rw).at(-1).boekwaarde, 10000);
+  assert.ok(afs.schema(rw).every((r) => r.afschrijving === 2500));
+  // Klein bedrag: nooit negatief, som klopt.
+  const klein = afs.schema(A({ aanschaf: 31, looptijdMaanden: 60 }));
+  assert.ok(klein.every((r) => r.afschrijving >= 0));
+  assert.equal(klein.reduce((t, r) => t + r.afschrijving, 0), 31);
+  assert.equal(afs.looptijdLabel(36), "3 jaar");
+  assert.equal(afs.looptijdLabel(30), "30 maanden");
+});
+await test("afschrijving: boekwaarde op datum, desinvestering met boekwinst en -verlies", () => {
+  const a = A();
+  assert.equal(afs.boekwaardeOp(a, "2026-03-14"), 0, "vóór aanschaf");
+  assert.equal(afs.boekwaardeOp(a, "2026-03-30"), 249900);
+  assert.equal(afs.boekwaardeOp(a, "2026-03-31"), 245735);
+  assert.equal(afs.boekwaardeOp(a, "2026-12-31"), 249900 - 41650);
+  const verkocht = A({ desinvesteringDatum: "2027-06-10", desinvesteringOpbrengst: 150000 });
+  const s = afs.schema(verkocht);
+  assert.equal(s.at(-1).maand, "2027-05", "afschrijving t/m de maand vóór de verkoop");
+  assert.equal(s.length, 15);
+  assert.equal(afs.boekwaardeBijDesinvestering(verkocht), 249900 - 15 * 4165);
+  assert.equal(afs.boekresultaat(verkocht), 150000 - (249900 - 15 * 4165));
+  assert.equal(afs.boekwaardeOp(verkocht, "2027-06-10"), 0);
+  const weg = A({ desinvesteringDatum: "2027-06-10", desinvesteringOpbrengst: 0 });
+  assert.ok(afs.boekresultaat(weg) < 0, "boekverlies bij weggooien");
+});
+await test("afschrijving: activastaat sluit (begin + investering − afschrijving − desinvestering = eind)", () => {
+  const lijst = [A(), A({ id: "b", aanschafdatum: "2025-01-10", ingebruikname: "2025-02-01", aanschaf: 120000, looptijdMaanden: 36, categorie: "0200" }), A({ id: "c", aanschafdatum: "2024-05-01", ingebruikname: "2024-05-01", aanschaf: 90000, looptijdMaanden: 36, desinvesteringDatum: "2026-08-20", desinvesteringOpbrengst: 30000 })];
+  for (const j of [2024, 2025, 2026, 2027, 2031]) {
+    const { regels, totaal } = afs.activastaat(lijst, j);
+    assert.equal(totaal.begin + totaal.investering - totaal.afschrijving - totaal.desinvestering, totaal.eind, String(j));
+    for (const r of regels) assert.equal(r.begin + r.investering - r.afschrijving - r.desinvestering, r.eind);
+  }
+  const s26 = afs.activastaat(lijst, 2026);
+  assert.equal(s26.totaal.investering, 249900);
+  assert.equal(s26.regels.length, 3);
+  assert.equal(afs.activastaat(lijst, 2027).regels.length, 2, "gedesinvesteerd valt het jaar erna weg");
+});
+await test("afschrijving: invoercontrole, hints en vergrendeling", () => {
+  const p = (b) => afs.parseActivumInvoer({ omschrijving: "Camera", aanschafdatum: "2026-05-19", aanschaf: "1.850,00", jaren: 3, ...b }, { vandaag: "2026-10-24" });
+  const ok = p({});
+  assert.equal(ok.ok, true, ok.fout);
+  assert.deepEqual([ok.waarde.aanschaf, ok.waarde.looptijdMaanden, ok.waarde.ingebruikname, ok.waarde.categorie, ok.waarde.restwaarde], [185000, 36, "2026-05-19", "0210", 0]);
+  assert.equal(p({ jaren: undefined, looptijdMaanden: 30 }).waarde.looptijdMaanden, 30);
+  for (const [b, veld] of [
+    [{ omschrijving: " " }, "omschrijving"],
+    [{ aanschaf: "0" }, "aanschaf"],
+    [{ restwaarde: "1850" }, "restwaarde"],
+    [{ jaren: undefined, looptijdMaanden: 6 }, "looptijdMaanden"],
+    [{ jaren: 25 }, "looptijdMaanden"],
+    [{ aanschafdatum: "2027-01-01" }, "aanschafdatum"],
+    [{ ingebruikname: "2026-05-01" }, "ingebruikname"],
+    [{ categorie: "4010" }, "categorie"],
+    [{ uitgaveId: "a0000000-0000-4000-8000-000000000001", boekingId: "a0000000-0000-4000-8000-000000000002" }, "herkomst"],
+    [{ desinvesteringDatum: "2026-05-01" }, "desinvesteringDatum"],
+  ]) {
+    const r = p(b);
+    assert.equal(r.ok, false, JSON.stringify(b));
+    assert.equal(r.veld, veld, JSON.stringify(b));
+  }
+  assert.deepEqual(afs.activumHints({ aanschaf: 40000, looptijdMaanden: 60, restwaarde: 0 }).map((h) => h.soort), ["hint"]);
+  assert.deepEqual(afs.activumHints({ aanschaf: 185000, looptijdMaanden: 36, restwaarde: 0 }).map((h) => h.soort), ["let_op"]);
+  assert.deepEqual(afs.activumHints({ aanschaf: 185000, looptijdMaanden: 60, restwaarde: 0 }), []);
+  // Vergrendeling (zelfde regel als de trigger bk_activa_periode).
+  const v = (boekjaren, dicht = []) => ({ boekjaren, open: (d) => !dicht.includes(d.slice(0, 7)) });
+  const w = afs.parseActivumInvoer(afs.activumAlsInvoer(A()), { vandaag: "2026-10-24" }).waarde;
+  assert.equal(afs.activumVergrendelFout(null, w, v([])), null);
+  assert.match(afs.activumVergrendelFout(null, w, v([2026])), /afgesloten/);
+  assert.match(afs.activumVergrendelFout(A(), { ...w, looptijdMaanden: 36 }, v([2026])), /vast/);
+  assert.equal(afs.activumVergrendelFout(A(), { ...w, notities: "x" }, v([2026])), null, "notities mogen altijd");
+  assert.match(afs.activumVergrendelFout(A(), { ...w, desinvesteringDatum: "2026-06-10", desinvesteringOpbrengst: 0 }, v([], ["2026-06"])), /vergrendeld/);
+  assert.match(afs.activumVergrendelFout(A(), null, v([2027])), /vast/);
+});
+
+// ---------------------------------------------------------------------------------- stap 3: journaal activa
+await test("journaal: activa — inbreng, afschrijving per maand, desinvestering; geactiveerde aankoop niet als kosten", () => {
+  const inbreng = A({ id: "inb", aanschafdatum: "2025-01-01", ingebruikname: "2025-01-01", aanschaf: 120000, looptijdMaanden: 24, categorie: "0200", desinvesteringDatum: "2026-04-15", desinvesteringOpbrengst: 30000 });
+  const p = journaal.activumPosten(inbreng);
+  assert.equal(regels(p[0]), "0200:D120000 0900:C120000");
+  const afschr = p.filter((x) => x.bron === "afschrijving");
+  assert.equal(afschr.length, 15, "jan 2025 t/m maart 2026");
+  assert.equal(regels(afschr[0]), "0209:C5000 4800:D5000");
+  assert.equal(regels(p.at(-1)), "0200:C120000 0209:D75000 8900:D45000");
+  // Bonnetje geactiveerd: de kostenkant wordt 0210 (rest naar kleine hardware).
+  const c = journaal.contextUit(stam);
+  const u = U({ totaal: 302379, btw: 52479, categorie: "hardware" });
+  assert.equal(regels(journaal.uitgaveNaarPost(u, c, null, { categorie: "0210", aanschaf: 249900 })), "0210:D249900 1520:D52479 1600:C302379");
+  assert.equal(regels(journaal.uitgaveNaarPost(u, c, null, { categorie: "0210", aanschaf: 200000 })), "0210:D200000 1520:D52479 1600:C302379 4010:D49900");
+  // Bankregel geactiveerd.
+  const b = maak({ bedrag: 223850, btwCode: "21", grootboek: "4010" });
+  assert.equal(regels(journaal.boekingNaarPost(b, ctx, [], { categorie: "0210", aanschaf: 185000 })), "0210:D185000 1100:C223850 1520:D38850");
+  // Volledig journaal: W&V-afschrijving per jaar = activastaat; 0210 − 0219 = boekwaarde.
+  const act = A({ id: "act", boekingId: b.id, aanschafdatum: b.datum, ingebruikname: b.datum, aanschaf: 185000, looptijdMaanden: 36 });
+  const posten = journaal.journaal(stam, { boekingen: [b], activa: [act, inbreng] });
+  const pb = journaal.proefbalans(posten, "2026-12-31");
+  assert.equal([...pb.values()].reduce((x, y) => x + y, 0), 0);
+  assert.equal(pb.get("4010") ?? 0, 0, "aanschaf niet als kosten");
+  assert.equal((pb.get("0210") ?? 0) + (pb.get("0219") ?? 0), afs.boekwaardeOp(act, "2026-12-31"));
+  assert.equal((pb.get("0200") ?? 0) + (pb.get("0209") ?? 0), 0, "gedesinvesteerd: niets meer op de balans");
+  const kosten26 = posten.filter((x) => x.datum.startsWith("2026")).flatMap((x) => x.regels).filter((r) => r.grootboek === "4800").reduce((t, r) => t + r.debet - r.credit, 0);
+  assert.equal(kosten26, afs.activastaat([act, inbreng], 2026).totaal.afschrijving);
+  // Twee activa uit één aankoop met dezelfde soort tellen samen.
+  const m = journaal.activeringen([act, { ...act, id: "x", aanschaf: 1000 }]);
+  assert.equal(m.perBoeking.get(b.id).aanschaf, 186000);
+});
+
+// ---------------------------------------------------------------------------------- stap 3: aangifte
+await test("aangifte: afronden op hele euro's in je voordeel (ook negatief)", () => {
+  assert.deepEqual([ag.euroOmlaag(123499), ag.euroOmlaag(123400), ag.euroOmlaag(-150), ag.euroOmlaag(-100), ag.euroOmlaag(0), ag.euroOmlaag(99)], [1234, 1234, -2, -1, 0, 0]);
+  assert.deepEqual([ag.euroOmhoog(123401), ag.euroOmhoog(123400), ag.euroOmhoog(-150), ag.euroOmhoog(1)], [1235, 1234, -1, 1]);
+  assert.equal(geld.formatHeleEuro(17800), "€ 17.800");
+  assert.equal(geld.formatHeleEuro(-12), "−€ 12");
+});
+const kwartaalPosten = () => {
+  const c = journaal.contextUit(stam);
+  const lijst = [
+    maak({ id: "i21", soort: "inkomst", richting: "bij", bedrag: 121050, btwCode: "21", grootboek: "8000", datum: "2026-07-02" }),
+    maak({ id: "i9", soort: "inkomst", richting: "bij", bedrag: 10900, btwCode: "9", grootboek: "8000", datum: "2026-07-03" }),
+    maak({ id: "u21", bedrag: 4840, btwCode: "21", grootboek: "4700", datum: "2026-07-12" }),
+    maak({ id: "u9", bedrag: 3815, btwCode: "9", grootboek: "4200", datum: "2026-08-15" }),
+    maak({ id: "ueu", bedrag: 7139, btwCode: "eu_dienst", grootboek: "4000", datum: "2026-08-03" }),
+    maak({ id: "uus", bedrag: 3000, btwCode: "buiten_eu", grootboek: "4000", datum: "2026-08-08" }),
+    maak({ id: "unl", bedrag: 50000, btwCode: "verlegd_nl", grootboek: "4600", datum: "2026-09-01" }),
+    maak({ id: "ug", bedrag: 950, btwCode: "geen", grootboek: "4900", datum: "2026-09-01" }),
+    maak({ id: "q4", soort: "inkomst", richting: "bij", bedrag: 12100, btwCode: "21", grootboek: "8000", datum: "2026-10-01" }),
+    maak({ id: "terug", soort: "inkomst", richting: "af", bedrag: 2420, btwCode: "21", grootboek: "8000", datum: "2026-09-20" }),
+  ];
+  const facturen = [F({ datum: "2026-07-10" }), F({ id: "f-eu", nummer: "2026-051", datum: "2026-08-01", subtotaal: 280000, omzet: 280000, btw: 0, totaal: 280000, btwPct: 0, verlegd: true, verlegdReden: "intracommunautaire dienst" }), F({ id: "f-nl", nummer: "2026-052", datum: "2026-08-02", subtotaal: 50000, omzet: 50000, btw: 0, totaal: 50000, btwPct: 0, verlegd: true, verlegdReden: "onderaanneming" })];
+  return { lijst, facturen, posten: journaal.journaal(stam, { boekingen: lijst, facturen }), c };
+};
+await test("aangifte: rubrieken 1a–4b, 5a/5b/5c uit het journaal (facturen + losse regels)", () => {
+  const { posten } = kwartaalPosten();
+  const a = ag.aangifteRubrieken(posten, 2026, 3);
+  const r = a.rubrieken;
+  // 1a: 1000,41 + 3000,00 − 20,00 (terugbetaling) = 3980,41 omzet; btw 210,09 + 630,00 − 4,20 = 835,89
+  assert.deepEqual([r["1a"].grondslag.centen, r["1a"].btw.centen, r["1a"].grondslag.euro, r["1a"].btw.euro], [398041, 83589, 3980, 835]);
+  assert.deepEqual([r["1b"].grondslag.centen, r["1b"].btw.centen, r["1b"].btw.euro], [10000, 900, 9]);
+  assert.deepEqual([r["3b"].grondslag.euro, r["3b"].btw.euro], [2800, 0]);
+  assert.deepEqual([r["1e"].grondslag.euro, r["1e"].btw.euro], [500, 0]);
+  assert.deepEqual([r["2a"].grondslag.centen, r["2a"].btw.centen, r["2a"].btw.euro], [50000, 10500, 105]);
+  assert.deepEqual([r["4a"].grondslag.centen, r["4a"].btw.centen, r["4a"].btw.euro], [3000, 630, 6]);
+  assert.deepEqual([r["4b"].grondslag.centen, r["4b"].btw.centen, r["4b"].btw.euro], [7139, 1499, 14]);
+  for (const k of ["1c", "1d", "3a", "3c"]) assert.deepEqual(r[k], { grondslag: { centen: 0, euro: 0 }, btw: { centen: 0, euro: 0 } });
+  // 5a = som van de afgeronde btw; 5b naar boven; 5c = 5a − 5b.
+  assert.equal(a.verschuldigd.euro, 835 + 9 + 105 + 6 + 14);
+  assert.equal(a.verschuldigd.centen, 83589 + 900 + 10500 + 630 + 1499);
+  const vb = 840 + 315 + 1499 + 630 + 10500; // KPN 21%, NS 9%, en de verlegde btw (aftrekbaar)
+  assert.deepEqual([a.voorbelasting.centen, a.voorbelasting.euro], [vb, Math.ceil(vb / 100)]);
+  assert.equal(a.saldo.euro, a.verschuldigd.euro - a.voorbelasting.euro);
+  assert.equal(ag.teBetalenCenten(a), a.saldo.euro * 100);
+  assert.ok(ag.afrondingsverschil(a) >= 0, "afronding altijd in het voordeel");
+  // Q4-regel en vrijgestelde bankkosten tellen niet; posten per rubriek voor de doorklik.
+  assert.ok(!a.posten["1a"].includes("boeking:q4"));
+  assert.ok(!Object.values(a.posten).flat().includes("boeking:ug"));
+  assert.ok(a.posten["5b"].includes("boeking:ueu") && a.posten["4b"].includes("boeking:ueu"));
+  assert.deepEqual(a.posten["3b"], ["factuur:f-eu"]);
+  // Snapshot is JSON-veilig en wordt weer ingelezen.
+  const snap = JSON.parse(JSON.stringify(ag.naarSnapshot(a)));
+  assert.deepEqual(ag.leesSnapshot(snap), snap);
+  assert.equal(ag.leesSnapshot({ versie: 2 }), null);
+  assert.equal(ag.leesSnapshot({ ...snap, saldo: { centen: 1.5, euro: 0 } }), null);
+});
+await test("aangifte: afsluitpost bij indienen — 1530 = aangegeven bedrag, betaling maakt 1530 nul", () => {
+  const { lijst, facturen, posten } = kwartaalPosten();
+  const ber = ag.aangifteRubrieken(posten, 2026, 3);
+  const aangifte = { id: "ag3", jaar: 2026, kwartaal: 3, snapshot: ag.naarSnapshot(ber) };
+  const met = journaal.journaal(stam, { boekingen: lijst, facturen, aangiften: [aangifte] });
+  const sluit = met.find((p) => p.bron === "btw_afsluiting");
+  assert.equal(sluit.datum, "2026-09-30");
+  const pb = journaal.proefbalans(met, "2026-09-30");
+  for (const g of ["1500", "1505", "1510", "1520"]) assert.equal(pb.get(g) ?? 0, 0, g);
+  assert.equal(-(pb.get("1530") ?? 0), ag.teBetalenCenten(ber), "1530 = te betalen volgens het formulier");
+  const voor = journaal.proefbalans(posten, "2026-09-30").get("8900") ?? 0;
+  assert.equal(voor - pb.get("8900"), ag.afrondingsverschil(ber), "afronding naar 8900");
+  // Betaling aan de Belastingdienst (soort btw) maakt 1530 nul.
+  const betaling = maak({ id: "bd", soort: "btw", richting: "af", bedrag: ag.teBetalenCenten(ber), btwCode: "geen", grootboek: null, datum: "2026-10-28" });
+  const na = journaal.proefbalans(journaal.journaal(stam, { boekingen: [...lijst, betaling], facturen, aangiften: [aangifte] }));
+  assert.equal(na.get("1530") ?? 0, 0);
+  assert.equal([...na.values()].reduce((x, y) => x + y, 0), 0);
+  // Drift: een factuur wijzigt na indiening → het verschil blijft op 1530 en de vergelijking signaleert het.
+  const gewijzigd = facturen.map((f) => (f.id === "f0000000-0000-4000-8000-000000000001" ? { ...f, subtotaal: 400000, omzet: 400000, btw: 84000, totaal: 484000 } : f));
+  const drift = journaal.journaal(stam, { boekingen: [...lijst, betaling], facturen: gewijzigd, aangiften: [aangifte] });
+  assert.equal(-(journaal.proefbalans(drift).get("1530") ?? 0), 21000);
+  const vgl = ag.vergelijkMetIngediend(aangifte.snapshot, ag.aangifteRubrieken(drift, 2026, 3));
+  assert.equal(vgl.verschil, 21000);
+  assert.equal(vgl.advies, "volgende_aangifte");
+  assert.ok(vgl.rubrieken.some((r) => r.rubriek === "1a" && r.soort === "btw"));
+  const groot = facturen.map((f) => (f.id === "f0000000-0000-4000-8000-000000000001" ? { ...f, subtotaal: 1000000, omzet: 1000000, btw: 210000, totaal: 1210000 } : f));
+  assert.equal(ag.vergelijkMetIngediend(aangifte.snapshot, ag.aangifteRubrieken(journaal.journaal(stam, { boekingen: lijst, facturen: groot }), 2026, 3)).advies, "suppletie");
+  assert.equal(ag.vergelijkMetIngediend(aangifte.snapshot, ber).advies, "geen");
+});
+await test("aangifte: kwartaalstatus, volgende aangifte en betaalcontrole", () => {
+  const { posten } = kwartaalPosten();
+  const a3 = { id: "x3", jaar: 2026, kwartaal: 3, ingediendOp: "2026-10-20T10:00:00Z", ingediendDoor: null, kenmerk: null, opmerking: null, snapshot: null, teBetalen: 50000 };
+  const rijen = ag.kwartaalOverzicht({ posten, aangiften: [a3], betalingen: [], vanaf: "2026-01-15", vandaag: "2026-10-24" });
+  assert.deepEqual(rijen.map((r) => `${r.kwartaal}:${r.status}`), ["4:lopend", "3:ingediend", "2:te_laat", "1:te_laat"]);
+  const betaald = ag.kwartaalOverzicht({ posten, aangiften: [a3], betalingen: [{ id: "b", boekingId: "x", aangifteId: "x3", bedrag: 50000 }], vanaf: "2026-07-01", vandaag: "2026-10-24" });
+  assert.equal(betaald.find((r) => r.kwartaal === 3).status, "betaald");
+  const zonder = ag.kwartaalOverzicht({ posten, aangiften: [], betalingen: [], vanaf: "2026-07-01", vandaag: "2026-10-24" });
+  assert.equal(zonder.find((r) => r.kwartaal === 3).status, "te_doen");
+  assert.equal(ag.volgendeAangifte(zonder).kwartaal, 3);
+  assert.equal(ag.volgendeAangifte(rijen).kwartaal, 1, "oudste openstaande eerst");
+  assert.equal(ag.kwartalenTot("2025-09-01", "2026-10-24").length, 6);
+  const f = (o) => ag.betalingFout({ soort: "btw", richting: "af", bankBedrag: 50000, alGekoppeld: 0, aangifte: a3, bedrag: 50000, ...o });
+  assert.equal(f({}), null);
+  assert.match(f({ soort: "uitgave" }), /Btw-aangifte/);
+  assert.match(f({ richting: "bij" }), /betaling/);
+  assert.match(f({ bedrag: 60000 }), /hoger/);
+  assert.match(f({ bedrag: -100 }), /Ongeldig/);
+  assert.equal(ag.betalingFout({ soort: "btw", richting: "bij", bankBedrag: 1000, alGekoppeld: 0, aangifte: { ...a3, teBetalen: -1000 }, bedrag: -1000 }), null, "teruggaaf");
+});
+
+// ---------------------------------------------------------------------------------- stap 3: activeren en controles
+await test("activeren: bron controleren (bankregel/bonnetje), bedrag ≤ excl., voorstellen en controles", () => {
+  const b = maak({ id: "cam", bedrag: 223850, btwCode: "21", grootboek: "4010", datum: "2026-05-19" });
+  const ink = maak({ id: "ink", soort: "inkomst", richting: "bij", grootboek: "8000" });
+  const gek = maak({ id: "gek", bedrag: 302379, grootboek: "0210", datum: "2026-03-06" });
+  const lap = U({ id: "lap", datum: "2026-03-05", totaal: 302379, btw: 52479 });
+  const concept = U({ id: "con", status: "concept", totaal: 99999 });
+  const ctxA = { boekingen: [b, ink, gek], uitgaven: [lap, concept], koppelingen: [{ id: "k", boekingId: "gek", bron: "uitgave", bronId: "lap", bedrag: 302379, aangemaakt: "" }], bronExtra: [], activa: [] };
+  assert.equal(act.boekingExcl(b), 185000);
+  assert.equal(act.uitgaveExcl(lap), 249900);
+  assert.equal(act.uitgaveExcl(U({ tarief: "verlegd", btw: 0, totaal: 7139 })), 7139);
+  assert.equal(act.herkomstVan({ boekingId: "cam", uitgaveId: null }, ctxA).herkomst.excl, 185000);
+  assert.match(act.herkomstVan({ boekingId: "ink", uitgaveId: null }, ctxA).fout, /uitgave/);
+  assert.match(act.herkomstVan({ boekingId: "gek", uitgaveId: null }, ctxA).fout, /bonnetje/);
+  assert.match(act.herkomstVan({ boekingId: null, uitgaveId: "con" }, ctxA).fout, /concept/);
+  const w = { ...A({ boekingId: "cam", aanschafdatum: "2026-05-19", ingebruikname: "2026-05-19", aanschaf: 185000, looptijdMaanden: 36 }) };
+  assert.equal(act.activumBronFout(w, ctxA), null);
+  assert.match(act.activumBronFout({ ...w, aanschaf: 185001 }, ctxA), /hoger/);
+  assert.match(act.activumBronFout({ ...w, aanschafdatum: "2026-05-20" }, ctxA), /datum/);
+  assert.match(act.activumBronFout({ ...w, aanschaf: 100000 }, { ...ctxA, activa: [{ ...w, id: "x", aanschaf: 90000 }] }), /samen hoger/);
+  assert.match(act.activumBronFout({ ...w, aanschaf: 1000 }, { ...ctxA, activa: [{ ...w, id: "x", categorie: "0200", aanschaf: 1000 }] }), /soort/);
+  // Voorstellen: hardware ≥ € 450 op de bank en het bonnetje (de gekoppelde betaling niet).
+  const v = act.teActiveren(ctxA);
+  assert.deepEqual(v.map((x) => `${x.soort}:${x.id}`).sort(), ["boeking:cam", "uitgave:lap"]);
+  assert.deepEqual(act.teActiveren({ ...ctxA, activa: [{ ...w, id: "x" }] }).map((x) => x.id), ["lap"]);
+  const opActiva = maak({ id: "inv", bedrag: 60500, btwCode: "21", grootboek: "0200" });
+  assert.match(act.teActiveren({ ...ctxA, boekingen: [opActiva] })[0].reden, /zonder activum/);
+  const klein = maak({ id: "kl", bedrag: 34900, btwCode: "21", grootboek: "4010" });
+  assert.equal(act.teActiveren({ ...ctxA, boekingen: [klein], uitgaven: [] }).length, 0, "onder € 450 geen voorstel");
+  // Controles: bron weg of te laag.
+  assert.deepEqual(act.activaControles({ ...ctxA, activa: [{ ...w, id: "x" }] }), []);
+  assert.match(act.activaControles({ ...ctxA, boekingen: [], activa: [{ ...w, id: "x" }] })[0].tekst, /bestaat niet/);
+});
+await test("btw-controles: te verwerken, bon ontbreekt, verlegd 1e, ICP, eerdere kwartalen, lopend", () => {
+  const { lijst, facturen, posten } = kwartaalPosten();
+  const kw = ag.kwartaalOverzicht({ posten, aangiften: [], betalingen: [], vanaf: "2026-04-01", vandaag: "2026-10-24" });
+  const c = ctl.btwControles({ jaar: 2026, kwartaal: 3, vandaag: "2026-10-24", boekingen: [...lijst, maak({ id: "tv", status: "te_verwerken", datum: "2026-09-02" })], facturen, uitgaven: [U({ datum: "2026-08-01", status: "concept" })], koppelingen: [], bronExtra: [], kwartalen: kw });
+  const per = Object.fromEntries(c.map((x) => [x.id, x]));
+  assert.equal(per.te_verwerken.aantal, 1);
+  assert.equal(per.te_verwerken.soort, "let_op");
+  assert.ok(per.bon.aantal >= 2);
+  assert.equal(per.concept.aantal, 1);
+  assert.equal(per.verlegd.aantal, 1);
+  assert.equal(per.verlegd.regels[0].actie.btwCode, "eu_dienst");
+  assert.equal(per.icp.regels[0].bedrag, 280000);
+  assert.equal(per.eerder.aantal, 1, "Q2 nog niet ingediend");
+  assert.equal(per.lopend, undefined);
+  const lopend = ctl.btwControles({ jaar: 2026, kwartaal: 4, vandaag: "2026-10-24", boekingen: [], facturen: [], uitgaven: [], koppelingen: [], bronExtra: [{ bron: "factuur", bronId: "f-nl", btwCode: "eu_dienst", grootboek: null, vennootId: null, notitie: null }], kwartalen: [] });
+  assert.equal(lopend.find((x) => x.id === "lopend").soort, "info");
+  assert.equal(lopend.find((x) => x.id === "te_verwerken").soort, "ok");
+});
+
+// ---------------------------------------------------------------------------------- stap 3: demo
+await test("demo-seed: activa (laptop 5 jaar via bonnetje, camera 3 jaar via bank, inbreng, verkochte camera)", () => {
+  const per = Object.fromEntries(data.activa.map((a) => [a.omschrijving, a]));
+  const lap = per['MacBook Pro 14"'];
+  assert.deepEqual([lap.aanschaf, lap.looptijdMaanden, lap.categorie, Boolean(lap.uitgaveId)], [249900, 60, "0210", true]);
+  assert.equal(afs.maandbedrag(lap).gewoon, 4165);
+  const cam = per["Sony A7 IV + 24-70 mm"];
+  assert.deepEqual([cam.aanschaf, cam.looptijdMaanden, Boolean(cam.boekingId)], [185000, 36, true]);
+  assert.ok(per["Canon EOS R (oud)"].desinvesteringDatum && afs.boekresultaat(per["Canon EOS R (oud)"]) > 0);
+  const ctxA = { boekingen: data.boekingen, uitgaven: data.uitgaven, koppelingen: data.koppelingen, bronExtra: data.bronExtra, activa: data.activa };
+  assert.deepEqual(act.activaControles(ctxA), []);
+  assert.deepEqual(act.teActiveren(ctxA), [], "alles wat te activeren is, is geactiveerd");
+  const posten = journaal.journaal(data.stamdata, { ...alles(data), aangiften: data.aangiften });
+  const pb = journaal.proefbalans(posten, VANDAAG);
+  const staat = afs.activastaat(data.activa, 2026);
+  const bw = data.activa.reduce((t, a) => t + afs.boekwaardeOp(a, VANDAAG), 0);
+  assert.equal(pb.get("0200") + pb.get("0209") + pb.get("0210") + pb.get("0219"), bw, "balans = boekwaarde");
+  assert.ok(staat.totaal.afschrijving > 0 && staat.totaal.investering === 249900 + 185000);
+});
+await test("demo-opslag: aangifte indienen, betaling koppelen, intrekken; activa toevoegen, wijzigen, verwijderen", async () => {
+  const r = new demo.DemoRepo("test-ag", "u-ag");
+  const stamR = await r.stamdata();
+  const nu = periode.vandaagNL();
+  const d0 = await r.aangiften();
+  assert.equal(d0.length, 4);
+  const snap = d0[0].snapshot;
+  const nieuw = await r.aangifteIndienen({ jaar: 2030, kwartaal: 1, snapshot: snap, teBetalen: 12300, kenmerk: "K", opmerking: null });
+  assert.ok((await r.stamdata()).vergrendeling.aangiften.some((x) => x.jaar === 2030 && x.kwartaal === 1));
+  await assert.rejects(r.aangifteIndienen({ jaar: 2030, kwartaal: 1, snapshot: snap, teBetalen: 0, kenmerk: null, opmerking: null }), (e) => e.status === 409);
+  const btwRegel = (await r.boekingen()).find((b) => b.soort === "btw");
+  const k = await r.aangifteBetalingKoppelen({ boekingId: btwRegel.id, aangifteId: nieuw.id, bedrag: 12300 });
+  assert.equal((await r.aangifteBetalingen()).filter((x) => x.aangifteId === nieuw.id).length, 1);
+  const uitg = (await r.boekingen()).find((b) => b.soort === "uitgave");
+  await assert.rejects(r.aangifteBetalingKoppelen({ boekingId: uitg.id, aangifteId: nieuw.id, bedrag: 1 }), (e) => e.code === "koppeling_ongeldig");
+  await r.aangifteBetalingOntkoppelen(k.id);
+  await r.aangifteIntrekken(nieuw.id);
+  assert.ok(!(await r.stamdata()).vergrendeling.aangiften.some((x) => x.jaar === 2030));
+  // Activa
+  const w = afs.parseActivumInvoer({ omschrijving: "Bureau", categorie: "0200", aanschafdatum: nu, aanschaf: "800", jaren: 5 }, { vandaag: nu }).waarde;
+  const a = await r.activumToevoegen(w);
+  assert.equal((await r.activa()).length, 5);
+  const gew = await r.activumWijzigen(a.id, { ...w, looptijdMaanden: 36 });
+  assert.equal(gew.looptijdMaanden, 36);
+  await r.activumVerwijderen(a.id);
+  assert.equal((await r.activa()).length, 4);
+  // Desinvestering in een vergrendeld kwartaal: geweigerd.
+  const lap = (await r.activa()).find((x) => x.uitgaveId);
+  const dicht = periode.kwartaalGrenzen(stamR.vergrendeling.aangiften.at(-1).jaar, stamR.vergrendeling.aangiften.at(-1).kwartaal).tot;
+  const wl = afs.parseActivumInvoer(afs.activumAlsInvoer(lap), { vandaag: nu }).waarde;
+  await assert.rejects(r.activumWijzigen(lap.id, { ...wl, desinvesteringDatum: dicht, desinvesteringOpbrengst: 0 }), (e) => e.status === 409);
+  demo.demoHerstellen("test-ag");
+  assert.equal((await r.activa()).length, 4);
 });
 
 // ---------------------------------------------------------------------------------- constanten

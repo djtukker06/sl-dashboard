@@ -94,8 +94,12 @@
 //     Stap 2 (bankimport, afletteren): de boekhouding schrijft nooit naar invoices/expenses
 //     (koppelingen en verfijningen staan in bk_koppelingen/bk_bron_extra); alleen
 //     koppelingen mogen echt verwijderd worden; import via de RPC bk_importeer.
+//     Stap 3 (btw-aangifte, activa): intrekken van een aangifte alleen via de eigenaar-route;
+//     echt verwijderen alleen bij koppelingen, aangiften (intrekken) en activa; de rekenkern
+//     (afschrijving, aangifte, activeren, controles) is puur; tabs Btw-aangifte en Activa.
 // Live: /boekhouding/bank (ook met filters), /boekhouding/bank/importeren,
-//       /boekhouding/openstaand en /boekhouding/instellingen zonder sessie -> 307 /login;
+//       /boekhouding/openstaand, /boekhouding/instellingen, /boekhouding/btw(/jaar/kw) en
+//       /boekhouding/activa(/id) zonder sessie -> 307 /login;
 //       GET/POST/PATCH/DELETE /api/boekhouding/** -> 401 (ook cross-site).
 //
 // Gebruik:  node scripts/rooktest-shell.mjs [http://localhost:3107]
@@ -599,9 +603,9 @@ console.log("Boekhouding: bank & boekingen (0027)");
   check(!/createServiceRoleClient/.test(lees("lib/boekhouding/repo/supabase.ts")), "boekhouding gebruikt nooit de service-role (RLS van het teamlid)");
   const sbRepo = lees("lib/boekhouding/repo/supabase.ts");
   const deletes = [...sbRepo.matchAll(/from\('(\w+)'\)\s*\.delete\(\)/g)].map((m) => m[1]);
-  check(deletes.every((t) => t === "bk_koppelingen") && (sbRepo.match(/\.delete\(\)/g) || []).length === deletes.length, "boekingsregels worden nooit echt verwijderd (bewaarplicht); alleen koppelingen", deletes.join(","));
+  check(deletes.every((t) => ["bk_koppelingen", "bk_aangiften", "bk_activa"].includes(t)) && (sbRepo.match(/\.delete\(\)/g) || []).length === deletes.length, "boekingsregels worden nooit echt verwijderd (bewaarplicht); alleen koppelingen, aangiften (intrekken) en activa", deletes.join(","));
   check(!/from\('(invoices|expenses|quotes|clients)'\)\s*\.(insert|update|upsert|delete)\(/.test(sbRepo) && /rpc\('bk_importeer'/.test(sbRepo), "boekhouding leest facturen/bonnetjes alleen; import via bk_importeer");
-  for (const f of ["kern/bronnen.ts", "kern/afletteren.ts", "kern/bankimport.ts", "repo/demo-voorbeeld.ts"]) {
+  for (const f of ["kern/bronnen.ts", "kern/afletteren.ts", "kern/bankimport.ts", "repo/demo-voorbeeld.ts", "kern/afschrijving.ts", "kern/aangifte.ts", "kern/activeren.ts", "kern/btw-controles.ts"]) {
     check(!/from '@\/|supabase|fetch\(/.test(lees(`lib/boekhouding/${f}`).replace(/\/\/[^\n]*/g, "")), `lib/boekhouding/${f} is een pure module`);
   }
   const m27 = lees("supabase/migrations/0027_boekhouding.sql").replace(/--[^\n]*/g, "");
@@ -617,6 +621,10 @@ console.log("Boekhouding: bank & boekingen (0027)");
   check(/naam: 'bk_boekingen', pk: \['id'\], zonder: \['jaar', 'kwartaal'\]/.test(lees("lib/backup/formaat-kern.ts")), "back-up kent de bk-tabellen (zonder gegenereerde kolommen)");
   check(fs.existsSync(path.join(ROOT, "scripts/test-boekhouding.mjs")) && fs.existsSync(path.join(ROOT, "scripts/test-boekhouding-db.mjs")), "tests voor de boekhouding bestaan");
   check(/\/boekhouding\/bank/.test(lees("components/boekhouding/BoekhoudingTabs.tsx")) && /\/boekhouding\/instellingen/.test(lees("components/boekhouding/BoekhoudingTabs.tsx")), "tabs Bank & boekingen en Instellingen");
+  check(/\/boekhouding\/btw/.test(lees("components/boekhouding/BoekhoudingTabs.tsx")) && /\/boekhouding\/activa/.test(lees("components/boekhouding/BoekhoudingTabs.tsx")), "tabs Btw-aangifte en Activa");
+  const agRoute = lees("app/api/boekhouding/aangiften/[jaar]/[kw]/route.ts");
+  check(/export const DELETE = bkRoute\([\s\S]*?\{ alleenEigenaar: true \}\s*\);/.test(agRoute), "aangifte intrekken alleen door de eigenaar (route)");
+  check(/aangifteRubrieken\(journaalVan\(data\)/.test(lees("lib/boekhouding/acties.ts")), "bij indienen rekent de server de aangifte zelf uit");
   // Facturen ongewijzigd sinds de start van de boekhouding (commit 7df4ae9).
   const fdiff = spawnSync("git", ["diff", "--name-only", "7df4ae9", "--", "lib/invoice", "app/actions", "app/api/invoices", "app/api/quotes", "app/(app)/facturen", "components/InvoiceForm.tsx", "components/InvoicesTable.tsx", "components/QuotesTable.tsx", "components/RestfactuurKnop.tsx"], { cwd: ROOT, encoding: "utf8" });
   if (fdiff.status === 0) check(fdiff.stdout.trim() === "", "facturen-code ongewijzigd sinds de start van de boekhouding", fdiff.stdout.trim().replace(/\n/g, ", "));
@@ -748,7 +756,7 @@ for (const url of ["/social-files/brand/logo-licht.png", "/social-files/projects
 
 console.log("Boekhouding zonder sessie");
 {
-  for (const url of ["/boekhouding/bank", "/boekhouding/bank?rekening=00000000-0000-4000-8000-000000000000&jaar=2026&kw=3&soort=uitgave&status=te_verwerken&q=adobe", "/boekhouding/bank?open=00000000-0000-4000-8000-000000000000", "/boekhouding/bank/importeren", "/boekhouding/openstaand", "/boekhouding/instellingen"]) {
+  for (const url of ["/boekhouding/bank", "/boekhouding/bank?rekening=00000000-0000-4000-8000-000000000000&jaar=2026&kw=3&soort=uitgave&status=te_verwerken&q=adobe", "/boekhouding/bank?open=00000000-0000-4000-8000-000000000000", "/boekhouding/bank/importeren", "/boekhouding/openstaand", "/boekhouding/instellingen", "/boekhouding/btw", "/boekhouding/btw/2026/3", "/boekhouding/btw/9999/9", "/boekhouding/activa", "/boekhouding/activa?jaar=2026&activeer=boeking:00000000-0000-4000-8000-000000000000", "/boekhouding/activa/00000000-0000-4000-8000-000000000000"]) {
     const res = await vraag(url);
     check(res.status === 307 && naarLogin(res), `${url} -> 307 /login`, `status ${res.status} ${res.headers.get("location") || ""}`);
   }
@@ -767,6 +775,14 @@ console.log("Boekhouding zonder sessie");
     ["POST", "/api/boekhouding/import"],
     ["GET", "/api/boekhouding/import"],
     ["GET", "/api/boekhouding"],
+    ["POST", "/api/boekhouding/aangiften/2026/3"],
+    ["DELETE", "/api/boekhouding/aangiften/2026/3"],
+    ["POST", "/api/boekhouding/aangiften/2026/3/betaling"],
+    ["DELETE", "/api/boekhouding/aangiften/2026/3/betaling?id=00000000-0000-4000-8000-000000000000"],
+    ["GET", "/api/boekhouding/activa"],
+    ["POST", "/api/boekhouding/activa"],
+    ["PATCH", "/api/boekhouding/activa/00000000-0000-4000-8000-000000000000"],
+    ["DELETE", "/api/boekhouding/activa/00000000-0000-4000-8000-000000000000"],
   ]) {
     for (const origin of [BASIS, "https://evil.example"]) {
       const res = await vraag(url, { method: m, headers: { origin, "content-type": "application/json" }, body: m === "GET" || m === "DELETE" ? undefined : JSON.stringify({ omschrijving: "x", bedrag: "1" }) });
