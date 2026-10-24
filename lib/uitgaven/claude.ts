@@ -16,11 +16,11 @@ import {
 // De Claude-kant van het uitlezen: schema, prompt, de aanroep en het samenvoegen met wat
 // er al is ingevuld. Bewust zonder '@/'-imports, zodat scripts/test-uitgaven.mjs dit
 // bestand los kan laden. Zelfde SDK-patroon als lib/social/claude.ts (env ANTHROPIC_API_KEY).
-// Eerst Sonnet (snel en goedkoop, meestal ruim voldoende); blijft leverancier, datum of
-// totaal leeg of onzeker, dan één tweede poging met Opus (zelfde schema), zie uitlezen.ts.
+// Eerst Haiku (snelst en goedkoopst, meestal voldoende); blijft leverancier, datum of
+// totaal leeg of onzeker, dan één tweede poging met Sonnet (zelfde schema), zie uitlezen.ts.
 
-export const MODEL = 'claude-sonnet-5-5';
-export const MODEL_TWEEDE = 'claude-opus-5-5';
+export const MODEL = 'claude-haiku-5-5';
+export const MODEL_TWEEDE = 'claude-sonnet-5-5';
 let client: Anthropic | null = null;
 function getClient() {
   if (!client) client = new Anthropic();
@@ -215,9 +215,9 @@ const gelijk = (v: VerplichtVeld, a: unknown, b: unknown) =>
     : typeof a === 'string' && typeof b === 'string' && a.trim().toLowerCase() === b.trim().toLowerCase();
 
 /**
- * Combineert de eerste (Sonnet) en de tweede poging (Opus) per verplicht veld:
- *   - wat één van beide zeker leest, wint (zijn beide zeker maar verschillend: Opus, onzeker);
- *   - anders de waarde van Opus (of Sonnet als Opus niets heeft), nog steeds onzeker;
+ * Combineert de eerste (Haiku) en de tweede poging (Sonnet) per verplicht veld:
+ *   - wat één van beide zeker leest, wint (zijn beide zeker maar verschillend: Sonnet, onzeker);
+ *   - anders de waarde van Sonnet (of Haiku als Sonnet niets heeft), nog steeds onzeker;
  * De overige velden (btw, valuta, …) komen van de poging waar het totaal vandaan komt,
  * aangevuld met de andere. Geeft ook terug welk model wat leverde (voor de log).
  */

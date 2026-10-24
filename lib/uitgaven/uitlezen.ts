@@ -28,7 +28,7 @@ import { bestandenVan, leveranciers, moetUitgave, type BestandRij } from './repo
 
 // Bonnetjes en facturen automatisch uitlezen: bestanden uit Storage halen (HEIC eerst omzetten
 // naar JPEG en die opslaan), Claude vragen (lib/uitgaven/claude.ts; eerst Sonnet, bij een leeg
-// of onzeker verplicht veld nog één keer Opus), normaliseren (lib/uitgaven/model.ts) en alleen
+// of onzeker verplicht veld nog één keer Sonnet), normaliseren (lib/uitgaven/model.ts) en alleen
 // de lege velden vullen. Wat de gebruiker al heeft ingevuld, wordt nooit overschreven.
 
 /** Ruim onder de requestlimiet van 32 MB. */
@@ -120,7 +120,7 @@ async function inhoudVoor(bestanden: BestandRij[], omgezet: Map<string, Buffer>)
   return { blokken, reden };
 }
 
-/** Sonnet, en bij een leeg of onzeker verplicht veld nog één keer Opus. */
+/** Haiku, en bij een leeg of onzeker verplicht veld nog één keer Sonnet. */
 async function leesMetClaude(blokken: ContentBlockParam[], systeem: string, vandaag: string): Promise<Uitgelezen> {
   const start = Date.now();
   let eerste: Uitgelezen | null = null;

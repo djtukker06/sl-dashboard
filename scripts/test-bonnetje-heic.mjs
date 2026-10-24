@@ -14,7 +14,7 @@
 //   c. Browser: de echte bereidVoor() uit lib/uitgaven/client.ts in headless Chrome (puppeteer)
 //      met een .HEIC zonder MIME-type: er moet een rechtopstaande JPEG van max. 2400 px uitkomen
 //      en de fase "omzetten" moet gemeld zijn.
-//   b. Met --claude: échte uitleesacties (Sonnet; en één keer Opus, het model van de tweede
+//   b. Met --claude: échte uitleesacties (Haiku; en één keer Sonnet, het model van de tweede
 //      poging) op de JPEG, op de vanaf HEIC omgezette versie en op de lange bon. Verwacht:
 //      leverancier "Action", datum 2026-10-24, totaal 16,33. De API-key wordt nooit getoond.
 //
@@ -275,7 +275,7 @@ await test("tweede poging: wanneer, en hoe de resultaten gecombineerd worden", (
   assert.deepEqual([r.leverancier, r.datum, r.totaal, r.btwTarief], ["Action", "2026-10-24", 16.33, "21"]);
   assert.deepEqual(r.onzeker, []);
   assert.deepEqual(bron, { leverancier: "eerste", datum: "tweede", totaal: "tweede" });
-  // Beide zeker maar verschillend: Opus, gemarkeerd als onzeker. Beide onzeker: blijft onzeker.
+  // Beide zeker maar verschillend: Sonnet (tweede poging), gemarkeerd als onzeker. Beide onzeker: blijft onzeker.
   const c = claude.combineer({ ...b, totaal: 16.38 }, b);
   assert.deepEqual([c.r.totaal, c.r.onzeker], [16.33, ["totaal"]]);
   const d = claude.combineer({ ...a, onzeker: ["leverancier", "totaal"] }, { ...a, datum: null, onzeker: ["totaal"] });
@@ -395,15 +395,15 @@ if (!ECHT) {
     assert.equal(r.totaal, 16.33);
     assert.deepEqual(r.onzeker, []);
   };
-  await test("Sonnet op de JPEG-foto", async () => {
+  await test("Haiku op de JPEG-foto", async () => {
     const r = await lees("bon.jpg", fotoJpg);
     verwacht(r);
     assert.equal(r.btwBedrag, 2.83);
     assert.equal(r.btwTarief, "21");
   });
-  if (fotoHeic) await test("Sonnet op de vanaf HEIC omgezette foto", async () => verwacht(await lees("bon.heic", fotoHeic)));
-  await test("Sonnet op de lange bon (geheel + 2 helften)", async () => verwacht(await lees("bon-lang (4400 px)", fs.readFileSync(pad("bon-lang-4400.jpg")))));
-  await test("Opus (tweede poging) op de HEIC/JPEG-foto", async () =>
+  if (fotoHeic) await test("Haiku op de vanaf HEIC omgezette foto", async () => verwacht(await lees("bon.heic", fotoHeic)));
+  await test("Haiku op de lange bon (geheel + 2 helften)", async () => verwacht(await lees("bon-lang (4400 px)", fs.readFileSync(pad("bon-lang-4400.jpg")))));
+  await test("Sonnet (tweede poging) op de HEIC/JPEG-foto", async () =>
     verwacht(await lees(fotoHeic ? "bon.heic" : "bon.jpg", fotoHeic ?? fotoJpg, { model: claude.MODEL_TWEEDE, effort: "high", timeoutMs: 90_000, maxRetries: 0 })),
   );
 }

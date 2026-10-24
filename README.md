@@ -506,9 +506,9 @@ bonnetjes*; in mail: **Bij bonnetjes** naast een PDF- of fotobijlage.
   Lukt dat niet, dan gaat het origineel en zet de server hem bij het uitlezen om
   (`lib/uitgaven/beeld.ts`, ook voor HEIC-bijlagen uit mail): de JPEG vervangt het origineel
   in de opslag, zodat elke browser hem toont. Onleesbaar bestand: een melding in gewone taal.
-- **Automatisch uitlezen** (`lib/uitgaven/claude.ts`, model `claude-sonnet-5-5`, gestructureerde
+- **Automatisch uitlezen** (`lib/uitgaven/claude.ts`, model `claude-haiku-5-5`, gestructureerde
   JSON-uitvoer; blijft leverancier, datum of totaal leeg of onzeker, dan één tweede poging met
-  `claude-opus-5-5`, zelfde schema; logregels `[uitgaven]` zeggen welk model wat vond, zonder
+  `claude-sonnet-5-5`, zelfde schema; logregels `[uitgaven]` zeggen welk model wat vond, zonder
   bedragen). De leverancier wordt ook aan logo/huisstijl en bekende ketens herkend, het totaal
   is de regel Totaal/Te betalen/PIN (niet subtotaal of wisselgeld), datums in NL-notatie
   (24-10-26, 24 okt 2026). Een lange smalle bon gaat als geheel plus twee vergrote helften

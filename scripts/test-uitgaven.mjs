@@ -388,7 +388,7 @@ if (!ECHT) {
       const ruw = await claude.vraagClaude([beeldBlok], claude.systeemPrompt(VANDAAG, [{ naam: "Bakkerij De Zon", categorie: "representatie", betaaldVia: null, aantal: 2 }]));
       const v = verzoeken[0].body;
       assert.ok(verzoeken[0].url.endsWith("/v1/messages"));
-      assert.equal(v.model, "claude-sonnet-5-5");
+      assert.equal(v.model, "claude-haiku-5-5");
       assert.equal(v.output_config.format.type, "json_schema");
       assert.deepEqual(Object.keys(v.output_config.format.schema.properties).sort(), [...v.output_config.format.schema.required].sort());
       assert.equal(v.output_config.format.schema.additionalProperties, false);
