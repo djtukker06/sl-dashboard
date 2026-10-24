@@ -498,16 +498,27 @@ bonnetjes*; in mail: **Bij bonnetjes** naast een PDF- of fotobijlage.
   `n`), maak op de telefoon een **Foto maken** (camera), of plak een screenshot met `⌘V`.
   Meerdere tegelijk kan; elk bestand wordt een eigen upload en verschijnt meteen (met
   "Wordt uitgelezen…"). Een PDF krijgt de soort *inkoopfactuur*, een foto *bonnetje* (aan te
-  passen). Foto's worden in de browser verkleind (max.
-  2400 px, JPEG). Uploads gaan via een signed upload-URL direct naar de privé-bucket
-  `uitgaven` (buiten de 4,5 MB-limiet van Vercel om; max. 25 MB per bestand).
+  passen). Foto's worden in de browser rechtop gezet (EXIF) en verkleind (max. 2400 px,
+  een lange smalle bon tot 4000 px; JPEG). Uploads gaan via een signed upload-URL direct naar
+  de privé-bucket `uitgaven` (buiten de 4,5 MB-limiet van Vercel om; max. 25 MB per bestand).
+- **HEIC (iPhone-foto's).** Safari leest HEIC zelf; in Chrome/Firefox/Edge zet de browser de
+  foto eerst om met `libheif-js` (wasm, pas geladen als het nodig is, "Foto omzetten…").
+  Lukt dat niet, dan gaat het origineel en zet de server hem bij het uitlezen om
+  (`lib/uitgaven/beeld.ts`, ook voor HEIC-bijlagen uit mail): de JPEG vervangt het origineel
+  in de opslag, zodat elke browser hem toont. Onleesbaar bestand: een melding in gewone taal.
 - **Automatisch uitlezen** (`lib/uitgaven/claude.ts`, model `claude-sonnet-5-5`, gestructureerde
-  JSON-uitvoer): leverancier, datum, bedrag incl. btw, btw-bedrag en -tarief, valuta,
+  JSON-uitvoer; blijft leverancier, datum of totaal leeg of onzeker, dan één tweede poging met
+  `claude-opus-5-5`, zelfde schema; logregels `[uitgaven]` zeggen welk model wat vond, zonder
+  bedragen). De leverancier wordt ook aan logo/huisstijl en bekende ketens herkend, het totaal
+  is de regel Totaal/Te betalen/PIN (niet subtotaal of wisselgeld), datums in NL-notatie
+  (24-10-26, 24 okt 2026). Een lange smalle bon gaat als geheel plus twee vergrote helften
+  naar Claude. Velden: leverancier, datum, bedrag incl. btw, btw-bedrag (ook uit de
+  btw-specificatie per tarief) en -tarief, valuta,
   factuurnummer, korte omschrijving, categorie en (als zichtbaar) betaalwijze. Het vult
   alleen lege velden; automatisch ingevulde velden krijgen een zandkleurige stip tot je ze
   aanpast. Bij een bekende leverancier gaat de laatst gebruikte categorie/betaalwijze voor.
-  Zonder `ANTHROPIC_API_KEY`, bij HEIC-foto's (die de API niet leest) of bij een fout blijft
-  het een concept dat je zelf invult.
+  Zonder `ANTHROPIC_API_KEY`, bij een onleesbaar bestand of bij een fout blijft het een
+  concept dat je zelf invult.
 - **Leverancier, datum, bedrag: ontbreekt of onzeker.** De prompt vraagt de datum in ISO
   (`JJJJ-MM-DD`), het bedrag als totaal incl. btw in euro en de bedrijfsnaam zoals op de bon
   zonder rechtsvorm ("Albert Heijn", niet "Albert Heijn B.V."; de app haalt restjes ook
@@ -549,6 +560,9 @@ bonnetjes*; in mail: **Bij bonnetjes** naast een PDF- of fotobijlage.
   client), `app/api/uitgaven/**`, `components/uitgaven/`, `app/(app)/uitgaven.css`.
   Tests zonder database/netwerk: `node scripts/test-uitgaven.mjs`; één echte Claude-aanroep
   met een gegenereerd testbonnetje: `ANTHROPIC_API_KEY=… node scripts/test-uitgaven.mjs --claude`.
+  HEIC en foto's: `node scripts/test-bonnetje-heic.mjs` maakt een realistische Action-kassabon
+  (puppeteer, scheef gefotografeerd, via macOS `sips` naar HEIC) en test de omzetting op de
+  server en in headless Chrome; met `--claude` ook échte uitleesacties (Sonnet en Opus).
 
 ## Google Drive (Bestanden)
 
@@ -608,7 +622,7 @@ Studio Levant/
   Boekhouding/
     Facturen/<jaar>/       automatisch: elke nieuwe of bijgewerkte factuur (PDF, naam = download)
     Prijsopgaven/<jaar>/   automatisch: elke prijsopgave
-    Bonnetjes/<jaar>/      automatisch: elk geüpload bonnetje of inkoopfactuur ("<datum> <bestand>")
+    Bonnetjes/<jaar>/      automatisch: elk bonnetje of inkoopfactuur, na het uitlezen ("JJJJ-MM-DD_leverancier_bedrag.ext")
   Klanten/
     <klantnaam>/           blok "Bestanden" op de klantpagina
       <projectnaam>/       blok "Bestanden" op de projectpagina (zonder klant: Klanten/Zonder klant/…)
@@ -641,8 +655,13 @@ Studio Levant/
   zonder eindregel betekent dat de functie stopte (maxDuration 60 s van de factuurroutes,
   inclusief het maken van de PDF); na 40 s volgt een waarschuwing. Een verlopen toestemming
   (Google-app in "Testing": na 7 dagen `invalid_grant`) staat er als `opnieuw_koppelen`.
-- Een bonnetje gaat naar Drive direct na het uploaden, dus vóór het uitlezen: naam en
-  jaarmap gebruiken dan de uploaddatum.
+- Een bonnetje gaat naar Drive nadat het uitlezen klaar is, als
+  `JJJJ-MM-DD_leverancier_bedrag.ext` in de map van het jaar van de bon (zoals de ZIP-export).
+  Pas je daarna datum, leverancier of bedrag aan (of vul je ze zelf in), dan wordt het
+  Drive-bestand hernoemd en zo nodig naar de juiste jaarmap verplaatst. Is er nog geen
+  datum, dan de uploaddatum en de bestandsnaam. Een extra bestand bij een bestaande uitgave
+  gaat meteen. Alles na het antwoord en best effort (`naDriveUitgave` in
+  `lib/drive/kopieen.ts`).
 - **Uploaden** gaat niet via de server (Vercel laat maximaal 4,5 MB per verzoek door): de
   server maakt bij Google een *resumable upload-sessie* voor precies dat ene bestand in die
   map, en de browser zet het bestand daar rechtstreeks neer (met voortgang). Daarna legt de
@@ -826,12 +845,13 @@ node scripts/rooktest-shell.mjs http://localhost:3107 # alle pagina's -> /login,
 node scripts/test-snelinvoer.mjs                      # herkenning datum/tijd in de taak-popup (incl. zomer-/wintertijd)
 node scripts/test-taken.mjs                           # taken op naam: toewijzing, subtaken, projecten, rechten
 node scripts/test-uitgaven.mjs                        # uitgaven: bedragen, btw, CSV, uitlezen (nagebootst), ontbrekend/onzeker
+node scripts/test-bonnetje-heic.mjs [--claude]        # HEIC → JPEG (server + headless Chrome), foto's voor Claude; --claude: échte testbon
 node scripts/test-team.mjs                            # herkomst (CSRF), basis-URL voor mails, teambeheer-scripts
 node scripts/test-account.mjs                         # mailkluis (AES-GCM), SSRF-controle, profiel/mailbox-invoer, zoeken
 node scripts/test-brand-guard-parity.mjs              # social-port gelijk aan het origineel
 node scripts/test-rls.mjs                             # RLS van 0021 op lokale Postgres (PGlite): per tabel/bucket wie wat mag
 node scripts/test-drive.mjs                           # Google Drive: paden, namen, state (CSRF), token-kluis, Drive-API (nagebootst)
-node scripts/test-externals.mjs                       # serverExternalPackages laden zonder require(esm); gebouwde mailroutes (na build)
+node scripts/test-externals.mjs                       # serverExternalPackages (ook libheif-js) laden zonder require(esm); gebouwde mail-/uitgavenroutes (na build)
 node scripts/genereer-sql-editor.mjs --controleer     # SQL-bestanden actueel
 node scripts/teamlid-toevoegen.mjs --help             # teambeheer (niet uitvoeren zonder reden)
 node --experimental-strip-types scripts/rooktest-render.mjs   # social-renderer (lokale Chrome nodig)
@@ -918,6 +938,9 @@ Instellingen:
   imapflow, mailparser en nodemailer blijven external: die laadt Turbopack met `import()`
   (eigen ESM-build) en ze laden ook zonder require(esm). `node scripts/test-externals.mjs`
   controleert dit (na `npm run build` ook de gebouwde mailroutes, zonder require(esm)).
+  `libheif-js` (HEIC voor bonnetjes) is ook external: CommonJS zonder ESM-afhankelijkheden,
+  de wasm zit als base64 in `wasm-bundle.js` (geen los bestand om mee te tracen). De
+  prebuilt `sharp` kan geen HEIC lezen (geen HEVC-decoder) en wordt daarom niet gebruikt.
 
 **Let op — een gratis Supabase-project pauzeert na 1 week inactiviteit.** Zet het dan eerst
 weer aan in het Supabase-dashboard.
@@ -949,9 +972,9 @@ git push -u origin dashboard
 - **Mail:** de link in een taak die met "Taak maken" uit een mail is gemaakt werkt niet meer
   zodra die mail naar een andere map is verplaatst (het uid verandert dan).
 - **Agenda:** geen herhalende afspraken (bewust, voor nu).
-- **Bonnetjes:** HEIC-foto's worden opgeslagen maar niet automatisch uitgelezen en in de
-  meeste browsers niet als voorbeeld getoond (Safari/iPhone levert bij "Foto maken" gewoon
-  JPEG). Bedragen in andere valuta worden niet omgerekend. Het btw-overzicht is een indicatie.
+- **Bonnetjes:** een HEIC die al vóór deze versie is geüpload, wordt pas omgezet (en
+  getoond) na **Opnieuw automatisch uitlezen**. Bedragen in andere valuta worden niet
+  omgerekend. Het btw-overzicht is een indicatie.
 - **Social op de telefoon** is net als het origineel niet geoptimaliseerd voor kleine schermen.
 - **Bestanden:** bekijken/downloaden loopt via de server (gestreamd); heel grote downloads
   kunnen tegen de tijdslimiet van een Vercel-functie (60 s) aanlopen. Uploaden heeft die

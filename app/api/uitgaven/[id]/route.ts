@@ -1,6 +1,7 @@
 import { dbFout, fout, isUuid, json, leesJson, uitgavenRoute } from '@/lib/uitgaven/api';
 import { schrijfAiVelden, type UitgaveInvoer } from '@/lib/uitgaven/model';
 import { verwijder } from '@/lib/uitgaven/opslag';
+import { naDriveUitgave } from '@/lib/drive/kopieen';
 import {
   bestandenVan,
   metKolommen,
@@ -25,7 +26,7 @@ export const GET = uitgavenRoute(async (_request, ctx: Ctx, sb) => {
 });
 
 // PATCH /api/uitgaven/[id]  (alle velden optioneel) → { uitgave }
-export const PATCH = uitgavenRoute(async (request, ctx: Ctx, sb) => {
+export const PATCH = uitgavenRoute(async (request, ctx: Ctx, sb, lid) => {
   const { id } = await ctx.params;
   if (!isUuid(id)) return fout(404, 'Deze uitgave bestaat niet (meer).');
   const body = (await leesJson(request)) as UitgaveInvoer;
@@ -57,7 +58,12 @@ export const PATCH = uitgavenRoute(async (request, ctx: Ctx, sb) => {
   );
   if (error) throw dbFout(error);
   if (!data) return fout(404, 'Deze uitgave bestaat niet (meer).');
-  return json({ uitgave: naarUitgave(data as unknown as UitgaveRij) });
+  const nieuw = naarUitgave(data as unknown as UitgaveRij);
+  // Datum, leverancier of bedrag veranderd: de Drive-kopie hernoemen/verplaatsen (ná het antwoord).
+  if (nieuw.datum !== uitgave.datum || nieuw.leverancier !== uitgave.leverancier || nieuw.totaal !== uitgave.totaal) {
+    naDriveUitgave(lid, id);
+  }
+  return json({ uitgave: nieuw });
 });
 
 // DELETE /api/uitgaven/[id] → { ok: true }   (verwijdert ook de bestanden uit de opslag)

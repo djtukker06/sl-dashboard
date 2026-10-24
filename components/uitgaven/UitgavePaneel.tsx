@@ -288,6 +288,8 @@ export function UitgavePaneel({
     setFout('');
     try {
       const { uitgave: u } = await uitgavenApi.uitlezen(uitgave.id);
+      // Een HEIC-foto is bij het uitlezen omgezet naar JPEG: toon de nieuwe versie.
+      setBestanden(u.bestanden);
       const n = naarForm(u);
       const nieuw = new Set(ai);
       const y = { ...f };
@@ -444,7 +446,7 @@ export function UitgavePaneel({
                   ) : huidig.type === 'image/heic' || huidig.type === 'image/heif' ? (
                     <div className="ug-voorbeeld-leeg">
                       <UgIcoon naam="beeld" grootte={26} />
-                      <span>HEIC-foto: download om te bekijken</span>
+                      <span>HEIC-foto: wordt bij het uitlezen omgezet naar JPEG (of download om te bekijken)</span>
                     </div>
                   ) : (
                     <a href={bestandUrl(uitgave.id, huidig.id)} target="_blank" rel="noopener noreferrer" title="Groot openen">

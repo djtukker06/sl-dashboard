@@ -87,12 +87,19 @@ export const bestandUrl = (uitgaveId: string, bestandId: string, download = fals
 
 // ---------- foto's verkleinen ----------
 
+/** Normale foto's: langste zijde max. 2400 px. */
 const MAX_ZIJDE = 2400;
+/** Lange, smalle bon (verhouding ≥ 2,2): tot 4000 px, zodat de tekst leesbaar blijft (de server knipt hem voor Claude in delen). */
+const MAX_ZIJDE_LANG = 4000;
+const LANG = 2.2;
+const KWALITEIT = 0.86;
 
 /** Type van een gekozen bestand (sommige systemen geven HEIC/PDF zonder type door). */
 export function typeVan(f: File): BestandsType | null {
   if (isBestandsType(f.type)) return f.type;
-  const ext = f.name.toLowerCase().split('.').pop();
+  if (f.type === 'image/heic-sequence') return 'image/heic';
+  if (f.type === 'image/heif-sequence') return 'image/heif';
+  const ext = (f.name || '').toLowerCase().split('.').pop();
   if (ext === 'heic') return 'image/heic';
   if (ext === 'heif') return 'image/heif';
   if (ext === 'pdf') return 'application/pdf';
@@ -102,20 +109,51 @@ export function typeVan(f: File): BestandsType | null {
   return null;
 }
 
+const isHeic = (t: BestandsType) => t === 'image/heic' || t === 'image/heif';
+
 /**
- * Foto's worden in de browser verkleind tot max. 2400 px en als JPEG opgeslagen (sneller
- * uploaden, en ruim binnen de 5 MB die Claude per afbeelding accepteert). Lukt decoderen
- * niet (bv. HEIC in Chrome), dan gaat het origineel. PDF's blijven ongewijzigd.
+ * Foto's worden in de browser rechtop gezet (EXIF), verkleind tot max. 2400 px (lange
+ * bonnen 4000 px) en als JPEG opgeslagen: sneller uploaden en ruim binnen wat Claude per
+ * afbeelding accepteert. HEIC (iPhone) kan Chrome/Firefox niet lezen: die zetten we eerst om
+ * met libheif (wasm, pas geladen als het nodig is; `onOmzetten` meldt dat). Lukt ook dat
+ * niet, dan gaat het origineel en zet de server hem om. PDF's blijven ongewijzigd.
  */
-export async function bereidVoor(f: File): Promise<{ blob: Blob; type: BestandsType; naam: string }> {
+export async function bereidVoor(
+  f: File,
+  opties: { onOmzetten?: () => void } = {}
+): Promise<{ blob: Blob; type: BestandsType; naam: string; omgezet?: boolean }> {
   const type = typeVan(f);
   if (!type) throw new Error('Alleen foto’s (jpg, png, webp, heic) en PDF’s zijn toegestaan.');
   if (type === 'application/pdf') return { blob: f, type, naam: f.name };
+
+  let bron: ImageBitmap | HTMLCanvasElement | null = null;
   try {
-    const beeld = await createImageBitmap(f, { imageOrientation: 'from-image' });
-    const schaal = Math.min(1, MAX_ZIJDE / Math.max(beeld.width, beeld.height));
-    const w = Math.max(1, Math.round(beeld.width * schaal));
-    const h = Math.max(1, Math.round(beeld.height * schaal));
+    // Safari leest HEIC zelf; de rest leest jpg/png/webp. imageOrientation: rechtop volgens EXIF.
+    bron = await createImageBitmap(f, { imageOrientation: 'from-image' });
+  } catch {
+    bron = null;
+  }
+  let omgezet = false;
+  if (!bron && isHeic(type)) {
+    opties.onOmzetten?.();
+    try {
+      const { heicNaarCanvas } = await import('./heic');
+      bron = await heicNaarCanvas(f);
+      omgezet = true;
+    } catch (e) {
+      console.warn('[uitgaven] HEIC omzetten in de browser mislukt; de server probeert het', e);
+      bron = null;
+    }
+  }
+  if (!bron) return { blob: f, type, naam: f.name };
+
+  try {
+    const lang = Math.max(bron.width, bron.height);
+    const kort = Math.max(1, Math.min(bron.width, bron.height));
+    const max = lang / kort >= LANG ? MAX_ZIJDE_LANG : MAX_ZIJDE;
+    const schaal = Math.min(1, max / lang);
+    const w = Math.max(1, Math.round(bron.width * schaal));
+    const h = Math.max(1, Math.round(bron.height * schaal));
     const canvas = document.createElement('canvas');
     canvas.width = w;
     canvas.height = h;
@@ -123,20 +161,23 @@ export async function bereidVoor(f: File): Promise<{ blob: Blob; type: BestandsT
     if (!ctx) throw new Error('geen canvas');
     ctx.fillStyle = '#fff'; // transparante screenshots niet zwart maken
     ctx.fillRect(0, 0, w, h);
-    ctx.drawImage(beeld, 0, 0, w, h);
-    beeld.close();
-    const blob = await new Promise<Blob | null>((ok) => canvas.toBlob(ok, 'image/jpeg', 0.86));
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(bron, 0, 0, w, h);
+    const blob = await new Promise<Blob | null>((ok) => canvas.toBlob(ok, 'image/jpeg', KWALITEIT));
     if (!blob) throw new Error('geen blob');
     // Al klein genoeg en kleiner dan het resultaat? Dan het origineel houden.
     if (schaal === 1 && type === 'image/jpeg' && f.size <= blob.size) return { blob: f, type, naam: f.name };
-    const naam = f.name.replace(/\.[^.]+$/, '') + '.jpg';
-    return { blob, type: 'image/jpeg', naam: naam === '.jpg' ? 'bonnetje.jpg' : naam };
+    const naam = (f.name || 'bonnetje').replace(/\.[^.]+$/, '') + '.jpg';
+    return { blob, type: 'image/jpeg', naam: naam === '.jpg' ? 'bonnetje.jpg' : naam, omgezet };
   } catch {
     return { blob: f, type, naam: f.name };
+  } finally {
+    if ('close' in bron) bron.close();
   }
 }
 
-export type UploadFase = 'voorbereiden' | 'uploaden' | 'uitlezen' | 'klaar' | 'fout';
+export type UploadFase = 'voorbereiden' | 'omzetten' | 'uploaden' | 'uitlezen' | 'klaar' | 'fout';
 
 /**
  * Volledige upload van één bestand: verkleinen → signed URL → PUT naar Storage →
@@ -154,7 +195,7 @@ export async function uploadBonnetje(
   } = {}
 ): Promise<Uitgave> {
   opties.onFase?.('voorbereiden');
-  const { blob, type, naam } = await bereidVoor(f);
+  const { blob, type, naam } = await bereidVoor(f, { onOmzetten: () => opties.onFase?.('omzetten') });
   if (blob.size > MAX_BESTAND_BYTES) throw new Error('Dit bestand is te groot (max. 25 MB).');
   opties.onFase?.('uploaden');
   const doel = await api<{ uitgaveId: string; pad: string; signedUrl: string }>('/api/uitgaven/upload-url', {

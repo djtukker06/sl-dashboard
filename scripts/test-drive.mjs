@@ -526,12 +526,26 @@ test("kopieën na het antwoord (after), best effort; lib/invoice ongewijzigd", (
     ["app/api/invoices/[id]/restfactuur/route.ts", "factuur"],
     ["app/api/quotes/route.ts", "prijsopgave"],
     ["app/api/quotes/[id]/route.ts", "prijsopgave"],
-    ["app/api/uitgaven/[id]/bestanden/route.ts", "bonnetje"],
-    ["app/api/uitgaven/uit-mail/route.ts", "bonnetje"],
   ]) {
     const src = lees(f);
     assert.match(src, new RegExp(`naDrive\\(lid, '${soort}', `), f);
     assert.ok(!/await naDrive/.test(src), `${f}: niet wachten op Drive`);
+  }
+  // Bonnetjes: pas naar Drive nadat het uitlezen klaar is (naam JJJJ-MM-DD_leverancier_bedrag),
+  // en opnieuw (hernoemen/verplaatsen) na het wijzigen van datum, leverancier of bedrag.
+  assert.match(k, /export function naDriveUitgave\([^)]*\): void \{/);
+  assert.match(k, /exportBestandsnaam\(/);
+  assert.match(k, /v\.client\.wijzig\(driveId, \{ name: bron\.naam \}/);
+  assert.match(k, /soort !== 'bonnetje'/, "hernoemen alleen voor bonnetjes (facturen ongewijzigd)");
+  const uitlezen = lees("app/api/uitgaven/[id]/uitlezen/route.ts");
+  assert.match(uitlezen, /await leesUitgaveUit\(sb, id, vandaagNL\(\)\);\s*naDriveUitgave\(lid, id\);/);
+  assert.match(lees("app/api/uitgaven/uit-mail/route.ts"), /leesUitgaveUit\(sb, id, vandaagNL\(\)\);\s*naDriveUitgave\(lid, id\);/);
+  const bestanden = lees("app/api/uitgaven/[id]/bestanden/route.ts");
+  assert.match(bestanden, /if \(bestond\) naDriveUitgave\(lid, id\);/, "nieuwe upload: niet meteen naar Drive");
+  assert.ok(!/naDrive\(lid, 'bonnetje'/.test(bestanden), "geen kopie met de uploaddatum direct na het uploaden");
+  assert.match(lees("app/api/uitgaven/[id]/route.ts"), /nieuw\.datum !== uitgave\.datum[\s\S]*naDriveUitgave\(lid, id\)/);
+  for (const f of ["app/api/uitgaven/[id]/uitlezen/route.ts", "app/api/uitgaven/uit-mail/route.ts", "app/api/uitgaven/[id]/bestanden/route.ts", "app/api/uitgaven/[id]/route.ts"]) {
+    assert.ok(!/await naDrive/.test(lees(f)), `${f}: niet wachten op Drive`);
   }
   const diff = spawnSync("git", ["diff", "--name-only", "HEAD", "--", "lib/invoice", "components/InvoiceForm.tsx", "components/InvoicesTable.tsx", "components/QuotesTable.tsx", "app/(app)/facturen"], { cwd: ROOT, encoding: "utf8" });
   if (diff.status === 0) assert.equal(diff.stdout.trim(), "", "facturen-logica gewijzigd");

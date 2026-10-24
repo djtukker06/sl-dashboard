@@ -35,7 +35,7 @@ export function BonnetjeKnop({ className = 'db-knop', label = '+ Bonnetje' }: { 
   }
 
   const tekst =
-    fase === 'uploaden' || fase === 'voorbereiden' ? 'Uploaden…' : fase === 'uitlezen' ? 'Uitlezen…' : fase === 'klaar' ? 'Openen…' : label;
+    fase === 'omzetten' ? 'Foto omzetten…' : fase === 'uploaden' || fase === 'voorbereiden' ? 'Uploaden…' : fase === 'uitlezen' ? 'Uitlezen…' : fase === 'klaar' ? 'Openen…' : label;
   return (
     <>
       <button

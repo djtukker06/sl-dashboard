@@ -10,11 +10,12 @@ import { isBestandsType, MAX_BESTAND_BYTES, schoon, snuffelType, typeUitNaam } f
 import { nieuwPad, upload, verwijder } from '@/lib/uitgaven/opslag';
 import { heeftSoortKolom, kolomOntbreekt, moetUitgave } from '@/lib/uitgaven/repo';
 import { leesUitgaveUit } from '@/lib/uitgaven/uitlezen';
-import { naDrive } from '@/lib/drive/kopieen';
+import { naDriveUitgave } from '@/lib/drive/kopieen';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-export const maxDuration = 60;
+// IMAP + HEIC omzetten + Sonnet + zo nodig een tweede poging met Opus.
+export const maxDuration = 120;
 
 // POST /api/uitgaven/uit-mail  { map, uid, deel, onderwerp? } → { uitgave }
 // "Opslaan als uitgave" in de mail-lezer: haalt de bijlage server-side op via IMAP (zoals de
@@ -81,15 +82,16 @@ export const POST = uitgavenRoute(async (request, _ctx, sb, lid) => {
     await verwijder([pad]);
     throw dbFout(bestand.error);
   }
-  // Kopie naar Google Drive (Boekhouding/Bonnetjes/<jaar>), ná het antwoord en best effort.
-  naDrive(lid, 'bonnetje', (bestand.data as { id?: string } | null)?.id);
-
-  // Uitlezen mislukt nooit hard: dan blijft het een concept om zelf in te vullen.
+  // Uitlezen mislukt nooit hard: dan blijft het een concept om zelf in te vullen. Daarna de
+  // kopie naar Google Drive (Boekhouding/Bonnetjes/<jaar>, naam met datum/leverancier/bedrag),
+  // ná het antwoord en best effort.
   try {
     const uitgave = await leesUitgaveUit(sb, id, vandaagNL());
+    naDriveUitgave(lid, id);
     return json({ uitgave }, 201);
   } catch (e) {
     console.error('[uitgaven] uitlezen na mail', (e as Error)?.message ?? e);
+    naDriveUitgave(lid, id);
     const { uitgave } = await moetUitgave(sb, id);
     return json({ uitgave }, 201);
   }

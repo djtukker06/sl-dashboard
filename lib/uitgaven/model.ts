@@ -552,6 +552,8 @@ export interface RuwUitgelezen {
   omschrijving?: unknown;
   categorie?: unknown;
   betaalmethode?: unknown;
+  /** Btw per tarief: [{ tarief: '21%', btw: 2.83 }]. */
+  btwSpecificatie?: unknown;
   /** Per verplicht veld 'zeker' of 'onzeker'. */
   zekerheid?: unknown;
 }
@@ -688,6 +690,12 @@ export function normaliseerUitgelezen(r: RuwUitgelezen, vandaag: string): Uitgel
   let btwBedrag = leesBedrag(r.btwBedrag);
   let btwTarief = leesTarief(r.btwTarief);
   if (btwBedrag !== null && totaal !== null && Math.abs(btwBedrag) > Math.abs(totaal)) btwBedrag = null;
+  // Geen btw-totaal maar wel een specificatie per tarief: de som daarvan.
+  if (btwBedrag === null && Array.isArray(r.btwSpecificatie)) {
+    const regels = r.btwSpecificatie.map((x) => leesBedrag((x as { btw?: unknown } | null)?.btw)).filter((x): x is number => x !== null);
+    const som = Math.round(regels.reduce((t, x) => t + x, 0) * 100) / 100;
+    if (regels.length && (totaal === null || Math.abs(som) <= Math.abs(totaal))) btwBedrag = som;
+  }
   if (btwBedrag === null && totaal !== null) btwBedrag = btwUitTotaal(totaal, btwTarief);
   // Tarief afleiden uit bedragen als het ontbreekt (alleen bij een duidelijke match).
   if (!btwTarief && totaal && btwBedrag !== null) {

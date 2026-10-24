@@ -86,6 +86,7 @@ export function useUploads({
 
 export const FASE_TEKST: Record<UploadFase, string> = {
   voorbereiden: 'Voorbereiden…',
+  omzetten: 'Foto omzetten…',
   uploaden: 'Uploaden…',
   uitlezen: 'Uitlezen…',
   klaar: 'Klaar',

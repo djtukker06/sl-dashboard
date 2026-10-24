@@ -2,7 +2,7 @@ import { dbFout, fout, isUuid, json, leesJson, uitgavenRoute } from '@/lib/uitga
 import { MAX_BESTAND_BYTES, schoon, typeUitNaam } from '@/lib/uitgaven/model';
 import { grootte, isPadVan, verwijder } from '@/lib/uitgaven/opslag';
 import { heeftSoortKolom, kolomOntbreekt, moetUitgave } from '@/lib/uitgaven/repo';
-import { naDrive } from '@/lib/drive/kopieen';
+import { naDriveUitgave } from '@/lib/drive/kopieen';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -32,6 +32,8 @@ export const POST = uitgavenRoute(async (request, ctx: Ctx, sb, lid) => {
 
   // Concept aanmaken als het nog niet bestaat (twee gelijktijdige aanmeldingen: de tweede doet niets).
   // Soort alvast uit het bestand (PDF = inkoopfactuur, foto = bonnetje); aan te passen in het paneel.
+  const { data: bestond, error: zoekFout } = await sb.from('expenses').select('id').eq('id', id).maybeSingle();
+  if (zoekFout) throw dbFout(zoekFout);
   const basis: Record<string, unknown> = { id, source: 'upload', created_by: lid.userId };
   const soort = type === 'application/pdf' ? 'inkoopfactuur' : 'bonnetje';
   let nieuw = await sb
@@ -42,7 +44,7 @@ export const POST = uitgavenRoute(async (request, ctx: Ctx, sb, lid) => {
   }
   if (nieuw.error) throw dbFout(nieuw.error);
 
-  const { data: bestand, error } = await sb
+  const { error } = await sb
     .from('expense_files')
     .insert({
       expense_id: id,
@@ -54,8 +56,10 @@ export const POST = uitgavenRoute(async (request, ctx: Ctx, sb, lid) => {
     .select('id')
     .maybeSingle();
   if (error && error.code !== '23505') throw dbFout(error);
-  // Kopie naar Google Drive (Boekhouding/Bonnetjes/<jaar>), ná het antwoord en best effort.
-  naDrive(lid, 'bonnetje', (bestand as { id?: string } | null)?.id);
+  // Kopie naar Google Drive (Boekhouding/Bonnetjes/<jaar>): bij een nieuwe upload pas nadat het
+  // uitlezen klaar is (uitlezen-route), zodat datum/leverancier/bedrag in de naam staan. Een
+  // extra bestand bij een bestaande uitgave gaat meteen (ná het antwoord, best effort).
+  if (bestond) naDriveUitgave(lid, id);
 
   const { uitgave } = await moetUitgave(sb, id);
   return json({ uitgave }, 201);

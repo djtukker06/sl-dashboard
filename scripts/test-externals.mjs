@@ -7,6 +7,8 @@
 //      sanitize-html 2.18 faalt hier (CJS die htmlparser2 12, alleen ESM, require't) en mag
 //      dus niet external zijn: Turbopack bundelt hem.
 //   2. sanitize-html zelf faalt zonder require(esm): bewijst dat de controle het probleem ziet.
+//   1b. libheif-js (HEIC → JPEG voor bonnetjes): de subpath wasm-bundle.js laadt met require()
+//      en decodeert (op macOS, via sips) echt een HEIC.
 //   3. Na `npm run build`: de gebouwde mail- en uitgaven-routes laden zonder require(esm)
 //      (zoals de server ze laadt), inclusief async modules met ESM-externals.
 //
@@ -58,6 +60,32 @@ for (const pkg of externals) {
   if (!f) ok(`${pkg}: laadt met ${wijze}() zonder require(esm)`);
   else mis(pkg, `${wijze}(): ${f}`);
 }
+// libheif-js: lib/uitgaven/beeld.ts laadt de subpath wasm-bundle.js (wasm als base64 in de .js).
+// Laden zonder require(esm) en (op macOS, met sips) echt een HEIC decoderen.
+{
+  const os = await import("node:os");
+  const map = fs.mkdtempSync(path.join(os.tmpdir(), "heic-"));
+  const heic = path.join(map, "t.heic");
+  const bmp = path.join(map, "t.bmp");
+  // 1×1 BMP (24-bit) als bron voor sips; zonder sips alleen het laden controleren.
+  const bmpKop = Buffer.from("424d3a0000000000000036000000280000000100000001000000010018000000000004000000130b0000130b00000000000000000000", "hex");
+  fs.writeFileSync(bmp, Buffer.concat([bmpKop, Buffer.from([0x20, 0x40, 0xc0, 0])]));
+  const metHeic = spawnSync("sips", ["-s", "format", "heic", bmp, "--out", heic], { encoding: "utf8" }).status === 0 && fs.existsSync(heic);
+  const r = zonderRequireEsm(`
+    const lib = require('libheif-js/wasm-bundle.js');
+    if (typeof lib.HeifDecoder !== 'function') { console.error('geen HeifDecoder'); process.exit(1); }
+    const pad = ${JSON.stringify(metHeic ? heic : "")};
+    if (pad) {
+      const b = new lib.HeifDecoder().decode(require('fs').readFileSync(pad));
+      if (!b.length) { console.error('HEIC niet gedecodeerd'); process.exit(1); }
+      const w = b[0].get_width(), h = b[0].get_height();
+      b[0].display({ data: new Uint8ClampedArray(w * h * 4), width: w, height: h }, (r) => process.exit(r ? 0 : 1));
+    }`);
+  fs.rmSync(map, { recursive: true, force: true });
+  if (r.status === 0) ok(`libheif-js/wasm-bundle.js laadt met require() zonder require(esm)${metHeic ? " en decodeert een HEIC" : " (HEIC-decodering overgeslagen: geen sips)"}`);
+  else mis("libheif-js/wasm-bundle.js", (r.stderr || "").trim().split("\n").slice(-1)[0] || `exit ${r.status}`);
+}
+
 // mailparser leest HTML-mail via html-to-text: één keer echt parsen.
 {
   const r = zonderRequireEsm(
@@ -98,7 +126,7 @@ const SERVER = path.join(ROOT, ".next", "server", "app");
 if (!fs.existsSync(SERVER)) {
   console.log("  (stap 3 overgeslagen: eerst npm run build)");
 } else {
-  const routes = ["api/mail/overzicht", "api/mail/berichten", "api/mail/berichten/[uid]", "api/mail/verzenden", "api/uitgaven/uit-mail", "api/drive/diagnose"];
+  const routes = ["api/mail/overzicht", "api/mail/berichten", "api/mail/berichten/[uid]", "api/mail/verzenden", "api/uitgaven/uit-mail", "api/uitgaven/[id]/uitlezen", "api/uitgaven/[id]/bestanden", "api/uitgaven/[id]", "api/drive/diagnose"];
   const laad = `
     const path = require('node:path');
     (async () => {

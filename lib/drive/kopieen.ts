@@ -3,6 +3,7 @@ import { after } from 'next/server';
 import type { Teamlid, TeamlidBewijs } from '@/lib/auth/team';
 import { tabelOntbreekt } from '@/lib/db/ontbreekt';
 import { veiligeBestandsnaam } from '@/lib/invoice/bestandsnaam';
+import { exportBestandsnaam, isDatum } from '@/lib/uitgaven/model';
 import { ontbrekendeEnv } from './config';
 import { bonnetjeNaam, boekhoudPad, dagVan, DriveFout, foutTekst, jaarVan, MELDING, metNummer, type KopieSoort } from './kern';
 import { verbind, type Verbinding } from './koppeling';
@@ -69,22 +70,45 @@ async function leesBron(v: Verbinding, soort: KopieSoort, id: string): Promise<B
   }
   const { data } = await v.service
     .from('expense_files')
-    .select('storage_path, file_name, mime_type, created_at, expenses(expense_date)')
+    .select('expense_id, storage_path, file_name, mime_type, created_at, expenses(expense_date, supplier, total_amount)')
     .eq('id', id)
     .maybeSingle();
   if (!data?.storage_path) return null;
-  const uitgave = (Array.isArray(data.expenses) ? data.expenses[0] : data.expenses) as { expense_date?: string | null } | null;
-  const datum = uitgave?.expense_date || data.created_at;
+  const uitgave = (Array.isArray(data.expenses) ? data.expenses[0] : data.expenses) as {
+    expense_date?: string | null;
+    supplier?: string | null;
+    total_amount?: number | string | null;
+  } | null;
+  const mime = data.mime_type || 'application/octet-stream';
+  // Datum bekend (uitgelezen of zelf ingevuld): JJJJ-MM-DD_leverancier_bedrag.ext, net als de
+  // export voor de boekhouder, in de map van dat jaar. Nog geen datum: de uploaddatum en de
+  // bestandsnaam; zodra de gegevens er zijn, hernoemt/verplaatst kopieer() het bestand.
+  if (uitgave?.expense_date && isDatum(uitgave.expense_date)) {
+    const { data: broers } = await v.service.from('expense_files').select('id').eq('expense_id', data.expense_id).order('created_at');
+    const volgnummer = Math.max(1, ((broers ?? []) as { id: string }[]).findIndex((b) => b.id === id) + 1);
+    const totaal = uitgave.total_amount === null || uitgave.total_amount === undefined ? null : Number(uitgave.total_amount);
+    return {
+      pad: data.storage_path,
+      bucket: 'uitgaven',
+      naam: exportBestandsnaam(
+        { datum: uitgave.expense_date, leverancier: uitgave.supplier || '', totaal: Number.isFinite(totaal) ? totaal : null },
+        mime,
+        volgnummer
+      ),
+      mime,
+      jaar: jaarVan(uitgave.expense_date)
+    };
+  }
   return {
     pad: data.storage_path,
     bucket: 'uitgaven',
-    naam: bonnetjeNaam(dagVan(datum), data.file_name || data.storage_path.split('/').pop() || 'bonnetje'),
-    mime: data.mime_type || 'application/octet-stream',
-    jaar: jaarVan(datum)
+    naam: bonnetjeNaam(dagVan(data.created_at), data.file_name || data.storage_path.split('/').pop() || 'bonnetje'),
+    mime,
+    jaar: jaarVan(data.created_at)
   };
 }
 
-export type KopieUitkomst = 'gekopieerd' | 'bijgewerkt' | 'overgeslagen' | 'geen_bestand';
+export type KopieUitkomst = 'gekopieerd' | 'bijgewerkt' | 'hernoemd' | 'overgeslagen' | 'geen_bestand';
 export interface KopieResultaat {
   uitkomst: KopieUitkomst;
   /** Map in Drive, bv. "Boekhouding/Facturen/2026". */
@@ -111,17 +135,29 @@ async function kopieer(v: Verbinding, soort: KopieSoort, id: string, controleer:
   }
 
   let driveId: string | null = (bestaand?.drive_file_id as string | undefined) ?? null;
+  let inDrive: { name?: string; parents?: string[] } | null = null;
   if (driveId && controleer) {
     // Nog in Drive (niet weggegooid)? Anders opnieuw kopiëren.
     try {
-      const b = await v.client.bestand(driveId, 'id,trashed');
+      const b = await v.client.bestand(driveId, 'id,name,parents,trashed');
       if (b.trashed) driveId = null;
+      else inDrive = b;
     } catch (e) {
       if (e instanceof DriveFout && e.code === 'niet_gevonden') driveId = null;
       else throw e;
     }
   }
-  if (driveId && bestaand?.bron_pad === bron.pad) return r('overgeslagen');
+  if (driveId && bestaand?.bron_pad === bron.pad) {
+    // Bonnetjes: zelfde bestand, maar misschien nu met datum/leverancier/bedrag → hernoemen
+    // en zo nodig naar de map van het juiste jaar verplaatsen (facturen: ongewijzigd).
+    if (soort !== 'bonnetje' || !inDrive) return r('overgeslagen');
+    const ouder = await zorgVoorPad(v, boekhoudPad(soort, bron.jaar));
+    const ouders = inDrive.parents ?? [];
+    const juisteMap = ouders.includes(ouder);
+    if (inDrive.name === bron.naam && juisteMap) return r('overgeslagen');
+    await v.client.wijzig(driveId, { name: bron.naam }, juisteMap ? undefined : { naar: ouder, van: ouders });
+    return r('hernoemd');
+  }
 
   const { data: blob, error: dlFout } = await v.service.storage.from(bron.bucket).download(bron.pad);
   if (dlFout || !blob) throw new Error(`Bestand niet op te halen uit Storage (${bron.bucket}/${bron.pad}): ${dlFout?.message ?? 'leeg'}`);
@@ -217,6 +253,41 @@ export function naDrive(lid: Teamlid, soort: KopieSoort, id: string | null | und
     );
   } catch (e) {
     console.error(`[drive] kopie ${soort} ${id ?? '?'}: plannen mislukt, ${foutTekst(e)}`);
+  }
+}
+
+/**
+ * Alle bestanden van een uitgave (bonnetje) naar Drive, ná het antwoord: aangeroepen nadat het
+ * uitlezen klaar is en na het (handmatig) wijzigen van datum, leverancier of bedrag. Nieuwe
+ * bestanden worden gekopieerd als JJJJ-MM-DD_leverancier_bedrag.ext; bestaande kopieën
+ * hernoemd en zo nodig naar de juiste jaarmap verplaatst. Gooit nooit, wacht nergens op.
+ */
+export function naDriveUitgave(lid: Teamlid, uitgaveId: string | null | undefined): void {
+  const label = `kopie bonnetje(s) van uitgave ${uitgaveId ?? '?'}`;
+  try {
+    if (!uitgaveId || lid.overgang) return;
+    const ontbreekt = ontbrekendeEnv();
+    if (ontbreekt.length) {
+      console.info(`[drive] ${label}: overgeslagen, env ontbreekt (${ontbreekt.join(', ')})`);
+      return;
+    }
+    const bewijs = lid.bewijs;
+    plan(label, () =>
+      metDriveLog(
+        label,
+        async () => {
+          const v = await verbind(bewijs);
+          const { data, error } = await v.service.from('expense_files').select('id').eq('expense_id', uitgaveId).order('created_at');
+          if (error) throw error;
+          const uit: KopieResultaat[] = [];
+          for (const b of (data ?? []) as { id: string }[]) uit.push(await kopieer(v, 'bonnetje', b.id, true));
+          return uit;
+        },
+        (r) => (r.length ? r.map((x) => (x.uitkomst === 'geen_bestand' ? 'geen bestand' : `${x.uitkomst} → ${x.map}/${x.naam}`)).join('; ') : 'geen bestanden')
+      )
+    );
+  } catch (e) {
+    console.error(`[drive] ${label}: plannen mislukt, ${foutTekst(e)}`);
   }
 }
 

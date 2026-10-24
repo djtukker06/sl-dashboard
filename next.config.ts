@@ -10,7 +10,10 @@ const nextConfig: NextConfig = {
   // load external module sanitize-html"); door hem te laten bundelen lost Turbopack de
   // CJS→ESM-import zelf op, onafhankelijk van de Node-versie. Controle:
   // scripts/test-externals.mjs.
-  serverExternalPackages: ['@sparticuz/chromium', 'puppeteer-core', 'imapflow', 'mailparser', 'nodemailer'],
+  // libheif-js (HEIC → JPEG voor bonnetjes, lib/uitgaven/beeld.ts) is CommonJS zonder
+  // ESM-afhankelijkheden en laadt dus gewoon met require(); als external hoeft Turbopack de
+  // 2 MB grote wasm-bundel (wasm als base64 in de .js, geen los .wasm-bestand) niet te verwerken.
+  serverExternalPackages: ['@sparticuz/chromium', 'puppeteer-core', 'imapflow', 'mailparser', 'nodemailer', 'libheif-js'],
   // De output-file-tracer volgt alleen require()/import-statements, niet de losse
   // Chromium-binaire bestanden (.br) die @sparticuz/chromium pas tijdens het draaien
   // dynamisch inleest — die moeten dus expliciet worden meegenomen in de deploy-bundel.
