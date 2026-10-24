@@ -270,6 +270,8 @@ export function parseBoekingInvoer(
   if (!isDatum(datum)) return { ok: false, fout: 'Vul een geldige datum in.', veld: 'datum' };
   if (datum < '2000-01-01') return { ok: false, fout: 'Die datum is te ver in het verleden.', veld: 'datum' };
   if (datum > plusDagen(opties.vandaag, 366)) return { ok: false, fout: 'Die datum ligt te ver in de toekomst.', veld: 'datum' };
+  const beginRekening = stam.rekeningen.find((x) => x.id === rekeningId)?.begindatum;
+  if (beginRekening && datum < beginRekening) return { ok: false, fout: 'Deze datum ligt vóór het beginsaldo van deze rekening.', veld: 'datum' };
 
   // Omschrijving
   const omschrijving = tekst(body.omschrijving, 200);

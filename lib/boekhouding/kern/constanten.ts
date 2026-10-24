@@ -49,7 +49,7 @@ export const STANDAARD_GROOTBOEK: GrootboekSeed[] = [
   { code: '4100', naam: 'Kantoor & werkplek', soort: 'kosten', rubriek: 'kosten', rgs: 'WBed', btw: '21' },
   { code: '4200', naam: 'Reiskosten', soort: 'kosten', rubriek: 'kosten', rgs: 'WBed', btw: '21' },
   { code: '4300', naam: 'Marketing & reclame', soort: 'kosten', rubriek: 'kosten', rgs: 'WBed', btw: '21' },
-  { code: '4400', naam: 'Representatie', soort: 'kosten', rubriek: 'kosten', rgs: 'WBed', btw: '21', hint: 'Fiscaal beperkt aftrekbaar' },
+  { code: '4400', naam: 'Representatie', soort: 'kosten', rubriek: 'kosten', rgs: 'WBed', btw: 'geen', hint: 'Btw niet aftrekbaar (horeca); kosten fiscaal beperkt aftrekbaar' },
   { code: '4500', naam: 'Opleiding', soort: 'kosten', rubriek: 'kosten', rgs: 'WBed', btw: '21' },
   { code: '4600', naam: 'Uitbesteed werk', soort: 'kosten', rubriek: 'kosten', rgs: 'WBed', btw: '21' },
   { code: '4700', naam: 'Telefoon & internet', soort: 'kosten', rubriek: 'kosten', rgs: 'WBed', btw: '21' },

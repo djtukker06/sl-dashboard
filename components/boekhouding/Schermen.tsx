@@ -10,7 +10,7 @@ import { onverdeeldVermogen, rekeningInfo } from '@/lib/boekhouding/kern/rapport
 import { beginvermogenVoorstel, memoriaalRekeningen } from '@/lib/boekhouding/kern/memoriaal';
 import { administratieStart } from '@/lib/boekhouding/jaarwerk';
 import { BedrijfsgegevensForm, GrootboekBeheer, MemoriaalBeheer, VennotenForm, type MemoriaalRij } from './InstellingenBeheer';
-import { btwPerKwartaal, journaal } from '@/lib/boekhouding/kern/journaal';
+import { administratieBegin, btwPerKwartaal, journaal } from '@/lib/boekhouding/kern/journaal';
 import {
   betalingSuggesties,
   bonOntbreekt,
@@ -46,7 +46,7 @@ export async function BankScherm({ repo, sp, demoReden }: { repo: BoekhoudRepo; 
   const { stam, boekingen, koppelingen, facturen, uitgaven, bronExtra, activa } = await laadAlles(repo);
   const vandaag = vandaagNL();
   // Btw uit facturen en bonnetjes per kwartaal (de losse bankregels telt de pagina zelf mee).
-  const bronBtw = Object.fromEntries(btwPerKwartaal(journaal({ ...stam, rekeningen: [] }, { boekingen: [], facturen, uitgaven, bronExtra })));
+  const bronBtw = Object.fromEntries(btwPerKwartaal(journaal({ ...stam, rekeningen: [] }, { boekingen: [], facturen, uitgaven, bronExtra, start: administratieBegin(stam) })));
   const openId = een(sp.open);
   const jaarTekst = een(sp.jaar);
   const kw = Number(een(sp.kw));
@@ -177,11 +177,18 @@ export async function OpenstaandScherm({ repo, demoReden }: { repo: BoekhoudRepo
   const vandaag = vandaagNL();
   const bankNaam = new Map(stam.rekeningen.map((r) => [r.id, r.naam]));
   const gekoppeld = new Set(koppelingen.map((k) => k.boekingId));
-  const fOpen = factuurPosten(facturen, koppelingen, vandaag).filter((p) => p.open !== 0);
-  const uOpen = uitgavePosten(uitgaven, koppelingen, vandaag).filter((p) => p.open !== 0);
+  const fOpenAlle = factuurPosten(facturen, koppelingen, vandaag).filter((p) => p.open !== 0);
+  const uOpenAlle = uitgavePosten(uitgaven, koppelingen, vandaag).filter((p) => p.open !== 0);
+  // Documenten van vóór de start van de administratie staan niet in de balans (pas als ze na
+  // de start betaald worden, als openingspost), dus ook niet in de openstaande posten. Koppelen
+  // aan een bankregel kan wel (via Bank & boekingen).
+  const start = administratieBegin(stam);
+  const naStart = (p: { doc: { datum: string | null } }) => !start || !p.doc.datum || p.doc.datum >= start;
+  const fOpen = fOpenAlle.filter(naStart);
+  const uOpen = uOpenAlle.filter(naStart);
   const besteVoor = new Map<string, string>();
   for (const b of boekingen) {
-    const s = koppelSuggesties(b, fOpen, uOpen, koppelingen, 1)[0];
+    const s = koppelSuggesties(b, fOpenAlle, uOpenAlle, koppelingen, 1)[0];
     if (s) besteVoor.set(b.id, s.bronId);
   }
   const naarRij = (bron: 'factuur' | 'uitgave', p: OpenPost<FactuurBron> | OpenPost<UitgaveBron>, titel: string, sub: string): OpenRij => ({

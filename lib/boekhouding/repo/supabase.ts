@@ -2,7 +2,7 @@ import 'server-only';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { tabelOntbreekt } from '@/lib/db/ontbreekt';
 import { logFout } from '@/lib/log';
-import { naarCenten } from '../kern/geld';
+import { leesCenten } from '../kern/geld';
 import { isBtwCode } from '../kern/btw';
 import { isKwartaal } from '../kern/periode';
 import { isImportFormaat, type Boeking, type BoekingWaarde, type Grootboekrekening, type ImportFormaat, type Instellingen, type Rekening, type Stamdata, type Vennoot } from '../model';
@@ -57,10 +57,8 @@ export function bkDbFout(error: unknown): BoekhoudFout {
   return new BoekhoudFout(500, 'Er ging iets mis bij het opslaan of ophalen van de boekhouding.');
 }
 
-const centen = (v: unknown): number => {
-  const c = naarCenten(v);
-  return c === null ? 0 : c;
-};
+// bigint-centenkolommen: niet schalen (naarCenten() leest euro's en zou ×100 doen).
+const centen = leesCenten;
 
 type Rij = Record<string, unknown>;
 

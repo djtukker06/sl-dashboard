@@ -450,10 +450,14 @@ export function kapitaalVergelijking(posten: readonly JournaalPost[], stam: Pick
  */
 export function onverdeeldVermogen(posten: readonly JournaalPost[], grootboek: readonly Grootboekrekening[], jaar: number): Centen {
   const info = rekeningInfo(grootboek);
-  const voor = mutaties(posten, null, jaarEinde(jaar - 1));
-  let rest = -vol(mutaties(posten, null, jaarEinde(jaar)), GB.beginbalans);
-  for (const [code, v] of voor) if (isResultaatSoort(info(code).soort)) rest -= v;
-  return rest;
+  // Zelfde logica als balans(): na de afsluitpost van dit jaar staat het resultaat van eerdere
+  // jaren al op 0900 (en de resultaatrekeningen op 0), dus niet nog een keer aftrekken.
+  const totEind = mutaties(posten, null, jaarEinde(jaar));
+  const ditJaar = mutaties(posten, jaarBegin(jaar), jaarEinde(jaar), { zonderAfsluiting: true });
+  const afgesloten = posten.some((p) => isAfsluiting(p) && jaarVan(p.datum) === jaar);
+  let rest = -vol(totEind, GB.beginbalans);
+  for (const [code, v] of totEind) if (isResultaatSoort(info(code).soort)) rest -= afgesloten ? v : v - (ditJaar.get(code) ?? 0);
+  return rest === 0 ? 0 : rest;
 }
 
 // ---------------------------------------------------------------------------------

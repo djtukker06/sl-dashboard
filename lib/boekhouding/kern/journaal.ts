@@ -23,6 +23,7 @@ import {
   uitgaveBtwCode,
   uitgaveGrootboek,
   uitgaveTeltNiet,
+  uitgaveViaBank,
   type BronExtra,
   type FactuurBron,
   type Koppeling,
@@ -451,6 +452,68 @@ export interface JournaalInvoer {
   bronExtra?: BronExtra[];
   activa?: Activum[];
   aangiften?: AangifteInJournaal[];
+  /**
+   * Begin van de administratie. Weggelaten: afgeleid uit de stamdata (administratieBegin).
+   * null: geen startfilter.
+   */
+  start?: Datum | null;
+}
+
+/**
+ * Het begin van de administratie zoals de gebruiker het heeft ingesteld: de startdatum of het
+ * vroegste beginsaldo van een rekening. null als niets is ingesteld (dan telt alles mee).
+ */
+export function administratieBegin(stam: Stamdata): Datum | null {
+  const k = [stam.instellingen.startdatum, ...stam.rekeningen.map((r) => r.begindatum)].filter((x): x is string => !!x);
+  return k.length ? k.sort()[0] : null;
+}
+
+/**
+ * Bankregels die meetellen: niet vóór de begindatum van hun rekening (het beginsaldo bevat
+ * die mutaties al; zelfde regel als saldoPerRekening/lopendSaldo).
+ */
+export function boekingenVanafBegin<T extends Pick<Boeking, 'rekeningId' | 'datum'>>(boekingen: readonly T[], stam: Stamdata): T[] {
+  const begin = new Map(stam.rekeningen.map((r) => [r.id, r.begindatum]));
+  return boekingen.filter((b) => {
+    const bd = b.rekeningId ? begin.get(b.rekeningId) : null;
+    return !bd || b.datum >= bd;
+  });
+}
+
+/** Documenten (facturen/bonnetjes) vanaf het begin van de administratie. */
+export function vanafStart<T extends { datum: Datum | null }>(docs: readonly T[], start: Datum | null): T[] {
+  return start ? docs.filter((d) => !d.datum || d.datum >= start) : [...docs];
+}
+
+/**
+ * Een factuur of bonnetje van vóór de start telt niet als omzet/kosten (dat hoort bij de
+ * periode vóór de administratie). Wordt het na de start betaald (koppeling met een bankregel),
+ * dan komt het betaalde deel als openingspost op de startdatum:
+ *   factuur  D 1300 debiteuren / C 0900 beginbalans
+ *   bonnetje D 0900 beginbalans / C 1600 crediteuren
+ * zonder btw. De betaling (bank tegen 1300/1600) maakt de post dan weer nul.
+ */
+function openingPost(soort: 'factuur' | 'uitgave', id: string, naam: string, bedrag: Centen, start: Datum): JournaalPost | null {
+  if (!bedrag) return null;
+  const regels =
+    soort === 'factuur'
+      ? [regel(GB.debiteuren, bedrag, 'debet'), regel(GB.beginbalans, bedrag, 'credit')]
+      : [regel(GB.beginbalans, bedrag, 'debet'), regel(GB.crediteuren, bedrag, 'credit')];
+  return assertSluit({
+    id: `opening-${soort}:${id}`,
+    bron: 'beginsaldo',
+    bronId: id,
+    datum: start,
+    omschrijving: `Openstaand bij start · ${naam}`,
+    regels: zonderNul(regels)
+  });
+}
+
+/** Betaalde deel (koppelingen) begrensd tot het documenttotaal, met het teken van het totaal. */
+function betaaldDeel(totaal: Centen, ks: readonly Koppeling[] | undefined): Centen {
+  const som = (ks ?? []).reduce((t, k) => t + k.bedrag, 0);
+  if (totaal >= 0) return Math.max(0, Math.min(totaal, som));
+  return Math.min(0, Math.max(totaal, som));
 }
 
 /** Koppelingen per boeking (alleen van boekingen die bestaan). */
@@ -471,15 +534,36 @@ export function extraSleutel(bron: string, id: string): string {
 /** Het journaal van alle bronnen, op datum. */
 export function journaal(stam: Stamdata, invoer: JournaalInvoer): JournaalPost[] {
   const ctx = contextUit(stam);
-  const perBoeking = koppelingenPerBoeking(invoer.koppelingen ?? []);
+  const start = invoer.start === undefined ? administratieBegin(stam) : invoer.start;
+  const boekingen = boekingenVanafBegin(invoer.boekingen, stam);
+  const ids = new Set(boekingen.map((b) => b.id));
+  const koppelingen = (invoer.koppelingen ?? []).filter((k) => ids.has(k.boekingId));
+  const perBoeking = koppelingenPerBoeking(koppelingen);
+  const perDoc = new Map<string, Koppeling[]>();
+  for (const k of koppelingen) {
+    const key = extraSleutel(k.bron, k.bronId);
+    perDoc.set(key, [...(perDoc.get(key) ?? []), k]);
+  }
   const extra = new Map((invoer.bronExtra ?? []).map((e) => [extraSleutel(e.bron, e.bronId), e]));
   const { perBoeking: actBoeking, perUitgave: actUitgave } = activeringen(invoer.activa ?? []);
+  const voorStart = (d: Datum | null) => !!start && !!d && d < start;
+  const factuurPost = (f: FactuurBron): JournaalPost[] => {
+    if (!voorStart(f.datum)) return [factuurNaarPost(f, extra.get(extraSleutel('factuur', f.id)))];
+    const p = openingPost('factuur', f.id, `Factuur ${f.nummer} · ${f.klant}`, betaaldDeel(f.totaal, perDoc.get(extraSleutel('factuur', f.id))), start as Datum);
+    return p ? [p] : [];
+  };
+  const uitgavePost = (u: UitgaveBron): JournaalPost[] => {
+    if (!voorStart(u.datum)) return [uitgaveNaarPost(u, ctx, extra.get(extraSleutel('uitgave', u.id)), actUitgave.get(u.id)) ?? []].flat();
+    if (uitgaveTeltNiet(u) || !uitgaveViaBank(u) || u.totaal === null) return [];
+    const p = openingPost('uitgave', u.id, `Bonnetje ${u.leverancier || u.omschrijving || ''}`.trim(), betaaldDeel(u.totaal, perDoc.get(extraSleutel('uitgave', u.id))), start as Datum);
+    return p ? [p] : [];
+  };
   const posten: JournaalPost[] = [
     ...beginsaldoPosten(stam),
-    ...invoer.boekingen.map((b) => boekingNaarPost(b, ctx, perBoeking.get(b.id), actBoeking.get(b.id))),
+    ...boekingen.map((b) => boekingNaarPost(b, ctx, perBoeking.get(b.id), actBoeking.get(b.id))),
     ...(invoer.memoriaal ?? []).map(memoriaalNaarPost),
-    ...(invoer.facturen ?? []).map((f) => factuurNaarPost(f, extra.get(extraSleutel('factuur', f.id)))),
-    ...(invoer.uitgaven ?? []).flatMap((u) => uitgaveNaarPost(u, ctx, extra.get(extraSleutel('uitgave', u.id)), actUitgave.get(u.id)) ?? []),
+    ...(invoer.facturen ?? []).flatMap(factuurPost),
+    ...(invoer.uitgaven ?? []).flatMap(uitgavePost),
     ...(invoer.activa ?? []).flatMap(activumPosten)
   ];
   for (const a of invoer.aangiften ?? []) {

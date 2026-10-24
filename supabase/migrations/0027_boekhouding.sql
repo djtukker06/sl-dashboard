@@ -961,7 +961,7 @@ insert into public.bk_grootboek (code, naam, soort, rubriek, rgs_code, btw_stand
   ('4100', 'Kantoor & werkplek', 'kosten', 'kosten', 'WBed', '21', null, true, 4100),
   ('4200', 'Reiskosten', 'kosten', 'kosten', 'WBed', '21', null, true, 4200),
   ('4300', 'Marketing & reclame', 'kosten', 'kosten', 'WBed', '21', null, true, 4300),
-  ('4400', 'Representatie', 'kosten', 'kosten', 'WBed', '21', 'Fiscaal beperkt aftrekbaar', true, 4400),
+  ('4400', 'Representatie', 'kosten', 'kosten', 'WBed', 'geen', 'Btw niet aftrekbaar (horeca); kosten fiscaal beperkt aftrekbaar', true, 4400),
   ('4500', 'Opleiding', 'kosten', 'kosten', 'WBed', '21', null, true, 4500),
   ('4600', 'Uitbesteed werk', 'kosten', 'kosten', 'WBed', '21', null, true, 4600),
   ('4700', 'Telefoon & internet', 'kosten', 'kosten', 'WBed', '21', null, true, 4700),

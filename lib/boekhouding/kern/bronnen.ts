@@ -183,6 +183,8 @@ export function factuurBtwCode(f: FactuurBron, extra?: BronExtra | null): BtwCod
  */
 export function uitgaveBtwCode(u: UitgaveBron, extra?: BronExtra | null): BtwCode {
   if (extra?.btwCode) return extra.btwCode;
+  // Eten en drinken in de horeca (representatie, 4400): btw niet aftrekbaar (BUA).
+  if (uitgaveGrootboek(u, extra) === REPRESENTATIE_GROOTBOEK) return 'geen';
   switch (u.tarief) {
     case '21':
     case '9':
@@ -195,6 +197,9 @@ export function uitgaveBtwCode(u: UitgaveBron, extra?: BronExtra | null): BtwCod
       return u.btw && u.btw !== 0 ? '21' : 'geen';
   }
 }
+
+/** Representatie (eten/drinken): btw is niet aftrekbaar als voorbelasting. */
+export const REPRESENTATIE_GROOTBOEK = '4400';
 
 /** Bonnetjescategorie → kostenrekening (zelfde indeling als de bonnetjes). */
 export const CATEGORIE_GROOTBOEK: Record<string, string> = {

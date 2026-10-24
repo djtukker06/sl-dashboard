@@ -12,6 +12,7 @@ import { activastaat } from '@/lib/boekhouding/kern/afschrijving';
 import { saldoPerRekening } from '@/lib/boekhouding/model';
 import { administratieStart, afsluitStatus, rapportTot } from '@/lib/boekhouding/jaarwerk';
 import { journaalVan, laadAlles, type BoekhoudRepo } from '@/lib/boekhouding/repo/types';
+import { administratieBegin, vanafStart } from '@/lib/boekhouding/kern/journaal';
 
 // De jaarafsluiting van één boekjaar en de kerncijfers op het Overzicht.
 
@@ -64,8 +65,9 @@ export async function overzichtData(repo: BoekhoudRepo) {
   const rekeningen = data.stam.rekeningen.filter((r) => r.actief).map((r) => ({ naam: r.naam, saldo: saldi.get(r.id) ?? 0 }));
   const rijen = kwartaalOverzicht({ posten, aangiften: data.aangiften, betalingen: data.aangifteBetalingen, vanaf: administratieStart(data, vandaag), vandaag });
   const btw = volgendeAangifte(rijen);
-  const deb = factuurPosten(data.facturen, data.koppelingen, vandaag).filter((p) => p.open > 0);
-  const cred = uitgavePosten(data.uitgaven, data.koppelingen, vandaag).filter((p) => p.open > 0);
+  const start = administratieBegin(data.stam);
+  const deb = factuurPosten(vanafStart(data.facturen, start), data.koppelingen, vandaag).filter((p) => p.open > 0);
+  const cred = uitgavePosten(vanafStart(data.uitgaven, start), data.koppelingen, vandaag).filter((p) => p.open > 0);
   return {
     jaar,
     rekeningen,

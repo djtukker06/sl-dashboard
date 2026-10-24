@@ -37,6 +37,16 @@ export function rondAf(teller: number, noemer: number): Centen {
 }
 
 /**
+ * Leest een bigint-centenkolom uit de database (bk_*: bedrag_centen enz.) ZONDER te schalen.
+ * PostgREST geeft bigint als JSON-number, soms als tekst ("1210"). Alles wat geen veilig
+ * geheel getal is, wordt 0. Niet verwarren met naarCenten(), dat euro's leest.
+ */
+export function leesCenten(v: unknown): Centen {
+  const n = typeof v === 'string' && /^-?\d+$/.test(v.trim()) ? Number(v.trim()) : v;
+  return typeof n === 'number' && Number.isSafeInteger(n) ? n : 0;
+}
+
+/**
  * Leest een bedrag als centen. Accepteert:
  *   - getallen (bv. uit de database als JSON-number: 1234.5)
  *   - "1234.50" (Postgres numeric), "1.234,56" en "1234,5" (NL), "1,234.56", "€ 12,50", "-12,30"

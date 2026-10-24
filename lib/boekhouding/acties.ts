@@ -64,6 +64,10 @@ export async function importActie(request: Request, repo: BoekhoudRepo): Promise
     else if (r.datum < '2000-01-01' || r.datum > plusDagen(vandaag, 1)) {
       status = 'buiten_bereik';
       reden = 'datum in de toekomst of te ver terug';
+    } else if (rek.begindatum && r.datum < rek.begindatum) {
+      // Het beginsaldo bevat deze mutatie al; meetellen zou dubbel zijn.
+      status = 'buiten_bereik';
+      reden = 'vóór het beginsaldo van deze rekening';
     } else {
       reden = vergrendeldReden(r.datum, stam.vergrendeling);
       if (reden) status = 'vergrendeld';

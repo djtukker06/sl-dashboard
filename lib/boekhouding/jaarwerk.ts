@@ -2,7 +2,7 @@
 // de pure kern (kern/rapporten.ts). Geen netwerk; werkt op de geladen BoekhoudData.
 
 import type { Centen } from './kern/geld';
-import type { JournaalPost } from './kern/journaal';
+import { administratieBegin, type JournaalPost } from './kern/journaal';
 import { aangifteRubrieken, vergelijkMetIngediend } from './kern/aangifte';
 import { jaarVan, kwartaalLabel, type Datum } from './kern/periode';
 import { activastaat } from './kern/afschrijving';
@@ -22,8 +22,7 @@ import type { BoekhoudData } from './repo/types';
 
 /** Begin van de administratie: de startdatum of het vroegste beginsaldo (anders 1 januari dit jaar). */
 export function administratieStart(d: BoekhoudData, vandaag: Datum): Datum {
-  const kandidaten = [d.stam.instellingen.startdatum, ...d.stam.rekeningen.map((r) => r.begindatum)].filter((x): x is string => !!x);
-  const begin = kandidaten.length ? kandidaten.sort()[0] : `${jaarVan(vandaag)}-01-01`;
+  const begin = administratieBegin(d.stam) ?? `${jaarVan(vandaag)}-01-01`;
   return begin > vandaag ? vandaag : begin;
 }
 

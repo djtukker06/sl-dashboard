@@ -1614,6 +1614,97 @@ await test("demo-opslag: memoriaal, jaar afsluiten/heropenen, vergrendeling, ins
   demo.demoHerstellen("test-jaar");
 });
 
+// ---------------------------------------------------------------------------------- reviewbevindingen
+await test("live-opslag: bigint-centen worden niet nog eens met 100 vermenigvuldigd", () => {
+  // repo/supabase.ts leest bedrag_centen/btw_centen/beginsaldo_centen/... met leesCenten.
+  assert.equal(geld.leesCenten(1210), 1210);
+  assert.equal(geld.leesCenten("1210"), 1210);
+  assert.equal(geld.leesCenten("-1210"), -1210);
+  assert.equal(geld.leesCenten(9999999999), 9999999999);
+  assert.equal(geld.leesCenten(null), 0);
+  assert.equal(geld.leesCenten("12,10"), 0);
+  assert.equal(geld.leesCenten(12.1), 0);
+  const src = fs.readFileSync(path.join(ROOT, "lib", "boekhouding", "repo", "supabase.ts"), "utf8").replace(/\/\/[^\n]*/g, "");
+  assert.ok(/const centen = leesCenten;/.test(src), "centen() is leesCenten");
+  assert.ok(!/naarCenten\(/.test(src), "geen naarCenten() op centenkolommen");
+});
+
+await test("btw: representatie (horeca, 4400) zonder voorbelasting, ook bij 9% op het bonnetje", () => {
+  const lunch = U({ categorie: "representatie", leverancier: "Brasserie De Haven", omschrijving: "Lunch met klant", totaal: 8640, btw: 713, tarief: "9", betaalwijze: "prive" });
+  assert.equal(bronnen.uitgaveBtwCode(lunch), "geen");
+  const p = journaal.uitgaveNaarPost(lunch, ctx);
+  assert.equal(p.btw.voorbelasting, 0);
+  assert.ok(p.regels.some((r) => r.grootboek === "4400" && r.debet === 8640));
+  assert.ok(!p.regels.some((r) => r.grootboek === "1520"));
+  // Een verfijning gaat voor (bv. als het geen horeca was).
+  assert.equal(bronnen.uitgaveBtwCode(lunch, { bron: "uitgave", bronId: lunch.id, btwCode: "21" }), "21");
+  assert.equal(constanten.STANDAARD_GROOTBOEK.find((g) => g.code === "4400").btw, "geen");
+  const sql = fs.readFileSync(path.join(ROOT, "supabase", "migrations", "0027_boekhouding.sql"), "utf8");
+  assert.ok(/\('4400', 'Representatie', 'kosten', 'kosten', 'WBed', 'geen'/.test(sql));
+  // In de demo vraagt de aangifte de horeca-btw niet terug.
+  const lp = P4.find((x) => x.bron === "uitgave" && /Brasserie/.test(x.omschrijving));
+  assert.ok(lp && lp.btw.voorbelasting === 0);
+});
+
+await test("journaal: facturen/bonnetjes van vóór de start tellen niet; na de start betaald = openingspost", () => {
+  const s = { ...stam, instellingen: { ...stam.instellingen, startdatum: "2026-01-01" }, rekeningen: stam.rekeningen.map((r) => ({ ...r, beginsaldo: 0, begindatum: null })) };
+  const oud = F({ id: "f-oud", nummer: "25-090", datum: "2025-11-15", subtotaal: 200000, omzet: 200000, btw: 42000, totaal: 242000 });
+  const bonOud = U({ id: "u-oud", datum: "2025-12-10" });
+  const j0 = journaal.journaal(s, { boekingen: [], facturen: [oud], uitgaven: [bonOud] });
+  const pb0 = journaal.proefbalans(j0);
+  for (const c of ["1300", "1500", "8000", "0900", "1600", "1520"]) assert.equal(pb0.get(c) ?? 0, 0, c);
+  // Betaald na de start: D 1300 / C 0900 op de startdatum, de betaling maakt 1300 nul.
+  const betaling = maak({ id: "b-oud", rekeningId: RB, soort: "inkomst", richting: "bij", grootboek: "8000", bedrag: 242000, btwCode: "21", datum: "2026-01-10" });
+  const k = { id: "k-oud", boekingId: betaling.id, bron: "factuur", bronId: oud.id, bedrag: 242000, aangemaakt: "" };
+  const af = maak({ id: "b-bon", rekeningId: RB, bedrag: 34900, grootboek: "4010", datum: "2026-01-05" });
+  const ku = { id: "k-bon", boekingId: af.id, bron: "uitgave", bronId: bonOud.id, bedrag: 34900, aangemaakt: "" };
+  const j1 = journaal.journaal(s, { boekingen: [betaling, af], facturen: [oud], uitgaven: [bonOud], koppelingen: [k, ku] });
+  const op = j1.find((p) => p.id === "opening-factuur:f-oud");
+  assert.equal(op.datum, "2026-01-01");
+  assert.equal(regels(op), "0900:C242000 1300:D242000");
+  assert.ok(!op.btw);
+  const pb1 = journaal.proefbalans(j1);
+  assert.deepEqual([pb1.get("1300") ?? 0, pb1.get("1600") ?? 0, pb1.get("1500") ?? 0, pb1.get("1520") ?? 0, pb1.get("8000") ?? 0], [0, 0, 0, 0, 0]);
+  assert.equal(pb1.get("0900"), -242000 + 34900);
+  assert.equal(journaal.btwPerKwartaal(j1).size, 0);
+  // Zonder startdatum of beginsaldo: geen filter.
+  const zonder = { ...s, instellingen: { ...s.instellingen, startdatum: null } };
+  assert.equal(journaal.administratieBegin(zonder), null);
+  assert.equal(journaal.proefbalans(journaal.journaal(zonder, { boekingen: [], facturen: [oud] })).get("1300"), 242000);
+  assert.deepEqual(journaal.vanafStart([oud, F()], "2026-01-01").map((f) => f.id), [F().id]);
+});
+
+await test("journaal: bankregels vóór de begindatum van de rekening tellen niet (zoals het saldo)", () => {
+  const s = { ...stam, rekeningen: stam.rekeningen.map((r) => (r.id === RB ? { ...r, beginsaldo: 845000, begindatum: "2026-01-01" } : r)) };
+  const oud = maak({ id: "b-voor", rekeningId: RB, bedrag: 10000, btwCode: "geen", btw: 0, grootboek: "4900", datum: "2025-12-20" });
+  const nieuw = maak({ id: "b-na", rekeningId: RB, bedrag: 10000, btwCode: "geen", btw: 0, grootboek: "4900", datum: "2026-01-20" });
+  const pb = journaal.proefbalans(journaal.journaal(s, { boekingen: [oud, nieuw] }));
+  const rb = s.rekeningen.find((r) => r.id === RB);
+  assert.equal(pb.get(rb.grootboek), model.saldoPerRekening([oud, nieuw], s.rekeningen).get(RB));
+  assert.equal(pb.get(rb.grootboek), 835000);
+  const r = model.parseBoekingInvoer({ soort: "uitgave", rekeningId: RB, datum: "2025-12-20", omschrijving: "Bankkosten", bedrag: "100", btwCode: "geen" }, s, { vandaag: VANDAAG });
+  assert.equal(r.ok, false);
+  assert.equal(r.veld, "datum");
+  assert.ok(model.parseBoekingInvoer({ soort: "uitgave", rekeningId: RB, datum: "2026-01-02", omschrijving: "Bankkosten", bedrag: "100", btwCode: "geen" }, s, { vandaag: VANDAAG }).ok);
+});
+
+await test("onverdeeld vermogen: na de jaarafsluiting niet nog eens het resultaat van eerdere jaren", () => {
+  const voor = rap.onverdeeldVermogen(P4, GBK, 2025);
+  const v = rap.jaarafsluitingVoorstel(P4, D4.stam, 2025);
+  const na = { ...D4, memoriaal: [...D4.memoriaal, { id: "afs-2025", datum: "2025-12-31", omschrijving: "Jaarafsluiting 2025", soort: "jaarafsluiting", regels: v.regels }] };
+  const P = types.journaalVan(na);
+  const naAfsluiten = rap.onverdeeldVermogen(P, GBK, 2025);
+  // Na afsluiten = wat er nog op 0900 staat (in de demo is alles verdeeld: 0).
+  assert.equal(naAfsluiten, 0 - (journaal.proefbalans(P, "2025-12-31").get("0900") ?? 0));
+  assert.equal(naAfsluiten, 0);
+  // Vóór het afsluiten ongewijzigd: 0900 plus resultaat vóór het jaar.
+  const totVorig = journaal.proefbalans(P4, "2024-12-31");
+  const info = rap.rekeningInfo(GBK);
+  let verwacht = 0 - (journaal.proefbalans(P4, "2025-12-31").get("0900") ?? 0);
+  for (const [c, x] of totVorig) if (rap.isResultaatSoort(info(c).soort)) verwacht -= x;
+  assert.equal(voor, verwacht);
+});
+
 // ---------------------------------------------------------------------------------- constanten
 await test("standaardgrootboek: unieke codes, systeemrekeningen bestaan", () => {
   const codes = constanten.STANDAARD_GROOTBOEK.map((g) => g.code);
