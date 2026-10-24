@@ -8,7 +8,7 @@ import { teVerwijderen } from './retentie-kern';
 // De back-ups in Google Drive, onder de rootmap "Studio Levant":
 //   Back-ups/<jaar>/<YYYY-MM-DD>.slbak                 dagelijkse database-back-up
 //   Back-ups/<jaar>/<datum>-handmatig-<HHmm>.slbak     "Nu back-up maken"
-//   Back-ups/Bestanden/<bucket>/<pad met __>.slenc     storage-bestanden (wekelijks, incrementeel)
+//   Back-ups/Bestanden/<bucket>/<pad met __>.slenc     storage-bestanden (eens per 3 dagen, incrementeel)
 // Alles is versleuteld (lib/backup/formaat-kern.ts); Drive ziet alleen onleesbare bytes.
 
 export { BACKUP_MAP };
@@ -48,8 +48,8 @@ export async function lijstDbBackups(v: Verbinding): Promise<DriveBestand[]> {
 }
 
 /**
- * Bewaarbeleid toepassen (14 dagelijkse, 8 wekelijkse, 12 maandelijkse; altijd de nieuwste
- * 3). Alleen na een geslaagde upload aanroepen. Weg = naar de prullenbak van Drive.
+ * Bewaarbeleid toepassen: alleen de nieuwste 3 blijven staan, de oudste gaat weg.
+ * Alleen na een geslaagde upload aanroepen. Weg = naar de prullenbak van Drive.
  */
 export async function ruimOudeBackupsOp(v: Verbinding, nu: number = Date.now()): Promise<number> {
   const alle = await lijstDbBackups(v);

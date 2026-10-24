@@ -21,7 +21,8 @@ import { lijstBucket } from './storage';
 
 export type RunBron = 'cron' | 'github' | 'handmatig' | 'script';
 const HB_BEWAREN = 120;
-const DB_MIN_INTERVAL_UUR = 20;
+// Eén database-back-up per 3 dagen (met wat speling, zodat het nachtelijke tijdstip mag schuiven).
+const DB_MIN_INTERVAL_UUR = 3 * 24 - 4;
 const BESTANDEN_INTERVAL_DAGEN = 6;
 const MAX_BESTAND = 50 * 1024 * 1024;
 
@@ -100,7 +101,7 @@ async function laatsteRun(service: SupabaseClient, soort: 'db' | 'bestanden', st
   return (data as RunRij | null) ?? null;
 }
 
-/** Is er een nieuwe database-back-up nodig (laatste geslaagde ouder dan 20 uur)? */
+/** Is er een nieuwe database-back-up nodig (laatste geslaagde ouder dan ~3 dagen)? */
 export async function dbBackupNodig(service: SupabaseClient, nu: number = Date.now()): Promise<boolean | 'migratie_ontbreekt'> {
   const r = await laatsteRun(service, 'db', 'ok');
   if (r === 'ontbreekt') return 'migratie_ontbreekt';

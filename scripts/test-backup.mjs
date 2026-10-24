@@ -216,42 +216,28 @@ await test("korteFout: geen e-mailadressen, tokens of Bearer-waarden", () => {
 });
 
 // ---------- retentie ----------
-await test("retentie: gesimuleerd jaar dagelijkse back-ups (cron elke dag + opruimen)", () => {
+await test("retentie: een jaar lang elke 3 dagen een back-up, er blijven er altijd precies 3", () => {
   const DAG = 86_400_000;
   const begin = Date.UTC(2025, 9, 1, 3);
   let drive = [];
   let n = 0;
-  for (let d = 0; d < 400; d++) {
+  for (let d = 0; d < 400; d += 3) {
     const nu = begin + d * DAG;
     const datum = new Date(nu).toISOString().slice(0, 10);
     drive.push({ id: `id${n++}`, naam: `${datum}.slbak` });
-    if (d % 37 === 0) drive.push({ id: `id${n++}`, naam: `${datum}-handmatig-1415.slbak` });
     const weg = new Set(R.teVerwijderen(drive, nu + 3_600_000).map((b) => b.id));
     drive = drive.filter((b) => !weg.has(b.id));
+    assert.ok(drive.length <= R.BEWAAR_AANTAL, `${drive.length} back-ups op dag ${d}`);
   }
-  const nu = begin + 399 * DAG + 3_600_000;
-  const tijden = drive.map((b) => R.datumUitNaam(b.naam)).sort((a, b) => b - a);
-  // De laatste 14 dagen: elke dag.
-  for (let d = 0; d < 14; d++) {
-    const datum = new Date(nu - d * DAG).toISOString().slice(0, 10);
-    assert.ok(drive.some((b) => b.naam.startsWith(datum)), `dag ${datum} ontbreekt`);
-  }
-  // 8 weken: elke ISO-week heeft er een.
-  for (let w = 0; w < 8; w++) {
-    const wk = R.isoWeekSleutel(nu - w * 7 * DAG);
-    assert.ok(tijden.some((t) => R.isoWeekSleutel(t) === wk), `week ${wk} ontbreekt`);
-  }
-  // 12 maanden: elke maand heeft er een.
-  for (let m = 0; m < 12; m++) {
-    const d = new Date(nu);
-    d.setUTCDate(1);
-    d.setUTCMonth(d.getUTCMonth() - m);
-    const sleutel = d.toISOString().slice(0, 7);
-    assert.ok(drive.some((b) => b.naam.startsWith(sleutel)), `maand ${sleutel} ontbreekt`);
-  }
-  // Niet onbeperkt: ruim onder de 40, niets ouder dan ~13 maanden.
-  assert.ok(drive.length >= 25 && drive.length <= 40, `${drive.length} back-ups`);
-  assert.ok(nu - tijden[tijden.length - 1] < 400 * DAG);
+  assert.equal(drive.length, 3);
+  // Het zijn de nieuwste drie.
+  const namen = drive.map((b) => b.naam).sort();
+  const laatste = begin + 399 * DAG;
+  assert.equal(namen[2], `${new Date(laatste).toISOString().slice(0, 10)}.slbak`);
+  // Een handmatige tussendoor telt gewoon mee: de oudste gaat weg.
+  drive.push({ id: "h", naam: `${new Date(laatste + DAG).toISOString().slice(0, 10)}-handmatig-1415.slbak` });
+  const weg = R.teVerwijderen(drive, laatste + 2 * DAG).map((b) => b.naam);
+  assert.deepEqual(weg, [namen[0]]);
 });
 await test("retentie: nooit de nieuwste 3, nooit iets bij ≤ 3 bestanden, onbekende namen blijven", () => {
   const oud = [
@@ -441,11 +427,13 @@ await test("proxy: precies de twee cron-paden zonder sessie, geen voorvoegsel", 
   assert.ok(p.includes("pad === '/api/cron/dagelijks' || pad === '/api/cron/bestanden'"));
   assert.ok(!/startsWith\(['"]\/api\/cron/.test(p));
 });
-await test("vercel.json: twee dagelijkse crons (Hobby), maxDuration voor de cron-routes", () => {
+await test("vercel.json: twee crons van hooguit 1× per dag (Hobby), maxDuration voor de cron-routes", () => {
   const v = JSON.parse(lees("vercel.json"));
   const paden = (v.crons ?? []).map((c) => c.path).sort();
   assert.deepEqual(paden, ["/api/cron/bestanden", "/api/cron/dagelijks"]);
-  for (const c of v.crons) assert.match(c.schedule, /^\d{1,2} \d{1,2} \* \* \*$/, `${c.path}: hooguit 1× per dag`);
+  for (const c of v.crons) assert.match(c.schedule, /^\d{1,2} \d{1,2} (\*|\*\/\d+) \* \*$/, `${c.path}: hooguit 1× per dag`);
+  // De keep-alive moet elke nacht draaien (Supabase pauzeert na 7 dagen).
+  assert.equal(v.crons.find((c) => c.path === "/api/cron/dagelijks").schedule.split(" ")[2], "*");
   assert.equal(v.functions["app/api/cron/**/route.ts"].maxDuration, 300);
 });
 await test("GitHub Actions: elke 3 dagen, handmatig te starten, geen rechten, secrets niet in de code", () => {

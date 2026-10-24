@@ -11,8 +11,8 @@ export const maxDuration = 300;
 //   1. keep-alive: altijd eerst een kleine schrijfactie (heartbeat), zodat het gratis
 //      Supabase-project nooit pauzeert. Werkt ook vóór migratie 0026 (dan een leesquery);
 //   2. opruimen: heartbeat, inlogpogingen, oude audit-regels;
-//   3. database-back-up als de laatste geslaagde ouder is dan 20 uur (anders overgeslagen,
-//      zodat Vercel + GitHub op dezelfde dag geen dubbele back-up geven).
+//   3. database-back-up eens per 3 dagen: alleen als de laatste geslaagde ouder is dan ~3 dagen
+//      (anders overgeslagen). De keep-alive (stap 1) blijft wél elke nacht draaien.
 export const GET = cronRoute('dagelijks', async (_request, { service, bron }) => {
   const hb = await heartbeat(service, bron);
   await opruimen(service);
@@ -21,7 +21,7 @@ export const GET = cronRoute('dagelijks', async (_request, { service, bron }) =>
   try {
     const nodig = await dbBackupNodig(service);
     if (nodig === 'migratie_ontbreekt') backup = { status: 'migratie_ontbreekt' };
-    else if (!nodig) backup = { status: 'overgeslagen', reden: 'laatste back-up is nog geen 20 uur oud' };
+    else if (!nodig) backup = { status: 'overgeslagen', reden: 'laatste back-up is nog geen 3 dagen oud' };
     else {
       const r = await maakDbBackup(service, { bron });
       backup = { status: r.status, bestand: r.bestand, grootte: r.grootte, reden: r.reden };

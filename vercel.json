@@ -45,7 +45,7 @@
     },
     {
       "path": "/api/cron/bestanden",
-      "schedule": "30 4 * * *"
+      "schedule": "30 4 */3 * *"
     }
   ]
 }

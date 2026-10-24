@@ -115,9 +115,9 @@ export function Backups() {
       <header className="ac-blok-kop">
         <h2 id="bv-backups" className="ac-blok-titel">Back-ups</h2>
         <p className="ac-blok-uitleg">
-          Elke nacht een volledige, versleutelde kopie van de database in Google Drive (map Studio Levant › Back-ups), en
-          wekelijks de bestanden (facturen, bonnetjes, social). Bewaard: 14 dagen elke dag, 8 weken elke week en 12 maanden
-          elke maand. Dezelfde nachtelijke taak houdt Supabase wakker. Terugzetten gaat met{' '}
+          Eens per 3 dagen een volledige, versleutelde kopie van de database in Google Drive (map Studio Levant › Back-ups),
+          plus de nieuwe bestanden (facturen, bonnetjes, social). Alleen de nieuwste 3 back-ups blijven staan; komt er een
+          nieuwe bij, dan gaat de oudste weg. Elke nacht houdt een kleine taak Supabase wakker. Terugzetten gaat met{' '}
           <code>scripts/backup-herstellen.mjs</code> en de sleutel uit je wachtwoordmanager.
         </p>
       </header>
@@ -167,7 +167,7 @@ export function Backups() {
               </dd>
             </div>
             <div className="bk-vak">
-              <dt>Bestanden (wekelijks)</dt>
+              <dt>Bestanden (elke 3 dagen)</dt>
               <dd>
                 {status.laatsteBestanden ? (
                   <>

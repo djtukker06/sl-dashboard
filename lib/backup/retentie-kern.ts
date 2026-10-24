@@ -1,11 +1,9 @@
 // Bewaarbeleid voor de database-back-ups in Drive. Zonder env of '@/'-imports (zodat
 // scripts/test-backup.mjs het los kan testen op een gesimuleerd jaar).
 //
-//   - de laatste 14 dagen: alles;
-//   - daarnaast per ISO-week de nieuwste, voor de laatste 8 weken;
-//   - daarnaast per maand de nieuwste, voor de laatste 12 maanden;
-//   - en altijd de nieuwste 3, wat er ook gebeurt (ook als de klok raar staat).
-// De rest mag weg (naar de prullenbak van Drive; daar blijft hij nog 30 dagen).
+//   - alleen de nieuwste 3 blijven staan (één back-up per 3 dagen = ruim een week terug);
+//   - komt er een nieuwe bij, dan gaat de oudste weg (naar de prullenbak van Drive; daar
+//     blijft hij nog 30 dagen en daarna verdwijnt hij vanzelf).
 
 export interface BackupInDrive {
   id: string;
@@ -36,16 +34,15 @@ export function isoWeekSleutel(t: number): string {
   return `${d.getUTCFullYear()}-W${String(week).padStart(2, '0')}`;
 }
 
-function maandSleutel(t: number): string {
-  const d = new Date(t);
-  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
-}
+
+/** Hoeveel database-back-ups er in Drive blijven staan (de nieuwste). */
+export const BEWAAR_AANTAL = 3;
 
 /**
- * Welke back-ups blijven staan. Bestanden met een onbekende naam blijven altijd staan
- * (daar beslissen we niet over).
+ * Welke back-ups blijven staan: de nieuwste BEWAAR_AANTAL. Bestanden met een onbekende naam
+ * blijven altijd staan (daar beslissen we niet over).
  */
-export function teBewaren(bestanden: BackupInDrive[], nu: number = Date.now()): Set<string> {
+export function teBewaren(bestanden: BackupInDrive[]): Set<string> {
   const bewaar = new Set<string>();
   const met = bestanden
     .map((b) => ({ ...b, t: datumUitNaam(b.naam) }))
@@ -54,38 +51,15 @@ export function teBewaren(bestanden: BackupInDrive[], nu: number = Date.now()): 
       return b.t !== null;
     }) as (BackupInDrive & { t: number })[];
   met.sort((a, b) => b.t - a.t || b.naam.localeCompare(a.naam));
-
-  for (const b of met.slice(0, 3)) bewaar.add(b.id);
-
-  const weken = new Set<string>();
-  const maanden = new Set<string>();
-  for (const b of met) {
-    const leeftijd = nu - b.t;
-    if (leeftijd < 14 * DAG) {
-      bewaar.add(b.id);
-    }
-    if (leeftijd < 8 * 7 * DAG) {
-      const w = isoWeekSleutel(b.t);
-      if (!weken.has(w)) {
-        weken.add(w);
-        bewaar.add(b.id);
-      }
-    }
-    if (leeftijd < 366 * DAG) {
-      const m = maandSleutel(b.t);
-      if (!maanden.has(m)) {
-        maanden.add(m);
-        // Alleen de laatste 12 maanden (de huidige telt mee).
-        if (maanden.size <= 12) bewaar.add(b.id);
-      }
-    }
-  }
+  for (const b of met.slice(0, BEWAAR_AANTAL)) bewaar.add(b.id);
   return bewaar;
 }
 
-/** De back-ups die weg mogen (nooit als er minder dan 4 zijn). */
+/** De back-ups die weg mogen: alles behalve de nieuwste BEWAAR_AANTAL (nooit bij ≤ BEWAAR_AANTAL). */
+// `nu` blijft in de signatuur voor bestaande aanroepen; de regel hangt niet meer van de tijd af.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export function teVerwijderen(bestanden: BackupInDrive[], nu: number = Date.now()): BackupInDrive[] {
-  if (bestanden.length <= 3) return [];
-  const bewaar = teBewaren(bestanden, nu);
+  if (bestanden.length <= BEWAAR_AANTAL) return [];
+  const bewaar = teBewaren(bestanden);
   return bestanden.filter((b) => !bewaar.has(b.id));
 }
