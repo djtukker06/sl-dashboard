@@ -399,3 +399,23 @@
   /* Facturen houdt op smalle schermen zijn eigen 24px. */
   .sl-main:has(> .wrap) { --sl-gutter: 24px; }
 }
+
+/* ---------- dashboard: back-up mislukt / keep-alive stil (alleen eigenaar) ---------- */
+.db-backup {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  margin: 0 0 16px;
+  padding: 10px 14px;
+  border: 1px solid rgba(217, 140, 122, 0.45);
+  border-radius: var(--sl-r);
+  background: rgba(217, 140, 122, 0.12);
+  color: var(--sl-text);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.db-backup.is-zacht { border-color: var(--sl-line); background: transparent; color: var(--sl-muted); }
+.db-backup strong { font-weight: 700; color: var(--sl-text); }
+.db-backup a { color: var(--sl-sand); text-decoration: underline; text-underline-offset: 3px; }
+.db-backup a:hover { color: var(--sl-sand-hover); }

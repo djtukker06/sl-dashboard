@@ -5,7 +5,7 @@
 --
 -- Deel 1  mailboxen     meerdere inboxen per teamlid, ook gedeeld met het hele team
 -- Deel 2  beveiliging   2FA in RLS (is_teamlid), toegang_status(), audit-log, inlogpogingen
---   (volgend deel: back-ups en heartbeat)
+-- Deel 3  back-ups      backup_runs, backup_bestanden, heartbeat (keep-alive), backup_tabellen()
 --
 -- LET OP: voer na deze migratie UITVOEREN_0021_TEAM.sql niet opnieuw uit; die zet is_teamlid()
 -- terug naar de versie zonder 2FA-controle. (Opnieuw 0026 uitvoeren herstelt het.)
@@ -287,3 +287,94 @@ revoke all on public.inlog_pogingen from anon, authenticated;
 revoke all on sequence public.inlog_pogingen_id_seq from anon, authenticated;
 grant select, insert, delete on public.inlog_pogingen to service_role;
 grant usage, select on sequence public.inlog_pogingen_id_seq to service_role;
+
+-- ---------------------------------------------------------------------------------
+-- Deel 3. Back-ups en keep-alive
+--
+-- backup_runs       één rij per back-up (database-export of bestandensync): status,
+--                   grootte, sha256, sleutel-id, tellingen per tabel, korte fout (nooit data).
+--                   De eigenaar (aal2) leest; schrijven alleen de service-role (cron/route).
+-- backup_bestanden  welke storage-bestanden al (versleuteld) in Drive staan, voor de
+--                   wekelijkse incrementele sync. Alleen de service-role.
+-- heartbeat         de dagelijkse keep-alive (Vercel Cron, GitHub Actions): een kleine
+--                   schrijfactie zodat het gratis Supabase-project nooit pauzeert. De
+--                   eigenaar leest; de cron houdt de laatste 120 rijen.
+-- backup_tabellen() de basistabellen in public (alleen service-role), zodat de export
+--                   waarschuwt als er een tabel bij is gekomen die niet in de vaste lijst staat.
+-- ---------------------------------------------------------------------------------
+create table if not exists public.backup_runs (
+  id uuid primary key default gen_random_uuid(),
+  soort text not null check (soort in ('db', 'bestanden')),
+  bron text not null default 'cron' check (bron in ('cron', 'github', 'handmatig', 'script')),
+  gestart timestamptz not null default now(),
+  klaar timestamptz,
+  status text not null default 'bezig' check (status in ('bezig', 'ok', 'mislukt', 'overgeslagen')),
+  bestand text check (length(bestand) <= 200),
+  drive_id text check (length(drive_id) <= 200),
+  grootte bigint check (grootte >= 0),
+  sha256 text check (sha256 ~ '^[0-9a-f]{64}$'),
+  sleutel_id text check (sleutel_id ~ '^[0-9a-f]{16}$'),
+  tellingen jsonb not null default '{}'::jsonb check (jsonb_typeof(tellingen) = 'object' and length(tellingen::text) <= 8000),
+  fout text check (length(fout) <= 500),
+  door uuid
+);
+create index if not exists backup_runs_soort_gestart on public.backup_runs (soort, gestart desc);
+
+alter table public.backup_runs enable row level security;
+revoke all on public.backup_runs from anon, authenticated;
+grant select on public.backup_runs to authenticated;
+grant select, insert, update, delete on public.backup_runs to service_role;
+
+drop policy if exists "eigenaar leest back-ups" on public.backup_runs;
+create policy "eigenaar leest back-ups" on public.backup_runs
+  for select to authenticated using ((select public.is_teamlid()) and (select public.is_eigenaar()));
+
+create table if not exists public.backup_bestanden (
+  bucket text not null check (length(bucket) between 1 and 63),
+  pad text not null check (length(pad) between 1 and 1024),
+  grootte bigint,
+  bijgewerkt timestamptz,
+  etag text check (length(etag) <= 200),
+  drive_id text check (length(drive_id) <= 200),
+  gesynchroniseerd_op timestamptz not null default now(),
+  verwijderd_op timestamptz,
+  primary key (bucket, pad)
+);
+
+alter table public.backup_bestanden enable row level security;
+revoke all on public.backup_bestanden from anon, authenticated;
+grant select, insert, update, delete on public.backup_bestanden to service_role;
+
+create table if not exists public.heartbeat (
+  id bigserial primary key,
+  op timestamptz not null default now(),
+  bron text not null default 'cron' check (bron in ('cron', 'github', 'handmatig', 'script'))
+);
+create index if not exists heartbeat_op on public.heartbeat (op desc);
+
+alter table public.heartbeat enable row level security;
+revoke all on public.heartbeat from anon, authenticated;
+revoke all on sequence public.heartbeat_id_seq from anon, authenticated;
+grant select on public.heartbeat to authenticated;
+grant select, insert, delete on public.heartbeat to service_role;
+grant usage, select on sequence public.heartbeat_id_seq to service_role;
+
+drop policy if exists "eigenaar leest heartbeat" on public.heartbeat;
+create policy "eigenaar leest heartbeat" on public.heartbeat
+  for select to authenticated using ((select public.is_teamlid()) and (select public.is_eigenaar()));
+
+create or replace function public.backup_tabellen()
+returns setof text
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select c.relname::text
+  from pg_catalog.pg_class c
+  join pg_catalog.pg_namespace n on n.oid = c.relnamespace
+  where n.nspname = 'public' and c.relkind in ('r', 'p')
+  order by 1;
+$$;
+revoke all on function public.backup_tabellen() from public, anon, authenticated;
+grant execute on function public.backup_tabellen() to service_role;

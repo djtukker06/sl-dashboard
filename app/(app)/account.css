@@ -268,3 +268,10 @@
   .bv-scan { grid-template-columns: 1fr; }
   .bv-qr-vlak { justify-self: start; }
 }
+
+/* Back-ups (bk-) op /beveiliging */
+.bk-overzicht { margin: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; }
+.bk-vak { margin: 0; padding: 12px 14px; border: 1px solid var(--sl-line); border-radius: 4px; display: grid; gap: 6px; min-width: 0; }
+.bk-vak dt { font-family: var(--sl-mono); font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--sl-muted); }
+.bk-vak dd { margin: 0; display: grid; gap: 4px; min-width: 0; }
+.bk-sub { font-size: 12px; color: var(--sl-muted); overflow-wrap: anywhere; }

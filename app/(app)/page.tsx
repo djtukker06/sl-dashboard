@@ -15,6 +15,7 @@ import { TaakKnop } from '@/components/dashboard/TaakKnop';
 import { UitgavenWidget } from '@/components/dashboard/UitgavenWidget';
 import { BonnetjeKnop } from '@/components/uitgaven/BonnetjeKnop';
 import { DashboardTaken } from '@/components/taken/DashboardTaken';
+import { BackupWaarschuwing } from '@/components/dashboard/BackupWaarschuwing';
 
 export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'Dashboard · Studio Levant' };
@@ -56,6 +57,11 @@ export default async function DashboardPage() {
             <NieuweMailKnop lid={lid} />
           </Suspense>
         </ModuleKop>
+
+        {/* Alleen de eigenaar: back-up mislukt/te oud of keep-alive stil. */}
+        <Suspense fallback={null}>
+          <BackupWaarschuwing lid={lid} />
+        </Suspense>
 
         <div className="db-grid">
           {/* Jouw Vandaag, Deze week en Taken (alleen op jouw naam; uitgezet = alleen een link). */}

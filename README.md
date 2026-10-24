@@ -709,6 +709,45 @@ Studio Levant/
 - **Vóór 0024 of zonder env-vars** tonen Bestanden en de blokken een nette melding (welke
   variabelen ontbreken, of welk SQL-bestand nog moet); facturen en bonnetjes werken gewoon.
 
+## Back-ups en keep-alive (migratie 0026)
+
+**Wat er automatisch gebeurt**
+- **Keep-alive.** Elke nacht om 03:00 UTC roept Vercel Cron `/api/cron/dagelijks` aan. Die route schrijft eerst een kleine heartbeat-rij, zodat het gratis Supabase-project nooit pauzeert (dat gebeurt na 7 dagen zonder activiteit). Vóór migratie 0026 doet hij een kleine leesquery.
+- **Tweede vangnet.** Een GitHub Actions-workflow (`.github/workflows/keepalive.yml`) roept dezelfde route elke 3 dagen aan.
+- **Database-back-up.** Dezelfde nachtelijke taak maakt een volledige export van alle eigen tabellen, plus de gebruikers (zonder wachtwoorden) en een overzicht van de storage-bestanden. De export wordt met AES-256-GCM versleuteld (`BACKUP_ENCRYPTION_KEY`) en komt in Google Drive onder `Studio Levant/Back-ups/<jaar>/<datum>.slbak`. Was er de afgelopen 20 uur al een geslaagde back-up, dan wordt hij overgeslagen, dus GitHub en Vercel samen geven geen dubbele.
+- **Bewaren.** 14 dagen elke dag, 8 weken elke week en 12 maanden elke maand. De nieuwste 3 blijven altijd staan; opgeruimde back-ups gaan naar de prullenbak van Drive.
+- **Bestanden.** Facturen-PDF's, bonnetjes en social-assets gaan wekelijks via `/api/cron/bestanden` naar Drive (04:30 UTC). Alleen nieuwe en gewijzigde bestanden worden gekopieerd, elk apart versleuteld, naar `Studio Levant/Back-ups/Bestanden/<bucket>/`. Een ronde die niet in één keer af komt, gaat de volgende nacht verder.
+
+**Status en knoppen.** Op `/beveiliging` › Back-ups (alleen de eigenaar, met 2FA-sessie) zie je:
+- de laatste back-up, de laatste bestandensync en de laatste heartbeat;
+- de laatste 20 runs;
+- de knoppen "Nu back-up maken", "Bestanden nu bijwerken" en "Download (versleuteld)".
+
+Is de laatste back-up mislukt, de laatste geslaagde ouder dan 2 dagen of de heartbeat ouder dan 3 dagen, dan ziet de eigenaar dat op het dashboard.
+
+**Inrichten (eenmalig)**
+1. Maak twee geheimen aan met `openssl rand -base64 32`. Zet ze in Vercel (Production) als `BACKUP_ENCRYPTION_KEY` en `CRON_SECRET`, en bewaar ze ook in je wachtwoordmanager. Zonder `BACKUP_ENCRYPTION_KEY` zijn de back-ups onbruikbaar.
+2. Zet in GitHub (Settings › Secrets and variables › Actions) twee secrets:
+   - `SL_CRON_URL`: `https://sl-dashboard-delta.vercel.app`
+   - `SL_CRON_SECRET`: dezelfde waarde als `CRON_SECRET`
+3. Deploy opnieuw en voer `supabase/UITVOEREN_0026.sql` uit.
+4. Klik op `/beveiliging` op "Nu back-up maken". Controleer daarna lokaal:
+   `node --env-file=.env.local scripts/backup-controleren.mjs --drive`
+5. Draai de workflow één keer handmatig: Actions › Keep-alive › Run workflow.
+
+Let op: GitHub zet geplande workflows uit na 60 dagen zonder activiteit in de repository. Vercel Cron is daarom de hoofdroute.
+
+**Controleren en terugzetten**
+- **Controleren.** `node --env-file=.env.local scripts/backup-controleren.mjs --drive` ontsleutelt de nieuwste back-up en controleert hem; het script print alleen tellingen. Met `--bestand x.slbak` controleer je een gedownload bestand; dat werkt alleen met `BACKUP_ENCRYPTION_KEY`.
+- **Droog terugzetten.** `node --env-file=.env.local scripts/backup-herstellen.mjs --bestand x.slbak` is standaard droog: het toont per tabel wat nieuw, gewijzigd en ontbrekend is ten opzichte van de huidige database.
+- **Echt terugzetten.** Voeg `--schrijven` toe. Het script maakt dan eerst een versleutelde veiligheidskopie van de huidige stand en vraagt je `HERSTEL <project>` te typen.
+- **Extra opties.**
+  - `--tabellen a,b`: alleen deze tabellen
+  - `--gebruikers`: ontbrekende accounts aanmaken, zonder wachtwoord
+  - `--bestanden <map met .slenc>`: storage-bestanden terugzetten
+  - `--ook-verwijderen`: rijen die niet in de back-up staan verwijderen
+  - `--ander-project`: een back-up van een ander Supabase-project terugzetten
+
 ## Mail per gebruiker (Account & mail)
 
 ### Meerdere inboxen (migratie 0026)

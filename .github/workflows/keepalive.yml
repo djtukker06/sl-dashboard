@@ -1,0 +1,45 @@
+# Keep-alive (tweede vangnet naast Vercel Cron): roept elke 3 dagen de dagelijkse taak van de
+# backoffice aan, zodat het gratis Supabase-project nooit pauzeert (dat gebeurt na 7 dagen
+# zonder activiteit). De route schrijft een heartbeat en maakt een back-up als die er
+# vandaag nog niet is (dus geen dubbele back-ups met Vercel Cron).
+#
+# Zet in GitHub: Settings > Secrets and variables > Actions > New repository secret
+#   SL_CRON_URL     https://sl-dashboard-delta.vercel.app   (zonder / aan het eind)
+#   SL_CRON_SECRET  dezelfde waarde als CRON_SECRET in Vercel
+#
+# Let op: GitHub zet geplande workflows uit na 60 dagen zonder activiteit in de repository.
+# Vercel Cron (vercel.json) is daarom de primaire route; dit is de reserve. Handmatig
+# draaien: tabblad Actions > Keep-alive > Run workflow.
+name: Keep-alive
+
+on:
+  schedule:
+    - cron: "17 6 */3 * *"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: keepalive
+  cancel-in-progress: false
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Dagelijkse taak aanroepen
+        env:
+          SL_CRON_URL: ${{ secrets.SL_CRON_URL }}
+          SL_CRON_SECRET: ${{ secrets.SL_CRON_SECRET }}
+        run: |
+          if [ -z "$SL_CRON_URL" ] || [ -z "$SL_CRON_SECRET" ]; then
+            echo "::error::Zet de repository-secrets SL_CRON_URL en SL_CRON_SECRET (zie bovenin dit bestand)."
+            exit 1
+          fi
+          curl --fail --silent --show-error --retry 3 --retry-delay 20 --max-time 300 \
+            -H "Authorization: Bearer ${SL_CRON_SECRET}" \
+            "${SL_CRON_URL%/}/api/cron/dagelijks?bron=github" \
+            -o /tmp/antwoord.json
+          # Alleen de status tonen (geen bestandsnamen of andere details in de openbare log).
+          python3 -c "import json;d=json.load(open('/tmp/antwoord.json'));print('status:',d.get('status'),'heartbeat:',d.get('heartbeat'),'backup:',(d.get('backup') or {}).get('status'))"

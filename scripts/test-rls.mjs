@@ -416,6 +416,7 @@ async function scenarioA() {
   await opvolging0025(db);
   await mailboxen0026(db);
   await beveiliging0026(db);
+  await backups0026(db);
   await zichtbaarheid0022(db);
   await matrix(db);
 
@@ -498,9 +499,9 @@ async function matrix(db) {
     const fac = await als(
       db,
       wie,
-      "select p.oid::regprocedure::text as f, has_function_privilege(current_user, p.oid, 'execute') as mag from pg_proc p where p.proname in ('create_invoice','update_invoice','social_restore_latest','team_eigenaar','audit_opruimen')",
+      "select p.oid::regprocedure::text as f, has_function_privilege(current_user, p.oid, 'execute') as mag from pg_proc p where p.proname in ('create_invoice','update_invoice','social_restore_latest','team_eigenaar','audit_opruimen','backup_tabellen')",
     );
-    check(fac.ok && fac.rows.length >= 5 && fac.rows.every((r) => !r.mag), `${wie}: factuur-/beheerfuncties niet uitvoerbaar`, JSON.stringify(fac.rows ?? fac.msg));
+    check(fac.ok && fac.rows.length >= 6 && fac.rows.every((r) => !r.mag), `${wie}: factuur-/beheerfuncties niet uitvoerbaar`, JSON.stringify(fac.rows ?? fac.msg));
     if (wie !== "anon") {
       const lid = await als(db, wie, "select public.is_teamlid() as lid, public.is_actief_teamlid($1) as ander", [U.daniel]);
       check(lid.ok && lid.rows[0].lid === false && lid.rows[0].ander === false, `${wie}: is_teamlid() = false en verraadt niets`, uitleg(lid));
@@ -524,10 +525,10 @@ async function matrix(db) {
   for (const wie of ["daniel", "mark"]) {
     for (const t of tabellen) {
       const sel = await als(db, wie, `select count(*)::int as n from public.${t}`);
-      if (t === "user_mailboxes" || t === "drive_koppeling" || t === "mailboxen" || t === "inlog_pogingen") {
+      if (t === "user_mailboxes" || t === "drive_koppeling" || t === "mailboxen" || t === "inlog_pogingen" || t === "backup_bestanden") {
         check(geweigerd(sel), `${wie}: ${t} niet leesbaar (alleen server)`, uitleg(sel));
-      } else if (t === "audit_log" && wie !== "daniel") {
-        check(sel.ok && sel.rows[0].n === 0, `${wie}: audit-log niet leesbaar (alleen eigenaar)`, uitleg(sel));
+      } else if ((t === "audit_log" || t === "backup_runs" || t === "heartbeat") && wie !== "daniel") {
+        check(sel.ok && sel.rows[0].n === 0, `${wie}: ${t} niet leesbaar (alleen eigenaar)`, uitleg(sel));
       } else if (ZICHTBAAR[t]) {
         const echt = (await db.query(ZICHTBAAR[t], [U[wie]])).rows[0].n;
         check(sel.ok && sel.rows[0].n === echt, `${wie}: leest alleen eigen/betrokken rijen uit ${t}`, `${uitleg(sel)} verwacht ${echt}`);
@@ -1222,6 +1223,83 @@ async function mailboxen0026(db) {
   // Voor de toegangsmatrix hierna: de oude rij weer terug (code vóór 0026 blijft werken).
   await db.query("insert into public.user_mailboxes (user_id, email, wachtwoord_enc) values ($1, 'daniel@studio-levant.nl', $2)", [U.daniel, oud.wachtwoord_enc]);
   if (fouten === fouten0) console.log("  0026 mailboxen: ok");
+}
+
+// ---------------------------------------------------------------------------------
+// 0026 deel 3: back-ups en keep-alive
+// ---------------------------------------------------------------------------------
+async function backups0026(db) {
+  const fouten0 = fouten;
+  const m26 = lees("supabase/migrations/0026_beveiliging_mailboxen_backups.sql");
+  // Service-role schrijft (zoals de cron en de knop).
+  let r = await als(db, "service", "insert into public.heartbeat (bron) values ('cron'), ('github') returning id");
+  check(r.ok && r.rows.length === 2, "heartbeat: service-role schrijft", uitleg(r));
+  r = await als(db, "service", "insert into public.heartbeat (bron) values ('iemand')");
+  check(!r.ok && r.code === "23514", "heartbeat: alleen bekende bronnen", uitleg(r));
+  r = await als(
+    db,
+    "service",
+    "insert into public.backup_runs (soort, bron, status, bestand, grootte, sha256, sleutel_id, tellingen) values ('db', 'cron', 'ok', '2026-10-24.slbak', 1234, repeat('a', 64), '0123456789abcdef', '{\"tabellen\":{\"clients\":2}}') returning id",
+  );
+  check(r.ok, "backup_runs: service-role schrijft", uitleg(r));
+  r = await als(db, "service", "insert into public.backup_runs (soort, status) values ('db', 'half')");
+  check(!r.ok && r.code === "23514", "backup_runs: onbekende status geweigerd", uitleg(r));
+  r = await als(db, "service", "insert into public.backup_runs (soort, sha256) values ('db', 'geen-hash')");
+  check(!r.ok && r.code === "23514", "backup_runs: sha256 moet hex zijn", uitleg(r));
+  r = await als(db, "service", "insert into public.backup_bestanden (bucket, pad, grootte, etag, drive_id) values ('invoices', '2026/F-001.pdf', 1000, 'e1', 'drive123')");
+  check(r.ok, "backup_bestanden: service-role schrijft", uitleg(r));
+  // als() draait in een transactie die wordt teruggedraaid: nu echte testdata (ook voor de matrix).
+  await db.exec(`insert into public.heartbeat (bron) values ('cron'), ('github');
+    insert into public.backup_runs (soort, bron, status, bestand, grootte) values ('db', 'cron', 'ok', '2026-10-24.slbak', 1234);
+    insert into public.backup_bestanden (bucket, pad, grootte, etag, drive_id) values ('invoices', '2026/F-001.pdf', 1000, 'e1', 'drive123');`);
+
+  // Lezen: alleen de eigenaar (met 2FA-sessie als hij een factor heeft); backup_bestanden niemand.
+  for (const t of ["backup_runs", "heartbeat"]) {
+    r = await alsMetAal(db, "daniel", "aal2", `select count(*)::int as n from public.${t}`);
+    check(r.ok && r.rows[0].n > 0, `${t}: eigenaar leest`, uitleg(r));
+    r = await als(db, "mark", `select count(*)::int as n from public.${t}`);
+    check(r.ok && r.rows[0].n === 0, `${t}: lid leest niets`, uitleg(r));
+    for (const wie of ["daniel", "mark", "indringer"]) {
+      r = await als(db, wie, `insert into public.${t} (${t === "heartbeat" ? "bron" : "soort"}) values ('${t === "heartbeat" ? "cron" : "db"}')`);
+      check(geweigerd(r), `${t}: ${wie} schrijft niets via de API`, uitleg(r));
+      r = await als(db, wie, `delete from public.${t}`);
+      check(geweigerd(r) || nietsGeraakt(r), `${t}: ${wie} verwijdert niets`, uitleg(r));
+    }
+    r = await als(db, "anon", `select * from public.${t}`);
+    check(geweigerd(r), `${t}: anon leest niets`, uitleg(r));
+  }
+  await db.query("insert into auth.mfa_factors (user_id, friendly_name, status) values ($1, 'Telefoon', 'verified')", [U.daniel]);
+  r = await alsMetAal(db, "daniel", "aal1", "select count(*)::int as n from public.backup_runs");
+  check(r.ok && r.rows[0].n === 0, "backup_runs: eigenaar met factor op aal1 leest niets", uitleg(r));
+  r = await alsMetAal(db, "daniel", "aal1", "select count(*)::int as n from public.heartbeat");
+  check(r.ok && r.rows[0].n === 0, "heartbeat: eigenaar met factor op aal1 leest niets", uitleg(r));
+  await db.query("delete from auth.mfa_factors where user_id = $1", [U.daniel]);
+  for (const wie of ["daniel", "mark", "indringer", "anon"]) {
+    r = await als(db, wie, "select * from public.backup_bestanden");
+    check(geweigerd(r), `backup_bestanden: ${wie} leest niets`, uitleg(r));
+  }
+  const pol = (await db.query("select count(*)::int as n from pg_policies where tablename = 'backup_bestanden'")).rows[0].n;
+  check(pol === 0, "backup_bestanden: geen policies", `${pol}`);
+
+  // backup_tabellen(): alleen de service-role; geeft de public-tabellen.
+  r = await als(db, "service", "select public.backup_tabellen() as t");
+  const namen = r.ok ? r.rows.map((x) => x.t) : [];
+  check(namen.includes("clients") && namen.includes("backup_runs") && namen.includes("inlog_pogingen"), "backup_tabellen: service-role krijgt de tabellen", uitleg(r));
+  for (const wie of ["daniel", "mark", "anon"]) {
+    r = await als(db, wie, "select public.backup_tabellen()");
+    check(geweigerd(r), `backup_tabellen: niet voor ${wie}`, uitleg(r));
+  }
+  // De vaste exportlijst dekt alle tabellen (behalve inlog_pogingen).
+  const kern = lees("lib/backup/formaat-kern.ts");
+  const ontbreekt = namen.filter((n) => n !== "inlog_pogingen" && !kern.includes(`naam: '${n}'`));
+  check(ontbreekt.length === 0, "exportlijst (lib/backup/formaat-kern.ts) bevat elke tabel", ontbreekt.join(","));
+
+  // Twee keer uitvoeren: gegevens blijven, niets dubbel.
+  const voor = (await db.query("select (select count(*) from public.backup_runs) + (select count(*) from public.heartbeat) + (select count(*) from public.backup_bestanden) as n")).rows[0].n;
+  await voerUit(db, m26, "0026 (7e keer, met back-ups)");
+  const na = (await db.query("select (select count(*) from public.backup_runs) + (select count(*) from public.heartbeat) + (select count(*) from public.backup_bestanden) as n")).rows[0].n;
+  check(String(voor) === String(na), "0026 opnieuw: back-upgegevens ongemoeid", `${voor} → ${na}`);
+  if (fouten === fouten0) console.log("  0026 back-ups en heartbeat: ok");
 }
 
 // ---------------------------------------------------------------------------------

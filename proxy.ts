@@ -107,13 +107,17 @@ export async function proxy(request: NextRequest) {
   // vereist de sessie die /auth/callback opent). /auth/uitloggen en /auth/callback
   // handelen zelf af. /geen-toegang toont alleen tekst. /login/2fa stuurt zonder sessie
   // zelf door naar /login.
+  // De cron-routes (Vercel Cron, GitHub Actions) hebben geen sessie; ze controleren zelf
+  // CRON_SECRET (lib/auth/cron.ts, fail closed). Exact deze paden, geen voorvoegsel.
+  const isCronPad = pad === '/api/cron/dagelijks' || pad === '/api/cron/bestanden';
   const isPubliekPad =
     isLoginPath ||
     isTfaPad ||
     pad === '/wachtwoord-vergeten' ||
     pad === '/auth/callback' ||
     pad === '/auth/uitloggen' ||
-    pad === '/geen-toegang';
+    pad === '/geen-toegang' ||
+    isCronPad;
 
   const naarLogin = (extra?: Record<string, string>) => {
     const url = request.nextUrl.clone();

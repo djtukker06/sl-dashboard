@@ -30,6 +30,22 @@
     },
     "app/api/mail/**/route.ts": {
       "maxDuration": 30
+    },
+    "app/api/cron/**/route.ts": {
+      "maxDuration": 300
+    },
+    "app/api/beveiliging/backup/route.ts": {
+      "maxDuration": 300
     }
-  }
+  },
+  "crons": [
+    {
+      "path": "/api/cron/dagelijks",
+      "schedule": "0 3 * * *"
+    },
+    {
+      "path": "/api/cron/bestanden",
+      "schedule": "30 4 * * *"
+    }
+  ]
 }

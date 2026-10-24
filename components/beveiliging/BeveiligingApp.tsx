@@ -3,8 +3,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ModuleKop } from '@/components/shell/ModuleKop';
 import { api, datumTijd } from '@/lib/beveiliging/client';
+import { Backups } from './Backups';
 
-// Eigenaarspagina /beveiliging: team & 2FA en de audit-log.
+// Eigenaarspagina /beveiliging: team & 2FA, back-ups (en keep-alive) en de audit-log.
 
 interface Lid {
   userId: string;
@@ -49,7 +50,13 @@ const ACTIES: Record<string, string> = {
   export_bonnetjes: 'Bonnetjes geëxporteerd',
   export_social: 'Social geëxporteerd',
   drive_gekoppeld: 'Google Drive gekoppeld',
-  drive_ontkoppeld: 'Google Drive ontkoppeld'
+  drive_ontkoppeld: 'Google Drive ontkoppeld',
+  backup_gemaakt: 'Back-up gemaakt',
+  backup_mislukt: 'Back-up mislukt',
+  backup_gedownload: 'Back-up gedownload',
+  backup_bestanden: 'Bestanden naar back-up gekopieerd',
+  cron_dagelijks: 'Nachtelijke taak (keep-alive + back-up)',
+  cron_bestanden: 'Nachtelijke taak (bestanden)'
 };
 
 const GEVAARLIJK = /mislukt|geblokkeerd|reset|verwijderd|ontkoppeld|noodstop/;
@@ -64,7 +71,8 @@ const FILTERS: { waarde: string; label: string }[] = [
   { waarde: 'verwijderd', label: 'Verwijderd' },
   { waarde: 'drive', label: 'Google Drive' },
   { waarde: 'team', label: 'Team' },
-  { waarde: 'backup', label: 'Back-ups' }
+  { waarde: 'backup', label: 'Back-ups' },
+  { waarde: 'cron', label: 'Nachtelijke taken' }
 ];
 
 function actieLabel(a: string): string {
@@ -98,8 +106,8 @@ export function BeveiligingApp({
       <div className="ac-inhoud">
         {!migratie && (
           <p className="ac-waarschuwing" role="status">
-            Voer in Supabase <code>supabase/UITVOEREN_0026.sql</code> uit: dan werken 2FA in de database, de audit-log en de
-            pogingenlimiet volledig.
+            Voer in Supabase <code>supabase/UITVOEREN_0026.sql</code> uit: dan werken 2FA in de database, de audit-log, de
+            pogingenlimiet en de back-ups volledig.
           </p>
         )}
         {migratie && !afdwingen && (
@@ -131,6 +139,7 @@ export function BeveiligingApp({
         ) : (
           <>
             <TeamTfa />
+            <Backups />
             <AuditLog mijnId={mijnId} />
           </>
         )}

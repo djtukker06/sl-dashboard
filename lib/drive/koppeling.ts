@@ -80,8 +80,16 @@ async function accessToken(refreshToken: string, sleutel: string, vers = false):
 
 /** De Drive-client van de koppeling; gooit DriveFout als er (nog) niets is. */
 export async function verbind(bewijs: TeamlidBewijs): Promise<Verbinding> {
+  return verbindMetService(createServiceRoleClient(bewijs));
+}
+
+/**
+ * Zelfde als verbind(), met een al gemaakte service-role client. Voor de back-up-cron
+ * (de systeem-client van lib/auth/cron.ts, pas na de controle van CRON_SECRET) en de
+ * back-uproutes.
+ */
+export async function verbindMetService(service: SupabaseClient): Promise<Verbinding> {
   if (ontbrekendeEnv().length) throw new DriveFout('niet_ingericht', MELDING.niet_ingericht);
-  const service = createServiceRoleClient(bewijs);
   const k = await leesKoppeling(service);
   if (!k) throw new DriveFout('niet_gekoppeld', MELDING.niet_gekoppeld);
   const refresh = ontsleutelToken(k.refresh_token_enc);

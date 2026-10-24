@@ -80,6 +80,11 @@
 //       logo's zonder CORP; API's met Cache-Control no-store; /login/2fa, /beveiliging en
 //       /beveiliging/instellen zonder sessie -> /login; /login?reden=verlopen toont uitleg.
 //
+// 15. Back-ups en keep-alive (0026 deel 3): /api/cron/dagelijks en /api/cron/bestanden zonder
+//       (juist) CRON_SECRET -> 401 (of 503 als de server geen CRON_SECRET heeft), nooit 200;
+//       andere /api/cron/*-paden -> 401 (proxy); /api/beveiliging/backup(/<id>/download)
+//       zonder sessie -> 401 (automatisch).
+//
 // Gebruik:  node scripts/rooktest-shell.mjs [http://localhost:3107]
 //           node scripts/rooktest-shell.mjs --alleen-statisch
 import fs from "node:fs";
@@ -145,6 +150,11 @@ function bestandenIn(map, filter) {
   // vóór de 2FA-code), alleen voor de 2FA-routes zelf (geen service-role).
   const WRAPPERS = /\b(teamlidRoute|controleerRoute|metSessie|mailRoute|uitgavenRoute|driveRoute|eigenaarRoute|tfaRoute|route)(?:<\w+>)?\(/;
   for (const f of bestandenIn("app/api", (n) => n === "route.ts")) {
+    // De cron-routes hebben geen sessie: daar is CRON_SECRET de controle (cronRoute).
+    if (f.startsWith(path.join("app", "api", "cron") + path.sep)) {
+      check(/export const GET = cronRoute\(/.test(lees(f)), `${f} gebruikt cronRoute (CRON_SECRET)`);
+      continue;
+    }
     check(WRAPPERS.test(lees(f)), `${f} gebruikt de teamlidcontrole`);
   }
   for (const f of bestandenIn("app/social-files", (n) => n === "route.ts")) {
@@ -610,7 +620,7 @@ for (const r of alles.filter((r) => (r.pagina || r.url === "/social") && !PUBLIE
 }
 
 console.log("API's en bestanden zonder sessie -> JSON-401");
-for (const r of alles.filter((r) => !r.pagina && !PUBLIEK.has(r.url) && r.url !== "/social")) {
+for (const r of alles.filter((r) => !r.pagina && !PUBLIEK.has(r.url) && r.url !== "/social" && !r.url.startsWith("/api/cron/"))) {
   for (const m of r.methoden) {
     const init = { method: m, headers: { origin: BASIS } };
     if (m !== "GET" && m !== "DELETE") {
@@ -758,6 +768,24 @@ console.log("Beveiliging: CSP, HSTS, COOP/CORP, no-store, 2FA-pagina's");
   check(/automatisch uitgelogd/.test(await verlopen.text()), "/login?reden=verlopen legt uit waarom");
   const tfa = await vraag("/api/beveiliging/2fa/uitdagen", { method: "POST", headers: { "content-type": "application/json", origin: "https://evil.example" }, body: '{"code":"123456"}' });
   check(tfa.status === 401, "POST /api/beveiliging/2fa/uitdagen zonder sessie -> 401", `status ${tfa.status}`);
+}
+
+console.log("Cron-routes (keep-alive, back-ups): alleen met CRON_SECRET");
+{
+  for (const url of ["/api/cron/dagelijks", "/api/cron/bestanden", "/api/cron/dagelijks?bron=github"]) {
+    for (const auth of [null, "Bearer fout-geheim-van-voldoende-lengte", "Basic eHg6eHg="]) {
+      const res = await vraag(url, auth ? { headers: { authorization: auth } } : {});
+      const type = res.headers.get("content-type") || "";
+      check((res.status === 401 || res.status === 503) && type.includes("application/json"), `GET ${url} ${auth ? `(${auth.split(" ")[0]} fout)` : "(zonder secret)"} -> 401/503`, `status ${res.status} ${type}`);
+      check(/no-store/.test(res.headers.get("cache-control") || ""), `GET ${url}: no-store`);
+    }
+    const post = await vraag(url, { method: "POST", headers: { origin: BASIS } });
+    check(post.status >= 400, `POST ${url} geweigerd (alleen GET)`, `status ${post.status}`);
+  }
+  for (const url of ["/api/cron", "/api/cron/iets-anders", "/api/cron/dagelijks/extra"]) {
+    const res = await vraag(url);
+    check(res.status === 401, `GET ${url} zonder sessie -> 401 (geen open voorvoegsel)`, `status ${res.status}`);
+  }
 }
 
 console.log("Uitloggen");
