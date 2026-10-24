@@ -2,13 +2,29 @@
 // creditregels die altijd sluit (som debet = som credit). Afgeleid bij het lezen, niet
 // gekopieerd: zo kloppen bewerken en verwijderen vanzelf. Pure module.
 //
-// Stap 1: boekingsregels (bk_boekingen), beginsaldi van de rekeningen en memoriaalposten.
-// Facturen, bonnetjes, afschrijvingen en de btw-afsluiting komen er in latere stappen bij.
+// Bronnen: boekingsregels (bk_boekingen), beginsaldi van de rekeningen, memoriaalposten,
+// facturen (invoices, alleen lezen) en bonnetjes (expenses, alleen lezen). Afschrijvingen en
+// de btw-afsluiting komen er in stap 3 bij.
+//
+// Dubbeltelling voorkomen: een bankregel die gekoppeld is aan een factuur of bonnetje is
+// alleen een BETALING (bank tegen debiteuren/crediteuren, zonder btw). Omzet, kosten en btw
+// komen dan uit de factuur of het bonnetje zelf.
 
 import { moetCenten, type Centen } from './geld';
 import { GB } from './constanten';
-import { isVerlegd, type Rubriek } from './btw';
+import { btwUitExcl, isVerlegd, rubriekVoor, VERLEGD_TARIEF, type Rubriek } from './btw';
 import type { Datum } from './periode';
+import {
+  factuurBtwCode,
+  uitgaveBtw,
+  uitgaveBtwCode,
+  uitgaveGrootboek,
+  uitgaveTeltNiet,
+  type BronExtra,
+  type FactuurBron,
+  type Koppeling,
+  type UitgaveBron
+} from './bronnen';
 import { berekenBoeking, type Boeking, type Stamdata } from '../model';
 
 export interface JournaalRegel {
@@ -26,7 +42,7 @@ export interface JournaalBtw {
   voorbelasting: Centen;
 }
 
-export type JournaalBron = 'boeking' | 'beginsaldo' | 'memoriaal';
+export type JournaalBron = 'boeking' | 'beginsaldo' | 'memoriaal' | 'factuur' | 'uitgave';
 
 export interface JournaalPost {
   id: string;
@@ -74,14 +90,18 @@ export interface JournaalContext {
   bankGrootboek: (rekeningId: string | null) => string;
   /** Privérekening van een vennoot (id → code). */
   privéGrootboek: (vennootId: string | null) => string;
+  /** De vennoot die bij een gebruiker hoort (voor privé voorgeschoten bonnetjes). */
+  vennootVanGebruiker: (userId: string | null) => string | null;
 }
 
 export function contextUit(stam: Stamdata): JournaalContext {
   const banken = new Map(stam.rekeningen.map((r) => [r.id, r.grootboek]));
   const vennoten = new Map(stam.vennoten.map((v) => [v.id, v.grootboekPrive]));
+  const perGebruiker = new Map(stam.vennoten.filter((v) => v.userId).map((v) => [v.userId as string, v.id]));
   return {
     bankGrootboek: (id) => (id ? banken.get(id) ?? GB.vraagposten : GB.kas),
-    privéGrootboek: (id) => (id ? vennoten.get(id) ?? GB.vraagposten : GB.vraagposten)
+    privéGrootboek: (id) => (id ? vennoten.get(id) ?? GB.vraagposten : GB.vraagposten),
+    vennootVanGebruiker: (u) => (u ? perGebruiker.get(u) ?? null : null)
   };
 }
 
@@ -95,13 +115,27 @@ export function contextUit(stam: Stamdata): JournaalContext {
  *   btw:           D/C 1530 af te dragen btw tegen bank
  * Een terugbetaling (andere richting) keert alle bedragen om.
  */
-export function boekingNaarPost(b: Boeking, ctx: JournaalContext): JournaalPost {
+export function boekingNaarPost(b: Boeking, ctx: JournaalContext, koppelingen: readonly Koppeling[] = []): JournaalPost {
   const r = berekenBoeking(b);
   const bank = ctx.bankGrootboek(b.rekeningId);
   const t = r.teken;
   const x = r.btw;
   let regels: JournaalRegel[];
   let btw: JournaalBtw | undefined;
+
+  // Gekoppeld aan een factuur of bonnetje: alleen een betaling (geen omzet/kosten, geen btw).
+  const gekoppeld = (b.soort === 'inkomst' || b.soort === 'uitgave') && koppelingen.length > 0;
+  if (gekoppeld) {
+    const tegen = koppelingen[0].bron === 'factuur' ? GB.debiteuren : GB.crediteuren;
+    return assertSluit({
+      id: `boeking:${b.id}`,
+      bron: 'boeking',
+      bronId: b.id,
+      datum: b.datum,
+      omschrijving: b.omschrijving,
+      regels: zonderNul([regel(bank, r.bankMutatie, 'debet'), regel(tegen, r.bankMutatie, 'credit')])
+    });
+  }
 
   switch (b.soort) {
     case 'uitgave': {
@@ -183,11 +217,139 @@ export function memoriaalNaarPost(m: Memoriaal): JournaalPost {
   });
 }
 
-/** Het journaal van alle bronnen (stap 1: boekingen, beginsaldi, memoriaal), op datum. */
-export function journaal(stam: Stamdata, boekingen: Boeking[], memoriaal: Memoriaal[] = []): JournaalPost[] {
+// ---------------------------------------------------------------------------------
+// Facturen en bonnetjes (afgeleid, alleen lezen)
+// ---------------------------------------------------------------------------------
+/**
+ * Een factuur als journaalpost (factuurstelsel: op de factuurdatum):
+ *   D 1300 debiteuren (totaal)
+ *   C 8000 omzet (revenue_subtotal) — bij verlegd/0%: 8010 —, C 8090 doorberekende kosten
+ *     (subtotaal − revenue_subtotal), C 1500/1505 btw zoals gefactureerd (vat_amount).
+ * Een creditfactuur (negatieve bedragen) keert vanzelf om. Aanbetaling en restfactuur zijn
+ * elk een eigen factuur met eigen bedragen, dus niets telt dubbel.
+ */
+export function factuurNaarPost(f: FactuurBron, extra?: BronExtra | null): JournaalPost {
+  const code = factuurBtwCode(f, extra);
+  const zonderNlBtw = code !== '21' && code !== '9';
+  const omzetRekening = extra?.grootboek ?? (zonderNlBtw ? '8010' : GB.omzet);
+  const btw = zonderNlBtw ? 0 : f.btw;
+  const doorberekend = f.subtotaal - f.omzet;
+  // Sluitpost: het totaal is altijd subtotaal + btw; een eventueel verschil (afronding in een
+  // oude factuur) valt in de omzet, zodat de post sluit en debiteuren klopt met de factuur.
+  const omzet = f.totaal - btw - doorberekend;
+  return assertSluit({
+    id: `factuur:${f.id}`,
+    bron: 'factuur',
+    bronId: f.id,
+    datum: f.datum,
+    omschrijving: `Factuur ${f.nummer} · ${f.klant}`,
+    regels: zonderNul([
+      regel(GB.debiteuren, f.totaal, 'debet'),
+      regel(omzetRekening, omzet, 'credit'),
+      regel('8090', doorberekend, 'credit'),
+      regel(code === '9' ? GB.btwLaag : GB.btwHoog, btw, 'credit')
+    ]),
+    btw: { rubriek: rubriekVoor('inkomst', code), grondslag: f.totaal - btw, verschuldigd: btw, voorbelasting: 0 }
+  });
+}
+
+/**
+ * Een verwerkt bonnetje (in EUR) als journaalpost op de bondatum:
+ *   D kosten (excl.) + D 1520 voorbelasting / C tegenrekening (totaal);
+ *   verlegd (4b/2a/4a): D kosten (totaal) / C tegenrekening, plus D 1520 / C 1510 21% (per saldo 0).
+ * Tegenrekening: zakelijk/creditcard → 1600 crediteuren (de bankregel betaalt die af),
+ * privé voorgeschoten → privé van de vennoot, contant → 1000 kas.
+ * null als het bonnetje (nog) niet meetelt (concept, andere valuta).
+ */
+export function uitgaveNaarPost(u: UitgaveBron, ctx: JournaalContext, extra?: BronExtra | null): JournaalPost | null {
+  if (uitgaveTeltNiet(u) || !u.datum || u.totaal === null) return null;
+  const code = uitgaveBtwCode(u, extra);
+  const kosten = uitgaveGrootboek(u, extra);
+  let tegen: string = GB.crediteuren;
+  let vennootId: string | null = null;
+  if (u.betaalwijze === 'prive') {
+    vennootId = extra?.vennootId ?? ctx.vennootVanGebruiker(u.aangemaaktDoor);
+    tegen = ctx.privéGrootboek(vennootId);
+  } else if (u.betaalwijze === 'contant') tegen = GB.kas;
+
+  let regels: JournaalRegel[];
+  let btw: JournaalBtw;
+  if (isVerlegd(code)) {
+    const v = btwUitExcl(u.totaal, VERLEGD_TARIEF);
+    regels = [
+      regel(kosten, u.totaal, 'debet'),
+      regel(tegen, u.totaal, 'credit', vennootId),
+      regel(GB.voorbelasting, v, 'debet'),
+      regel(GB.btwVerlegd, v, 'credit')
+    ];
+    btw = { rubriek: rubriekVoor('uitgave', code), grondslag: u.totaal, verschuldigd: v, voorbelasting: v };
+  } else {
+    const b = uitgaveBtw(u, code);
+    regels = [regel(kosten, u.totaal - b, 'debet'), regel(GB.voorbelasting, b, 'debet'), regel(tegen, u.totaal, 'credit', vennootId)];
+    btw = { rubriek: rubriekVoor('uitgave', code), grondslag: u.totaal - b, verschuldigd: 0, voorbelasting: b };
+  }
+  return assertSluit({
+    id: `uitgave:${u.id}`,
+    bron: 'uitgave',
+    bronId: u.id,
+    datum: u.datum,
+    omschrijving: `Bonnetje ${u.leverancier || u.omschrijving || ''}`.trim(),
+    regels: zonderNul(regels),
+    btw
+  });
+}
+
+export interface JournaalInvoer {
+  boekingen: Boeking[];
+  memoriaal?: Memoriaal[];
+  facturen?: FactuurBron[];
+  uitgaven?: UitgaveBron[];
+  koppelingen?: Koppeling[];
+  bronExtra?: BronExtra[];
+}
+
+/** Koppelingen per boeking (alleen van boekingen die bestaan). */
+export function koppelingenPerBoeking(koppelingen: readonly Koppeling[]): Map<string, Koppeling[]> {
+  const uit = new Map<string, Koppeling[]>();
+  for (const k of koppelingen) {
+    const l = uit.get(k.boekingId);
+    if (l) l.push(k);
+    else uit.set(k.boekingId, [k]);
+  }
+  return uit;
+}
+
+export function extraSleutel(bron: string, id: string): string {
+  return `${bron}:${id}`;
+}
+
+/** Het journaal van alle bronnen, op datum. */
+export function journaal(stam: Stamdata, invoer: JournaalInvoer): JournaalPost[] {
   const ctx = contextUit(stam);
-  const posten = [...beginsaldoPosten(stam), ...boekingen.map((b) => boekingNaarPost(b, ctx)), ...memoriaal.map(memoriaalNaarPost)];
+  const perBoeking = koppelingenPerBoeking(invoer.koppelingen ?? []);
+  const extra = new Map((invoer.bronExtra ?? []).map((e) => [extraSleutel(e.bron, e.bronId), e]));
+  const posten: JournaalPost[] = [
+    ...beginsaldoPosten(stam),
+    ...invoer.boekingen.map((b) => boekingNaarPost(b, ctx, perBoeking.get(b.id))),
+    ...(invoer.memoriaal ?? []).map(memoriaalNaarPost),
+    ...(invoer.facturen ?? []).map((f) => factuurNaarPost(f, extra.get(extraSleutel('factuur', f.id)))),
+    ...(invoer.uitgaven ?? []).flatMap((u) => uitgaveNaarPost(u, ctx, extra.get(extraSleutel('uitgave', u.id))) ?? [])
+  ];
   return posten.sort((a, b) => (a.datum < b.datum ? -1 : a.datum > b.datum ? 1 : a.id < b.id ? -1 : 1));
+}
+
+/** Btw per kwartaal uit het journaal ("JJJJ-Q" → verschuldigd en voorbelasting). */
+export function btwPerKwartaal(posten: JournaalPost[]): Map<string, { verschuldigd: Centen; voorbelasting: Centen }> {
+  const uit = new Map<string, { verschuldigd: Centen; voorbelasting: Centen }>();
+  for (const p of posten) {
+    if (!p.btw) continue;
+    const k = `${p.datum.slice(0, 4)}-${Math.floor((Number(p.datum.slice(5, 7)) - 1) / 3) + 1}`;
+    const t = uit.get(k) ?? { verschuldigd: 0, voorbelasting: 0 };
+    t.verschuldigd += p.btw.verschuldigd;
+    t.voorbelasting += p.btw.voorbelasting;
+    uit.set(k, t);
+  }
+  return uit;
 }
 
 /** Saldo per grootboekrekening (debet − credit), eventueel tot en met een datum. */

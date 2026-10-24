@@ -14,7 +14,11 @@
 //     service-role (herstel) mag wel;
 //   - memoriaal moet sluiten; grootboek: systeemrekeningen niet te verwijderen;
 //   - rekening toevoegen (eigen 11xx-rekening) en standaardrekening wisselen;
-//   - backup_tabellen() bevat alle bk-tabellen; de grote SQL-bestanden opnieuw blijven "ok".
+//   - backup_tabellen() bevat alle bk-tabellen; de grote SQL-bestanden opnieuw blijven "ok";
+//   - stap 2: koppelingen (factuur ↔ inkomst, bonnetje ↔ uitgave; soort moet passen; in een
+//     vergrendeld kwartaal alleen bij regels zonder btw), verfijning van facturen/bonnetjes
+//     alleen in een open periode, bk_importeer: in één transactie, dubbele sleutels overgeslagen
+//     (2e keer 0 nieuw), alleen voor teamleden.
 //
 // Gebruik:  node scripts/test-boekhouding-db.mjs
 import fs from "node:fs";
@@ -259,6 +263,75 @@ let B1;
     "insert into public.bk_memoriaal_regels (memoriaal_id, grootboek_code, debet_centen, credit_centen) values ('aaaaaaaa-0000-4000-8000-0000000000a3', '1100', 5, 5)",
   ]);
   check(!tweeKanten.ok && tweeKanten.code === "23514", "memoriaalregel met debet én credit geweigerd", uitleg(tweeKanten));
+}
+
+
+// ---- koppelingen, verfijning en import (stap 2) ----
+{
+  await db.query("insert into public.clients (id, company_name) values ('cccccccc-0000-4000-8000-000000000001', 'Hotel Zeezicht') on conflict do nothing");
+  await db.query(`insert into public.invoices (id, invoice_number, year, sequence_number, client_id, client_company_name, line_items, subtotal, vat_amount, total, revenue_subtotal, issued_at)
+                  values ('ffffffff-0000-4000-8000-000000000001', '2026-901', 2026, 901, 'cccccccc-0000-4000-8000-000000000001', 'Hotel Zeezicht', '[]', 3000, 630, 3630, 3000, '2026-05-10T10:00:00Z'),
+                         ('ffffffff-0000-4000-8000-000000000002', '2026-902', 2026, 902, 'cccccccc-0000-4000-8000-000000000001', 'Hotel Zeezicht', '[]', 1000, 210, 1210, 1000, '2026-02-10T10:00:00Z')`);
+  await db.query(`insert into public.expenses (id, expense_date, supplier, total_amount, vat_amount, vat_rate, status) values ('eeeeeeee-0000-4000-8000-000000000001', '2026-05-12', 'Coolblue', 349, 60.57, '21', 'verwerkt')`);
+  const ink = await als(db, "bram", `insert into public.bk_boekingen (rekening_id, datum, omschrijving, soort, richting, bedrag_centen, btw_code, btw_centen, grootboek_code) values ('${REK}', '2026-05-20', 'Betaling 2026-901', 'inkomst', 'bij', 363000, '21', 63000, '8000') returning id`, { commit: true });
+  const uit = await als(db, "bram", `insert into public.bk_boekingen (rekening_id, datum, omschrijving, soort, richting, bedrag_centen, btw_code, btw_centen, grootboek_code) values ('${REK}', '2026-05-13', 'Coolblue', 'uitgave', 'af', 34900, '21', 6057, '4010') returning id`, { commit: true });
+  const INK = ink.rows?.[0]?.id;
+  const UIT = uit.rows?.[0]?.id;
+  check(INK && UIT, "boekingen voor de koppeltest", uitleg(ink) + uitleg(uit));
+  const k1 = await als(db, "bram", `insert into public.bk_koppelingen (boeking_id, bron, bron_id, bedrag_centen) values ('${INK}', 'factuur', 'ffffffff-0000-4000-8000-000000000001', 363000) returning id`, { commit: true });
+  check(k1.ok, "lid koppelt een inkomst aan een factuur", uitleg(k1));
+  const fout1 = await als(db, "bram", `insert into public.bk_koppelingen (boeking_id, bron, bron_id, bedrag_centen) values ('${UIT}', 'factuur', 'ffffffff-0000-4000-8000-000000000002', 1210)`);
+  check(!fout1.ok && /koppeling_ongeldig/.test(fout1.msg || ""), "factuur aan een uitgave koppelen geweigerd", uitleg(fout1));
+  const k2 = await als(db, "bram", `insert into public.bk_koppelingen (boeking_id, bron, bron_id, bedrag_centen) values ('${UIT}', 'uitgave', 'eeeeeeee-0000-4000-8000-000000000001', 34900)`, { commit: true });
+  check(k2.ok, "lid koppelt een uitgave aan een bonnetje", uitleg(k2));
+  const dubbel = await als(db, "bram", `insert into public.bk_koppelingen (boeking_id, bron, bron_id, bedrag_centen) values ('${INK}', 'factuur', 'ffffffff-0000-4000-8000-000000000001', 1)`);
+  check(!dubbel.ok && dubbel.code === "23505", "zelfde koppeling niet twee keer", uitleg(dubbel));
+  const ind = await als(db, "indringer", `insert into public.bk_koppelingen (boeking_id, bron, bron_id, bedrag_centen) values ('${INK}', 'factuur', 'ffffffff-0000-4000-8000-000000000002', 1)`);
+  check(geweigerd(ind), "buitenstaander koppelt niets", uitleg(ind));
+  // Vergrendeld Q2: ontkoppelen van een regel met btw kan niet; van een regel zonder btw wel.
+  await db.exec("insert into public.bk_aangiften (jaar, kwartaal) values (2026, 2)");
+  const los = await als(db, "bram", `delete from public.bk_koppelingen where boeking_id = '${INK}'`);
+  check(vergrendeld(los), "ontkoppelen in een vergrendeld kwartaal (regel met btw) geweigerd", uitleg(los));
+  const zonderBtw = (await db.query(`insert into public.bk_boekingen (rekening_id, datum, omschrijving, soort, richting, bedrag_centen, btw_code, btw_centen, grootboek_code) values ('${REK}', '2026-05-21', 'Betaling 2026-902', 'inkomst', 'bij', 121000, 'geen', 0, '8000') returning id`)).rows[0].id;
+  const k3 = await als(db, "bram", `insert into public.bk_koppelingen (boeking_id, bron, bron_id, bedrag_centen) values ('${zonderBtw}', 'factuur', 'ffffffff-0000-4000-8000-000000000002', 121000)`);
+  check(k3.ok, "koppelen in een vergrendeld kwartaal kan bij een regel zonder eigen btw", uitleg(k3));
+  const status = await als(db, "bram", `update public.bk_boekingen set status = 'geboekt' where id = '${INK}'`);
+  check(status.ok && status.n === 1, "status van een gekoppelde regel in Q2 mag wijzigen", uitleg(status));
+  // Verfijning: factuur uit Q2 (vergrendeld) niet, factuur uit Q1 (open) wel; notitie mag altijd.
+  const ex1 = await als(db, "bram", "insert into public.bk_bron_extra (bron, bron_id, btw_code) values ('factuur', 'ffffffff-0000-4000-8000-000000000001', 'eu_dienst')");
+  check(vergrendeld(ex1), "btw-rubriek van een factuur in een vergrendeld kwartaal wijzigen geweigerd", uitleg(ex1));
+  const ex2 = await als(db, "bram", "insert into public.bk_bron_extra (bron, bron_id, btw_code, notitie) values ('factuur', 'ffffffff-0000-4000-8000-000000000002', 'eu_dienst', 'x')", { commit: true });
+  check(ex2.ok, "verfijning van een factuur in een open kwartaal kan", uitleg(ex2));
+  const ex3 = await als(db, "bram", "update public.bk_bron_extra set btw_code = '21' where bron_id = 'ffffffff-0000-4000-8000-000000000002'");
+  check(ex3.ok && ex3.n === 1, "verfijning wijzigen in een open kwartaal kan", uitleg(ex3));
+  await db.exec("delete from public.bk_aangiften where jaar = 2026 and kwartaal = 2");
+  check((await als(db, "bram", `delete from public.bk_koppelingen where boeking_id = '${INK}'`)).ok, "na intrekken: ontkoppelen kan weer");
+  // invoices/expenses zijn niet gewijzigd door de koppelingen.
+  const inv = (await db.query("select string_agg(invoice_number || ':' || total::text, ',' order by invoice_number) as s from public.invoices where invoice_number like '2026-90%'")).rows[0].s;
+  check(inv === "2026-901:3630.00,2026-902:1210.00", "facturen ongemoeid door koppelen en verfijnen", inv);
+
+  // bk_importeer
+  const regels = JSON.stringify([
+    { datum: "2026-10-01", omschrijving: "KPN", tegenpartij: "KPN B.V.", tegenrekening: "NL13KPNB0101010101", soort: "uitgave", richting: "af", bedrag_centen: 4840, btw_code: "21", btw_centen: 840, grootboek_code: "4700", vennoot_id: "", import_sleutel: "rb:1", kenmerk: "" },
+    { datum: "2026-10-02", omschrijving: "Fysio", tegenpartij: "", tegenrekening: "", soort: "inkomst", richting: "bij", bedrag_centen: 302500, btw_code: "21", btw_centen: 52500, grootboek_code: "8000", vennoot_id: "", import_sleutel: "rb:2", kenmerk: "" },
+  ]);
+  const imp1 = await als(db, "bram", [[`select public.bk_importeer($1, 'afschrift.csv', 'regiobank', $2::jsonb) as r`, [REK, regels]]], { commit: true });
+  check(imp1.ok && imp1.rows[0].r.nieuw === 2 && imp1.rows[0].r.dubbel === 0, "import: 2 nieuwe regels", uitleg(imp1) + JSON.stringify(imp1.rows?.[0]));
+  const imp2 = await als(db, "bram", [[`select public.bk_importeer($1, 'afschrift.csv', 'regiobank', $2::jsonb) as r`, [REK, regels]]], { commit: true });
+  check(imp2.ok && imp2.rows[0].r.nieuw === 0 && imp2.rows[0].r.dubbel === 2, "opnieuw importeren: 0 nieuw, 2 dubbel", uitleg(imp2) + JSON.stringify(imp2.rows?.[0]));
+  const st = (await db.query("select status, import_id is not null as i, created_by from public.bk_boekingen where import_sleutel in ('rb:1', 'rb:2')")).rows;
+  check(st.length === 2 && st.every((r) => r.status === "te_verwerken" && r.i && r.created_by === U.bram), "geïmporteerde regels: te verwerken, met import en created_by", JSON.stringify(st));
+  const im = (await db.query("select aantal_nieuw, aantal_dubbel, periode_van::text, periode_tot::text from public.bk_imports order by created_at")).rows;
+  check(im.length === 2 && im[0].aantal_nieuw === 2 && im[1].aantal_dubbel === 2 && im[0].periode_van === "2026-10-01" && im[0].periode_tot === "2026-10-02", "bk_imports houdt de telling en periode bij", JSON.stringify(im));
+  const impInd = await als(db, "indringer", [[`select public.bk_importeer($1, 'x', 'regiobank', $2::jsonb)`, [REK, regels]]]);
+  check(!impInd.ok, "buitenstaander kan niet importeren", uitleg(impInd));
+  const impAnon = await als(db, "anon", [[`select public.bk_importeer($1, 'x', 'regiobank', $2::jsonb)`, [REK, regels]]]);
+  check(geweigerd(impAnon), "anon kan niet importeren", uitleg(impAnon));
+  await db.exec("insert into public.bk_aangiften (jaar, kwartaal) values (2026, 4)");
+  const regelsQ4 = JSON.stringify([{ datum: "2026-10-03", omschrijving: "x", soort: "uitgave", richting: "af", bedrag_centen: 100, btw_code: "geen", btw_centen: 0, import_sleutel: "rb:3" }]);
+  const impSlot = await als(db, "bram", [[`select public.bk_importeer($1, 'x', 'regiobank', $2::jsonb)`, [REK, regelsQ4]]]);
+  check(vergrendeld(impSlot) && (await db.query("select count(*)::int as n from public.bk_imports")).rows[0].n === 2, "import in een vergrendeld kwartaal: alles teruggedraaid", uitleg(impSlot));
+  await db.exec("delete from public.bk_aangiften where jaar = 2026 and kwartaal = 4");
 }
 
 // ---- grootboek ----

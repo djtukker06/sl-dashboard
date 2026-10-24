@@ -15,7 +15,12 @@ const TABS = [
     kort: 'Bonnetjes',
     actief: (p: string) => p.startsWith('/boekhouding/bonnetjes') || p.startsWith('/uitgaven')
   },
-  { href: '/boekhouding/bank', label: 'Bank & boekingen', kort: 'Bank', actief: (p: string) => p.startsWith('/boekhouding/bank') },
+  {
+    href: '/boekhouding/bank',
+    label: 'Bank & boekingen',
+    kort: 'Bank',
+    actief: (p: string) => p.startsWith('/boekhouding/bank') || p.startsWith('/boekhouding/openstaand')
+  },
   { href: '/boekhouding/instellingen', label: 'Instellingen', actief: (p: string) => p.startsWith('/boekhouding/instellingen') }
 ] as const;
 

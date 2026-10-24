@@ -7,10 +7,14 @@
 // serverinstantie landen met een eigen geheugen; een demowijziging kan dan "verdwijnen".
 // Dat is acceptabel voor een demo en staat in de banner-uitleg en de README.
 
-import { MAX_CENTEN } from '../kern/geld';
-import { vandaagNL } from '../kern/periode';
-import { vergrendelFout, type Boeking, type BoekingWaarde, type Rekening } from '../model';
+import { MAX_CENTEN, type Centen } from '../kern/geld';
+import { vandaagNL, vergrendeldReden } from '../kern/periode';
+import { factuurPosten, koppelFout, koppelVergrendelFout, uitgavePosten } from '../kern/afletteren';
+import type { BronExtra, KoppelBron, Koppeling } from '../kern/bronnen';
+import type { ImportBoeking, Kolommapping } from '../kern/bankimport';
+import { vergrendelFout, type Boeking, type BoekingWaarde, type ImportFormaat, type Rekening } from '../model';
 import { demoSeed, type DemoData } from './demo-seed';
+import { voorbeeldAfschriften } from './demo-voorbeeld';
 import { BoekhoudFout, type BoekhoudRepo, type RekeningInvoer, type RekeningWijziging } from './types';
 
 const TTL_MS = 4 * 60 * 60 * 1000;
@@ -125,7 +129,9 @@ export class DemoRepo implements BoekhoudRepo {
     const fout = vergrendelFout(d.boekingen[i], null, d.stamdata.vergrendeling);
     if (fout) throw new BoekhoudFout(409, fout, 'periode_vergrendeld');
     if (!reden.trim()) throw new BoekhoudFout(400, 'Geef een reden op.', 'ongeldig');
-    this.muteer().boekingen.splice(i, 1);
+    const data = this.muteer();
+    data.koppelingen = data.koppelingen.filter((k) => k.boekingId !== id);
+    data.boekingen.splice(i, 1);
   }
 
   async rekeningToevoegen(r: RekeningInvoer): Promise<Rekening> {
@@ -181,6 +187,124 @@ export class DemoRepo implements BoekhoudRepo {
     if (!d.stamdata.rekeningen.some((x) => x.id === id && x.actief)) throw new BoekhoudFout(404, 'Die rekening bestaat niet (meer) of is niet actief.', 'onbekend');
     this.muteer();
     for (const r of d.stamdata.rekeningen) r.standaard = r.id === id;
+  }
+
+  async importMappingOpslaan(rekeningId: string, mapping: Kolommapping | null): Promise<void> {
+    const rek = this.s.data.stamdata.rekeningen.find((x) => x.id === rekeningId);
+    if (!rek) throw new BoekhoudFout(404, 'Die rekening bestaat niet (meer).', 'onbekend');
+    this.muteer();
+    rek.importMapping = mapping ? { ...mapping } : null;
+  }
+
+  async bronnen() {
+    const d = this.s.data;
+    return { facturen: kopie(d.facturen), uitgaven: kopie(d.uitgaven) };
+  }
+
+  async koppelingen(): Promise<Koppeling[]> {
+    const d = this.s.data;
+    const ids = new Set(d.boekingen.map((b) => b.id));
+    return kopie(d.koppelingen.filter((k) => ids.has(k.boekingId)));
+  }
+
+  async koppelingToevoegen(k: { boekingId: string; bron: KoppelBron; bronId: string; bedrag: Centen }): Promise<Koppeling> {
+    const d = this.s.data;
+    const b = d.boekingen.find((x) => x.id === k.boekingId);
+    if (!b) throw new BoekhoudFout(404, 'Deze boeking bestaat niet (meer).', 'onbekend');
+    const vandaag = vandaagNL();
+    const ids = new Set(d.boekingen.map((x) => x.id));
+    const actief = d.koppelingen.filter((x) => ids.has(x.boekingId));
+    const post =
+      k.bron === 'factuur'
+        ? factuurPosten(d.facturen.filter((f) => f.id === k.bronId), actief, vandaag)[0]
+        : uitgavePosten(d.uitgaven.filter((u) => u.id === k.bronId), actief, vandaag)[0];
+    if (!post) throw new BoekhoudFout(404, k.bron === 'factuur' ? 'Deze factuur bestaat niet (meer).' : 'Dit bonnetje bestaat niet (meer) of telt niet mee.', 'onbekend');
+    const fout = koppelFout(b, { bron: k.bron, id: k.bronId, totaal: post.totaal, open: post.open }, k.bedrag, actief, d.stamdata.vergrendeling);
+    if (fout) throw koppelVergrendelFout(b, d.stamdata.vergrendeling) ? new BoekhoudFout(409, fout, 'periode_vergrendeld') : new BoekhoudFout(400, fout, 'koppeling_ongeldig');
+    const data = this.muteer();
+    const nieuw: Koppeling = { id: crypto.randomUUID(), boekingId: b.id, bron: k.bron, bronId: k.bronId, bedrag: k.bedrag, aangemaakt: new Date().toISOString() };
+    data.koppelingen.push(nieuw);
+    if (b.status === 'te_verwerken') b.status = 'geboekt';
+    return kopie(nieuw);
+  }
+
+  async koppelingVerwijderen(id: string): Promise<void> {
+    const d = this.s.data;
+    const i = d.koppelingen.findIndex((k) => k.id === id);
+    if (i < 0) throw new BoekhoudFout(404, 'Deze koppeling bestaat niet (meer).', 'onbekend');
+    const b = d.boekingen.find((x) => x.id === d.koppelingen[i].boekingId);
+    const slot = b ? koppelVergrendelFout(b, d.stamdata.vergrendeling) : null;
+    if (slot) throw new BoekhoudFout(409, slot, 'periode_vergrendeld');
+    this.muteer().koppelingen.splice(i, 1);
+  }
+
+  async bronExtra(): Promise<BronExtra[]> {
+    return kopie(this.s.data.bronExtra);
+  }
+
+  async bronExtraOpslaan(e: BronExtra): Promise<BronExtra> {
+    const d = this.s.data;
+    const doc = e.bron === 'factuur' ? d.facturen.find((f) => f.id === e.bronId) : d.uitgaven.find((u) => u.id === e.bronId);
+    if (!doc) throw new BoekhoudFout(404, 'Dit document bestaat niet (meer).', 'onbekend');
+    const datum = doc.datum;
+    const oud = d.bronExtra.find((x) => x.bron === e.bron && x.bronId === e.bronId);
+    const financieel = !oud || oud.btwCode !== e.btwCode || oud.grootboek !== e.grootboek || oud.vennootId !== e.vennootId;
+    const slot = datum && financieel ? vergrendeldReden(datum, d.stamdata.vergrendeling) : null;
+    if (slot) throw new BoekhoudFout(409, slot, 'periode_vergrendeld');
+    const data = this.muteer();
+    data.bronExtra = data.bronExtra.filter((x) => !(x.bron === e.bron && x.bronId === e.bronId));
+    data.bronExtra.push({ ...e });
+    return kopie(e);
+  }
+
+  async importSleutels(rekeningId: string): Promise<Set<string>> {
+    return new Set(this.s.data.importSleutels[rekeningId] ?? []);
+  }
+
+  async importeer(rekeningId: string, _meta: { bestandsnaam: string; formaat: ImportFormaat }, regels: ImportBoeking[]): Promise<{ nieuw: number; dubbel: number }> {
+    const d = this.s.data;
+    if (!d.stamdata.rekeningen.some((r) => r.id === rekeningId && r.actief)) throw new BoekhoudFout(404, 'Die rekening bestaat niet (meer) of is niet actief.', 'onbekend');
+    for (const r of regels) {
+      const slot = vergrendeldReden(r.datum, d.stamdata.vergrendeling);
+      if (slot) throw new BoekhoudFout(409, slot, 'periode_vergrendeld');
+      this.controleer({ ...r, rekeningId });
+    }
+    const data = this.muteer();
+    const bestaand = new Set(data.importSleutels[rekeningId] ?? []);
+    const importId = crypto.randomUUID();
+    let nieuw = 0;
+    const nu = new Date().toISOString();
+    for (const r of regels) {
+      if (bestaand.has(r.sleutel)) continue;
+      bestaand.add(r.sleutel);
+      const w: BoekingWaarde = {
+        rekeningId,
+        datum: r.datum,
+        omschrijving: r.omschrijving,
+        tegenpartij: r.tegenpartij,
+        soort: r.soort,
+        richting: r.richting,
+        bedrag: r.bedrag,
+        isExcl: r.isExcl,
+        btwCode: r.btwCode,
+        btw: r.btw,
+        btwHandmatig: r.btwHandmatig,
+        grootboek: r.grootboek,
+        vennootId: r.vennootId,
+        status: 'te_verwerken',
+        notities: r.notities
+      };
+      const { tegenrekening, kenmerk } = r;
+      data.boekingen.push({ id: crypto.randomUUID(), ...w, status: 'te_verwerken', tegenrekening, kenmerk, importId, aangemaakt: nu, aangemaaktDoor: this.userId, gewijzigd: nu });
+      nieuw++;
+    }
+    data.importSleutels[rekeningId] = [...bestaand];
+    return { nieuw, dubbel: regels.length - nieuw };
+  }
+
+  /** Voorbeeld-CSV's (RegioBank en Revolut) om de import in de demo te proberen. */
+  voorbeeldAfschriften(): { regiobank: string; revolut: string } {
+    return voorbeeldAfschriften(this.s.data, vandaagNL());
   }
 
   /** Dezelfde regels als de CHECK-constraints in 0027. */

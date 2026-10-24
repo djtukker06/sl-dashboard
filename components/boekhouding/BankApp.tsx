@@ -17,8 +17,12 @@ import {
   type Stamdata
 } from '@/lib/boekhouding/model';
 import { BkApiFout, bkApi } from '@/lib/boekhouding/client';
+import { factuurPosten, koppelBronVoor, koppelSuggesties, koppelVergrendelFout, restVanBoeking, uitgavePosten } from '@/lib/boekhouding/kern/afletteren';
+import type { FactuurBron, KoppelBron, Koppeling, UitgaveBron } from '@/lib/boekhouding/kern/bronnen';
+import type { Centen } from '@/lib/boekhouding/kern/geld';
 import { BoekingFormulier, Uitkomst, formulierNaarBody, leegFormulier, pasAan, rekenUit, type Formulier } from './BoekingFormulier';
 import { BoekingPaneel } from './BoekingPaneel';
+import type { KoppelInfo } from './KoppelSuggesties';
 
 export interface BankFilter {
   rekening: string;
@@ -31,15 +35,38 @@ export interface BankFilter {
 
 // Bank & boekingen: alles wat er op de rekeningen gebeurt, in regels. Bovenaan de saldi en
 // de snelle invoer (bank standaard RegioBank; btw en kwartaal live), daaronder de lijst met
-// filters, totalen en het lopende saldo per rekening. Een regel openen = zijpaneel.
-export function BankApp({ stam, boekingen: begin, vandaag, filter: beginFilter }: { stam: Stamdata; boekingen: Boeking[]; vandaag: Datum; filter: BankFilter }) {
+// filters, totalen en het lopende saldo per rekening. Een regel openen = zijpaneel (met
+// afletteren tegen een factuur of bonnetje).
+export function BankApp({
+  stam,
+  boekingen: begin,
+  vandaag,
+  filter: beginFilter,
+  koppelingen: beginKoppelingen,
+  facturen,
+  uitgaven,
+  bronBtw,
+  openId: beginOpen
+}: {
+  stam: Stamdata;
+  boekingen: Boeking[];
+  vandaag: Datum;
+  filter: BankFilter;
+  koppelingen: Koppeling[];
+  facturen: FactuurBron[];
+  uitgaven: UitgaveBron[];
+  /** Btw uit facturen en bonnetjes per kwartaal ("JJJJ-Q"). */
+  bronBtw: Record<string, { verschuldigd: Centen; voorbelasting: Centen }>;
+  openId?: string | null;
+}) {
   const [lijst, setLijst] = useState<Boeking[]>(begin);
+  const [koppel, setKoppel] = useState<Koppeling[]>(beginKoppelingen);
   const [form, setForm] = useState<Formulier>(() => leegFormulier(stam, vandaag));
   const [fouten, setFouten] = useState<Record<string, string>>({});
   const [melding, setMelding] = useState<{ tekst: string; soort: 'ok' | 'fout' } | null>(null);
   const [bezig, setBezig] = useState(false);
   const [filter, setFilter] = useState<BankFilter>(beginFilter);
-  const [openId, setOpenId] = useState<string | null>(null);
+  const [openId, setOpenId] = useState<string | null>(beginOpen ?? null);
   const [aantal, setAantal] = useState(100);
   const omschrijvingRef = useRef<HTMLDivElement>(null);
 
@@ -51,18 +78,51 @@ export function BankApp({ stam, boekingen: begin, vandaag, filter: beginFilter }
   const lopend = useMemo(() => lopendSaldo(lijst, stam.rekeningen), [lijst, stam.rekeningen]);
   const uitrekening = rekenUit(stam, form);
 
+  // Afletteren: welke regels zijn betalingen van een factuur/bonnetje, wat staat er nog open.
+  const perBoeking = useMemo(() => {
+    const m = new Map<string, Koppeling[]>();
+    for (const k of koppel) m.set(k.boekingId, [...(m.get(k.boekingId) ?? []), k]);
+    return m;
+  }, [koppel]);
+  const gekoppeld = useMemo(() => new Set(perBoeking.keys()), [perBoeking]);
+  const fPosten = useMemo(() => factuurPosten(facturen, koppel, vandaag), [facturen, koppel, vandaag]);
+  const uPosten = useMemo(() => uitgavePosten(uitgaven, koppel, vandaag), [uitgaven, koppel, vandaag]);
+  const factuurVan = useMemo(() => new Map(facturen.map((f) => [f.id, f])), [facturen]);
+  const uitgaveVan = useMemo(() => new Map(uitgaven.map((u) => [u.id, u])), [uitgaven]);
+  const koppelLabel = (k: Koppeling) => {
+    if (k.bron === 'factuur') {
+      const f = factuurVan.get(k.bronId);
+      return f ? { titel: `Factuur ${f.nummer}`, sub: f.klant, bestaat: true } : { titel: 'Verwijderde factuur', sub: 'De factuur bestaat niet meer', bestaat: false };
+    }
+    const u = uitgaveVan.get(k.bronId);
+    return u ? { titel: u.leverancier || 'Bonnetje', sub: u.omschrijving || 'Bonnetje', bestaat: true } : { titel: 'Verwijderd bonnetje', sub: 'Het bonnetje bestaat niet meer', bestaat: false };
+  };
+  // Regels die nog te verwerken zijn en een goede koppelsuggestie hebben.
+  const metSuggestie = useMemo(() => {
+    const s = new Set<string>();
+    for (const b of lijst) {
+      if (b.status !== 'te_verwerken' || gekoppeld.has(b.id)) continue;
+      if (koppelSuggesties(b, fPosten, uPosten, koppel, 1).length) s.add(b.id);
+    }
+    return s;
+  }, [lijst, gekoppeld, fPosten, uPosten, koppel]);
+
   // Btw-kaart: het eerstvolgende kwartaal waarvoor nog aangifte moet worden gedaan (het vorige
-  // kwartaal zolang dat niet is ingediend, anders het lopende). Alleen de losse bankregels;
-  // facturen en bonnetjes komen er in de btw-aangifte bij.
+  // kwartaal zolang dat niet is ingediend, anders het lopende): facturen en bonnetjes plus de
+  // losse bankregels (gekoppelde betalingen tellen niet dubbel).
   const nuJaar = jaarVan(vandaag);
   const huidigKw = kwartaalVan(vandaag);
   const vorig = huidigKw === 1 ? { jaar: nuJaar - 1, kw: 4 as Kwartaal } : { jaar: nuJaar, kw: (huidigKw - 1) as Kwartaal };
   const vorigOpen = !stam.vergrendeling.aangiften.some((a) => a.jaar === vorig.jaar && a.kwartaal === vorig.kw);
   const btwKw = vorigOpen ? vorig : { jaar: nuJaar, kw: huidigKw };
   const btwNu = useMemo(() => {
-    const t = totalen(lijst.filter((b) => jaarVan(b.datum) === btwKw.jaar && kwartaalVan(b.datum) === btwKw.kw));
-    return t.verschuldigd - t.voorbelasting;
-  }, [lijst, btwKw.jaar, btwKw.kw]);
+    const t = totalen(
+      lijst.filter((b) => jaarVan(b.datum) === btwKw.jaar && kwartaalVan(b.datum) === btwKw.kw),
+      gekoppeld
+    );
+    const bron = bronBtw[`${btwKw.jaar}-${btwKw.kw}`] ?? { verschuldigd: 0, voorbelasting: 0 };
+    return t.verschuldigd + bron.verschuldigd - t.voorbelasting - bron.voorbelasting;
+  }, [lijst, btwKw.jaar, btwKw.kw, gekoppeld, bronBtw]);
   const teVerwerken = lijst.filter((b) => b.status === 'te_verwerken').length;
 
   const jaren = useMemo(() => {
@@ -88,7 +148,7 @@ export function BankApp({ stam, boekingen: begin, vandaag, filter: beginFilter }
         return true;
       });
   }, [lijst, filter, categorieVan]);
-  const som = useMemo(() => totalen(gefilterd), [gefilterd]);
+  const som = useMemo(() => totalen(gefilterd, gekoppeld), [gefilterd, gekoppeld]);
 
   const suggesties = useMemo(() => {
     const gezien = new Set<string>();
@@ -113,6 +173,7 @@ export function BankApp({ stam, boekingen: begin, vandaag, filter: beginFilter }
     zet('soort', filter.soort || null);
     zet('status', filter.status || null);
     zet('q', filter.q.trim() || null);
+    zet('open', null);
     const url = u.pathname + u.search;
     if (url !== window.location.pathname + window.location.search) window.history.replaceState(null, '', url);
   }, [filter, nuJaar]);
@@ -171,6 +232,40 @@ export function BankApp({ stam, boekingen: begin, vandaag, filter: beginFilter }
   }
 
   const open = openId ? lijst.find((b) => b.id === openId) ?? null : null;
+  const koppelInfo: KoppelInfo | undefined = useMemo(() => {
+    if (!open) return undefined;
+    const bron = koppelBronVoor(open);
+    if (!bron) return undefined;
+    const eigen = perBoeking.get(open.id) ?? [];
+    const kandidaten =
+      bron === 'factuur'
+        ? fPosten.filter((p) => p.open !== 0).map((p) => ({ bron: 'factuur' as const, id: p.doc.id, titel: `Factuur ${p.doc.nummer}`, sub: p.doc.klant, datum: p.doc.datum, open: p.open }))
+        : uPosten.filter((p) => p.open !== 0).map((p) => ({ bron: 'uitgave' as const, id: p.doc.id, titel: p.doc.leverancier || 'Bonnetje', sub: p.doc.omschrijving || '', datum: p.doc.datum as Datum, open: p.open }));
+    return {
+      bron,
+      koppelingen: eigen,
+      label: koppelLabel,
+      suggesties: koppelSuggesties(open, fPosten, uPosten, koppel, 3),
+      kandidaten: kandidaten.filter((k) => !eigen.some((e) => e.bronId === k.id)).sort((a, b) => (a.datum < b.datum ? 1 : -1)),
+      rest: restVanBoeking(open, koppel),
+      slot: koppelVergrendelFout(open, stam.vergrendeling)
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, perBoeking, fPosten, uPosten, koppel, stam.vergrendeling]);
+
+  async function koppelen(bron: KoppelBron, bronId: string, bedrag?: Centen) {
+    if (!open) return;
+    const { koppeling } = await bkApi<{ koppeling: Koppeling }>('/api/boekhouding/koppelingen', { method: 'POST', body: { boekingId: open.id, bron, bronId, bedrag } });
+    setKoppel((k) => [...k, koppeling]);
+    setLijst((l) => l.map((b) => (b.id === open.id && b.status === 'te_verwerken' ? { ...b, status: 'geboekt' } : b)));
+    setMelding({ tekst: `Gekoppeld: ${koppelLabel(koppeling).titel} — ${formatCenten(koppeling.bedrag)}`, soort: 'ok' });
+  }
+
+  async function ontkoppelen(id: string) {
+    await bkApi(`/api/boekhouding/koppelingen?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
+    setKoppel((k) => k.filter((x) => x.id !== id));
+    setMelding({ tekst: 'Koppeling verwijderd; de bankregel staat weer los.', soort: 'ok' });
+  }
   const zetFilter = (w: Partial<BankFilter>) => {
     setFilter((f) => ({ ...f, ...w }));
     setAantal(100);
@@ -337,13 +432,23 @@ export function BankApp({ stam, boekingen: begin, vandaag, filter: beginFilter }
             {gefilterd.slice(0, aantal).map((b) => {
               const r = berekenBoeking(b);
               const slot = isVergrendeld(b.datum, stam.vergrendeling);
-              const meta =
-                b.soort === 'uitgave' || b.soort === 'inkomst'
+              const ks = perBoeking.get(b.id);
+              const meta = ks
+                ? ks.map((k) => koppelLabel(k).titel).join(', ') + (ks[0].bron === 'factuur' ? '' : ' (bon)')
+                : b.soort === 'uitgave' || b.soort === 'inkomst'
                   ? categorieVan.get(b.grootboek ?? '') ?? 'Nog in te delen'
                   : b.soort === 'prive'
                     ? `Privé ${vennootVan.get(b.vennootId ?? '') ?? ''}`.trim()
                     : SOORT_LABELS[b.soort].label;
-              const btwTekst = b.soort === 'uitgave' || b.soort === 'inkomst' ? (r.btw.btw ? `${BTW_LABELS[b.btwCode].kort} · ${formatCenten(r.teken * r.btw.btw)}` : BTW_LABELS[b.btwCode].kort) : '—';
+              const btwTekst = ks
+                ? ks[0].bron === 'factuur'
+                  ? 'via factuur'
+                  : 'via bon'
+                : b.soort === 'uitgave' || b.soort === 'inkomst'
+                  ? r.btw.btw
+                    ? `${BTW_LABELS[b.btwCode].kort} · ${formatCenten(r.teken * r.btw.btw)}`
+                    : BTW_LABELS[b.btwCode].kort
+                  : '—';
               return (
                 <button key={b.id} type="button" role="row" className={`bh-tr bh-rij${b.status === 'te_verwerken' ? ' is-open' : ''}`} onClick={() => setOpenId(b.id)}>
                   <span role="cell" className="bh-rij-datum">
@@ -353,6 +458,8 @@ export function BankApp({ stam, boekingen: begin, vandaag, filter: beginFilter }
                     <span className="bh-rij-titel">
                       {b.omschrijving}
                       {b.status === 'te_verwerken' && <span className="bh-pil is-let-op">te verwerken</span>}
+                      {metSuggestie.has(b.id) && <span className="bh-pil is-koppel">koppelen?</span>}
+                      {ks && <span className="bh-pil is-zacht">gekoppeld</span>}
                     </span>
                     <span className="bh-rij-meta">
                       {meta}
@@ -399,6 +506,9 @@ export function BankApp({ stam, boekingen: begin, vandaag, filter: beginFilter }
           boeking={open}
           naamBank={naamVan.get(open.rekeningId ?? '') ?? 'Kas'}
           onSluit={() => setOpenId(null)}
+          koppel={koppelInfo}
+          onKoppel={koppelen}
+          onOntkoppel={ontkoppelen}
           onOpgeslagen={(b) => {
             setLijst((l) => l.map((x) => (x.id === b.id ? b : x)));
             setMelding({ tekst: 'Wijziging opgeslagen.', soort: 'ok' });
@@ -406,6 +516,7 @@ export function BankApp({ stam, boekingen: begin, vandaag, filter: beginFilter }
           onVerwijderd={(id) => {
             setLijst((l) => l.filter((x) => x.id !== id));
             setOpenId(null);
+            setKoppel((k) => k.filter((x) => x.boekingId !== id));
             setMelding({ tekst: 'Boeking verwijderd (bewaard als verwijderd, met reden).', soort: 'ok' });
           }}
         />

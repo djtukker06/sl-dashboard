@@ -35,6 +35,8 @@ export interface Rekening {
   begindatum: Datum | null;
   actief: boolean;
   volgorde: number;
+  /** Onthouden kolomkeuze voor de CSV-import (generiek formaat), of null. */
+  importMapping?: Record<string, unknown> | null;
 }
 
 export interface Grootboekrekening {
@@ -419,13 +421,18 @@ export interface Totalen {
   aantal: number;
 }
 
-/** Totalen van een (gefilterde) lijst: geld in/uit en de btw (met teken bij terugbetalingen). */
-export function totalen(lijst: Boeking[]): Totalen {
+/**
+ * Totalen van een (gefilterde) lijst: geld in/uit en de btw (met teken bij terugbetalingen).
+ * Regels in `gekoppeld` (betalingen van een factuur of bonnetje) tellen niet mee voor de btw:
+ * die komt uit het document zelf.
+ */
+export function totalen(lijst: Boeking[], gekoppeld?: ReadonlySet<string>): Totalen {
   const t: Totalen = { bij: 0, af: 0, voorbelasting: 0, verschuldigd: 0, aantal: lijst.length };
   for (const b of lijst) {
     const r = berekenBoeking(b);
     if (r.bankMutatie >= 0) t.bij += r.bankMutatie;
     else t.af -= r.bankMutatie;
+    if (gekoppeld?.has(b.id) && (b.soort === 'inkomst' || b.soort === 'uitgave')) continue;
     t.voorbelasting += r.teken * r.btw.voorbelasting;
     t.verschuldigd += r.teken * r.btw.verschuldigd;
   }

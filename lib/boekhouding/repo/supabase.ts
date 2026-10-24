@@ -5,7 +5,9 @@ import { logFout } from '@/lib/log';
 import { naarCenten } from '../kern/geld';
 import { isBtwCode } from '../kern/btw';
 import { isKwartaal } from '../kern/periode';
-import { isImportFormaat, type Boeking, type BoekingWaarde, type Grootboekrekening, type Instellingen, type Rekening, type Stamdata, type Vennoot } from '../model';
+import { isImportFormaat, type Boeking, type BoekingWaarde, type Grootboekrekening, type ImportFormaat, type Instellingen, type Rekening, type Stamdata, type Vennoot } from '../model';
+import { bronExtraUitRij, factuurUitRij, isKoppelBron, uitgaveUitRij, type BronExtra, type FactuurBron, type KoppelBron, type Koppeling, type UitgaveBron } from '../kern/bronnen';
+import type { ImportBoeking, Kolommapping } from '../kern/bankimport';
 import { BoekhoudFout, type BoekhoudRepo, type RekeningInvoer, type RekeningWijziging } from './types';
 
 // De echte opslag: tabellen bk_* (migratie 0027) via de gebruikerscliënt van het teamlid,
@@ -27,6 +29,7 @@ export function bkDbFout(error: unknown): BoekhoudFout {
   if (msg.startsWith('grootboek_in_gebruik:')) return new BoekhoudFout(400, 'Deze rekening is in gebruik.', 'grootboek_in_gebruik');
   if (msg.startsWith('geen_vrije_rekening:')) return new BoekhoudFout(400, 'Er kunnen maximaal 10 bankrekeningen zijn.', 'te_veel');
   if (msg.startsWith('rekening_onbekend')) return new BoekhoudFout(404, 'Die rekening bestaat niet (meer) of is niet actief.', 'onbekend');
+  if (msg.startsWith('koppeling_ongeldig:')) return new BoekhoudFout(400, 'Deze koppeling past niet bij de boeking (soort of verwijderd).', 'koppeling_ongeldig');
   if (e.code === '23505') return new BoekhoudFout(409, 'Dat bestaat al (zelfde naam of nummer).', 'bestaat_al');
   if (e.code === '23514') return new BoekhoudFout(400, 'De invoer voldoet niet aan de regels. Controleer de velden.', 'ongeldig');
   if (e.code === '23503') return new BoekhoudFout(400, 'Een gekozen rekening, categorie of vennoot bestaat niet (meer).', 'ongeldig');
@@ -54,7 +57,8 @@ function naarRekening(r: Rij): Rekening {
     beginsaldo: centen(r.beginsaldo_centen),
     begindatum: (r.beginsaldo_datum as string | null) ?? null,
     actief: r.actief !== false,
-    volgorde: Number(r.volgorde ?? 0)
+    volgorde: Number(r.volgorde ?? 0),
+    importMapping: r.import_mapping && typeof r.import_mapping === 'object' ? (r.import_mapping as Record<string, unknown>) : null
   };
 }
 
@@ -250,5 +254,108 @@ export class SupabaseRepo implements BoekhoudRepo {
   async standaardRekening(id: string): Promise<void> {
     const { error } = await this.sb.rpc('bk_standaard_rekening', { p_id: id });
     if (error) throw bkDbFout(error);
+  }
+
+  async importMappingOpslaan(rekeningId: string, mapping: Kolommapping | null): Promise<void> {
+    const { data, error } = await this.sb.from('bk_rekeningen').update({ import_mapping: mapping }).eq('id', rekeningId).select('id');
+    if (error) throw bkDbFout(error);
+    if (!data?.length) throw new BoekhoudFout(404, 'Die rekening bestaat niet (meer).', 'onbekend');
+  }
+
+  async bronnen(): Promise<{ facturen: FactuurBron[]; uitgaven: UitgaveBron[] }> {
+    // Alleen lezen. Kolommen expliciet (geen line_items/pdf); bestaan sinds 0013 en 0020.
+    const [f, u] = await Promise.all([
+      this.sb
+        .from('invoices')
+        .select('id, invoice_number, client_company_name, issued_at, subtotal, revenue_subtotal, vat_percentage, vat_amount, total, vat_reverse_charged, vat_reverse_charge_reason, deposit_percentage, remainder_of_invoice_id')
+        .order('issued_at', { ascending: true })
+        .limit(10000),
+      this.sb
+        .from('expenses')
+        .select('id, expense_date, supplier, description, category, total_amount, vat_amount, vat_rate, currency, invoice_number, payment_method, status, created_by')
+        .order('expense_date', { ascending: true })
+        .limit(20000)
+    ]);
+    if (f.error && !tabelOntbreekt(f.error)) throw bkDbFout(f.error);
+    if (u.error && !tabelOntbreekt(u.error)) throw bkDbFout(u.error);
+    return {
+      facturen: ((f.error ? [] : f.data ?? []) as Rij[]).map(factuurUitRij).filter((x): x is FactuurBron => x !== null),
+      uitgaven: ((u.error ? [] : u.data ?? []) as Rij[]).map(uitgaveUitRij).filter((x): x is UitgaveBron => x !== null)
+    };
+  }
+
+  async koppelingen(): Promise<Koppeling[]> {
+    const { data, error } = await this.sb.from('bk_koppelingen').select('id, boeking_id, bron, bron_id, bedrag_centen, created_at').in('bron', ['factuur', 'uitgave']).limit(50000);
+    if (error) throw bkDbFout(error);
+    return ((data ?? []) as Rij[])
+      .filter((r) => isKoppelBron(r.bron))
+      .map((r) => ({ id: String(r.id), boekingId: String(r.boeking_id), bron: r.bron as KoppelBron, bronId: String(r.bron_id), bedrag: centen(r.bedrag_centen), aangemaakt: String(r.created_at) }));
+  }
+
+  async koppelingToevoegen(k: { boekingId: string; bron: KoppelBron; bronId: string; bedrag: number }): Promise<Koppeling> {
+    const { data, error } = await this.sb
+      .from('bk_koppelingen')
+      .insert({ boeking_id: k.boekingId, bron: k.bron, bron_id: k.bronId, bedrag_centen: k.bedrag })
+      .select('id, created_at')
+      .single();
+    if (error) throw bkDbFout(error);
+    // Gekoppeld = verwerkt (de status mag ook in een vergrendelde periode wijzigen).
+    const st = await this.sb.from('bk_boekingen').update({ status: 'geboekt' }).eq('id', k.boekingId).eq('status', 'te_verwerken');
+    if (st.error) throw bkDbFout(st.error);
+    const r = data as Rij;
+    return { id: String(r.id), boekingId: k.boekingId, bron: k.bron, bronId: k.bronId, bedrag: k.bedrag, aangemaakt: String(r.created_at) };
+  }
+
+  async koppelingVerwijderen(id: string): Promise<void> {
+    const { data, error } = await this.sb.from('bk_koppelingen').delete().eq('id', id).select('id');
+    if (error) throw bkDbFout(error);
+    if (!data?.length) throw new BoekhoudFout(404, 'Deze koppeling bestaat niet (meer).', 'onbekend');
+  }
+
+  async bronExtra(): Promise<BronExtra[]> {
+    const { data, error } = await this.sb.from('bk_bron_extra').select('bron, bron_id, btw_code, grootboek_code, vennoot_id, notitie').limit(20000);
+    if (error) throw bkDbFout(error);
+    return ((data ?? []) as Rij[]).map(bronExtraUitRij).filter((x): x is BronExtra => x !== null);
+  }
+
+  async bronExtraOpslaan(e: BronExtra): Promise<BronExtra> {
+    const { error } = await this.sb.from('bk_bron_extra').upsert(
+      { bron: e.bron, bron_id: e.bronId, btw_code: e.btwCode, grootboek_code: e.grootboek, vennoot_id: e.vennootId, notitie: e.notitie },
+      { onConflict: 'bron,bron_id' }
+    );
+    if (error) throw bkDbFout(error);
+    return e;
+  }
+
+  async importSleutels(rekeningId: string): Promise<Set<string>> {
+    const { data, error } = await this.sb.from('bk_boekingen').select('import_sleutel').eq('rekening_id', rekeningId).not('import_sleutel', 'is', null).limit(50000);
+    if (error) throw bkDbFout(error);
+    return new Set(((data ?? []) as Rij[]).map((r) => String(r.import_sleutel)));
+  }
+
+  async importeer(rekeningId: string, meta: { bestandsnaam: string; formaat: ImportFormaat }, regels: ImportBoeking[]): Promise<{ nieuw: number; dubbel: number }> {
+    const { data, error } = await this.sb.rpc('bk_importeer', {
+      p_rekening: rekeningId,
+      p_bestandsnaam: meta.bestandsnaam,
+      p_formaat: meta.formaat,
+      p_regels: regels.map((r) => ({
+        datum: r.datum,
+        omschrijving: r.omschrijving,
+        tegenpartij: r.tegenpartij ?? '',
+        tegenrekening: r.tegenrekening ?? '',
+        soort: r.soort,
+        richting: r.richting,
+        bedrag_centen: r.bedrag,
+        btw_code: r.btwCode,
+        btw_centen: r.btw,
+        grootboek_code: r.grootboek ?? '',
+        vennoot_id: r.vennootId ?? '',
+        import_sleutel: r.sleutel,
+        kenmerk: r.kenmerk ?? ''
+      }))
+    });
+    if (error) throw bkDbFout(error);
+    const d = (data ?? {}) as Rij;
+    return { nieuw: Number(d.nieuw ?? 0), dubbel: Number(d.dubbel ?? 0) };
   }
 }

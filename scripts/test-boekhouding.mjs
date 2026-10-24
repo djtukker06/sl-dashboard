@@ -11,6 +11,19 @@
 //                       gelijk aan het kwartaalsaldo, niets in de toekomst; de demo-opslag
 //                       importeert geen Supabase, houdt teamleden gescheiden en volgt de
 //                       vergrendeling.
+//   Stap 2:
+//   - kern/bronnen.ts   facturen/bonnetjes uit databaserijen (tekst → centen, NL-dag), btw-code
+//                       (verlegd EU → 3b), categorie → grootboek;
+//   - journaal          factuur (21%, verlegd, doorberekend, creditnota, aanbetaling+rest),
+//                       bonnetje (zakelijk/privé/contant/verlegd/activeren), een gekoppelde
+//                       bankregel is alleen een betaling: omzet en btw veranderen niet;
+//   - kern/afletteren   openstaand/deels/betaald, ouderdom, suggesties, koppelregels (ook
+//                       vergrendeling), overboekingen paren, bon ontbreekt, verweesd;
+//   - kern/bankimport   CSV (aanhalingstekens, BOM, scheidingsteken), datums, RegioBank- en
+//                       Revolut-fixtures (alleen COMPLETED, fee apart, valuta), generiek met
+//                       kolomkeuze, unieke sleutels, voorstel uit de geschiedenis;
+//   - demo              facturen/bonnetjes/koppelingen: debiteuren = open facturen, opnieuw
+//                       importeren geeft 0 nieuwe regels.
 //
 // Gebruik:  node scripts/test-boekhouding.mjs
 import fs from "node:fs";
@@ -37,9 +50,9 @@ export async function resolve(spec, ctx, next) {
 );
 
 const laad = (p) => import(pathToFileURL(path.join(ROOT, "lib", "boekhouding", p)).href);
-let geld, btw, periode, model, journaal, constanten, seed, demo;
+let geld, btw, periode, model, journaal, constanten, seed, demo, bronnen, afl, imp, voorbeeld;
 try {
-  [geld, btw, periode, model, journaal, constanten, seed, demo] = await Promise.all([
+  [geld, btw, periode, model, journaal, constanten, seed, demo, bronnen, afl, imp, voorbeeld] = await Promise.all([
     laad("kern/geld.ts"),
     laad("kern/btw.ts"),
     laad("kern/periode.ts"),
@@ -48,6 +61,10 @@ try {
     laad("kern/constanten.ts"),
     laad("repo/demo-seed.ts"),
     laad("repo/demo.ts"),
+    laad("kern/bronnen.ts"),
+    laad("kern/afletteren.ts"),
+    laad("kern/bankimport.ts"),
+    laad("repo/demo-voorbeeld.ts"),
   ]);
 } catch (err) {
   if (process.env.BK_CHILD) throw err;
@@ -410,8 +427,9 @@ await test("demo-seed: realistisch, niets in de toekomst, alle soorten", () => {
   // Elke opgeslagen btw = de berekende btw.
   for (const x of b) assert.equal(x.btw, model.berekenBoeking(x).btw.btw, x.omschrijving);
 });
+const alles = (d) => ({ boekingen: d.boekingen, facturen: d.facturen, uitgaven: d.uitgaven, koppelingen: d.koppelingen, bronExtra: d.bronExtra });
 await test("demo-seed: journaal sluit, saldi = grootboek, kruisposten 0, saldo nooit negatief", () => {
-  const posten = journaal.journaal(data.stamdata, data.boekingen);
+  const posten = journaal.journaal(data.stamdata, alles(data));
   const pb = journaal.proefbalans(posten);
   assert.equal([...pb.values()].reduce((a, b) => a + b, 0), 0);
   const saldi = model.saldoPerRekening(data.boekingen, data.stamdata.rekeningen);
@@ -426,17 +444,23 @@ await test("demo-seed: ingediende kwartalen vergrendeld en betaald (btw-saldo = 
   assert.deepEqual(a, ["Q3 2025", "Q4 2025", "Q1 2026", "Q2 2026"]);
   assert.equal(periode.isVergrendeld("2026-06-30", data.stamdata.vergrendeling), true);
   assert.equal(periode.isVergrendeld("2026-07-01", data.stamdata.vergrendeling), false);
+  const perKw = journaal.btwPerKwartaal(journaal.journaal(data.stamdata, alles(data)));
   for (const ag of data.aangiften) {
-    const { van, tot } = periode.kwartaalGrenzen(ag.jaar, ag.kwartaal);
-    const t = model.totalen(data.boekingen.filter((x) => x.datum >= van && x.datum <= tot));
+    const t = perKw.get(`${ag.jaar}-${ag.kwartaal}`);
     assert.equal(ag.teBetalen, t.verschuldigd - t.voorbelasting);
+    // Zelfde uitkomst via losse bankregels (zonder gekoppelde) + facturen + bonnetjes.
+    const { van, tot } = periode.kwartaalGrenzen(ag.jaar, ag.kwartaal);
+    const gek = new Set(data.koppelingen.map((k) => k.boekingId));
+    const los = model.totalen(data.boekingen.filter((x) => x.datum >= van && x.datum <= tot), gek);
+    const bron = journaal.btwPerKwartaal(journaal.journaal(data.stamdata, { ...alles(data), boekingen: [] })).get(`${ag.jaar}-${ag.kwartaal}`) ?? { verschuldigd: 0, voorbelasting: 0 };
+    assert.equal(ag.teBetalen, los.verschuldigd + bron.verschuldigd - los.voorbelasting - bron.voorbelasting);
     const betaling = data.boekingen.find((x) => x.soort === "btw" && x.omschrijving === `Belastingdienst btw Q${ag.kwartaal} ${ag.jaar}`);
     assert.ok(betaling && betaling.bedrag === Math.abs(ag.teBetalen) && betaling.richting === (ag.teBetalen > 0 ? "af" : "bij"));
     assert.ok(betaling.datum <= periode.aangifteDeadline(ag.jaar, ag.kwartaal));
   }
 });
 await test("demo-opslag: importeert geen Supabase en schrijft niets naar het netwerk", () => {
-  for (const f of ["repo/demo.ts", "repo/demo-seed.ts", "model.ts", "kern/geld.ts", "kern/btw.ts", "kern/periode.ts", "kern/journaal.ts", "kern/constanten.ts"]) {
+  for (const f of ["repo/demo.ts", "repo/demo-seed.ts", "repo/demo-voorbeeld.ts", "model.ts", "kern/geld.ts", "kern/btw.ts", "kern/periode.ts", "kern/journaal.ts", "kern/constanten.ts", "kern/bronnen.ts", "kern/afletteren.ts", "kern/bankimport.ts"]) {
     const src = fs.readFileSync(path.join(ROOT, "lib", "boekhouding", f), "utf8");
     assert.ok(!/supabase|@\/|fetch\(|node:fs/.test(src.replace(/\/\/[^\n]*/g, "")), `${f} importeert iets buiten de kern`);
   }
@@ -477,6 +501,366 @@ await test("demo-opslag: per teamlid, vergrendeling, herstellen", async () => {
   demo.demoHerstellen("test-a");
   assert.equal((await a.boekingen()).length, voor);
   assert.equal((await a.stamdata()).rekeningen.length, 2);
+});
+
+
+// ---------------------------------------------------------------------------------- stap 2: bronnen
+const F = (o = {}) => ({
+  id: "f0000000-0000-4000-8000-000000000001", nummer: "2026-050", klant: "Hotel Zeezicht", datum: "2026-08-10",
+  subtotaal: 300000, omzet: 300000, btw: 63000, totaal: 363000, btwPct: 21, verlegd: false, verlegdReden: null, aanbetaling: false, restVan: null, ...o,
+});
+const U = (o = {}) => ({
+  id: "u0000000-0000-4000-8000-000000000001", datum: "2026-08-12", leverancier: "Coolblue B.V.", omschrijving: "Monitor", categorie: "hardware",
+  totaal: 34900, btw: 6057, tarief: "21", valuta: "EUR", betaalwijze: "zakelijk", status: "verwerkt", factuurnummer: "", aangemaaktDoor: null, ...o,
+});
+await test("bronnen: factuur- en bonnetjesrijen exact naar centen, factuurdatum in NL-tijd", () => {
+  const f = bronnen.factuurUitRij({ id: "a", invoice_number: "2026-011", client_company_name: "X", issued_at: "2026-03-31T23:30:00Z", subtotal: "1234.56", revenue_subtotal: null, vat_percentage: "21.00", vat_amount: "259.26", total: "1493.82", vat_reverse_charged: false });
+  assert.deepEqual([f.datum, f.subtotaal, f.omzet, f.btw, f.totaal, f.btwPct], ["2026-04-01", 123456, 123456, 25926, 149382, 21]);
+  const g = bronnen.factuurUitRij({ id: "b", issued_at: "2026-12-31T23:30:00Z", subtotal: 0.1 + 0.2, vat_amount: 0.07, total: 0.37, revenue_subtotal: 0.1 });
+  assert.deepEqual([g.datum, g.subtotaal, g.btw, g.totaal, g.omzet], ["2027-01-01", 30, 7, 37, 10]);
+  assert.equal(bronnen.factuurUitRij({ id: "c", issued_at: null, subtotal: 1, total: 1 }), null);
+  const u = bronnen.uitgaveUitRij({ id: "u", expense_date: "2026-02-30", supplier: "Bol", total_amount: "42.95", vat_amount: "7.45", vat_rate: "21", currency: "EUR", payment_method: "prive", status: "verwerkt" });
+  assert.deepEqual([u.datum, u.totaal, u.btw, u.tarief, u.betaalwijze], [null, 4295, 745, "21", "prive"]);
+  assert.equal(bronnen.uitgaveTeltNiet(u), "datum of bedrag ontbreekt");
+  assert.equal(bronnen.uitgaveTeltNiet(U({ status: "concept" })), "nog in concept");
+  assert.equal(bronnen.uitgaveTeltNiet(U({ valuta: "USD" })), "in USD");
+  assert.equal(bronnen.uitgaveTeltNiet(U()), null);
+});
+await test("bronnen: btw-code van facturen en bonnetjes, categorie → grootboek, verfijning gaat voor", () => {
+  assert.equal(bronnen.factuurBtwCode(F()), "21");
+  assert.equal(bronnen.factuurBtwCode(F({ btwPct: 9 })), "9");
+  assert.equal(bronnen.factuurBtwCode(F({ btwPct: 0, btw: 0 })), "0");
+  assert.equal(bronnen.factuurBtwCode(F({ verlegd: true, verlegdReden: "Btw verlegd — intracommunautaire dienst" })), "eu_dienst");
+  assert.equal(bronnen.factuurBtwCode(F({ verlegd: true, verlegdReden: "art. 196 Btw-richtlijn" })), "eu_dienst");
+  assert.equal(bronnen.factuurBtwCode(F({ verlegd: true, verlegdReden: "Onderaanneming, btw verlegd" })), "verlegd_nl");
+  assert.equal(bronnen.factuurBtwCode(F({ verlegd: true }), { btwCode: "buiten_eu" }), "buiten_eu");
+  assert.equal(bronnen.uitgaveBtwCode(U({ tarief: "verlegd" })), "eu_dienst");
+  assert.equal(bronnen.uitgaveBtwCode(U({ tarief: "verlegd" }), { btwCode: "verlegd_nl" }), "verlegd_nl");
+  assert.equal(bronnen.uitgaveGrootboek(U()), "4010");
+  assert.equal(bronnen.uitgaveGrootboek(U({ categorie: null })), "4990");
+  assert.equal(bronnen.uitgaveGrootboek(U(), { grootboek: "0210" }), "0210");
+  assert.equal(bronnen.uitgaveBtw(U({ btw: null }), "21"), 6057);
+});
+
+// ---------------------------------------------------------------------------------- stap 2: journaal
+await test("journaal: factuur 21%, doorberekende kosten, verlegd EU (3b), 9%, creditnota", () => {
+  const p = journaal.factuurNaarPost(F());
+  assert.equal(regels(p), "1300:D363000 1500:C63000 8000:C300000");
+  assert.deepEqual(p.btw, { rubriek: "1a", grondslag: 300000, verschuldigd: 63000, voorbelasting: 0 });
+  assert.equal(regels(journaal.factuurNaarPost(F({ omzet: 250000 }))), "1300:D363000 1500:C63000 8000:C250000 8090:C50000");
+  const eu = journaal.factuurNaarPost(F({ verlegd: true, verlegdReden: "intracommunautair", btwPct: 0, btw: 0, subtotaal: 280000, omzet: 280000, totaal: 280000 }));
+  assert.equal(regels(eu), "1300:D280000 8010:C280000");
+  assert.equal(eu.btw.rubriek, "3b");
+  const nl = journaal.factuurNaarPost(F({ verlegd: true, verlegdReden: "onderaanneming", btwPct: 0, btw: 0, subtotaal: 1000, omzet: 1000, totaal: 1000 }));
+  assert.equal(nl.btw.rubriek, "1e");
+  assert.equal(regels(journaal.factuurNaarPost(F({ btwPct: 9, subtotaal: 10000, omzet: 10000, btw: 900, totaal: 10900 }))), "1300:D10900 1505:C900 8000:C10000");
+  const cn = journaal.factuurNaarPost(F({ subtotaal: -20000, omzet: -20000, btw: -4200, totaal: -24200 }));
+  assert.equal(regels(cn), "1300:C24200 1500:D4200 8000:D20000");
+  assert.deepEqual(cn.btw, { rubriek: "1a", grondslag: -20000, verschuldigd: -4200, voorbelasting: 0 });
+  // Totaal wijkt 1 cent af (oude afronding): de post sluit toch en debiteuren = factuurtotaal.
+  assert.equal(regels(journaal.factuurNaarPost(F({ totaal: 363001 }))), "1300:D363001 1500:C63000 8000:C300001");
+  // Verfijning: andere omzetrekening.
+  assert.equal(regels(journaal.factuurNaarPost(F(), { bron: "factuur", bronId: "x", btwCode: null, grootboek: "8900", vennootId: null, notitie: null })), "1300:D363000 1500:C63000 8900:C300000");
+});
+await test("journaal: aanbetaling + restfactuur tellen samen precies één keer", () => {
+  const a = journaal.factuurNaarPost(F({ id: "a", aanbetaling: true, subtotaal: 150000, omzet: 150000, btw: 31500, totaal: 181500 }));
+  const r = journaal.factuurNaarPost(F({ id: "r", restVan: "a", subtotaal: 150000, omzet: 150000, btw: 31500, totaal: 181500 }));
+  const pb = journaal.proefbalans([a, r]);
+  assert.deepEqual([pb.get("8000"), pb.get("1500"), pb.get("1300")], [-300000, -63000, 363000]);
+});
+await test("journaal: bonnetje zakelijk/privé/contant/verlegd/activeren; concept en valuta tellen niet", () => {
+  const c = journaal.contextUit({ ...stam, vennoten: stam.vennoten.map((v) => (v.naam === "Bram" ? { ...v, userId: "user-bram" } : v)) });
+  assert.equal(regels(journaal.uitgaveNaarPost(U(), c)), "1520:D6057 1600:C34900 4010:D28843");
+  assert.equal(journaal.uitgaveNaarPost(U(), c).btw.rubriek, "5b");
+  assert.equal(regels(journaal.uitgaveNaarPost(U({ betaalwijze: "prive", aangemaaktDoor: "user-bram" }), c)), "0610:C34900 1520:D6057 4010:D28843");
+  assert.equal(regels(journaal.uitgaveNaarPost(U({ betaalwijze: "prive" }), c, { vennootId: seed.DEMO_ID.daniel })), "0600:C34900 1520:D6057 4010:D28843");
+  assert.equal(regels(journaal.uitgaveNaarPost(U({ betaalwijze: "prive" }), c)), "1520:D6057 1900:C34900 4010:D28843");
+  assert.equal(regels(journaal.uitgaveNaarPost(U({ betaalwijze: "contant" }), c)), "1000:C34900 1520:D6057 4010:D28843");
+  const v = journaal.uitgaveNaarPost(U({ tarief: "verlegd", btw: 0, totaal: 7139, categorie: "software" }), c);
+  assert.equal(regels(v), "1510:C1499 1520:D1499 1600:C7139 4000:D7139");
+  assert.deepEqual(v.btw, { rubriek: "4b", grondslag: 7139, verschuldigd: 1499, voorbelasting: 1499 });
+  assert.equal(regels(journaal.uitgaveNaarPost(U(), c, { grootboek: "0210" })), "0210:D28843 1520:D6057 1600:C34900");
+  assert.equal(regels(journaal.uitgaveNaarPost(U({ tarief: "geen", btw: 0, categorie: "bankkosten" }), c)), "1600:C34900 4900:D34900");
+  assert.equal(journaal.uitgaveNaarPost(U({ status: "concept" }), c), null);
+  assert.equal(journaal.uitgaveNaarPost(U({ valuta: "USD" }), c), null);
+});
+await test("journaal: gekoppelde bankregel = alleen betaling; omzet en btw veranderen niet", () => {
+  const f = F();
+  const betaling = maak({ soort: "inkomst", richting: "bij", grootboek: "8000", bedrag: 363000, btwCode: "21" });
+  const k = { id: "k1", boekingId: betaling.id, bron: "factuur", bronId: f.id, bedrag: 363000, aangemaakt: "" };
+  const los = journaal.journaal(stam, { boekingen: [betaling], facturen: [f] });
+  const gek = journaal.journaal(stam, { boekingen: [betaling], facturen: [f], koppelingen: [k] });
+  // Los: dubbel (factuur + losse inkomst); gekoppeld: alleen de factuur.
+  assert.equal(journaal.btwPerKwartaal(los).get("2026-3").verschuldigd, 126000);
+  assert.equal(journaal.btwPerKwartaal(gek).get("2026-3").verschuldigd, 63000);
+  const pb = journaal.proefbalans(gek);
+  assert.deepEqual([pb.get("8000"), pb.get("1500"), pb.get("1300") ?? 0], [-300000, -63000, 0]);
+  assert.equal(regels(journaal.boekingNaarPost(betaling, ctx, [k])), "1100:D363000 1300:C363000");
+  // Bonnetje: bank tegen crediteuren, btw alleen uit het bonnetje.
+  const u = U();
+  const af = maak({ bedrag: 34900, btwCode: "21", grootboek: "4010" });
+  const ku = { id: "k2", boekingId: af.id, bron: "uitgave", bronId: u.id, bedrag: 34900, aangemaakt: "" };
+  const j = journaal.journaal(stam, { boekingen: [af], uitgaven: [u], koppelingen: [ku] });
+  const pb2 = journaal.proefbalans(j);
+  assert.deepEqual([pb2.get("1520"), pb2.get("1600") ?? 0, pb2.get("4010")], [6057, 0, 28843]);
+  // Deelbetaling: debiteuren houdt het restant.
+  const half = maak({ soort: "inkomst", richting: "bij", grootboek: "8000", bedrag: 100000, btwCode: "21" });
+  const pb3 = journaal.proefbalans(journaal.journaal(stam, { boekingen: [half], facturen: [f], koppelingen: [{ ...k, boekingId: half.id, bedrag: 100000 }] }));
+  assert.equal(pb3.get("1300"), 263000);
+});
+
+// ---------------------------------------------------------------------------------- stap 2: afletteren
+await test("afletteren: openstaand, deels, betaald, te veel, ouderdom en termijn", () => {
+  const k = (bronId, bedrag, id = "k" + bedrag) => ({ id, boekingId: "b" + id, bron: "factuur", bronId, bedrag, aangemaakt: "" });
+  const fs = [F({ id: "a", datum: "2026-10-20" }), F({ id: "b", datum: "2026-09-01" }), F({ id: "c", datum: "2026-07-01" }), F({ id: "d" }), F({ id: "e", totaal: -24200 })];
+  const p = afl.factuurPosten(fs, [k("b", 100000), k("c", 363000), k("d", 400000), k("e", -24200)], VANDAAG);
+  assert.deepEqual(p.map((x) => x.status), ["open", "deels", "betaald", "te_veel", "betaald"]);
+  assert.deepEqual(p.map((x) => x.open), [363000, 263000, 0, -37000, 0]);
+  assert.deepEqual(p.map((x) => x.ouderdom), ["0-30", "31-60", "60+", "60+", "60+"]);
+  assert.deepEqual(p.map((x) => x.vervallen), [false, true, false, true, false]);
+  const t = afl.ouderdomTotalen(p.slice(0, 2));
+  assert.deepEqual([t.aantal, t.open, t.per["0-30"], t.per["31-60"]], [2, 626000, 363000, 263000]);
+  // Bonnetjes: alleen zakelijk betaald en meetellend.
+  const u = afl.uitgavePosten([U({ id: "1" }), U({ id: "2", betaalwijze: "prive" }), U({ id: "3", status: "concept" }), U({ id: "4", betaalwijze: null })], [], VANDAAG);
+  assert.deepEqual(u.map((x) => x.doc.id), ["1", "4"]);
+});
+await test("afletteren: factuurnummer herkennen, suggesties met score", () => {
+  assert.equal(afl.nummerIn("2026-018", "Betaling factuur 2026-018 Fysio"), true);
+  assert.equal(afl.nummerIn("2026-018", "betaling 2026018"), true);
+  assert.equal(afl.nummerIn("2026-01", "factuur 2026-018"), false);
+  assert.equal(afl.nummerIn("2026-018", "factuur 12026-018"), false);
+  assert.ok(afl.naamOvereenkomst("Hotel Zeezicht B.V.", "HOTEL ZEEZICHT ZANDVOORT") === 1);
+  assert.equal(afl.naamOvereenkomst("Studio Vlakveld", "Overboeking"), 0);
+  const fs = afl.factuurPosten([F({ id: "a", nummer: "2026-050", klant: "Hotel Zeezicht" }), F({ id: "b", nummer: "2026-051", klant: "Fysio Noord", totaal: 121000 }), F({ id: "c", nummer: "2026-052", klant: "Fysio Noord", datum: "2026-10-30" })], [], VANDAAG);
+  const b = maak({ soort: "inkomst", richting: "bij", bedrag: 121000, datum: "2026-10-20", omschrijving: "Betaling", tegenpartij: "FYSIO NOORD" });
+  const s = afl.koppelSuggesties(b, fs, [], []);
+  assert.equal(s[0].bronId, "b");
+  assert.equal(s[0].bedrag, 121000);
+  assert.ok(!s.some((x) => x.bronId === "c"), "factuur na de betaling is geen kandidaat");
+  const b2 = maak({ soort: "inkomst", richting: "bij", bedrag: 50000, datum: "2026-10-20", omschrijving: "Termijn 1 factuur 2026-050" });
+  const s2 = afl.koppelSuggesties(b2, fs, [], []);
+  assert.deepEqual([s2[0].bronId, s2[0].bedrag], ["a", 50000], "deelbetaling via factuurnummer");
+  // Bonnetje: zelfde bedrag, datum dichtbij, leverancier.
+  const us = afl.uitgavePosten([U({ id: "x", leverancier: "bol.com", totaal: 4295, datum: "2026-10-21" }), U({ id: "y", leverancier: "Coolblue", totaal: 4295, datum: "2026-06-01" })], [], VANDAAG);
+  const af = maak({ bedrag: 4295, datum: "2026-10-22", omschrijving: "BOL.COM B.V. 4021886533", tegenpartij: "bol.com" });
+  assert.deepEqual(afl.koppelSuggesties(af, [], us, []).map((x) => x.bronId), ["x"]);
+  // Omgekeerd: betalingen bij een open factuur.
+  const bs = afl.betalingSuggesties("factuur", fs[1], [b, b2, maak({})], []);
+  assert.deepEqual(bs.map((x) => x.boeking.id), [b.id]);
+  // Al volledig gekoppeld: geen suggesties meer.
+  assert.deepEqual(afl.koppelSuggesties(b, fs, [], [{ id: "k", boekingId: b.id, bron: "factuur", bronId: "b", bedrag: 121000, aangemaakt: "" }]), []);
+});
+await test("afletteren: koppelregels (soort, bedragen, dubbel, mengen, vergrendeling)", () => {
+  const v0 = { aangiften: [], boekjaren: [] };
+  const vQ3 = { aangiften: [{ jaar: 2026, kwartaal: 3 }], boekjaren: [] };
+  const ink = maak({ soort: "inkomst", richting: "bij", bedrag: 121000, datum: "2026-08-20" });
+  const doc = { bron: "factuur", id: "a", totaal: 363000, open: 363000 };
+  assert.equal(afl.koppelFout(ink, doc, 121000, [], v0), null);
+  assert.match(afl.koppelFout(ink, { ...doc, bron: "uitgave" }, 121000, [], v0), /Uitgave/);
+  assert.match(afl.koppelFout(maak({ soort: "prive", vennootId: "x" }), doc, 1, [], v0), /Alleen een uitgave of inkomst/);
+  assert.match(afl.koppelFout(ink, doc, 121001, [], v0), /nog € 1\.210,00/);
+  assert.match(afl.koppelFout(ink, { ...doc, open: 100 }, 121000, [], v0), /nog € 1,00 open/);
+  assert.match(afl.koppelFout(ink, { ...doc, open: 0 }, 1, [], v0), /helemaal betaald/);
+  assert.match(afl.koppelFout(ink, doc, -5, [], v0), /bankregel over/);
+  const al = [{ id: "k", boekingId: ink.id, bron: "factuur", bronId: "a", bedrag: 1000, aangemaakt: "" }];
+  assert.match(afl.koppelFout(ink, doc, 1000, al, v0), /al aan dit document/);
+  assert.equal(afl.koppelFout(ink, { ...doc, id: "b" }, 120000, al, v0), null, "één betaling voor meerdere facturen");
+  assert.match(afl.koppelFout(ink, { ...doc, id: "b" }, 120001, al, v0), /nog € 1\.200,00/);
+  // Vergrendeld kwartaal: alleen als de regel zelf geen btw-effect heeft.
+  assert.match(afl.koppelFout(ink, doc, 121000, [], vQ3), /wijzigen/);
+  assert.equal(afl.koppelFout({ ...ink, btwCode: "geen", btw: 0 }, doc, 121000, [], vQ3), null);
+  assert.match(afl.koppelFout({ ...ink, btwCode: "geen", btw: 0 }, doc, 121000, [], { aangiften: [], boekjaren: [2026] }), /Boekjaar 2026/);
+  // Creditnota: terugbetaling (inkomst af) koppelt een negatief bedrag.
+  const terug = maak({ soort: "inkomst", richting: "af", bedrag: 24200, datum: "2026-09-01" });
+  assert.equal(afl.betaaldBedrag(terug), -24200);
+  assert.equal(afl.koppelFout(terug, { bron: "factuur", id: "cn", totaal: -24200, open: -24200 }, -24200, [], v0), null);
+  assert.equal(afl.standaardBedrag(-24200, -10000), -10000);
+  assert.equal(afl.standaardBedrag(500, -10000), 0);
+});
+await test("afletteren: overboekingen paren, bon ontbreekt, ontvangsten zonder factuur, verweesd", () => {
+  const a = maak({ soort: "overboeking", richting: "af", bedrag: 50000, datum: "2026-10-01", btwCode: "geen" });
+  const b = maak({ soort: "overboeking", richting: "bij", rekeningId: RV, bedrag: 50000, datum: "2026-10-02", btwCode: "geen" });
+  const c = maak({ soort: "overboeking", richting: "af", bedrag: 20000, datum: "2026-10-05", btwCode: "geen" });
+  const o = afl.overboekingen([a, b, c]);
+  assert.deepEqual([o.paren.length, o.los.map((x) => x.id)], [1, [c.id]]);
+  const kpn = maak({ btwCode: "21" });
+  const bank = maak({ btwCode: "geen", grootboek: "4900" });
+  const adobe = maak({ btwCode: "eu_dienst" });
+  const gek = maak({ btwCode: "21" });
+  assert.deepEqual(afl.bonOntbreekt([kpn, bank, adobe, gek], new Set([gek.id])).map((x) => x.id), [kpn.id]);
+  const ink = maak({ soort: "inkomst", richting: "bij" });
+  assert.deepEqual(afl.inkomstenZonderFactuur([ink, kpn], new Set()).map((x) => x.id), [ink.id]);
+  const w = afl.verweesdeKoppelingen([{ id: "1", boekingId: "x", bron: "factuur", bronId: "weg", bedrag: 1, aangemaakt: "" }, { id: "2", boekingId: "x", bron: "factuur", bronId: F().id, bedrag: 1, aangemaakt: "" }], [F()], []);
+  assert.deepEqual(w.map((x) => x.id), ["1"]);
+});
+
+// ---------------------------------------------------------------------------------- stap 2: bankimport
+const fixture = (n) => fs.readFileSync(path.join(ROOT, "scripts", "fixtures", "boekhouding", n), "utf8");
+await test("bankimport: CSV-parser (aanhalingstekens, BOM, regeleinde in veld) en scheidingsteken", () => {
+  assert.deepEqual(imp.leesCsv('﻿a;"b;c";"d ""e"""\r\n1;2;3\n\n'), [["a", "b;c", 'd "e"'], ["1", "2", "3"]]);
+  assert.deepEqual(imp.leesCsv('x,"regel1\nregel2",z'), [["x", "regel1\nregel2", "z"]]);
+  assert.equal(imp.raadScheiding("a;b;c\n1,5;2;3"), ";");
+  assert.equal(imp.raadScheiding('"a","b"\n"1,5","2"'), ",");
+  assert.equal(imp.raadScheiding("a\tb\n1\t2"), "\t");
+  for (const [v, d] of [["24-10-2026", "2026-10-24"], ["1/2/2026", "2026-02-01"], ["2026-10-24 13:05:00", "2026-10-24"], ["20261024", "2026-10-24"], ["31-02-2026", null], ["x", null]]) assert.equal(imp.leesDatum(v), d, v);
+  assert.equal(imp.leesBedrag("-1.234,56"), -123456);
+  assert.equal(imp.leesBedrag("-48.40"), -4840);
+  assert.equal(imp.hash("abc"), imp.hash("abc"));
+  assert.notEqual(imp.hash("abc"), imp.hash("abd"));
+});
+await test("bankimport: RegioBank (Volksbank-formaat) herkend, bedragen met teken, sleutel = volgnummer", () => {
+  const a = imp.leesAfschrift(fixture("regiobank.csv"));
+  assert.equal(a.formaat, "regiobank");
+  assert.equal(a.iban, "NL52RBRB0123456789");
+  assert.deepEqual(a.regels.map((r) => r.bedrag), [302500, -4840, -50000, -104300, -950]);
+  assert.deepEqual(a.regels.map((r) => r.datum), ["2026-10-01", "2026-10-02", "2026-10-03", "2026-10-05", "2026-10-06"]);
+  assert.equal(a.regels[0].sleutel, "rb:202610000001");
+  assert.equal(a.regels[0].tegenpartij, "Fysio Noord");
+  assert.equal(a.regels[0].omschrijving, "Factuur 2026-054");
+  assert.equal(a.regels[3].omschrijving, 'Btw Q3 2026, "aangifte"');
+  assert.equal(a.regels[1].kenmerk, "9876543210");
+  assert.equal(a.regels[4].tegenrekening, null);
+  assert.equal(a.overgeslagen.length, 0);
+});
+await test("bankimport: Revolut Business (alleen COMPLETED, fee apart, alleen euro's) en persoonlijk", () => {
+  const a = imp.leesAfschrift(fixture("revolut-business.csv"));
+  assert.equal(a.formaat, "revolut");
+  assert.deepEqual(a.regels.map((r) => [r.datum, r.bedrag]), [["2026-10-01", 50000], ["2026-10-04", -7139], ["2026-10-05", -1499], ["2026-10-05", -50], ["2026-10-08", 280000]]);
+  assert.deepEqual(a.regels.map((r) => r.sleutel), ["rv:9c1e0000-0000-4000-8000-000000000001", "rv:9c1e0000-0000-4000-8000-000000000002", "rv:9c1e0000-0000-4000-8000-000000000003", "rv:9c1e0000-0000-4000-8000-000000000003:fee", "rv:9c1e0000-0000-4000-8000-000000000006"]);
+  assert.equal(a.regels[3].bankkosten, true);
+  assert.equal(a.regels[2].omschrijving, "Fontstand, licentie · Font");
+  assert.equal(a.regels[4].tegenpartij, "Agentur Nordlicht GmbH");
+  assert.deepEqual(a.overgeslagen.map((o) => o.reden), ["status pending", "in USD (alleen euro's)"]);
+  const p = imp.leesAfschrift(fixture("revolut-prive.csv"));
+  assert.equal(p.formaat, "revolut");
+  assert.deepEqual(p.regels.map((r) => r.bedrag), [-1250, -1250, -5000, -25]);
+  const sl = p.regels.map((r) => r.sleutel);
+  assert.equal(new Set(sl).size, 4, "twee gelijke regels krijgen elk een eigen sleutel");
+  assert.ok(sl[0].endsWith(":1") && sl[1].endsWith(":2"));
+  // Opnieuw lezen = dezelfde sleutels (zo herkent de database dubbele regels).
+  assert.deepEqual(imp.leesAfschrift(fixture("revolut-prive.csv")).regels.map((r) => r.sleutel), sl);
+});
+await test("bankimport: generiek formaat met kopregel en Af/Bij (gok + kolomkeuze)", () => {
+  const a = imp.leesAfschrift(fixture("generiek-af-bij.csv"));
+  assert.equal(a.formaat, "generiek");
+  assert.equal(a.mappingNodig, false);
+  assert.deepEqual([a.mapping.datum, a.mapping.bedrag, a.mapping.afBij, a.mapping.tegenrekening], [0, 6, 5, 3]);
+  assert.deepEqual(a.regels.map((r) => [r.datum, r.bedrag]), [["2026-10-01", -6050], ["2026-10-02", 123456]]);
+  assert.equal(a.kolommen[6], "Bedrag (EUR)");
+  // Een herkend formaat kan toch via de kolomkeuze (formaat 'generiek' afgedwongen).
+  const g = imp.leesAfschrift(fixture("revolut-business.csv"), { formaat: "generiek" });
+  assert.equal(g.formaat, "generiek");
+  assert.ok(g.mapping && g.kolommen[0].startsWith("Date started"));
+  // Onzin-bestand: kolomkeuze nodig.
+  const x = imp.leesAfschrift("foo;bar\nbaz;qux\n");
+  assert.equal(x.mappingNodig, true);
+  // Met een expliciete kolomkeuze (zonder kopregel).
+  const m = { heeftKop: false, datum: 1, bedrag: 0, afBij: null, omschrijving: [2], tegenpartij: null, tegenrekening: null, sleutel: 3 };
+  assert.equal(imp.isKolommapping(m), true);
+  assert.equal(imp.isKolommapping({ ...m, bedrag: null }), false);
+  assert.equal(imp.isKolommapping({ ...m, datum: -1 }), false);
+  const y = imp.leesAfschrift("-12,50;03-10-2026;Lunch;ID1\n", { mapping: m });
+  assert.deepEqual(y.regels.map((r) => [r.datum, r.bedrag, r.omschrijving, r.sleutel]), [["2026-10-03", -1250, "Lunch", "g:ID1"]]);
+});
+await test("bankimport: voorstel (eigen rekening, fee, geschiedenis, Belastingdienst, standaard)", () => {
+  const rek = stam.rekeningen.map((r) => (r.id === RV ? { ...r, iban: "LT123250012345678901" } : r));
+  const a = imp.leesAfschrift(fixture("regiobank.csv"));
+  const hist = [
+    maak({ omschrijving: "KPN Zakelijk september", tegenpartij: "KPN B.V.", grootboek: "4700", btwCode: "21", datum: "2026-09-02" }),
+    maak({ soort: "inkomst", richting: "bij", omschrijving: "Betaling", tegenpartij: "Fysio Noord", grootboek: "8000", btwCode: "21", datum: "2026-05-02" }),
+    maak({ omschrijving: "Kosten Zakelijk Pakket", tegenpartij: null, grootboek: "4900", btwCode: "geen", datum: "2026-09-01" }),
+  ];
+  const v = a.regels.map((r) => imp.stelVoor(r, hist, rek));
+  assert.deepEqual(v.map((x) => [x.soort, x.bron]), [["inkomst", "geschiedenis"], ["uitgave", "geschiedenis"], ["overboeking", "eigen_rekening"], ["btw", "belastingdienst"], ["uitgave", "geschiedenis"]]);
+  assert.deepEqual([v[1].grootboek, v[1].btwCode, v[4].grootboek, v[4].btwCode], ["4700", "21", "4900", "geen"]);
+  const r = imp.leesAfschrift(fixture("revolut-business.csv")).regels;
+  assert.deepEqual(imp.stelVoor(r[3], [], rek), { soort: "uitgave", btwCode: "geen", grootboek: "4900", vennootId: null, bron: "bankkosten" });
+  assert.deepEqual(imp.stelVoor(r[2], [], rek).bron, "standaard");
+  const w = imp.naarImportBoeking(a.regels[1], RB, v[1]);
+  assert.deepEqual([w.soort, w.richting, w.bedrag, w.btw, w.status, w.sleutel], ["uitgave", "af", 4840, 840, "te_verwerken", "rb:202610000002"]);
+  const o = imp.naarImportBoeking(a.regels[2], RB, v[2]);
+  assert.deepEqual([o.soort, o.btwCode, o.btw, o.grootboek], ["overboeking", "geen", 0, null]);
+  // Privé-voorstel zonder vennoot wordt een gewone uitgave.
+  assert.equal(imp.naarImportBoeking(a.regels[1], RB, { soort: "prive", btwCode: "geen", grootboek: null, vennootId: null, bron: "geschiedenis" }).soort, "uitgave");
+});
+
+// ---------------------------------------------------------------------------------- stap 2: demo
+await test("demo-seed: facturen, bonnetjes en koppelingen; debiteuren/crediteuren = openstaande posten", () => {
+  assert.ok(data.facturen.length >= 25, `${data.facturen.length} facturen`);
+  assert.ok(data.facturen.some((f) => f.verlegd) && data.facturen.some((f) => f.aanbetaling) && data.facturen.some((f) => f.restVan) && data.facturen.some((f) => f.totaal < 0) && data.facturen.some((f) => f.omzet < f.subtotaal));
+  assert.ok(data.uitgaven.some((u) => u.betaalwijze === "prive") && data.uitgaven.some((u) => u.status === "concept"));
+  assert.ok(data.koppelingen.length >= 25);
+  assert.equal(new Set(data.facturen.map((f) => f.nummer)).size, data.facturen.length, "unieke factuurnummers");
+  assert.ok(data.facturen.every((f) => f.datum <= VANDAAG) && data.uitgaven.every((u) => !u.datum || u.datum <= VANDAAG));
+  const fp = afl.factuurPosten(data.facturen, data.koppelingen, VANDAAG);
+  assert.ok(fp.every((p) => p.status !== "te_veel"));
+  const open = fp.filter((p) => p.open !== 0);
+  assert.ok(open.some((p) => p.status === "deels") && open.some((p) => p.ouderdom === "60+") && open.some((p) => p.doc.klant === "Studio Vlakveld"));
+  const up = afl.uitgavePosten(data.uitgaven, data.koppelingen, VANDAAG).filter((p) => p.open !== 0);
+  const pb = journaal.proefbalans(journaal.journaal(data.stamdata, alles(data)));
+  assert.equal(pb.get("1300"), open.reduce((s, p) => s + p.open, 0), "debiteuren = som open facturen");
+  assert.equal(-(pb.get("1600") ?? 0), up.reduce((s, p) => s + p.open, 0), "crediteuren = som open bonnetjes");
+  assert.ok(pb.get("0210") > 0, "laptop geactiveerd via verfijning");
+  assert.equal(pb.get("1900") ?? 0, 0, "geen vraagposten");
+  // Elke koppeling klopt met de regels (soort, bedrag).
+  for (const k of data.koppelingen) {
+    const b = data.boekingen.find((x) => x.id === k.boekingId);
+    assert.equal(afl.koppelBronVoor(b), k.bron);
+    assert.equal(afl.betaaldBedrag(b), k.bedrag);
+  }
+  // Suggesties voor de te verwerken regels bol.com en Studio Vlakveld.
+  const tv = data.boekingen.filter((b) => b.status === "te_verwerken");
+  const metSugg = tv.filter((b) => afl.koppelSuggesties(b, fp, afl.uitgavePosten(data.uitgaven, data.koppelingen, VANDAAG), data.koppelingen, 1).length);
+  assert.deepEqual(metSugg.map((b) => b.tegenpartij).sort(), ["Studio Vlakveld", "bol.com"]);
+});
+await test("demo-opslag: koppelen, ontkoppelen, verfijnen, importeren (2x = 0 nieuw)", async () => {
+  const a = new demo.DemoRepo("test-k", "u-k");
+  const nu = periode.vandaagNL();
+  const [bs, ks, br] = await Promise.all([a.boekingen(), a.koppelingen(), a.bronnen()]);
+  const fp = afl.factuurPosten(br.facturen, ks, nu);
+  const vlak = fp.find((p) => p.doc.klant === "Studio Vlakveld" && p.open !== 0);
+  const ontv = bs.find((b) => b.tegenpartij === "Studio Vlakveld");
+  await assert.rejects(a.koppelingToevoegen({ boekingId: ontv.id, bron: "factuur", bronId: vlak.doc.id, bedrag: vlak.open + 1 }), (e) => e.status === 400);
+  const k = await a.koppelingToevoegen({ boekingId: ontv.id, bron: "factuur", bronId: vlak.doc.id, bedrag: vlak.open });
+  assert.equal((await a.boeking(ontv.id)).status, "geboekt");
+  await assert.rejects(a.koppelingToevoegen({ boekingId: ontv.id, bron: "factuur", bronId: vlak.doc.id, bedrag: 1 }), (e) => e.status === 400);
+  await a.koppelingVerwijderen(k.id);
+  assert.equal((await a.koppelingen()).length, ks.length);
+  // In een vergrendeld kwartaal ontkoppelen kan niet (de regel heeft eigen btw-gegevens).
+  const stam2 = await a.stamdata();
+  const oud = ks.find((x) => periode.isVergrendeld(bs.find((b) => b.id === x.boekingId).datum, stam2.vergrendeling));
+  await assert.rejects(a.koppelingVerwijderen(oud.id), (e) => e.status === 409);
+  // Verfijning in een vergrendeld kwartaal: geweigerd; in een open kwartaal: ok.
+  const oudeFactuur = br.facturen.find((f) => periode.isVergrendeld(f.datum, stam2.vergrendeling));
+  await assert.rejects(a.bronExtraOpslaan({ bron: "factuur", bronId: oudeFactuur.id, btwCode: "eu_dienst", grootboek: null, vennootId: null, notitie: null }), (e) => e.status === 409);
+  await a.bronExtraOpslaan({ bron: "factuur", bronId: vlak.doc.id, btwCode: null, grootboek: "8900", vennootId: null, notitie: "test" });
+  assert.equal((await a.bronExtra()).find((e) => e.bronId === vlak.doc.id).grootboek, "8900");
+  // Import: de voorbeeldafschriften, twee keer.
+  const vb = a.voorbeeldAfschriften();
+  const st = await a.stamdata();
+  for (const [soort, rekId] of [["regiobank", RB], ["revolut", RV]]) {
+    const af = imp.leesAfschrift(vb[soort]);
+    assert.equal(af.formaat, soort);
+    const boek = await a.boekingen();
+    const regelsImp = af.regels.map((r) => imp.naarImportBoeking(r, rekId, imp.stelVoor(r, boek, st.rekeningen)));
+    const eerste = await a.importeer(rekId, { bestandsnaam: "x.csv", formaat: soort }, regelsImp);
+    assert.ok(eerste.nieuw >= 4 && eerste.dubbel === 0, JSON.stringify(eerste));
+    const tweede = await a.importeer(rekId, { bestandsnaam: "x.csv", formaat: soort }, regelsImp);
+    assert.deepEqual(tweede, { nieuw: 0, dubbel: regelsImp.length });
+    if (soort === "regiobank") {
+      const ov = regelsImp.find((r) => r.omschrijving === "Overboeking naar Revolut");
+      assert.equal(ov.soort, "overboeking", "tegenrekening = eigen Revolut-rekening");
+    } else {
+      assert.equal(af.overgeslagen.length, 2, "pending en USD overgeslagen");
+      assert.ok(af.regels.some((r) => r.bankkosten));
+    }
+  }
+  // Na de import: de betaling van de oudste open factuur heeft een koppelsuggestie.
+  const boek2 = await a.boekingen();
+  const fp2 = afl.factuurPosten(br.facturen, await a.koppelingen(), nu);
+  const nieuweInk = boek2.filter((b) => b.importId && b.soort === "inkomst");
+  assert.ok(nieuweInk.length >= 1 && nieuweInk.every((b) => afl.koppelSuggesties(b, fp2, [], [], 1)[0]?.score >= 90));
+  demo.demoHerstellen("test-k");
 });
 
 // ---------------------------------------------------------------------------------- constanten

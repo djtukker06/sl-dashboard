@@ -6,7 +6,12 @@
 // Wat erin zit (bewust alle soorten regels):
 //   - software uit de EU met verlegde btw (Adobe en Google, Ierland → rubriek 4b) en van
 //     buiten de EU (Figma, VS → 4a), KPN 21%, NS 9%, bankkosten zonder btw, een verzekering;
-//   - klantbetalingen 21% en één EU-klant (btw verlegd, 3b);
+//   - voorbeeldfacturen (21%, één EU-klant met verlegde btw → 3b, aanbetaling + restfactuur,
+//     doorberekende kosten, een creditnota) met de betalingen gekoppeld (afgeletterd); een
+//     paar staan nog open (waarvan één ruim over de termijn en één deels betaald);
+//   - voorbeeldbonnetjes (monitor, laptop als investering, drukwerk, fotograaf), gekoppeld aan
+//     de bankregel; een lunch die privé is voorgeschoten; een inkoopfactuur die nog open staat
+//     en een bonnetje in concept;
 //   - een laptop (investering, € 2.499 excl.) en een monitor onder € 450 (direct kosten);
 //   - maandelijkse privé-opnamen van Daniel en Bram, overboekingen tussen de eigen rekeningen;
 //   - per afgelopen kwartaal de btw-betaling aan de Belastingdienst; die kwartalen zijn
@@ -15,11 +20,12 @@
 
 import { STANDAARD_GROOTBOEK } from '../kern/constanten';
 import type { BtwCode } from '../kern/btw';
+import { btwPerKwartaal, journaal } from '../kern/journaal';
+import type { BronExtra, FactuurBron, Koppeling, UitgaveBron } from '../kern/bronnen';
 import {
   aangifteDeadline,
   dagenInMaand,
   jaarVan,
-  kwartaalGrenzen,
   kwartaalVan,
   maakDatum,
   maandVan,
@@ -33,6 +39,13 @@ import { berekenBoeking, type Boeking, type BoekingSoort, type BoekingStatus, ty
 export interface DemoData {
   stamdata: Stamdata;
   boekingen: Boeking[];
+  /** Voorbeeldfacturen en -bonnetjes (de echte tabs Facturen en Bonnetjes blijven ongewijzigd). */
+  facturen: FactuurBron[];
+  uitgaven: UitgaveBron[];
+  koppelingen: Koppeling[];
+  bronExtra: BronExtra[];
+  /** Importsleutels per rekening (dubbele regels herkennen bij een volgende import). */
+  importSleutels: Record<string, string[]>;
   /** Ingediende aangiften met het betaalde/ontvangen saldo. */
   aangiften: { jaar: number; kwartaal: Kwartaal; teBetalen: number; ingediendOp: Datum }[];
 }
@@ -68,6 +81,8 @@ interface Regel {
   gb?: string;
   vennoot?: 'daniel' | 'bram';
   status?: BoekingStatus;
+  /** Betaling van deze factuur of dit bonnetje (afgeletterd), met het gekoppelde bedrag. */
+  koppel?: { bron: 'factuur' | 'uitgave'; id: string; bedrag: number };
 }
 
 export function demoSeed(vandaag: Datum): DemoData {
@@ -78,9 +93,55 @@ export function demoSeed(vandaag: Datum): DemoData {
   };
 
   const regels: Regel[] = [];
-  let factuurNr = 7;
+  const facturen: FactuurBron[] = [];
+  const uitgaven: UitgaveBron[] = [];
+  const bronExtra: BronExtra[] = [];
+  let fn = 0;
+  let un = 0;
+  const nummers = new Map<number, number>();
+  const nieuwNummer = (d: Datum) => {
+    const j = jaarVan(d);
+    const n = (nummers.get(j) ?? (j === jaarVan(start) ? 30 : 0)) + 1;
+    nummers.set(j, n);
+    return `${j}-${String(n).padStart(3, '0')}`;
+  };
+  /** Een factuur met 21% (totaal incl. btw, een veelvoud van € 1,21) of met btw verlegd. */
+  const factuur = (o: { datum: Datum; klant: string; totaal: number; verlegd?: string; doorberekend?: number; aanbetaling?: boolean; restVan?: string }): FactuurBron => {
+    const datum = o.datum < start ? start : o.datum;
+    const subtotaal = o.verlegd ? o.totaal : (o.totaal / 121) * 100;
+    const f: FactuurBron = {
+      id: `de000000-0000-4000-b000-${(++fn).toString(16).padStart(12, '0')}`,
+      nummer: nieuwNummer(datum),
+      klant: o.klant,
+      datum,
+      subtotaal,
+      omzet: subtotaal - (o.doorberekend ?? 0),
+      btw: o.totaal - subtotaal,
+      totaal: o.totaal,
+      btwPct: o.verlegd ? 0 : 21,
+      verlegd: Boolean(o.verlegd),
+      verlegdReden: o.verlegd ?? null,
+      aanbetaling: Boolean(o.aanbetaling),
+      restVan: o.restVan ?? null
+    };
+    if (datum <= vandaag) facturen.push(f);
+    return f;
+  };
+  const bonnetje = (o: Omit<UitgaveBron, 'id' | 'valuta' | 'status' | 'factuurnummer' | 'aangemaaktDoor' | 'omschrijving'> & { omschrijving?: string; status?: 'concept' | 'verwerkt' }): UitgaveBron => {
+    const u: UitgaveBron = {
+      id: `de000000-0000-4000-c000-${(++un).toString(16).padStart(12, '0')}`,
+      omschrijving: o.omschrijving ?? '',
+      valuta: 'EUR',
+      status: o.status ?? 'verwerkt',
+      factuurnummer: '',
+      aangemaaktDoor: null,
+      ...o
+    };
+    if (u.datum && u.datum <= vandaag && u.datum >= start) uitgaven.push(u);
+    return u;
+  };
+
   for (let m = 0; m <= 13; m++) {
-    const j = jaarVan(op(m, 1));
     regels.push(
       { r: 'regiobank', datum: op(m, 1), omschrijving: 'Kosten Zakelijk Pakket', tegenpartij: 'RegioBank', soort: 'uitgave', bedrag: 950, btw: 'geen', gb: '4900' },
       { r: 'revolut', datum: op(m, 2), omschrijving: 'Revolut Business abonnement', tegenpartij: 'Revolut Bank UAB', soort: 'uitgave', bedrag: 1000, btw: 'geen', gb: '4900' },
@@ -91,18 +152,25 @@ export function demoSeed(vandaag: Datum): DemoData {
       { r: 'regiobank', datum: op(m, 25), omschrijving: 'Privé-opname Daniel', soort: 'prive', bedrag: 150000, vennoot: 'daniel' },
       { r: 'regiobank', datum: op(m, 25), omschrijving: 'Privé-opname Bram', soort: 'prive', bedrag: 150000, vennoot: 'bram' }
     );
+    // Twee facturen per maand, ongeveer 2 weken later betaald (en afgeletterd). Uitzonderingen:
+    // één factuur ruim over de termijn (niet betaald) en één deels betaald.
     for (const [i, dag] of [9, 21].entries()) {
       const k = (m * 2 + i) % KLANTEN.length;
-      const nr = `${j}-${String(factuurNr++).padStart(3, '0')}`;
+      const totaal = BETALINGEN[(m * 3 + i) % BETALINGEN.length];
+      const betaaldOp = op(m, dag);
+      const f = factuur({ datum: plusDagen(betaaldOp, -16), klant: KLANTEN[k], totaal, doorberekend: m === 4 && i === 1 ? 30000 : 0 });
+      if (m === 11 && i === 1) continue; // staat nog open (over de termijn)
+      const bedrag = m === 12 && i === 0 ? totaal - 205000 : totaal; // deelbetaling (rest € 2.050)
       regels.push({
         r: 'regiobank',
-        datum: op(m, dag),
-        omschrijving: `Betaling factuur ${nr}`,
+        datum: betaaldOp,
+        omschrijving: `Betaling factuur ${f.nummer}${bedrag !== totaal ? ' (deel)' : ''}`,
         tegenpartij: KLANTEN[k],
         soort: 'inkomst',
-        bedrag: BETALINGEN[(m * 3 + i) % BETALINGEN.length],
+        bedrag,
         btw: '21',
-        gb: '8000'
+        gb: '8000',
+        koppel: { bron: 'factuur', id: f.id, bedrag }
       });
     }
     if (m % 3 === 1) {
@@ -115,16 +183,44 @@ export function demoSeed(vandaag: Datum): DemoData {
       );
     }
   }
+
+  // Aanbetaling (50%) en restfactuur: elk een eigen factuur, elk betaald.
+  const aanb = factuur({ datum: op(4, 3), klant: 'Van Dijk Architecten', totaal: 302500, aanbetaling: true });
+  const rest = factuur({ datum: op(7, 2), klant: 'Van Dijk Architecten', totaal: 302500, restVan: aanb.id });
   regels.push(
-    { r: 'regiobank', datum: op(2, 14), omschrijving: 'Coolblue — monitor 27"', tegenpartij: 'Coolblue B.V.', soort: 'uitgave', bedrag: 34900, btw: '21', gb: '4010' },
-    { r: 'regiobank', datum: op(3, 20), omschrijving: 'Beroepsaansprakelijkheid', tegenpartij: 'Hiscox', soort: 'uitgave', bedrag: 41250, btw: 'geen', gb: '4750' },
-    { r: 'regiobank', datum: op(5, 15), omschrijving: 'Betaling factuur — Agentur Nordlicht (DE)', tegenpartij: 'Agentur Nordlicht GmbH', soort: 'inkomst', bedrag: 280000, btw: 'eu_dienst', gb: '8010' },
-    { r: 'regiobank', datum: op(6, 6), omschrijving: 'Apple — MacBook Pro 14"', tegenpartij: 'Apple Distribution International', soort: 'uitgave', bedrag: 302379, btw: '21', gb: '0210' },
-    { r: 'regiobank', datum: op(8, 11), omschrijving: 'Lunch met klant', tegenpartij: 'Brasserie De Haven', soort: 'uitgave', bedrag: 8640, btw: '9', gb: '4400' },
-    { r: 'regiobank', datum: op(9, 4), omschrijving: 'Drukwerk visitekaartjes', tegenpartij: 'Drukwerkdeal', soort: 'uitgave', bedrag: 6050, btw: '21', gb: '4300' },
-    { r: 'regiobank', datum: op(11, 18), omschrijving: 'Fotografie productshoot', tegenpartij: 'J. de Wit Fotografie', soort: 'uitgave', bedrag: 72600, btw: '21', gb: '4600' }
+    { r: 'regiobank', datum: op(4, 12), omschrijving: `Aanbetaling ${aanb.nummer} Van Dijk`, tegenpartij: 'Van Dijk Architecten', soort: 'inkomst', bedrag: 302500, btw: '21', gb: '8000', koppel: { bron: 'factuur', id: aanb.id, bedrag: 302500 } },
+    { r: 'regiobank', datum: op(7, 14), omschrijving: `Restbetaling ${rest.nummer}`, tegenpartij: 'Van Dijk Architecten', soort: 'inkomst', bedrag: 302500, btw: '21', gb: '8000', koppel: { bron: 'factuur', id: rest.id, bedrag: 302500 } }
   );
-  // Nog te verwerken (recent, uit de bankimport).
+  // EU-klant: btw verlegd (rubriek 3b + ICP).
+  const eu = factuur({ datum: op(5, 1), klant: 'Agentur Nordlicht GmbH', totaal: 280000, verlegd: 'Btw verlegd — intracommunautaire dienst (art. 196 Btw-richtlijn)' });
+  regels.push({ r: 'regiobank', datum: op(5, 15), omschrijving: `Betaling ${eu.nummer} Agentur Nordlicht (DE)`, tegenpartij: 'Agentur Nordlicht GmbH', soort: 'inkomst', bedrag: 280000, btw: 'eu_dienst', gb: '8010', koppel: { bron: 'factuur', id: eu.id, bedrag: 280000 } });
+  // Creditnota (deels teruggestort aan de klant).
+  const credit = factuur({ datum: op(9, 18), klant: 'Hotel Zeezicht', totaal: -24200 });
+  regels.push({ r: 'regiobank', datum: op(9, 24), omschrijving: `Terugbetaling creditnota ${credit.nummer}`, tegenpartij: 'Hotel Zeezicht', soort: 'inkomst', richting: 'af', bedrag: 24200, btw: '21', gb: '8000', koppel: { bron: 'factuur', id: credit.id, bedrag: -24200 } });
+  // Nog open: Studio Vlakveld (de betaling staat al op de bank, maar is nog niet gekoppeld).
+  factuur({ datum: plusDagen(vandaag, -20), klant: 'Studio Vlakveld', totaal: 121000 });
+
+  // Bonnetjes & inkoopfacturen.
+  const monitor = bonnetje({ datum: op(2, 13), leverancier: 'Coolblue B.V.', omschrijving: 'Monitor 27"', categorie: 'hardware', totaal: 34900, btw: 6057, tarief: '21', betaalwijze: 'zakelijk' });
+  const laptop = bonnetje({ datum: op(6, 5), leverancier: 'Apple Distribution International', omschrijving: 'MacBook Pro 14"', categorie: 'hardware', totaal: 302379, btw: 52479, tarief: '21', betaalwijze: 'zakelijk' });
+  bronExtra.push({ bron: 'uitgave', bronId: laptop.id, btwCode: null, grootboek: '0210', vennootId: null, notitie: 'Investering (≥ € 450): geactiveerd' });
+  const lunch = bonnetje({ datum: op(8, 11), leverancier: 'Brasserie De Haven', omschrijving: 'Lunch met klant', categorie: 'representatie', totaal: 8640, btw: 713, tarief: '9', betaalwijze: 'prive' });
+  bronExtra.push({ bron: 'uitgave', bronId: lunch.id, btwCode: null, grootboek: null, vennootId: DEMO_ID.daniel, notitie: 'Voorgeschoten door Daniel' });
+  const drukwerk = bonnetje({ datum: op(9, 3), leverancier: 'Drukwerkdeal', omschrijving: 'Visitekaartjes', categorie: 'marketing', totaal: 6050, btw: 1050, tarief: '21', betaalwijze: 'zakelijk' });
+  const foto = bonnetje({ datum: op(11, 15), leverancier: 'J. de Wit Fotografie', omschrijving: 'Productshoot', categorie: 'uitbesteed', totaal: 72600, btw: 12600, tarief: '21', betaalwijze: 'zakelijk' });
+  bonnetje({ datum: plusDagen(vandaag, -12), leverancier: 'J. de Wit Fotografie', omschrijving: 'Portretten team', categorie: 'uitbesteed', totaal: 48400, btw: 8400, tarief: '21', betaalwijze: 'zakelijk' });
+  bonnetje({ datum: plusDagen(vandaag, -3), leverancier: 'bol.com', omschrijving: 'Kantoorartikelen', categorie: 'kantoor', totaal: 4295, btw: 745, tarief: '21', betaalwijze: 'zakelijk' });
+  bonnetje({ datum: plusDagen(vandaag, -1), leverancier: 'Albert Heijn', omschrijving: 'Koffie en melk', categorie: 'kantoor', totaal: 1250, btw: 103, tarief: '9', betaalwijze: 'zakelijk', status: 'concept' });
+
+  regels.push(
+    { r: 'regiobank', datum: op(2, 14), omschrijving: 'Coolblue — monitor 27"', tegenpartij: 'Coolblue B.V.', soort: 'uitgave', bedrag: 34900, btw: '21', gb: '4010', koppel: { bron: 'uitgave', id: monitor.id, bedrag: 34900 } },
+    { r: 'regiobank', datum: op(3, 20), omschrijving: 'Beroepsaansprakelijkheid', tegenpartij: 'Hiscox', soort: 'uitgave', bedrag: 41250, btw: 'geen', gb: '4750' },
+    { r: 'regiobank', datum: op(6, 6), omschrijving: 'Apple — MacBook Pro 14"', tegenpartij: 'Apple Distribution International', soort: 'uitgave', bedrag: 302379, btw: '21', gb: '0210', koppel: { bron: 'uitgave', id: laptop.id, bedrag: 302379 } },
+    { r: 'regiobank', datum: op(9, 4), omschrijving: 'Drukwerk visitekaartjes', tegenpartij: 'Drukwerkdeal', soort: 'uitgave', bedrag: 6050, btw: '21', gb: '4300', koppel: { bron: 'uitgave', id: drukwerk.id, bedrag: 6050 } },
+    { r: 'regiobank', datum: op(11, 18), omschrijving: 'Fotografie productshoot', tegenpartij: 'J. de Wit Fotografie', soort: 'uitgave', bedrag: 72600, btw: '21', gb: '4600', koppel: { bron: 'uitgave', id: foto.id, bedrag: 72600 } }
+  );
+  // Nog te verwerken (recent, uit de bankimport); bol.com en Studio Vlakveld hebben een
+  // koppelsuggestie.
   regels.push(
     { r: 'regiobank', datum: plusDagen(vandaag, -2), omschrijving: 'BOL.COM B.V. 4021886533', tegenpartij: 'bol.com', soort: 'uitgave', bedrag: 4295, btw: '21', gb: '4990', status: 'te_verwerken' },
     { r: 'revolut', datum: plusDagen(vandaag, -4), omschrijving: 'Apple.com/bill iCloud+', tegenpartij: 'Apple', soort: 'uitgave', bedrag: 299, btw: '21', gb: '4000', status: 'te_verwerken' },
@@ -167,7 +263,25 @@ export function demoSeed(vandaag: Datum): DemoData {
       gewijzigd: tijd
     };
   };
-  const boekingen = regels.filter((g) => g.datum <= vandaag && g.datum >= start).map(naarBoeking);
+  const koppelingen: Koppeling[] = [];
+  const boekingen: Boeking[] = [];
+  for (const g of regels) {
+    if (g.datum > vandaag || g.datum < start) continue;
+    const b = naarBoeking(g);
+    boekingen.push(b);
+    if (g.koppel && (g.koppel.bron === 'factuur' ? facturen : uitgaven).some((d) => d.id === g.koppel!.id)) {
+      koppelingen.push({
+        id: `de000000-0000-4000-a000-${(koppelingen.length + 1).toString(16).padStart(12, '0')}`,
+        boekingId: b.id,
+        bron: g.koppel.bron,
+        bronId: g.koppel.id,
+        bedrag: g.koppel.bedrag,
+        aangemaakt: b.aangemaakt
+      });
+    }
+  }
+  // Btw per kwartaal uit het hele journaal (facturen, bonnetjes en losse bankregels).
+  const btwKw = btwPerKwartaal(journaal(demoStamdata(start), { boekingen, facturen, uitgaven, koppelingen, bronExtra }));
 
   // Afgelopen kwartalen waarvan de deadline voorbij is: ingediend en betaald.
   const aangiften: DemoData['aangiften'] = [];
@@ -176,13 +290,8 @@ export function demoSeed(vandaag: Datum): DemoData {
   for (;;) {
     const deadline = aangifteDeadline(j, q);
     if (deadline >= vandaag) break;
-    const { van, tot } = kwartaalGrenzen(j, q);
-    let saldo = 0;
-    for (const b of boekingen) {
-      if (b.datum < van || b.datum > tot) continue;
-      const r = berekenBoeking(b);
-      saldo += r.teken * (r.btw.verschuldigd - r.btw.voorbelasting);
-    }
+    const t = btwKw.get(`${j}-${q}`) ?? { verschuldigd: 0, voorbelasting: 0 };
+    const saldo = t.verschuldigd - t.voorbelasting;
     const betaaldOp = plusDagen(deadline, -4);
     aangiften.push({ jaar: j, kwartaal: q, teBetalen: saldo, ingediendOp: plusDagen(deadline, -9) });
     if (saldo !== 0) {
@@ -205,7 +314,8 @@ export function demoSeed(vandaag: Datum): DemoData {
   }
   stamdata.vergrendeling = { aangiften: aangiften.map((a) => ({ jaar: a.jaar, kwartaal: a.kwartaal })), boekjaren: [] };
   boekingen.sort((a, b) => (a.datum < b.datum ? -1 : a.datum > b.datum ? 1 : a.aangemaakt < b.aangemaakt ? -1 : 1));
-  return { stamdata, boekingen, aangiften };
+  facturen.sort((a, b) => (a.datum < b.datum ? -1 : a.datum > b.datum ? 1 : a.nummer < b.nummer ? -1 : 1));
+  return { stamdata, boekingen, facturen, uitgaven, koppelingen, bronExtra, importSleutels: {}, aangiften };
 }
 
 export function demoStamdata(start: Datum): Stamdata {

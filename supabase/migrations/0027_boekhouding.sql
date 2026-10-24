@@ -523,6 +523,133 @@ create trigger bk_grootboek_bewaken
   before update or delete on public.bk_grootboek
   for each row execute function public.bk_grootboek_bewaken();
 
+-- Koppelingen (afletteren): een gekoppelde bankregel telt niet meer zelf voor de btw (die komt
+-- uit de factuur of het bonnetje). (Ont)koppelen in een vergrendeld kwartaal mag daarom alleen
+-- als de regel zelf geen btw-effect heeft (btw-code 'geen'); in een afgesloten boekjaar nooit.
+-- Een factuur hoort bij een inkomst, een bonnetje bij een uitgave.
+create or replace function public.bk_koppelingen_controle()
+returns trigger
+language plpgsql
+set search_path = ''
+as $$
+declare
+  b record;
+begin
+  if public.bk_systeemrol() then
+    return coalesce(new, old);
+  end if;
+  select datum, soort, btw_code, verwijderd_op into b from public.bk_boekingen where id = coalesce(new.boeking_id, old.boeking_id);
+  if not found then
+    return coalesce(new, old);
+  end if;
+  if tg_op in ('INSERT', 'UPDATE') then
+    if b.verwijderd_op is not null then
+      raise exception using errcode = 'P0001', message = 'koppeling_ongeldig: de boeking is verwijderd';
+    end if;
+    if (new.bron = 'factuur' and b.soort <> 'inkomst') or (new.bron = 'uitgave' and b.soort <> 'uitgave') then
+      raise exception using errcode = 'P0001', message = 'koppeling_ongeldig: soort past niet bij het document';
+    end if;
+  end if;
+  if not public.bk_periode_open(b.datum)
+     and (exists (select 1 from public.bk_boekjaren j where j.jaar = extract(year from b.datum)::int)
+          or (b.soort in ('inkomst', 'uitgave') and b.btw_code <> 'geen')) then
+    perform public.bk_weiger_periode(b.datum);
+  end if;
+  return coalesce(new, old);
+end;
+$$;
+drop trigger if exists bk_koppelingen_controle on public.bk_koppelingen;
+create trigger bk_koppelingen_controle
+  before insert or update or delete on public.bk_koppelingen
+  for each row execute function public.bk_koppelingen_controle();
+
+-- Verfijning van een factuur/bonnetje (btw-code, categorie, vennoot) verandert de btw en het
+-- resultaat van die periode: alleen in een open periode (datum van het document; de factuur-
+-- of bonnetjestabel wordt alleen gelezen).
+create or replace function public.bk_bron_extra_periode()
+returns trigger
+language plpgsql
+set search_path = ''
+as $$
+declare
+  v_bron text := coalesce(new.bron, old.bron);
+  v_id uuid := coalesce(new.bron_id, old.bron_id);
+  d date;
+begin
+  if public.bk_systeemrol() then
+    return coalesce(new, old);
+  end if;
+  if tg_op = 'UPDATE' and (new.btw_code, new.grootboek_code, new.vennoot_id, new.bron, new.bron_id)
+     is not distinct from (old.btw_code, old.grootboek_code, old.vennoot_id, old.bron, old.bron_id) then
+    return new; -- alleen de notitie of het activum
+  end if;
+  if v_bron = 'factuur' then
+    select (i.issued_at at time zone 'Europe/Amsterdam')::date into d from public.invoices i where i.id = v_id;
+  else
+    select e.expense_date into d from public.expenses e where e.id = v_id;
+  end if;
+  if d is not null and not public.bk_periode_open(d) then
+    perform public.bk_weiger_periode(d);
+  end if;
+  return coalesce(new, old);
+end;
+$$;
+drop trigger if exists bk_bron_extra_periode on public.bk_bron_extra;
+create trigger bk_bron_extra_periode
+  before insert or update or delete on public.bk_bron_extra
+  for each row execute function public.bk_bron_extra_periode();
+
+-- Bankafschrift importeren in één transactie: een rij in bk_imports en de nieuwe regels
+-- (status 'te_verwerken'). Regels met een importsleutel die al bestaat voor deze rekening
+-- worden overgeslagen (dubbel). Geeft {import_id, nieuw, dubbel}. Draait als het teamlid
+-- (security invoker): RLS en de periodecontrole gelden gewoon.
+create or replace function public.bk_importeer(
+  p_rekening uuid,
+  p_bestandsnaam text,
+  p_formaat text,
+  p_regels jsonb
+)
+returns jsonb
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+declare
+  v_import uuid;
+  v_totaal integer;
+  v_nieuw integer;
+begin
+  if not public.is_teamlid() then
+    raise exception using errcode = '42501', message = 'geen toegang';
+  end if;
+  if jsonb_typeof(p_regels) <> 'array' or jsonb_array_length(p_regels) > 5000 then
+    raise exception using errcode = '22023', message = 'ongeldige regels';
+  end if;
+  if not exists (select 1 from public.bk_rekeningen where id = p_rekening and actief) then
+    raise exception using errcode = 'P0001', message = 'rekening_onbekend';
+  end if;
+  v_totaal := jsonb_array_length(p_regels);
+  insert into public.bk_imports (rekening_id, bestandsnaam, formaat, periode_van, periode_tot)
+  select p_rekening, left(p_bestandsnaam, 200), p_formaat, min((x->>'datum')::date), max((x->>'datum')::date)
+  from jsonb_array_elements(p_regels) x
+  returning id into v_import;
+
+  insert into public.bk_boekingen (rekening_id, datum, omschrijving, tegenpartij, tegenrekening, soort, richting,
+                                   bedrag_centen, bedrag_is_excl, btw_code, btw_centen, btw_handmatig, grootboek_code,
+                                   vennoot_id, status, import_id, import_sleutel, kenmerk)
+  select p_rekening, (x->>'datum')::date, x->>'omschrijving', nullif(x->>'tegenpartij', ''), nullif(x->>'tegenrekening', ''),
+         x->>'soort', x->>'richting', (x->>'bedrag_centen')::bigint, false, x->>'btw_code', (x->>'btw_centen')::bigint, false,
+         nullif(x->>'grootboek_code', ''), nullif(x->>'vennoot_id', '')::uuid, 'te_verwerken', v_import, x->>'import_sleutel',
+         nullif(x->>'kenmerk', '')
+  from jsonb_array_elements(p_regels) x
+  on conflict (rekening_id, import_sleutel) where import_sleutel is not null do nothing;
+  get diagnostics v_nieuw = row_count;
+
+  update public.bk_imports set aantal_nieuw = v_nieuw, aantal_dubbel = v_totaal - v_nieuw where id = v_import;
+  return jsonb_build_object('import_id', v_import, 'nieuw', v_nieuw, 'dubbel', v_totaal - v_nieuw);
+end;
+$$;
+
 -- Een rekening toevoegen = ook een eigen grootboekrekening (11xx) in één transactie.
 create or replace function public.bk_rekening_toevoegen(
   p_naam text,
@@ -585,11 +712,13 @@ revoke all on function public.bk_weiger_periode(date) from public, anon;
 revoke all on function public.bk_systeemrol() from public, anon;
 revoke all on function public.bk_rekening_toevoegen(text, text, text, bigint, date) from public, anon;
 revoke all on function public.bk_standaard_rekening(uuid) from public, anon;
+revoke all on function public.bk_importeer(uuid, text, text, jsonb) from public, anon;
 grant execute on function public.bk_periode_open(date) to authenticated, service_role;
 grant execute on function public.bk_weiger_periode(date) to authenticated, service_role;
 grant execute on function public.bk_systeemrol() to authenticated, service_role;
 grant execute on function public.bk_rekening_toevoegen(text, text, text, bigint, date) to authenticated, service_role;
 grant execute on function public.bk_standaard_rekening(uuid) to authenticated, service_role;
+grant execute on function public.bk_importeer(uuid, text, text, jsonb) to authenticated, service_role;
 
 -- ---------------------------------------------------------------------------------
 -- RLS: alleen actieve teamleden (gedeeld met het team). anon heeft geen rechten.

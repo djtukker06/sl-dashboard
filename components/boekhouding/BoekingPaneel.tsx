@@ -4,18 +4,25 @@ import { useEffect, useRef, useState } from 'react';
 import { langeDatum, vergrendeldReden } from '@/lib/boekhouding/kern/periode';
 import { BkApiFout, bkApi } from '@/lib/boekhouding/client';
 import type { Boeking, Stamdata } from '@/lib/boekhouding/model';
+import type { Centen } from '@/lib/boekhouding/kern/geld';
+import type { KoppelBron } from '@/lib/boekhouding/kern/bronnen';
 import { BoekingFormulier, Uitkomst, formulierNaarBody, formulierUit, rekenUit, type Formulier } from './BoekingFormulier';
+import { KoppelSuggesties, type KoppelInfo } from './KoppelSuggesties';
 
 // Zijpaneel van één boekingsregel: bekijken, wijzigen en (met reden) verwijderen. In een
 // vergrendelde periode (aangifte ingediend / boekjaar afgesloten) zijn alleen de notities en
-// de status te wijzigen; de rest staat vast.
+// de status te wijzigen; de rest staat vast. Een uitgave of inkomst kun je hier afletteren
+// tegen een bonnetje of factuur (suggesties met één klik).
 export function BoekingPaneel({
   stam,
   boeking,
   naamBank,
   onSluit,
   onOpgeslagen,
-  onVerwijderd
+  onVerwijderd,
+  koppel,
+  onKoppel,
+  onOntkoppel
 }: {
   stam: Stamdata;
   boeking: Boeking;
@@ -23,6 +30,9 @@ export function BoekingPaneel({
   onSluit: () => void;
   onOpgeslagen: (b: Boeking) => void;
   onVerwijderd: (id: string) => void;
+  koppel?: KoppelInfo;
+  onKoppel?: (bron: KoppelBron, bronId: string, bedrag?: Centen) => Promise<void>;
+  onOntkoppel?: (id: string) => Promise<void>;
 }) {
   const [form, setForm] = useState<Formulier>(() => formulierUit(boeking));
   const [fouten, setFouten] = useState<Record<string, string>>({});
@@ -33,6 +43,7 @@ export function BoekingPaneel({
   const paneel = useRef<HTMLElement>(null);
   const slot = vergrendeldReden(boeking.datum, stam.vergrendeling);
   const u = rekenUit(stam, form);
+  const gekoppeld = Boolean(koppel && koppel.koppelingen.length > 0);
 
   useEffect(() => {
     const toets = (e: KeyboardEvent) => {
@@ -106,7 +117,18 @@ export function BoekingPaneel({
                 <strong>Vergrendeld.</strong> {slot} Alleen de notities zijn nog te wijzigen; een correctie boek je als nieuwe regel in een open periode.
               </p>
             )}
-            {boeking.status === 'te_verwerken' && !slot && <p className="bh-uitkomst-noot is-let-op">Deze regel moet nog worden gecontroleerd. Controleer de soort, btw en categorie en klik op Opslaan.</p>}
+            {boeking.status === 'te_verwerken' && !slot && (
+              <p className="bh-uitkomst-noot is-let-op">
+                Deze regel moet nog worden gecontroleerd. Koppel hem aan een factuur of bonnetje, of controleer de soort, btw en categorie en klik op Opslaan.
+              </p>
+            )}
+            {koppel && onKoppel && onOntkoppel && <KoppelSuggesties info={koppel} onKoppel={onKoppel} onOntkoppel={onOntkoppel} />}
+            {gekoppeld && (
+              <p className="bh-uitkomst-noot">
+                Deze regel is de betaling; omzet of kosten en de btw komen uit de {koppel?.bron === 'factuur' ? 'factuur' : 'het bonnetje'} (factuurstelsel: in het kwartaal van de
+                {koppel?.bron === 'factuur' ? ' factuurdatum' : ' bondatum'}). Soort, bedrag en bank liggen vast zolang hij gekoppeld is.
+              </p>
+            )}
             <BoekingFormulier stam={stam} waarde={form} onWijzig={setForm} layout="paneel" fouten={fouten} alleenLezen={Boolean(slot)} />
             {slot && (
               <label className="bh-veld">
@@ -114,7 +136,7 @@ export function BoekingPaneel({
                 <textarea className="ag-veld" rows={3} value={form.notities} onChange={(e) => setForm({ ...form, notities: e.target.value })} maxLength={2000} />
               </label>
             )}
-            <Uitkomst u={{ ...u, slot: null }} />
+            {!gekoppeld && <Uitkomst u={{ ...u, slot: null }} />}
             {fout && <p className="ag-fout">{fout}</p>}
           </div>
 
