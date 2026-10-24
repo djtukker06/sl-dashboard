@@ -77,6 +77,10 @@ await test("apparaatNaam: standaard, uniek, zonder HTML of stuurtekens", () => {
 });
 await test("veiligeQr: alleen een SVG-data-URI", () => {
   assert.ok(tfa.veiligeQr("data:image/svg+xml;utf-8,<svg></svg>"));
+  // Supabase levert vaak kale SVG-tekst: die wordt een data-URI.
+  const kaal = tfa.veiligeQr('<?xml version="1.0"?>\n<svg xmlns="http://www.w3.org/2000/svg"><rect/></svg>');
+  assert.ok(kaal && kaal.startsWith("data:image/svg+xml;charset=utf-8,%3C"), String(kaal));
+  assert.equal(tfa.veiligeQr("<div>geen svg</div>"), null);
   for (const v of ["https://evil.example/qr.svg", "javascript:alert(1)", "data:text/html,<script>", null, 1]) assert.equal(tfa.veiligeQr(v), null, String(v));
 });
 await test("MAX_FACTOREN = 2", () => assert.equal(tfa.MAX_FACTOREN, 2));

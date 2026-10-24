@@ -207,6 +207,7 @@
 .bv-scan { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 20px; align-items: start; }
 .bv-qr-vlak { padding: 10px; border-radius: 6px; background: #fff; line-height: 0; }
 .bv-qr { display: block; width: 176px; height: 176px; }
+.bv-qr-geen { margin: 0; max-width: 220px; font-size: 13px; line-height: 1.5; color: var(--sl-muted); }
 .bv-scan-rechts { display: grid; gap: 12px; min-width: 0; }
 .bv-sleutel { margin: 0; display: grid; gap: 4px; }
 .bv-sleutel-label { font-size: 11.5px; color: var(--sl-muted); }

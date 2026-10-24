@@ -102,19 +102,21 @@ export function TfaInstellen({
 
       {start && (
         <form className="bv-scan" onSubmit={bevestig}>
-          <div className="bv-qr-vlak">
-            {start.qr ? (
-              // eslint-disable-next-line @next/next/no-img-element -- SVG-data-URI van Supabase
+          {start.qr ? (
+            <div className="bv-qr-vlak">
+              {/* eslint-disable-next-line @next/next/no-img-element -- SVG-data-URI van Supabase */}
               <img className="bv-qr" src={start.qr} alt="QR-code voor je authenticator-app" width={176} height={176} />
-            ) : (
-              <p className="ag-uitleg">Geen QR-code beschikbaar: typ de sleutel hieronder over.</p>
-            )}
-          </div>
+            </div>
+          ) : (
+            <p className="bv-qr-geen">Geen QR-code beschikbaar. Voeg in je app handmatig een account toe met de sleutel hiernaast.</p>
+          )}
           <div className="bv-scan-rechts">
-            <button type="button" className="bv-link" onClick={() => setToonSleutel((x) => !x)} aria-expanded={toonSleutel}>
-              {toonSleutel ? 'Sleutel verbergen' : 'Lukt scannen niet? Toon de sleutel'}
-            </button>
-            {toonSleutel && (
+            {start.qr && (
+              <button type="button" className="bv-link" onClick={() => setToonSleutel((x) => !x)} aria-expanded={toonSleutel}>
+                {toonSleutel ? 'Sleutel verbergen' : 'Lukt scannen niet? Toon de sleutel'}
+              </button>
+            )}
+            {(toonSleutel || !start.qr) && (
               <p className="bv-sleutel">
                 <span className="bv-sleutel-label">Sleutel ({start.naam})</span>
                 <code>{sleutelGroepen}</code>

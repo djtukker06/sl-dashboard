@@ -53,8 +53,17 @@ export function apparaatNaam(invoer: unknown, bestaand: string[]): string {
   return `${basis} ${Date.now().toString(36)}`.slice(0, 40);
 }
 
-/** Alleen een QR-code als SVG-data-URI van Supabase doorgeven (nooit een willekeurige URL). */
+/**
+ * Alleen een QR-code als SVG-data-URI doorgeven (nooit een willekeurige URL). Supabase levert
+ * `totp.qr_code` meestal als kale SVG-tekst (`<svg …>`); die zetten we zelf om naar een
+ * data-URI. Als <img src> voert de browser in een SVG nooit scripts uit.
+ */
 export function veiligeQr(v: unknown): string | null {
-  if (typeof v !== 'string') return null;
-  return /^data:image\/svg\+xml[;,]/i.test(v) && v.length < 200_000 ? v : null;
+  if (typeof v !== 'string' || v.length >= 200_000) return null;
+  const s = v.trim();
+  if (/^data:image\/svg\+xml[;,]/i.test(s)) return s;
+  if (/^(<\?xml[^>]*>\s*)?<svg[\s>]/i.test(s) && /<\/svg>\s*$/i.test(s)) {
+    return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(s)}`;
+  }
+  return null;
 }
