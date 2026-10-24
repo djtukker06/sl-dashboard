@@ -78,3 +78,237 @@
   .bh-tegel { padding: 18px 16px; }
   .bh-alles { margin-left: 0; }
 }
+
+/* ==========================================================
+   Bank & boekingen, instellingen en de demo-banner (stap 1)
+   ========================================================== */
+.bh { --bh-bij: #a9c4a0; --bh-let-op: var(--sl-let-op, #d4b27a); }
+.bh-sr { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+.bh-inhoud { display: grid; gap: 22px; padding: 24px 40px 64px; max-width: 1320px; min-width: 0; }
+.bh-label { font-family: var(--sl-mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--sl-muted); }
+.bh-zacht { color: var(--sl-faint); }
+.bh-pil {
+  display: inline-flex; align-items: center; margin-left: 8px; padding: 2px 7px; border: 1px solid var(--sl-line); border-radius: 999px;
+  font-family: var(--sl-mono); font-size: 9.5px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--sl-muted); font-weight: 400; vertical-align: middle;
+}
+.bh-pil.is-let-op { border-color: color-mix(in srgb, var(--bh-let-op) 55%, transparent); color: var(--bh-let-op); }
+.bh-pil.is-zacht { color: var(--sl-faint); }
+
+/* ---------- demo-banner ---------- */
+.bh-demo {
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  margin: 18px 40px 0; padding: 12px 16px; max-width: 1240px;
+  border: 1px solid color-mix(in srgb, var(--bh-let-op) 45%, transparent); border-radius: 6px;
+  background: color-mix(in srgb, var(--bh-let-op) 9%, var(--sl-panel));
+}
+.bh-demo-label { flex: none; padding: 3px 8px; border-radius: var(--sl-r); background: var(--bh-let-op); color: var(--sl-dark); font-family: var(--sl-mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; }
+.bh-demo-tekst { flex: 1 1 320px; margin: 0; font-size: 13.5px; line-height: 1.5; }
+.bh-demo-tekst strong { font-weight: 700; }
+.bh-demo-uitleg { color: var(--sl-muted); cursor: help; }
+.bh-demo-fout { color: var(--sl-danger); }
+.bh-demo-knop { flex: none; }
+
+/* ---------- saldi ---------- */
+.bh-saldi { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; }
+.bh-saldo {
+  display: grid; gap: 4px; align-content: start; padding: 16px 18px; min-width: 0; text-align: left;
+  border: 1px solid var(--sl-line); border-radius: 6px; background: var(--sl-panel); color: var(--sl-text); font-family: var(--sl-font);
+  transition: border-color .2s var(--sl-ease), background-color .2s var(--sl-ease);
+}
+button.bh-saldo { cursor: pointer; }
+button.bh-saldo:hover { border-color: #4a4847; background: var(--sl-raise); }
+.bh-saldo.is-aan { border-color: var(--sl-sand); }
+.bh-saldo:focus-visible { outline: none; box-shadow: var(--sl-focus); }
+.bh-saldo-naam { display: flex; align-items: center; font-family: var(--sl-mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--sl-muted); }
+.bh-saldo-bedrag { font-size: 24px; font-weight: 700; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.bh-saldo-bedrag.is-let-op { color: var(--bh-let-op); }
+.bh-saldo-sub { font-size: 12.5px; color: var(--sl-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ---------- kaarten ---------- */
+.bh-kaart { display: grid; gap: 16px; padding: 20px 22px; border: 1px solid var(--sl-line); border-radius: 6px; background: var(--sl-panel); min-width: 0; }
+.bh-kaart-kop { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 14px; }
+.bh-kaart-titel { margin: 0; font-size: 17px; font-weight: 700; letter-spacing: -0.005em; }
+.bh-kaart-sub { margin: 0; font-size: 13px; line-height: 1.5; color: var(--sl-muted); }
+
+/* ---------- formulier ---------- */
+.bh-form { margin: 0; padding: 0; border: 0; min-width: 0; display: grid; gap: 14px; }
+.bh-form:disabled { opacity: .7; }
+.bh-veld { display: grid; gap: 6px; min-width: 0; align-content: start; }
+.bh-segment { display: flex; flex-wrap: wrap; width: 100%; box-sizing: border-box; }
+.bh-segment button { white-space: nowrap; }
+.bh-bedrag-invoer { position: relative; display: block; }
+.bh-bedrag-invoer > span { position: absolute; left: 11px; top: 50%; transform: translateY(-50%); color: var(--sl-muted); font-size: 14px; pointer-events: none; }
+.bh-bedrag-invoer .ag-veld { padding-left: 26px; font-variant-numeric: tabular-nums; }
+.bh-veld-schakel { font-size: 13px; color: var(--sl-muted); }
+.ag-veld[aria-invalid="true"] { border-color: var(--sl-danger); }
+
+.bh-form-rij {
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, .8fr) minmax(0, 2fr) minmax(0, 1fr);
+  grid-template-areas:
+    "bank datum omschrijving bedrag"
+    "soort soort btw categorie"
+    ". . schakel schakel";
+  gap: 14px 16px;
+}
+.bh-form-rij .bh-veld-bank { grid-area: bank; }
+.bh-form-rij .bh-veld-datum { grid-area: datum; }
+.bh-form-rij .bh-veld-omschrijving { grid-area: omschrijving; }
+.bh-form-rij .bh-veld-bedrag { grid-area: bedrag; }
+.bh-form-rij .bh-veld-soort { grid-area: soort; }
+.bh-form-rij .bh-veld-btw { grid-area: btw; }
+.bh-form-rij .bh-veld-categorie { grid-area: categorie; }
+.bh-form-rij .bh-veld-breed { grid-area: auto; grid-row: btw; grid-column: btw-start / categorie-end; }
+.bh-form-rij .bh-veld-schakel { grid-area: schakel; justify-self: end; margin-top: -6px; }
+.bh-form-paneel .bh-veld-schakel { margin-top: -4px; }
+
+.bh-invoer-voet { display: flex; align-items: flex-end; gap: 16px; padding-top: 14px; margin-top: 14px; border-top: 1px solid var(--sl-line-soft); }
+.bh-boek-knop { flex: none; padding: 10px 22px; font-size: 14px; }
+.bh-uitkomst { flex: 1; display: grid; gap: 8px; min-width: 0; }
+.bh-uitkomst-cijfers { display: flex; flex-wrap: wrap; gap: 8px 28px; margin: 0; }
+.bh-uitkomst-cijfers > div { display: grid; gap: 2px; }
+.bh-uitkomst-cijfers dt { font-family: var(--sl-mono); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--sl-faint); }
+.bh-uitkomst-cijfers dd { margin: 0; font-size: 15px; font-variant-numeric: tabular-nums; }
+.bh-uitkomst-cijfers .is-nadruk dd { font-weight: 700; color: var(--sl-sand); }
+.bh-uitkomst-noot { margin: 0; font-size: 12.5px; line-height: 1.5; color: var(--sl-muted); }
+.bh-uitkomst-noot.is-slot { color: var(--sl-danger); }
+.bh-uitkomst-noot.is-let-op { color: var(--bh-let-op); }
+
+.bh-melding { margin: -8px 0 0; padding: 10px 14px; border-radius: var(--sl-r); font-size: 13px; animation: ag-in .18s var(--sl-ease); }
+.bh-melding.is-ok { border: 1px solid var(--sl-line); background: var(--sl-raise); }
+.bh-melding.is-fout { border: 1px solid color-mix(in srgb, var(--sl-danger) 50%, transparent); color: var(--sl-danger); }
+
+/* ---------- lijst ---------- */
+.bh-lijst-blok { display: grid; gap: 14px; min-width: 0; }
+.bh-lijst-kop { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px 18px; }
+.bh-rek-tabs { display: flex; gap: 4px; flex-wrap: wrap; }
+.bh-rek-tab {
+  padding: 6px 12px; border: 1px solid transparent; border-radius: 999px; background: none; color: var(--sl-muted);
+  font-family: var(--sl-font); font-size: 13px; cursor: pointer; transition: color .2s var(--sl-ease), border-color .2s var(--sl-ease);
+}
+.bh-rek-tab:hover { color: var(--sl-text); }
+.bh-rek-tab.is-aan { border-color: var(--sl-line); background: var(--sl-raise); color: var(--sl-text); }
+.bh-rek-tab:focus-visible, .bh-chip:focus-visible, .bh-rij:focus-visible { outline: none; box-shadow: var(--sl-focus); }
+.bh-filters { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.bh-filter { width: auto; max-width: 200px; padding: 7px 10px; font-size: 13px; }
+.bh-kw { width: auto; flex-wrap: nowrap; }
+.bh-kw button { padding: 6px 10px; }
+.bh-zoek {
+  display: flex; flex-direction: row; align-items: center; gap: 8px; flex: 1 1 240px; min-width: 0; padding: 0 11px;
+  border: 1px solid var(--sl-line); border-radius: var(--sl-r); background: var(--sl-bg); color: var(--sl-muted);
+}
+.bh-zoek:focus-within { border-color: var(--sl-sand); }
+.bh-zoek input { flex: 1; min-width: 0; padding: 8px 0; border: 0; background: transparent; color: var(--sl-text); font-family: var(--sl-font); font-size: 13.5px; outline: none; }
+.bh-zoek input::placeholder { color: var(--sl-faint); }
+.bh-chip { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border: 1px solid color-mix(in srgb, var(--bh-let-op) 55%, transparent); border-radius: 999px; background: none; color: var(--bh-let-op); font-family: var(--sl-font); font-size: 12.5px; cursor: pointer; }
+
+.bh-totalen { display: flex; flex-wrap: wrap; gap: 10px 32px; margin: 0; padding: 12px 0; border-top: 1px solid var(--sl-line-soft); border-bottom: 1px solid var(--sl-line-soft); }
+.bh-totalen > div { display: grid; gap: 2px; }
+.bh-totalen dt { font-family: var(--sl-mono); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--sl-faint); }
+.bh-totalen dd { margin: 0; font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.is-bij { color: var(--bh-bij); }
+.bh-lijst-leeg { padding: 24px 0; }
+
+.bh-tabel { display: grid; margin: 0 -10px; }
+.bh-tr {
+  display: grid; grid-template-columns: 92px minmax(0, 1fr) 96px 48px 128px 124px 120px; align-items: center; gap: 14px;
+  padding: 10px; border-radius: var(--sl-r);
+}
+.bh-th { padding-top: 4px; padding-bottom: 8px; font-family: var(--sl-mono); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--sl-faint); }
+.bh-r { text-align: right; justify-self: end; }
+.bh-rij {
+  width: 100%; border: 0; border-top: 1px solid var(--sl-line-soft); border-radius: 0; background: none; color: var(--sl-text);
+  font-family: var(--sl-font); text-align: left; cursor: pointer; transition: background-color .15s var(--sl-ease);
+}
+.bh-rij:hover { background: var(--sl-hover); }
+.bh-rij.is-open { box-shadow: inset 2px 0 0 var(--bh-let-op); }
+.bh-rij-datum { font-family: var(--sl-mono); font-size: 11px; letter-spacing: 0.02em; color: var(--sl-muted); white-space: nowrap; }
+.bh-rij-hoofd { display: grid; gap: 3px; min-width: 0; }
+.bh-rij-titel { display: flex; align-items: center; min-width: 0; font-size: 14px; font-weight: 500; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.bh-rij-meta { font-size: 12.5px; color: var(--sl-muted); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.bh-rij-bank, .bh-rij-btw { font-size: 12.5px; color: var(--sl-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bh-rij-kw { display: inline-flex; align-items: center; gap: 4px; font-family: var(--sl-mono); font-size: 11px; color: var(--sl-muted); }
+.bh-slot { color: var(--sl-faint); }
+.bh-rij-bedrag { font-size: 14px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.bh-rij-saldo { font-size: 12.5px; color: var(--sl-muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+/* ---------- paneel ---------- */
+.bh-paneel { width: min(500px, 100vw); }
+.bh-paneel .ag-paneel-kop { gap: 12px; }
+.bh-paneel .ag-paneel-kop > div { display: grid; gap: 4px; min-width: 0; padding: 14px 0; }
+.bh-paneel-titel { margin: 0; font-size: 18px; font-weight: 700; line-height: 1.3; overflow-wrap: anywhere; }
+.bh-form-paneel .bh-veld-bank, .bh-form-paneel .bh-veld-soort { grid-column: 1 / -1; }
+.bh-form-paneel { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+.bh-form-paneel > .bh-veld-omschrijving, .bh-form-paneel > label.bh-veld:not(.bh-veld-datum):not(.bh-veld-bedrag):not(.bh-veld-btw):not(.bh-veld-categorie), .bh-form-paneel > .bh-veld-schakel, .bh-form-paneel > .bh-veld-breed { grid-column: 1 / -1; }
+.bh-slot-melding { margin: 0; padding: 10px 12px; border: 1px solid var(--sl-line); border-radius: var(--sl-r); background: var(--sl-raise); font-size: 13px; line-height: 1.5; color: var(--sl-muted); }
+.bh-slot-melding strong { color: var(--sl-text); }
+.bh-verwijder { display: grid; gap: 10px; width: 100%; }
+.bh-verwijder .ag-paneel-acties { justify-content: flex-end; }
+
+/* ---------- instellingen ---------- */
+.bh-instellingen { max-width: 980px; gap: 34px; }
+.bh-sectie { display: grid; gap: 14px; }
+.bh-sectie-kop { display: grid; gap: 4px; }
+.bh-rekeningen { display: grid; gap: 14px; justify-items: start; }
+.bh-rek-lijst { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; width: 100%; }
+.bh-rek { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px 20px; padding: 16px 18px; border: 1px solid var(--sl-line); border-radius: 6px; background: var(--sl-panel); }
+.bh-rek.is-uit { opacity: .6; }
+.bh-rek-hoofd { display: grid; gap: 3px; min-width: 0; }
+.bh-rek-naam { display: flex; align-items: center; margin: 0; font-size: 15px; font-weight: 700; }
+.bh-rek-meta { margin: 0; font-size: 12.5px; color: var(--sl-muted); }
+.bh-rek-acties { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; }
+.bh-rek-form { width: 100%; box-sizing: border-box; }
+.bh-rek-velden { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.bh-rek-form-voet { display: flex; justify-content: flex-end; gap: 8px; }
+.bh-vennoten { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; }
+.bh-vennoot { display: grid; gap: 3px; padding: 14px 16px; border: 1px solid var(--sl-line); border-radius: 6px; background: var(--sl-panel); }
+.bh-vennoot-naam { font-size: 15px; font-weight: 700; }
+.bh-vennoot-aandeel { font-size: 13px; }
+.bh-gb { display: grid; border-top: 1px solid var(--sl-line-soft); }
+.bh-gb-rij { display: grid; grid-template-columns: 56px minmax(0, 1fr) 90px 70px; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--sl-line-soft); font-size: 13.5px; align-items: baseline; }
+.bh-gb-code, .bh-gb-soort, .bh-gb-btw { font-family: var(--sl-mono); font-size: 11px; color: var(--sl-muted); }
+.bh-gb-btw { text-align: right; }
+
+/* ---------- responsief ---------- */
+@media (max-width: 1180px) {
+  .bh-tr { grid-template-columns: 84px minmax(0, 1fr) 84px 40px 112px 116px; }
+  .bh-tr > :nth-child(7) { display: none; }
+}
+@media (max-width: 960px) {
+  .bh-form-rij {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-areas: "bank bank" "omschrijving omschrijving" "datum bedrag" "soort soort" "btw categorie" "schakel schakel";
+  }
+  .bh-form-rij .bh-veld-schakel { justify-self: start; margin-top: -4px; }
+  .bh-tr { grid-template-columns: 78px minmax(0, 1fr) 40px 116px; }
+  .bh-tr > :nth-child(3), .bh-tr > :nth-child(5) { display: none; }
+  .bh-rek-velden { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+}
+@media (max-width: 720px) {
+  .bh-inhoud { padding: 16px 16px 48px; gap: 18px; }
+  .bh-demo { margin: 14px 16px 0; }
+  .bh-saldi { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .bh-saldo { padding: 12px 14px; }
+  .bh-saldo-bedrag { font-size: 19px; }
+  .bh-kaart { padding: 16px; }
+  .bh-invoer-voet { flex-direction: column; align-items: stretch; }
+  .bh-boek-knop { justify-content: center; }
+  .bh-segment button { padding: 6px 7px; font-size: 12px; }
+  .bh-kw { width: 100%; }
+  .bh-filter { flex: 1 1 40%; max-width: none; }
+  .bh-tabel { margin: 0 -6px; }
+  .bh-tr { grid-template-columns: minmax(0, 1fr) auto; gap: 2px 10px; padding: 10px 6px; }
+  .bh-th { display: none; }
+  .bh-rij-hoofd { grid-column: 1; grid-row: 1; }
+  .bh-rij-bedrag { grid-column: 2; grid-row: 1; }
+  .bh-rij-datum { grid-column: 1; grid-row: 2; }
+  .bh-rij-kw { grid-column: 2; grid-row: 2; justify-self: end; }
+  .bh-tr > :nth-child(3), .bh-tr > :nth-child(5), .bh-tr > :nth-child(7) { display: none; }
+  .bh-totalen { gap: 10px 22px; }
+  .bh-form-paneel { grid-template-columns: minmax(0, 1fr); }
+  .bh-form-paneel > * { grid-column: 1 / -1; }
+  .bh-rek-velden { grid-template-columns: minmax(0, 1fr); }
+  .bh-rek { padding: 14px; }
+  .bh-gb-rij { grid-template-columns: 44px minmax(0, 1fr) 54px; }
+  .bh-gb-soort { display: none; }
+}
+.bh-meer { justify-self: center; }

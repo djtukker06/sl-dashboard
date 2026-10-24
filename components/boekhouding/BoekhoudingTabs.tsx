@@ -3,7 +3,8 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
-// Subnavigatie binnen Boekhouding: Overzicht · Facturen · Bonnetjes & inkoopfacturen.
+// Subnavigatie binnen Boekhouding: Overzicht · Facturen · Bonnetjes & inkoopfacturen ·
+// Bank & boekingen · Instellingen.
 // "Facturen" is actief op alle /facturen/*-paden (de facturenschermen zelf blijven ongewijzigd).
 const TABS = [
   { href: '/boekhouding', label: 'Overzicht', actief: (p: string) => p === '/boekhouding' },
@@ -13,7 +14,9 @@ const TABS = [
     label: 'Bonnetjes & inkoopfacturen',
     kort: 'Bonnetjes',
     actief: (p: string) => p.startsWith('/boekhouding/bonnetjes') || p.startsWith('/uitgaven')
-  }
+  },
+  { href: '/boekhouding/bank', label: 'Bank & boekingen', kort: 'Bank', actief: (p: string) => p.startsWith('/boekhouding/bank') },
+  { href: '/boekhouding/instellingen', label: 'Instellingen', actief: (p: string) => p.startsWith('/boekhouding/instellingen') }
 ] as const;
 
 export function BoekhoudingTabs() {
