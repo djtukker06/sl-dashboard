@@ -177,8 +177,9 @@ test("UITVOEREN_0023.sql: één transactie, controle per onderdeel, actueel", ()
   for (const r of ["projectstatus voorbereiding/bezig/wachten/afgerond", "kolom projects.status_sinds", "trigger status_sinds", "RLS projects ongewijzigd (teamlid)", "indexen 0023"]) assert.ok(sql.includes(`('${r}'`), r);
   for (const f of ["UITVOEREN_IN_SQL_EDITOR.sql", "UITVOEREN_0020_UITGAVEN.sql", "UITVOEREN_0021_TEAM.sql"]) {
     const delen = [...lees(`supabase/${f}`).matchAll(/^-- (\d{4}_[\w]+\.sql)$/gm)].map((m) => m[1]);
-    // Na 0023 volgen alleen nog 0024 (nieuwe Drive-tabellen met teamcheck) en 0025 (kolommen).
-    assert.deepEqual(delen.slice(-5), ["0021_team_en_taken.sql", "0022_team_crm.sql", "0023_projectstatus.sql", "0024_drive.sql", "0025_crm_opvolging.sql"], f);
+    // Na 0023 volgen alleen nog 0024 (nieuwe Drive-tabellen met teamcheck), 0025 (kolommen) en
+    // 0026 (inboxen, 2FA in is_teamlid, audit-log, back-ups).
+    assert.deepEqual(delen.slice(-6), ["0021_team_en_taken.sql", "0022_team_crm.sql", "0023_projectstatus.sql", "0024_drive.sql", "0025_crm_opvolging.sql", "0026_beveiliging_mailboxen_backups.sql"], f);
   }
   const r = spawnSync(process.execPath, [path.join(ROOT, "scripts/genereer-sql-editor.mjs"), "--controleer"], { encoding: "utf8" });
   assert.equal(r.status, 0, r.stderr);

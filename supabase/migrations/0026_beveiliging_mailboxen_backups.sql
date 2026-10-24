@@ -7,8 +7,9 @@
 -- Deel 2  beveiliging   2FA in RLS (is_teamlid), toegang_status(), audit-log, inlogpogingen
 -- Deel 3  back-ups      backup_runs, backup_bestanden, heartbeat (keep-alive), backup_tabellen()
 --
--- LET OP: voer na deze migratie UITVOEREN_0021_TEAM.sql niet opnieuw uit; die zet is_teamlid()
--- terug naar de versie zonder 2FA-controle. (Opnieuw 0026 uitvoeren herstelt het.)
+-- LET OP: voer na deze migratie de LOSSE migratie 0021_team_en_taken.sql niet opnieuw uit; die
+-- zet is_teamlid() terug naar de versie zonder 2FA-controle. (Opnieuw 0026 uitvoeren herstelt
+-- het.) De UITVOEREN_*-bestanden zijn veilig: de grote eindigen met 0026.
 
 -- ---------------------------------------------------------------------------------
 -- Deel 1. Meerdere mailboxen

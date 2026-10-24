@@ -50,6 +50,12 @@
 //                 user_mailboxes, privé-buckets alleen via de service-role.
 // Scenario B  0001–0019 → UITVOEREN_0021_TEAM.sql (0020 ontbreekt nog) → daarna
 //             UITVOEREN_0020_UITGAVEN.sql: alles "ok", ook uitgaven alleen voor teamleden.
+// Scenario C  0001–0025 los (zoals Supabase nu) → UITVOEREN_0026.sql (3x): elke controleregel
+//             "ok", per onderdeel (mailboxen, 2fa_rls, audit_log, inlog_pogingen, backups,
+//             heartbeat) een regel; inbox overgezet; 2FA op aal1/aal2; gedeelde inbox, heartbeat,
+//             back-ups en audit-log niet leesbaar voor leden/anon; de grote bestanden opnieuw
+//             zetten de 2FA-controle niet terug (de losse 0021 wel, 0026 herstelt); de controle
+//             slaat alarm bij geknoei en toont de noodstop.
 //
 // Gebruik:  node scripts/test-rls.mjs        (vereist de devDependency @electric-sql/pglite)
 import fs from "node:fs";
@@ -397,7 +403,9 @@ async function scenarioA() {
   check(!r25.ok && r25.code === "42703", "vóór 0025: kolom clients.opvolgen_op bestaat nog niet (42703)", uitleg(r25));
 
   // Opnieuw de oudere/grote bestanden: mogen de open policies van 0014–0020 én de open
-  // leesregels voor taken van 0021 niet terugzetten (ze eindigen met 0021 + 0022).
+  // leesregels voor taken van 0021 niet terugzetten (ze eindigen met 0021 + 0022). Sinds 0026
+  // eindigen ze ook met 0026 (2FA in is_teamlid, mailboxen, audit-log, back-ups).
+  check((await db.query("select to_regclass('public.mailboxen') as t")).rows[0].t === null, "vóór 0026: tabel mailboxen bestaat nog niet");
   checkControle(await voerUit(db, team, "UITVOEREN_0021_TEAM.sql"), "A: 0021_TEAM opnieuw");
   checkControle(await voerUit(db, team, "UITVOEREN_0021_TEAM.sql (2x)"), "A: 0021_TEAM opnieuw (2x)");
   checkControle(await voerUit(db, lees("supabase/UITVOEREN_IN_SQL_EDITOR.sql"), "UITVOEREN_IN_SQL_EDITOR.sql"), "A: IN_SQL_EDITOR opnieuw");
@@ -406,6 +414,8 @@ async function scenarioA() {
   check(nLeden === 2, "opnieuw uitvoeren zaait geen extra leden", `${nLeden}`);
   const open0021 = (await db.query("select count(*)::int as n from pg_policies where policyname like 'teamleden lezen %' and tablename in ('tasks', 'task_assignees', 'task_subtasks', 'calendar_events', 'event_attendees')")).rows[0].n;
   check(open0021 === 0, "oudere bestanden opnieuw: open leesregels voor taken blijven weg", `${open0021}`);
+  const def26 = (await db.query("select pg_get_functiondef('public.is_teamlid()'::regprocedure) as d")).rows[0].d;
+  check(/mfa_factors/.test(def26) && /aal2/.test(def26), "grote bestanden eindigen met 0026: is_teamlid() met 2FA-controle");
 
   await welkom0022(db);
 
@@ -1164,7 +1174,8 @@ async function opvolging0025(db) {
 async function mailboxen0026(db) {
   const fouten0 = fouten;
   const m26 = lees("supabase/migrations/0026_beveiliging_mailboxen_backups.sql");
-  check((await db.query("select to_regclass('public.mailboxen') as t")).rows[0].t === null, "vóór 0026: tabel mailboxen bestaat nog niet");
+  // (0026 is hiervoor al meegekomen met de grote UITVOEREN-bestanden; de koppeling van Daniel
+  // in user_mailboxes is daarna gezaaid, dus nu pas overgezet.)
   await voerUit(db, m26, "0026 (1e keer)");
   await voerUit(db, m26, "0026 (2e keer)");
 
@@ -1519,8 +1530,109 @@ async function scenarioB() {
   await db.close();
 }
 
+// ---------------------------------------------------------------------------------
+// Scenario C: zoals Supabase nu (0001–0025 uitgevoerd) → UITVOEREN_0026.sql
+// ---------------------------------------------------------------------------------
+async function scenarioC() {
+  const fouten0 = fouten;
+  // Gebruikers en data vóór 0021 (0021 zaait de eigenaar), daarna 0021–0025 los.
+  const db2 = await nieuweDb();
+  for (const f of MIGRATIES.filter((f) => f < "0021")) await voerUit(db2, lees(`supabase/migrations/${f}`), f);
+  await zaaiGebruikersVoor0021(db2);
+  await zaaiData(db2, true);
+  for (const f of MIGRATIES.filter((f) => f >= "0021" && f < "0026")) await voerUit(db2, lees(`supabase/migrations/${f}`), f);
+  await db2.query("insert into public.profiles (id, naam, initialen, email) values ($1, 'Mark', 'M', 'mark@studio-levant.nl') on conflict (id) do nothing", [U.mark]);
+  await db2.query("insert into public.team_members (user_id, actief, rol) values ($1, true, 'lid')", [U.mark]);
+  await db2.query("insert into public.user_mailboxes (user_id, email, wachtwoord_enc) values ($1, 'Daniel@studio-levant.nl', 'v1:aaa.bbb.ccc')", [U.daniel]);
+
+  const sql26 = lees("supabase/UITVOEREN_0026.sql");
+  check(/^begin;$/m.test(sql26) && /^commit;$/m.test(sql26), "C: UITVOEREN_0026.sql draait in één transactie");
+  const rijen1 = checkControle(await voerUit(db2, sql26, "UITVOEREN_0026.sql"), "C: UITVOEREN_0026 (1e keer)");
+  const rijen2 = checkControle(await voerUit(db2, sql26, "UITVOEREN_0026.sql (2x)"), "C: UITVOEREN_0026 (2e keer)");
+  const namen = rijen1.map((r) => r.onderdeel);
+  for (const deel of ["mailboxen", "2fa_rls", "audit_log", "inlog_pogingen", "backups", "heartbeat"]) {
+    check(namen.some((n) => n.startsWith(`${deel}:`)), `C: controle heeft een regel voor ${deel}`);
+  }
+  check(rijen1.length === rijen2.length, "C: 2e keer dezelfde controletabel", `${rijen1.length} / ${rijen2.length}`);
+  check(namen.some((n) => /2fa_rls: stand: aan/.test(n)), "C: stand 2FA zichtbaar (aan)", namen.filter((n) => n.startsWith("2fa_rls: stand")).join());
+  check(namen.some((n) => /teamleden met 2FA: 0 van 2/.test(n)), "C: aantal teamleden met 2FA zichtbaar", namen.filter((n) => n.includes("met 2FA")).join());
+  const mb = (await db2.query("select eigenaar_id, email, zichtbaarheid from public.mailboxen")).rows;
+  check(mb.length === 1 && mb[0].eigenaar_id === U.daniel && mb[0].zichtbaarheid === "prive", "C: bestaande inbox één keer overgezet, privé", JSON.stringify(mb));
+
+  // Daniel zet 2FA aan; daarna leest hij op aal1 niets, op aal2 alles. Mark (zonder) gewoon.
+  await db2.query("insert into auth.mfa_factors (user_id, friendly_name, status) values ($1, 'Telefoon', 'verified')", [U.daniel]);
+  const KL = "select count(*)::int as n from public.clients";
+  let r = await alsMetAal(db2, "daniel", "aal1", KL);
+  check(r.ok && r.rows[0].n === 0, "C: na 0026 met factor op aal1 niets", uitleg(r));
+  r = await alsMetAal(db2, "daniel", "aal2", KL);
+  check(r.ok && r.rows[0].n > 0, "C: met factor op aal2 wel", uitleg(r));
+  r = await alsMetAal(db2, "mark", "aal1", KL);
+  check(r.ok && r.rows[0].n > 0, "C: lid zonder factor niet buitengesloten", uitleg(r));
+  const naFactor = controleRijen(await voerUit(db2, sql26, "UITVOEREN_0026.sql (3x)")).map((x) => x.onderdeel);
+  check(naFactor.some((n) => /teamleden met 2FA: 1 van 2/.test(n)), "C: controle telt wie 2FA heeft", naFactor.filter((n) => n.includes("met 2FA")).join());
+
+  // Gedeelde inbox: ook voor teamleden niet via de API leesbaar (alleen de server filtert).
+  await db2.exec(`insert into public.mailboxen (eigenaar_id, email, label, zichtbaarheid, wachtwoord_enc) values ('${U.daniel}', 'info@studio-levant.nl', 'Info', 'team', 'v2:a.b.c')`);
+  for (const wie of ["mark", "anon"]) {
+    r = await als(db2, wie, "select * from public.mailboxen where zichtbaarheid = 'team'");
+    check(geweigerd(r), `C: gedeelde inbox niet via de API leesbaar voor ${wie}`, uitleg(r));
+  }
+  r = await alsMetAal(db2, "daniel", "aal2", "select wachtwoord_enc from public.mailboxen");
+  check(geweigerd(r), "C: ook de eigenaar leest geen wachtwoorden via de API", uitleg(r));
+
+  // Heartbeat/back-ups/audit: niet voor leden en anon.
+  await db2.exec(`insert into public.heartbeat (bron) values ('cron');
+                  insert into public.backup_runs (soort, status) values ('db', 'ok');
+                  insert into public.audit_log (actie, user_id) values ('inloggen', '${U.mark}');`);
+  for (const t of ["heartbeat", "backup_runs", "audit_log"]) {
+    r = await als(db2, "mark", `select count(*)::int as n from public.${t}`);
+    check(r.ok && r.rows[0].n === 0, `C: ${t} niet leesbaar voor een lid`, uitleg(r));
+    r = await als(db2, "anon", `select * from public.${t}`);
+    check(geweigerd(r), `C: ${t} niet leesbaar voor anon`, uitleg(r));
+    r = await alsMetAal(db2, "daniel", "aal2", `select count(*)::int as n from public.${t}`);
+    check(r.ok && r.rows[0].n === 1, `C: ${t} leesbaar voor de eigenaar (aal2)`, uitleg(r));
+  }
+  for (const t of ["backup_bestanden", "inlog_pogingen"]) {
+    r = await als(db2, "mark", `select * from public.${t}`);
+    check(geweigerd(r), `C: ${t} niet leesbaar voor een lid`, uitleg(r));
+  }
+
+  // Een groot bestand opnieuw uitvoeren zet de 2FA-controle NIET terug (eindigt met 0026).
+  for (const bestand of ["UITVOEREN_0021_TEAM.sql", "UITVOEREN_IN_SQL_EDITOR.sql", "UITVOEREN_0020_UITGAVEN.sql"]) {
+    checkControle(await voerUit(db2, lees(`supabase/${bestand}`), `C: ${bestand}`), `C: ${bestand} na 0026`);
+    r = await alsMetAal(db2, "daniel", "aal1", KL);
+    check(r.ok && r.rows[0].n === 0, `C: ${bestand} opnieuw: 2FA-controle blijft actief`, uitleg(r));
+  }
+  check((await db2.query("select count(*)::int as n from public.audit_log")).rows[0].n === 1, "C: grote bestanden opnieuw: audit-log ongemoeid");
+  // Maar de LOSSE 0021 zet hem wél terug (daarom de waarschuwing); 0026 opnieuw herstelt.
+  await voerUit(db2, lees("supabase/migrations/0021_team_en_taken.sql"), "C: losse 0021");
+  r = await alsMetAal(db2, "daniel", "aal1", KL);
+  check(r.ok && r.rows[0].n > 0, "C: losse 0021 zet is_teamlid() terug (waarschuwing klopt)", uitleg(r));
+  const naLos = controleRijen(await voerUit(db2, sql26, "UITVOEREN_0026.sql (herstel)"));
+  check(naLos.every((x) => ["ok", "actief", "gedeactiveerd"].includes(x.status)), "C: 0026 opnieuw herstelt alles", naLos.filter((x) => !["ok", "actief", "gedeactiveerd"].includes(x.status)).map((x) => x.onderdeel).join());
+  r = await alsMetAal(db2, "daniel", "aal1", KL);
+  check(r.ok && r.rows[0].n === 0, "C: na herstel weer 2FA-controle", uitleg(r));
+
+  // De controletabel slaat alarm bij geknoei.
+  const controleSql = sql26.slice(sql26.lastIndexOf("-- Controle:"));
+  await db2.exec(`create policy "lek" on public.audit_log for select to authenticated using (public.is_teamlid());
+                  create policy "lek" on public.mailboxen for select to authenticated using (public.is_teamlid());
+                  grant select on public.heartbeat to anon;
+                  drop trigger audit_log_geen_wijziging on public.audit_log;`);
+  const status = Object.fromEntries(controleRijen(await db2.exec(controleSql)).map((x) => [x.onderdeel, x.status]));
+  for (const k of ["audit_log: alleen de eigenaar leest", "mailboxen: zonder policies", "heartbeat: alleen de eigenaar leest", "audit_log: niet te wijzigen of te verwijderen (trigger)"]) {
+    check(status[k] === "ONTBREEKT", `C: controle ziet geknoei (${k})`, status[k]);
+  }
+  await db2.exec("update public.app_instellingen set tfa_rls = false");
+  const stand = controleRijen(await db2.exec(controleSql)).map((x) => x.onderdeel).find((n) => n.startsWith("2fa_rls: stand"));
+  check(/NOODSTOP/.test(stand ?? ""), "C: controle toont de noodstop", stand);
+  await db2.close();
+  if (fouten === fouten0) console.log("  scenario C (UITVOEREN_0026.sql op de huidige stand): ok");
+}
+
 await scenarioA();
 await scenarioB();
+await scenarioC();
 
 console.log(`\n${goed} geslaagd, ${fouten} mislukt`);
 if (fouten) process.exit(1);

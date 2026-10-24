@@ -10,7 +10,7 @@
 //    - createServiceRoleClient() krijgt altijd een bewijs; nergens signUp(; getClaims alleen in
 //      proxy.ts (eerste linie) — de echte teamcheck (lib/auth/team.ts) gebruikt getUser;
 //    - migratie 0021 maakt geen open policy ("auth.uid() is not null") en elk SQL-Editor-
-//      bestand eindigt met 0021; de proxy-matcher heeft geen algemene .png/.jpg-uitzondering.
+//      bestand eindigt met 0021–0026; de proxy-matcher heeft geen algemene .png/.jpg-uitzondering.
 // 3. Tegen een draaiende server (`npm run build && npx next start -p 3107`):
 //    - elke pagina (automatisch gevonden in app/) stuurt zonder sessie door naar /login;
 //    - elke API-route en elk social-bestand weigert met een JSON-401 — voor elke
@@ -207,12 +207,17 @@ function bestandenIn(map, filter) {
     const delen = [...sql.matchAll(/^-- (\d{4}_[\w]+\.sql)$/gm)].map((m) => m[1]);
     // 0021 (alleen teamleden) en daarna 0022 (taken alleen voor betrokkenen) sluiten af;
     // in de grote bestanden volgen alleen nog 0023 (projectstatus, geen policies), 0024
-    // (nieuwe Drive-tabellen, policies met teamcheck) en 0025 (kolommen, geen policies).
+    // (nieuwe Drive-tabellen, policies met teamcheck), 0025 (kolommen, geen policies) en als
+    // laatste 0026 (is_teamlid met 2FA-controle; zo zet opnieuw uitvoeren die nooit terug).
     const ok =
       f === "UITVOEREN_0022.sql"
         ? delen.join(",") === "0022_team_crm.sql"
-        : delen.slice(-5).join(",") === "0021_team_en_taken.sql,0022_team_crm.sql,0023_projectstatus.sql,0024_drive.sql,0025_crm_opvolging.sql";
-    check(ok, `${f} eindigt met 0021 + 0022 (+ 0023 + 0024 + 0025)`, delen.slice(-5).join(", ") || "geen");
+        : delen.slice(-6).join(",") === "0021_team_en_taken.sql,0022_team_crm.sql,0023_projectstatus.sql,0024_drive.sql,0025_crm_opvolging.sql,0026_beveiliging_mailboxen_backups.sql";
+    check(ok, `${f} eindigt met 0021 + 0022 (+ 0023 + 0024 + 0025 + 0026)`, delen.slice(-6).join(", ") || "geen");
+  }
+  {
+    const delen = [...lees("supabase/UITVOEREN_0026.sql").matchAll(/^-- (\d{4}_[\w]+\.sql)$/gm)].map((m) => m[1]);
+    check(delen.join(",") === "0026_beveiliging_mailboxen_backups.sql", "UITVOEREN_0026.sql bevat alleen 0026", delen.join(", "));
   }
   {
     const delen = [...lees("supabase/UITVOEREN_0023.sql").matchAll(/^-- (\d{4}_[\w]+\.sql)$/gm)].map((m) => m[1]);

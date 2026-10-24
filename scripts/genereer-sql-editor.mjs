@@ -7,6 +7,12 @@
 //   supabase/UITVOEREN_0023.sql           alleen 0023 (projectstatus voor het bord) — vereist 0022
 //   supabase/UITVOEREN_0024.sql           alleen 0024 (Google Drive / module Bestanden) — vereist 0022
 //   supabase/UITVOEREN_0025.sql           alleen 0025 (opvolgen van leads/klanten) — vereist 0022
+//   supabase/UITVOEREN_0026.sql           alleen 0026 (meerdere inboxen, 2FA in de database,
+//                                         audit-log, inlogpogingen, back-ups, heartbeat) — vereist 0021
+//
+// 0026 sluit ook de drie grote bestanden af (IN_SQL_EDITOR, 0020_UITGAVEN, 0021_TEAM): 0021
+// definieert is_teamlid() zonder 2FA-controle; doordat 0026 erachter staat (in dezelfde
+// transactie), zet opnieuw uitvoeren van een groot bestand de 2FA-controle nooit terug.
 //
 // 0021 + 0022 (+ 0023 projectstatus en 0024 Drive, alleen nieuwe tabellen met teamcheck) sluiten ELK groot bestand af: 0014–0020 maken nog policies "auth.uid() is not null"
 // (open voor elk account) en 0021 laat elk teamlid alle taken lezen. Wie een ouder bestand
@@ -35,6 +41,7 @@ const DOEL_0022 = path.join(ROOT, "supabase", "UITVOEREN_0022.sql");
 const DOEL_0023 = path.join(ROOT, "supabase", "UITVOEREN_0023.sql");
 const DOEL_0024 = path.join(ROOT, "supabase", "UITVOEREN_0024.sql");
 const DOEL_0025 = path.join(ROOT, "supabase", "UITVOEREN_0025.sql");
+const DOEL_0026 = path.join(ROOT, "supabase", "UITVOEREN_0026.sql");
 
 const MIGRATIES = [
   "0014_social.sql",
@@ -49,6 +56,7 @@ const MIGRATIES = [
   "0023_projectstatus.sql",
   "0024_drive.sql",
   "0025_crm_opvolging.sql",
+  "0026_beveiliging_mailboxen_backups.sql",
 ];
 
 // Controle-regels per onderdeel (onderaan elk bestand; elke regel hoort "ok" te tonen).
@@ -144,6 +152,46 @@ const CONTROLE_0025 = [
   "  ('RLS clients en client_notes ongewijzigd (teamlid)', not exists (select 1 from pg_policies where schemaname = 'public' and tablename in ('clients', 'client_notes') and (coalesce(qual, '') || ' ' || coalesce(with_check, '')) !~ 'is_teamlid\\('))",
 ];
 
+// Meerdere inboxen, 2FA in de database, audit-log, back-ups en heartbeat (0026). Per onderdeel
+// een regel "ok"; daaronder (informatief, altijd ok) de stand van de 2FA-schakelaars.
+const GEEN_APP_RECHTEN = (t) =>
+  `not has_table_privilege('anon', 'public.${t}', 'select') and not has_table_privilege('authenticated', 'public.${t}', 'select') and not has_table_privilege('authenticated', 'public.${t}', 'insert')`;
+const CONTROLE_0026 = [
+  // Deel 1: mailboxen
+  "  ('mailboxen: tabel',        to_regclass('public.mailboxen') is not null)",
+  "  ('mailboxen: RLS aan',      coalesce((select relrowsecurity from pg_class where oid = to_regclass('public.mailboxen')), false))",
+  "  ('mailboxen: zonder policies', not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'mailboxen'))",
+  `  ('mailboxen: onleesbaar voor de app (wachtwoorden alleen op de server)', ${GEEN_APP_RECHTEN("mailboxen")} and not has_table_privilege('authenticated', 'public.mailboxen', 'update'))`,
+  "  ('mailboxen: één keer hetzelfde adres per eigenaar', exists (select 1 from pg_class where relname = 'mailboxen_eigenaar_email'))",
+  "  ('mailboxen: alle bestaande koppelingen overgezet', not exists (select 1 from public.user_mailboxes u where not exists (select 1 from public.mailboxen m where m.eigenaar_id = u.user_id and lower(m.email) = lower(u.email))))",
+  "  ('mailboxen: aantal inboxen ' || (select count(*) from public.mailboxen) || ', waarvan gedeeld met het team ' || (select count(*) from public.mailboxen where zichtbaarheid = 'team'), true)",
+  // Deel 2: 2FA in RLS
+  "  ('2fa_rls: is_teamlid() met 2FA-controle', coalesce(pg_get_functiondef(to_regprocedure('public.is_teamlid()')) ~ 'mfa_factors' and pg_get_functiondef(to_regprocedure('public.is_teamlid()')) ~ 'aal2', false))",
+  "  ('2fa_rls: functies toegang_status en is_eigenaar', to_regprocedure('public.toegang_status()') is not null and to_regprocedure('public.is_eigenaar()') is not null)",
+  "  ('2fa_rls: functies dicht voor anon', not has_function_privilege('anon', 'public.toegang_status()', 'execute') and not has_function_privilege('anon', 'public.is_teamlid()', 'execute'))",
+  "  ('2fa_rls: instellingen (één rij)', (select count(*) from public.app_instellingen) = 1)",
+  "  ('2fa_rls: instellingen niet te wijzigen door de app', not has_table_privilege('authenticated', 'public.app_instellingen', 'update') and not has_table_privilege('authenticated', 'public.app_instellingen', 'insert'))",
+  "  ('2fa_rls: stand: ' || case when (select tfa_rls from public.app_instellingen where id = 1) is false then 'NOODSTOP (2FA telt niet mee; scripts/2fa-herstel.mjs --rls aan)' when (select tfa_rls_streng from public.app_instellingen where id = 1) then 'aan, streng (ook wie geen 2FA heeft ziet niets)' else 'aan (wie 2FA heeft, moet de code invullen)' end, true)",
+  "  ('2fa_rls: teamleden met 2FA: ' || (select count(*) from public.team_members m where m.actief and exists (select 1 from auth.mfa_factors f where f.user_id = m.user_id and f.status::text = 'verified')) || ' van ' || (select count(*) from public.team_members where actief), true)",
+  // Deel 2: audit-log en inlogpogingen
+  "  ('audit_log: tabel en RLS', coalesce((select relrowsecurity from pg_class where oid = to_regclass('public.audit_log')), false))",
+  "  ('audit_log: alleen de eigenaar leest', exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'audit_log' and cmd = 'SELECT' and qual ~ 'is_eigenaar\\(') and (select count(*) from pg_policies where schemaname = 'public' and tablename = 'audit_log') = 1)",
+  "  ('audit_log: niet te wijzigen of te verwijderen (trigger)', exists (select 1 from pg_trigger where tgname = 'audit_log_geen_wijziging' and tgrelid = 'public.audit_log'::regclass) and exists (select 1 from pg_trigger where tgname = 'audit_log_geen_truncate' and tgrelid = 'public.audit_log'::regclass))",
+  "  ('audit_log: app schrijft niets direct', not has_table_privilege('anon', 'public.audit_log', 'select') and not has_table_privilege('authenticated', 'public.audit_log', 'insert') and not has_table_privilege('authenticated', 'public.audit_log', 'update') and not has_table_privilege('authenticated', 'public.audit_log', 'delete'))",
+  "  ('audit_log: opruimen alleen via de server', to_regprocedure('public.audit_opruimen(integer)') is not null and not has_function_privilege('authenticated', 'public.audit_opruimen(integer)', 'execute') and not has_function_privilege('anon', 'public.audit_opruimen(integer)', 'execute'))",
+  "  ('inlog_pogingen: zonder policies', to_regclass('public.inlog_pogingen') is not null and not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'inlog_pogingen'))",
+  `  ('inlog_pogingen: onleesbaar voor de app', ${GEEN_APP_RECHTEN("inlog_pogingen")})`,
+  // Deel 3: back-ups en heartbeat
+  "  ('backups: tabellen backup_runs en backup_bestanden', to_regclass('public.backup_runs') is not null and to_regclass('public.backup_bestanden') is not null)",
+  "  ('backups: backup_runs alleen voor de eigenaar', (select count(*) from pg_policies where schemaname = 'public' and tablename = 'backup_runs' and cmd = 'SELECT' and qual ~ 'is_eigenaar\\(') = 1 and not has_table_privilege('authenticated', 'public.backup_runs', 'insert') and not has_table_privilege('anon', 'public.backup_runs', 'select'))",
+  `  ('backups: backup_bestanden zonder policies en onleesbaar', not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'backup_bestanden') and ${GEEN_APP_RECHTEN("backup_bestanden")})`,
+  "  ('backups: backup_tabellen() alleen voor de server', to_regprocedure('public.backup_tabellen()') is not null and not has_function_privilege('authenticated', 'public.backup_tabellen()', 'execute') and not has_function_privilege('anon', 'public.backup_tabellen()', 'execute'))",
+  "  ('backups: laatste geslaagde back-up: ' || coalesce((select to_char(max(klaar) at time zone 'Europe/Amsterdam', 'YYYY-MM-DD HH24:MI') from public.backup_runs where soort = 'db' and status = 'ok'), 'nog geen'), true)",
+  "  ('heartbeat: tabel en RLS', coalesce((select relrowsecurity from pg_class where oid = to_regclass('public.heartbeat')), false))",
+  "  ('heartbeat: alleen de eigenaar leest', (select count(*) from pg_policies where schemaname = 'public' and tablename = 'heartbeat' and cmd = 'SELECT' and qual ~ 'is_eigenaar\\(') = 1 and not has_table_privilege('anon', 'public.heartbeat', 'select') and not has_table_privilege('authenticated', 'public.heartbeat', 'insert'))",
+  "  ('heartbeat: laatste: ' || coalesce((select to_char(max(op) at time zone 'Europe/Amsterdam', 'YYYY-MM-DD HH24:MI') || ' (' || (select bron from public.heartbeat order by op desc limit 1) || ')' from public.heartbeat), 'nog geen (komt na de eerste nachtelijke taak)'), true)",
+];
+
 // Onder de controle: wie er nu toegang heeft (zo zie je meteen of er iemand tussen staat
 // die er niet hoort). Zelfde kolommen als de controle, zodat het één tabel blijft.
 const TEAMLEDEN = `union all
@@ -219,6 +267,9 @@ function bouw() {
 --                            mappen-cache, uploads en kopieën van facturen/bonnetjes
 --   0025       Opvolgen      volgende stap en opvolgdatum per klant/lead, statusregels
 --                            in de tijdlijn (client_notes.soort)
+--   0026       Beveiliging   meerdere inboxen (mailboxen, ook gedeeld met het team),
+--                            2FA in de database (is_teamlid met aal2), audit-log,
+--                            inlogpogingen, back-ups en heartbeat (keep-alive)
 -- Van de facturen-tabellen (0001–0013) veranderen alleen de toegangsregels (0021) en
 -- komen er bij clients drie kolommen met standaardwaarden bij (0022) en twee lege
 -- kolommen voor opvolgen (0025).
@@ -238,7 +289,8 @@ function bouw() {
 -- Al eerder 0014–0021 uitgevoerd? Dan volstaat supabase/UITVOEREN_0022.sql (+ 0023).
 -- Al eerder 0014–0022 uitgevoerd? Dan volstaat supabase/UITVOEREN_0023.sql (+ 0024).
 -- Al eerder 0014–0023 uitgevoerd? Dan volstaat supabase/UITVOEREN_0024.sql (+ 0025).
--- Al eerder 0014–0024 uitgevoerd? Dan volstaat supabase/UITVOEREN_0025.sql.
+-- Al eerder 0014–0024 uitgevoerd? Dan volstaat supabase/UITVOEREN_0025.sql (+ 0026).
+-- Al eerder 0014–0025 uitgevoerd? Dan volstaat supabase/UITVOEREN_0026.sql.
 --
 -- Daarna: importeer de oude social-projecten met
 --   scripts/importeer-social-projecten.mjs (zie README).
@@ -274,6 +326,7 @@ ${controle([
   ...CONTROLE_0023,
   ...CONTROLE_0024,
   ...CONTROLE_0025,
+  ...CONTROLE_0026,
 ], TEAMLEDEN)}`;
 }
 
@@ -286,8 +339,9 @@ function bouwUitgaven() {
 -- de privé-buckets "uitgaven" (bonnetjes, max. 25 MB, jpeg/png/webp/heic/pdf) en
 -- "uitgaven-export" (tijdelijke ZIP's voor de boekhouder, max. 50 MB).
 -- Daarna migratie 0021 (team): alleen actieve teamleden mogen nog iets, overal, 0022
--- (taken alleen voor betrokkenen, klanten & projecten), 0023 (projectstatus) en 0024
--- (Google Drive / module Bestanden).
+-- (taken alleen voor betrokkenen, klanten & projecten), 0023 (projectstatus), 0024
+-- (Google Drive / module Bestanden), 0025 (opvolgen) en 0026 (meerdere inboxen, 2FA in de
+-- database, audit-log, back-ups en heartbeat).
 --
 -- Zo voer je het uit:
 --   1. Supabase-dashboard -> je project -> SQL Editor -> "New query".
@@ -300,7 +354,7 @@ function bouwUitgaven() {
 ${TEAM_STAPPEN}
 --
 -- Gegenereerd met scripts/genereer-sql-editor.mjs uit supabase/migrations/0020_uitgaven.sql,
--- 0021_team_en_taken.sql, 0022_team_crm.sql, 0023_projectstatus.sql en 0024_drive.sql. Niet met de hand
+-- 0021_team_en_taken.sql t/m 0026_beveiliging_mailboxen_backups.sql. Niet met de hand
 -- aanpassen; pas de migratie aan en genereer opnieuw.
 -- ============================================================================
 
@@ -312,12 +366,13 @@ ${deel("0022_team_crm.sql")}
 ${deel("0023_projectstatus.sql")}
 ${deel("0024_drive.sql")}
 ${deel("0025_crm_opvolging.sql")}
+${deel("0026_beveiliging_mailboxen_backups.sql")}
 commit;
 
 -- PostgREST (de API van Supabase) direct laten weten dat er nieuwe tabellen zijn.
 notify pgrst, 'reload schema';
 
-${controle([...CONTROLE_UITGAVEN, ...CONTROLE_TEAM, ...CONTROLE_0022, ...CONTROLE_0023, ...CONTROLE_0024, ...CONTROLE_0025], TEAMLEDEN)}`;
+${controle([...CONTROLE_UITGAVEN, ...CONTROLE_TEAM, ...CONTROLE_0022, ...CONTROLE_0023, ...CONTROLE_0024, ...CONTROLE_0025, ...CONTROLE_0026], TEAMLEDEN)}`;
 }
 
 function bouwTeam() {
@@ -337,7 +392,9 @@ function bouwTeam() {
 --     afspraken gaan naar hun maker (of de eigenaar). Er wordt niets verwijderd.
 --   - Daarna 0022 (zie UITVOEREN_0022.sql), zodat dit bestand nooit de open leesregels
 --     voor taken van 0021 terugzet, 0023 (projectstatus, zie UITVOEREN_0023.sql) en 0024
---     (Google Drive, zie UITVOEREN_0024.sql).
+--     (Google Drive, zie UITVOEREN_0024.sql), 0025 (opvolgen) en als laatste 0026 (2FA in de
+--     database, audit-log, meerdere inboxen, back-ups). Daardoor zet opnieuw uitvoeren van dit
+--     bestand de 2FA-controle in is_teamlid() nooit terug.
 --
 -- Vereist 0014–0019 (zie UITVOEREN_IN_SQL_EDITOR.sql). Uitgaven (0020) nog niet uitgevoerd?
 -- Dan worden die onderdelen overgeslagen; voer dit bestand na 0020 gewoon nog eens uit.
@@ -352,9 +409,9 @@ function bouwTeam() {
 --
 ${TEAM_STAPPEN}
 --
--- Gegenereerd met scripts/genereer-sql-editor.mjs uit supabase/migrations/0021_team_en_taken.sql,
--- 0022_team_crm.sql, 0023_projectstatus.sql en 0024_drive.sql. Niet met de hand aanpassen;
--- pas de migratie aan en genereer opnieuw.
+-- Gegenereerd met scripts/genereer-sql-editor.mjs uit supabase/migrations/0021_team_en_taken.sql
+-- t/m 0026_beveiliging_mailboxen_backups.sql. Niet met de hand aanpassen; pas de migratie aan
+-- en genereer opnieuw.
 -- ============================================================================
 
 begin;
@@ -364,12 +421,13 @@ ${deel("0022_team_crm.sql")}
 ${deel("0023_projectstatus.sql")}
 ${deel("0024_drive.sql")}
 ${deel("0025_crm_opvolging.sql")}
+${deel("0026_beveiliging_mailboxen_backups.sql")}
 commit;
 
 -- PostgREST (de API van Supabase) direct laten weten dat er nieuwe tabellen zijn.
 notify pgrst, 'reload schema';
 
-${controle([...CONTROLE_TEAM, ...CONTROLE_0022, ...CONTROLE_0023, ...CONTROLE_0024, ...CONTROLE_0025], TEAMLEDEN)}`;
+${controle([...CONTROLE_TEAM, ...CONTROLE_0022, ...CONTROLE_0023, ...CONTROLE_0024, ...CONTROLE_0025, ...CONTROLE_0026], TEAMLEDEN)}`;
 }
 
 function bouw0022() {
@@ -538,6 +596,61 @@ notify pgrst, 'reload schema';
 ${controle(CONTROLE_0025, TEAMLEDEN)}`;
 }
 
+function bouw0026() {
+  return `-- ============================================================================
+-- Studio Levant-backoffice — beveiliging, meerdere inboxen en back-ups (migratie 0026)
+-- ============================================================================
+--
+-- Wat dit doet (alleen toevoegen; de facturen-functionaliteit blijft ongewijzigd):
+--   1. mailboxen       meerdere inboxen per teamlid, met naam en kleur, 'alleen ik' of
+--                      'hele team'. Bestaande koppelingen uit user_mailboxes worden één keer
+--                      overgezet (zelfde versleuteling). RLS aan, géén policies: wachtwoorden
+--                      en servers leest alleen de server.
+--   2. 2FA in de database: is_teamlid() eist voortaan een sessie na de 2FA-code (aal2) van
+--                      wie een 2FA-apparaat heeft. Een gestolen wachtwoord geeft via de
+--                      Supabase-API dan niets. Wie (nog) geen apparaat heeft, valt NIET buiten
+--                      (de app laat hem eerst 2FA instellen). Schakelaars in app_instellingen:
+--                      noodstop en "streng" (scripts/2fa-herstel.mjs, zie docs/BEVEILIGING.md).
+--      audit_log       gevoelige acties; alleen de eigenaar leest, niemand wijzigt of wist.
+--      inlog_pogingen  limiet op inlog- en codepogingen (alleen hashes).
+--   3. backup_runs, backup_bestanden en heartbeat: status van de dagelijkse versleutelde
+--      back-up naar Google Drive en de keep-alive (Supabase pauzeert anders na 7 dagen).
+--
+-- Vereist 0021 (team) en 0022. Nog niet uitgevoerd? Gebruik dan het grote
+-- UITVOEREN_0021_TEAM.sql (bevat 0021 t/m 0026).
+--
+-- Zo voer je het uit (zie README "Uitrol 0026" voor de volgorde):
+--   1. Supabase-dashboard -> je project -> SQL Editor -> "New query".
+--   2. Plak dit hele bestand en klik op "Run".
+--   3. Onderaan: elke regel moet "ok" tonen. Regels met een stand ("2fa_rls: stand", "teamleden
+--      met 2FA", "laatste back-up", "laatste heartbeat") zijn informatief; daaronder staat wie
+--      er toegang heeft.
+--
+-- Veilig om nogmaals uit te voeren; alles draait in één transactie (gaat er iets mis, dan
+-- wordt niets half doorgevoerd). De schakelaars, de audit-log en de back-upgegevens blijven
+-- staan. De app werkt vóór en na dit bestand: vóór 0026 één inbox, geen verplichte 2FA en
+-- geen back-ups (wel de keep-alive).
+--
+-- LET OP: voer daarna nooit meer de LOSSE migratie 0021_team_en_taken.sql uit (die zet
+-- is_teamlid() terug zonder 2FA-controle). De UITVOEREN_*-bestanden zijn veilig: de grote
+-- eindigen met 0026.
+--
+-- Gegenereerd met scripts/genereer-sql-editor.mjs uit
+-- supabase/migrations/0026_beveiliging_mailboxen_backups.sql. Niet met de hand aanpassen;
+-- pas de migratie aan en genereer opnieuw.
+-- ============================================================================
+
+begin;
+
+${deel("0026_beveiliging_mailboxen_backups.sql")}
+commit;
+
+-- PostgREST (de API van Supabase) direct laten weten dat er nieuwe tabellen en functies zijn.
+notify pgrst, 'reload schema';
+
+${controle(CONTROLE_0026, TEAMLEDEN)}`;
+}
+
 const bestanden = [
   [DOEL, bouw()],
   [DOEL_UITGAVEN, bouwUitgaven()],
@@ -546,6 +659,7 @@ const bestanden = [
   [DOEL_0023, bouw0023()],
   [DOEL_0024, bouw0024()],
   [DOEL_0025, bouw0025()],
+  [DOEL_0026, bouw0026()],
 ];
 if (process.argv.includes("--controleer")) {
   let verouderd = false;
@@ -557,10 +671,8 @@ if (process.argv.includes("--controleer")) {
     }
   }
   if (verouderd) process.exit(1);
-  console.log("UITVOEREN_IN_SQL_EDITOR.sql, UITVOEREN_0020_UITGAVEN.sql, UITVOEREN_0021_TEAM.sql, UITVOEREN_0022.sql, UITVOEREN_0023.sql, UITVOEREN_0024.sql en UITVOEREN_0025.sql zijn actueel.");
+  console.log(`${bestanden.map(([d]) => path.basename(d)).join(", ")} zijn actueel.`);
 } else {
   for (const [doel, inhoud] of bestanden) fs.writeFileSync(doel, inhoud);
-  console.log(
-    `Geschreven: ${path.relative(ROOT, DOEL)} (${MIGRATIES.length} migraties), ${path.relative(ROOT, DOEL_UITGAVEN)}, ${path.relative(ROOT, DOEL_TEAM)}, ${path.relative(ROOT, DOEL_0022)}, ${path.relative(ROOT, DOEL_0023)}, ${path.relative(ROOT, DOEL_0024)} en ${path.relative(ROOT, DOEL_0025)}`,
-  );
+  console.log(`Geschreven (${MIGRATIES.length} migraties in het grote bestand): ${bestanden.map(([d]) => path.relative(ROOT, d)).join(", ")}`);
 }

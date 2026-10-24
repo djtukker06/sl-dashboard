@@ -10,12 +10,13 @@ je vanuit elke module terug naar het dashboard.
 | Module | Route | Wat |
 |---|---|---|
 | Dashboard | `/` | Jouw eigen "Vandaag": begroeting, snelle acties, jouw dagplanning, taken en week, wat je uitdeelde, je eigen inbox; gedeeld: facturen, laatste bonnetjes en recente posts (met wie ze maakte) |
-| Mail | `/mail` | Je eigen mailbox (Private Email): lezen, beantwoorden, doorsturen, nieuwe mail, mail → taak |
+| Mail | `/mail` | Al je inboxen onder elkaar (eigen en met het team gedeelde, elk met kleur, naam, teller en mappen), plus "Alle inboxen": lezen, beantwoorden vanaf de juiste inbox, doorsturen, nieuwe mail, mail → taak |
 | Agenda | `/agenda` | Taken op naam (popup: voor wie, deadline, urgentie, klant, project, subtaken) en afspraken in één agenda (week/maand), alleen wat op jouw naam staat; tab Uitgezet voor wat je bij een ander hebt uitgezet |
 | Klanten & projecten | `/klanten`, `/projecten` | Simpel CRM/PM: klanten (lead/actief/afgerond) met contact, notities, projecten, open taken, facturen en prijsopgaven; projecten als bord of lijst (voorbereiding/bezig/wachten op goedkeuring/afgerond) met klant, deadline, eigenaar(s), taken met voortgang en een notitieveld |
 | Bestanden | `/bestanden` | De gedeelde Google Drive van Studio Levant: bladeren, slepen-uploaden (ook grote bestanden), mappen, hernoemen, prullenbak, zoeken, voorbeeld; een blok "Bestanden" op elke klant- en projectpagina; facturen, prijsopgaven en bonnetjes gaan er automatisch heen (zie "Google Drive") |
 | Boekhouding | `/boekhouding` | Keuze tussen **Facturen** (`/facturen`: facturen, prijsopgaven, klanten en PDF's, ongewijzigd) en **Bonnetjes & inkoopfacturen** (`/boekhouding/bonnetjes`: foto/PDF uploaden en snel terugvinden) |
-| Account & mail | `/account` | Je profiel (naam, initialen, kleur), je eigen mailbox koppelen, wachtwoord wijzigen |
+| Account & mail | `/account` | Je profiel (naam, initialen, kleur), inboxen koppelen en beheren (alleen ik / hele team), 2FA-apparaten, wachtwoord wijzigen |
+| Beveiliging | `/beveiliging` | Alleen de eigenaar (met 2FA-sessie): wie heeft 2FA (en reset), audit-log, back-ups en keep-alive (zie "Tweestapsverificatie" en "Back-ups en keep-alive") |
 | Social | `/social` | De social-media-tool (voorheen lokaal), met dezelfde schermen en werking |
 
 ## Eerste keer inrichten (checklist)
@@ -32,8 +33,9 @@ je vanuit elke module terug naar het dashboard.
    Al eerder uitgevoerd (0014–0021)? Dan alleen `supabase/UITVOEREN_0022.sql` en daarna
    `supabase/UITVOEREN_0023.sql`. Al eerder uitgevoerd (0014–0022)? Dan
    `supabase/UITVOEREN_0023.sql` (projectstatus voor het bord) en daarna
-   `supabase/UITVOEREN_0024.sql` (Google Drive). Al eerder uitgevoerd (0014–0023)? Dan alleen
-   `supabase/UITVOEREN_0024.sql`.
+   `supabase/UITVOEREN_0024.sql` (Google Drive). Al eerder uitgevoerd (0014–0023)? Dan
+   `supabase/UITVOEREN_0024.sql`, `0025` en `0026`. **Huidige situatie (0014–0025 uitgevoerd):
+   alleen `supabase/UITVOEREN_0026.sql`**, volgens "Uitrol 0026" hieronder.
    Alleen de oudste bestaande gebruiker (Daniel) wordt automatisch lid (eigenaar); controleer
    onderaan het aantal leden en wie het zijn.
 3. **Oude social-posts importeren** met `scripts/importeer-social-projecten.mjs`
@@ -44,7 +46,10 @@ je vanuit elke module terug naar het dashboard.
 5. Deployen op Vercel (zie "Deployen op Vercel").
 6. **Google Drive koppelen** (module Bestanden): Google Cloud-project, env-vars en één keer
    koppelen als eigenaar (zie "Google Drive").
-7. **Compagnon toevoegen** met `scripts/teamlid-toevoegen.mjs` (zie "Bram toevoegen in 3 stappen").
+7. **Beveiliging en back-ups** (migratie 0026): volg "Uitrol 0026" en de checklist in
+   [`docs/BEVEILIGING.md`](docs/BEVEILIGING.md) (2FA, geheimen in Vercel en GitHub, eerste back-up).
+8. **Compagnon toevoegen** met `scripts/teamlid-toevoegen.mjs` (zie "Bram toevoegen in 3 stappen"),
+   pas nadat 2FA live staat.
 
 ## Lokaal draaien
 
@@ -60,15 +65,21 @@ je vanuit elke module terug naar het dashboard.
 ## Database inrichten: één SQL-bestand
 
 Alles wat de nieuwe modules nodig hebben staat in **`supabase/UITVOEREN_IN_SQL_EDITOR.sql`**:
-de migraties 0014–0025 achter elkaar, in één transactie. Wie 0014–0019 al heeft uitgevoerd,
+de migraties 0014–0026 achter elkaar, in één transactie. Wie 0014–0019 al heeft uitgevoerd,
 draait **`supabase/UITVOEREN_0020_UITGAVEN.sql`** (uitgaven + team); wie 0014–0020 al heeft,
 **`supabase/UITVOEREN_0021_TEAM.sql`**; wie 0014–0021 al heeft, **`supabase/UITVOEREN_0022.sql`**
 en daarna **`supabase/UITVOEREN_0023.sql`**; wie 0014–0022 al heeft (de huidige situatie: 0023
 is nog niet uitgevoerd), **`supabase/UITVOEREN_0023.sql`** en daarna
 **`supabase/UITVOEREN_0024.sql`**; wie 0014–0023 al heeft, **`supabase/UITVOEREN_0024.sql`** en daarna **`supabase/UITVOEREN_0025.sql`**;
-wie 0014–0024 al heeft, alleen **`supabase/UITVOEREN_0025.sql`** (opvolgen van leads en klanten). Elk groot bestand eindigt met 0021 + 0022 (+ 0023,
-alleen de projectstatus, 0024, alleen nieuwe Drive-tabellen met teamcheck, en 0025, alleen kolommen), zodat opnieuw uitvoeren nooit de oude open policies of de open
-leesregels voor taken terugzet. 0022 opnieuw uitvoeren na 0023 laat de nieuwe projectstatussen
+wie 0014–0024 al heeft, **`supabase/UITVOEREN_0025.sql`** (opvolgen van leads en klanten) en daarna
+**`supabase/UITVOEREN_0026.sql`**; wie 0014–0025 al heeft (de huidige situatie), alleen
+**`supabase/UITVOEREN_0026.sql`** (meerdere inboxen, 2FA in de database, audit-log, back-ups;
+zie "Uitrol 0026"). Elk groot bestand eindigt met 0021 + 0022 (+ 0023,
+alleen de projectstatus, 0024, alleen nieuwe Drive-tabellen met teamcheck, 0025, alleen kolommen, en
+0026), zodat opnieuw uitvoeren nooit de oude open policies, de open
+leesregels voor taken of een `is_teamlid()` zonder 2FA-controle terugzet. Voer na 0026 nooit
+meer de **losse** migratie `0021_team_en_taken.sql` uit (die zet de 2FA-controle terug;
+`UITVOEREN_0026.sql` opnieuw uitvoeren herstelt het). 0022 opnieuw uitvoeren na 0023 laat de nieuwe projectstatussen
 staan. Onderaan elk
 bestand staat een controletabel (elke regel `ok`) en wie er toegang heeft.
 
@@ -85,6 +96,7 @@ bestand staat een controletabel (elke regel `ok`) en wie er toegang heeft.
 | `0022_team_crm.sql` | team van twee: `profiles.welkom_klaar_op` (welkomstflow), taken/afspraken alleen leesbaar voor betrokkenen (`taak_zichtbaar()`), klanten (`email`, `telefoon`, `status`, `client_notes`), projecten (status gepland/bezig/afgerond, `deadline`, `project_eigenaren`), tellers in één query (`taak_tellingen`, `project_taak_tellingen`) en indexen. Alleen toevoegend; de facturen werken ongewijzigd |
 | `0024_drive.sql` | Google Drive (module Bestanden): `drive_koppeling` (één rij: Google-account, versleuteld refresh token, rootmap; RLS aan, **geen policies en geen rechten** voor `anon`/`authenticated`, alleen de server), `drive_mappen` (cache van map-id's; teamleden lezen, alleen de server schrijft), `drive_bestanden` (wie wat uploadde; teamleden), `drive_kopieen` (welke factuur/prijsopgave/bonnetje al in Drive staat; teamleden lezen, alleen de server schrijft). Alleen nieuwe tabellen |
 | `0025_crm_opvolging.sql` | opvolgen: `clients.volgende_stap` (max. 200 tekens) en `clients.opvolgen_op` (datum), `client_notes.soort` (`notitie`/`status`, bestaande notities worden `notitie`) en index `clients_opvolgen_idx`. Alleen kolommen; RLS en facturen ongewijzigd. De app werkt ook vóór 0025 (opvolgen verborgen) |
+| `0026_beveiliging_mailboxen_backups.sql` | **mailboxen** (meerdere inboxen per teamlid, naam/kleur/volgorde, `prive`/`team`; bestaande `user_mailboxes` één keer overgezet; RLS aan, geen policies, alleen de server), **2FA in RLS** (`is_teamlid()`: wie een geverifieerde factor heeft, ziet alleen data met een aal2-sessie; wie geen factor heeft valt niet buiten tenzij "streng"), `app_instellingen` (noodstop `tfa_rls`, `tfa_rls_streng`), `toegang_status()`, `is_eigenaar()`, **audit_log** (alleen de eigenaar leest; niemand wijzigt of wist, trigger; `audit_opruimen()` na 400 dagen), `inlog_pogingen` (alleen hashes, alleen de server), **backup_runs**, `backup_bestanden`, **heartbeat** (alleen de eigenaar leest) en `backup_tabellen()`. Alleen toevoegend; facturen ongewijzigd. De app werkt ook vóór 0026 |
 | `0023_projectstatus.sql` | projectenbord: status `voorbereiding`/`bezig`/`wachten`/`afgerond` (`gepland` → `voorbereiding`, standaard `voorbereiding`), kolom `status_sinds` met trigger (zet "nu" bij elke statuswijziging; bestaande projecten krijgen hun laatste wijziging), indexen op status + status_sinds en deadline. RLS ongewijzigd |
 
 **Uitvoeren:** Supabase-dashboard → je project → **SQL Editor** → *New query* → plak het hele
@@ -163,6 +175,16 @@ onder **Project Settings → Environment Variables** (Production én Preview):
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | voor Bestanden | OAuth-client (type "Web application") uit Google Cloud Console, voor de koppeling met de Google Drive van Studio Levant (zie "Google Drive"). Het secret is geheim |
 | `DRIVE_ENCRYPTION_KEY` | nee | Eigen sleutel (32 bytes, base64) voor het Drive-refresh token. Leeg = `MAIL_ENCRYPTION_KEY` wordt gebruikt. Wijzigen = Drive opnieuw koppelen |
 | `CHROME_PATH` | nee, alleen lokaal | Eigen Chrome/Chromium voor social-exports tijdens `npm run dev` |
+| `BACKUP_ENCRYPTION_KEY` | voor back-ups | 32 bytes, base64 (`openssl rand -base64 32`). Versleutelt elke back-up (AES-256-GCM). Zonder sleutel geen back-up (de run wordt "mislukt"). **Ook in je wachtwoordmanager bewaren**: zonder deze sleutel zijn de back-ups onbruikbaar. Alleen Production |
+| `CRON_SECRET` | voor keep-alive en back-ups | Geheim (min. 16 tekens, `openssl rand -base64 32`). Vercel Cron stuurt het zelf mee naar `/api/cron/*`; zonder waarde geven die routes 503. Zelfde waarde als het GitHub-secret `SL_CRON_SECRET` |
+| `MFA_AFDWINGEN` | nee | Leeg = 2FA verplicht (standaard). Alleen `uit` zet het verplicht **instellen** tijdelijk uit (noodgeval); wie al een apparaat heeft, vult nog steeds zijn code in |
+| `SESSIE_GEHEIM` | nee | Eigen sleutel voor de sessiecookie (12 uur inactief / 14 dagen max). Leeg = afgeleid van `SUPABASE_SERVICE_ROLE_KEY` |
+| `AUDIT_PEPPER` | nee | Peper voor de hashes van IP- en e-mailadressen (audit-log, pogingenlimiet). Leeg = afgeleid van `SUPABASE_SERVICE_ROLE_KEY` |
+| `TEAM_VEREIST` | nee | Leeg = ontbreekt `team_members`, dan een storing (fail closed). Alleen `0` zet de overgangsmodus van vóór 0021 terug |
+
+**GitHub-secrets** (repository → Settings → Secrets and variables → Actions), voor de reserve-
+keep-alive `.github/workflows/keepalive.yml`: `SL_CRON_URL` (`https://sl-dashboard-delta.vercel.app`,
+zonder `/` aan het eind) en `SL_CRON_SECRET` (gelijk aan `CRON_SECRET`).
 
 Na het wijzigen van een variabele in Vercel: opnieuw deployen (Deployments → … → Redeploy),
 anders gebruikt de site nog de oude waarden. De API-key kan niet in de social-tool zelf
@@ -194,8 +216,9 @@ komen er alleen bij via een script met de service-role key ("aan de achterkant")
   iedereen in het team. Taken en afspraken zijn persoonlijk (0022): je leest alleen wat je
   maakte, wat voor jou is, of (taken) wat bij een project hoort; **wijzigen** kan alleen de
   maker of een toegewezene/deelnemer (RLS). Mail is persoonlijk:
-  ieder ziet alleen zijn eigen mailbox. Wachtwoorden van gekoppelde mailboxen staan
-  versleuteld in `user_mailboxes` (geen policies; alleen de server leest ze).
+  ieder ziet zijn eigen inboxen, plus de inboxen die een actief teamlid op *Hele team* zette.
+  Wachtwoorden van gekoppelde inboxen staan versleuteld in `mailboxen` (0026; daarvoor
+  `user_mailboxes`), zonder policies: alleen de server leest ze.
 - **Overgangsmodus:** zolang 0021 niet is uitgevoerd, werkt de app zoals voorheen (elk
   ingelogd account) en toont de shell een rode banner. Voer 0021 dus zo snel mogelijk uit.
 
@@ -244,9 +267,10 @@ aangemaakt, bevestigd en laatst ingelogd. Opties: `--initialen`, `--kleur #rrggb
 `--bestaand-account-vertrouwen`, `--dry-run`, `--help`.
 
 **Eerste login: de welkomstflow** (migratie `0022_team_crm.sql`). Na het kiezen van een
-wachtwoord komt een nieuw teamlid op `/welkom`: 1. naam, initialen en kleur bevestigen (al
-ingevuld door het script), 2. inbox koppelen met alleen e-mailadres + wachtwoord (*Later doen*
-kan), 3. klaar. Daarna verschijnt de flow nooit meer (`profiles.welkom_klaar_op`). Bestaande
+wachtwoord komt een nieuw teamlid op `/welkom`: 1. tweestapsverificatie instellen (na 0026,
+verplicht zolang `MFA_AFDWINGEN` niet `uit` is), 2. naam, initialen en kleur bevestigen (al
+ingevuld door het script), 3. inbox koppelen met alleen e-mailadres + wachtwoord (*Later doen*
+kan), 4. klaar. Daarna verschijnt de flow nooit meer (`profiles.welkom_klaar_op`). Bestaande
 eigenaren slaan hem over; zolang 0022 niet is uitgevoerd slaat iedereen hem over. Facturen,
 prijsopgaven, klanten, bonnetjes en social posts zijn al gedeeld; daarvoor hoeft niemand iets
 in te stellen.
@@ -266,7 +290,8 @@ in te stellen.
 
    Optioneel `--kleur #rrggbb` en `--initialen`. Als mede-oprichter kan hij `--rol eigenaar`
    krijgen (de standaard-mailbox uit de env blijft dan van Daniel); `lid` is ook prima.
-3. **Bram opent de mail**, kiest een wachtwoord en komt op `/welkom`: naam bevestigen, inbox
+3. **Bram opent de mail**, kiest een wachtwoord en komt op `/welkom`: 2FA instellen met een
+   authenticator-app, naam bevestigen, inbox
    koppelen met alleen `bram@studio-levant.nl` + het wachtwoord van zijn mailbox (servers
    gaan vanzelf), klaar. Facturen, prijsopgaven, klanten, projecten, bonnetjes en social
    posts staan er meteen; taken die Daniel voor hem maakt staan in zijn dashboard, takenlijst
@@ -286,6 +311,74 @@ De laatste actieve eigenaar kan niet worden gedeactiveerd.
 
 De scripts lezen de sleutels alleen uit de procesomgeving (`--env-file`), lezen zelf geen
 `.env`-bestanden en printen nooit een sleutel.
+
+## Tweestapsverificatie (2FA) en beveiliging (migratie 0026)
+
+Volledig overzicht, resterende risico's en de checklist voor de eigenaar:
+**[`docs/BEVEILIGING.md`](docs/BEVEILIGING.md)**.
+
+**2FA (verplicht voor iedereen in het team).** Met een authenticator-app (TOTP via Supabase
+Auth MFA: Google Authenticator, 1Password, Bitwarden, …).
+- **Instellen:** QR-code scannen (of de sleutel overtypen) en een code van 6 cijfers invullen.
+  Dat gebeurt in de welkomstflow (eerste stap), op `/beveiliging/instellen` (bestaande gebruikers
+  zoals Daniel worden daarheen geleid) en via Account › Beveiliging. Daar voeg je ook een tweede
+  apparaat toe (aangeraden; max. 2) of verwijder je er een (met een verse code).
+- **Inloggen:** na het wachtwoord volgt `/login/2fa`. Pagina's sturen een sessie zonder code
+  daarheen; API's geven 401 `tfa_nodig`.
+- **In de database:** `is_teamlid()` eist aal2 van wie een factor heeft. Een gestolen
+  wachtwoord geeft dus ook via de Supabase-API niets.
+- **Niemand buitensluiten:** vóór 0026 of met `MFA_AFDWINGEN=uit` hoeft niemand 2FA in te
+  stellen (wie een apparaat heeft, vult wel zijn code in). Wie nog geen factor heeft, ziet in de
+  database gewoon alles; de app laat hem eerst instellen. "Streng" (ook zonder factor geen data)
+  pas aanzetten als iedereen 2FA heeft.
+- **Herstel:** Supabase kent geen herstelcodes. De eigenaar reset de 2FA van een lid op
+  `/beveiliging` › Team & 2FA › *Reset 2FA* (met reden, in de audit-log). Voor jezelf, of als
+  noodschakelaar:
+
+  ```bash
+  node --env-file=.env.local scripts/2fa-herstel.mjs                   # status: wie heeft 2FA, schakelaars
+  node --env-file=.env.local scripts/2fa-herstel.mjs --reset <email>   # alle 2FA-apparaten van iemand weg
+  node --env-file=.env.local scripts/2fa-herstel.mjs --rls uit|aan     # noodstop 2FA in de database
+  node --env-file=.env.local scripts/2fa-herstel.mjs --streng aan|uit  # ook zonder factor geen data
+  ```
+
+  Elke wijziging vraagt bevestiging en komt in de audit-log (bron `script`).
+
+**Verder:**
+- **Inlogpogingen:** 5 per e-mailadres en 20 per IP per 15 minuten. 2FA-codes 5 per 5
+  minuten, wachtwoord vergeten 3 per uur. Tabel `inlog_pogingen`, alleen hashes.
+- **Wachtwoorden:** minstens 12 tekens en niet bekend uit datalekken (Have I Been Pwned,
+  k-anonimiteit).
+- **Sessie:** automatisch uitloggen na 12 uur zonder activiteit of na 14 dagen (cookie `sl_sessie`,
+  httpOnly en ondertekend).
+- **Headers:** CSP met nonce per verzoek (`proxy.ts`, `lib/auth/csp-kern.ts`), HSTS, COOP, CORP,
+  `X-Frame-Options`, `nosniff`, `Permissions-Policy` (`next.config.ts`). API's sturen
+  `Cache-Control: no-store`.
+- **Audit-log** (`/beveiliging` › Audit-log, alleen de eigenaar): inloggen (ook mislukt en
+  geblokkeerd), 2FA, wachtwoord, team, inboxen, exports, verwijderen, Drive, back-ups en cron.
+  Niet te wijzigen of te verwijderen; opruimen na 400 dagen.
+- **Limiet op dure AI-routes** (bonnetjes uitlezen, social genereren) per gebruiker per uur.
+
+## Uitrol 0026 (inboxen, 2FA, back-ups)
+
+De volgorde waarin niemand wordt buitengesloten:
+
+1. **Deployen** met `MFA_AFDWINGEN` niet gezet. Zonder 0026 dwingt de app niets af en werkt Mail
+   met de ene inbox van nu.
+2. **Geheimen:** in Vercel `BACKUP_ENCRYPTION_KEY` en `CRON_SECRET` (`openssl rand -base64 32`),
+   in GitHub `SL_CRON_URL` en `SL_CRON_SECRET`. Bewaar ze ook in je wachtwoordmanager en deploy
+   opnieuw.
+3. **SQL:** `supabase/UITVOEREN_0026.sql` in de SQL Editor. Elke regel moet `ok` zijn; de
+   bestaande inbox wordt automatisch overgezet.
+4. **2FA voor Daniel:** inloggen, op `/beveiliging/instellen` twee apparaten instellen
+   (telefoon + wachtwoordmanager). Uitloggen en weer inloggen: er moet om de code worden gevraagd.
+5. **Back-up:** `/beveiliging` › *Nu back-up maken*, daarna lokaal
+   `node --env-file=.env.local scripts/backup-controleren.mjs --drive`. Draai de GitHub-workflow
+   één keer handmatig en kijk de dag erna of er een heartbeat "via Vercel Cron" staat.
+6. **Bram uitnodigen.** Zijn welkomstflow begint met 2FA. Heeft iedereen 2FA, dan eventueel
+   `scripts/2fa-herstel.mjs --streng aan`.
+7. **Noodgeval:** `MFA_AFDWINGEN=uit` in Vercel en/of `scripts/2fa-herstel.mjs --rls uit`.
+   Daarna weer terugzetten.
 
 ## De shell: één geheel
 
@@ -721,7 +814,7 @@ Studio Levant/
 **Status en knoppen.** Op `/beveiliging` › Back-ups (alleen de eigenaar, met 2FA-sessie) zie je:
 - de laatste back-up, de laatste bestandensync en de laatste heartbeat;
 - de laatste 20 runs;
-- de knoppen "Nu back-up maken", "Bestanden nu bijwerken" en "Download (versleuteld)".
+- de knoppen "Nu back-up maken", "Bestanden nu bijwerken" en "Download laatste (versleuteld)".
 
 Is de laatste back-up mislukt, de laatste geslaagde ouder dan 2 dagen of de heartbeat ouder dan 3 dagen, dan ziet de eigenaar dat op het dashboard.
 
@@ -921,18 +1014,26 @@ sinds Klanten & projecten de nieuwe klantpagina (met een link naar de facturen v
 | `/api/drive/…` | Drive-API: `status`, `map` (GET `?id=`/`?klant=`/`?project=`, POST maakt een klant-/projectmap), `mappen`, `bestanden/<id>` (PATCH hernoemen, DELETE prullenbak), `bestanden/<id>/inhoud` (proxy), `upload` + `upload/klaar`, `zoeken?q=`, en voor de eigenaar `koppelen`, `callback`, `ontkoppelen`, `kopieer-bestaande`, `diagnose` (POST: "Test Drive-koppeling") (503 `tabel_ontbreekt`/`niet_ingericht`, 409 `niet_gekoppeld`/`opnieuw_koppelen`) |
 | `/account` | Account & mail |
 | `/api/account/profiel`, `/api/account/mailbox` | Eigen profiel wijzigen; eigen mailbox ophalen/koppelen/ontkoppelen (nooit het wachtwoord terug) |
+| `/api/account/mailboxen`, `/api/account/mailboxen/<id>` | Inboxen: lijst, koppelen (één knop), volgorde, naam/kleur/zichtbaarheid, ontkoppelen (alleen eigen inboxen; nooit wachtwoord of servers terug) |
+| `/beveiliging` | Eigenaar: Team & 2FA, Audit-log, Back-ups |
+| `/beveiliging/instellen`, `/login/2fa` | 2FA instellen / code invullen bij het inloggen |
+| `/api/beveiliging/…` | `2fa/{inschrijven,bevestigen,uitdagen,verwijderen}`, `team` en `team/<id>/2fa` (reset, eigenaar), `audit` (eigenaar), `backup` (POST: nu back-up maken) en `backup/<id>/download` (eigenaar, aal2) |
+| `/api/cron/dagelijks`, `/api/cron/bestanden` | Nachtelijke taken (Vercel Cron, GitHub Actions): alleen met `Authorization: Bearer <CRON_SECRET>` (401 zonder of fout, 503 als het secret niet is ingesteld) |
 | `/social` | Social-media-tool (`#p=<id>` opent een project, `#nieuw` een nieuwe post) |
 | `/api/social/…`, `/social-files/…` | Social-API (spiegelt de oude Express-API) en de bestanden die slides laden |
 
 **Beveiliging.** Alles behalve `/login`, `/wachtwoord-vergeten`, `/geen-toegang`, `/auth/*`,
-de logo's en de shell-bestanden zit achter de login én het teamlidmaatschap (zie "Team &
+de logo's, de shell-bestanden en de twee cron-routes (eigen geheim) zit achter de login, het
+teamlidmaatschap en (na 0026) de 2FA-code (zie "Team &
 toegang"). `proxy.ts` stuurt niet-ingelogde bezoekers naar `/login` (alle API's en
 `/social-files` krijgen een JSON-401) en niet-teamleden naar `/geen-toegang`; **elke** pagina,
 server action en API-route controleert daarnaast zelf (`lib/auth/team.ts`). Wijzigende
 API-verzoeken van een ander domein worden geweigerd. Elke tabel heeft RLS met `is_teamlid()`.
 Mail-HTML wordt op de server gesaneerd en in een gesandboxte iframe zonder scripts getoond.
 Elk antwoord krijgt `X-Frame-Options: SAMEORIGIN`, `Referrer-Policy: same-origin`,
-`X-Content-Type-Options: nosniff` en een strikte `Permissions-Policy` (`next.config.ts`).
+`X-Content-Type-Options: nosniff`, een strikte `Permissions-Policy`, HSTS, COOP en CORP
+(`next.config.ts`); pagina's krijgen een CSP met nonce (`proxy.ts`). Zie "Tweestapsverificatie
+(2FA) en beveiliging" en `docs/BEVEILIGING.md`.
 
 ## Controleren
 
@@ -948,7 +1049,9 @@ node scripts/test-bonnetje-heic.mjs [--claude]        # HEIC → JPEG (server + 
 node scripts/test-team.mjs                            # herkomst (CSRF), basis-URL voor mails, teambeheer-scripts
 node scripts/test-account.mjs                         # mailkluis (AES-GCM), SSRF-controle, profiel/mailbox-invoer, zoeken
 node scripts/test-brand-guard-parity.mjs              # social-port gelijk aan het origineel
-node scripts/test-rls.mjs                             # RLS van 0021 op lokale Postgres (PGlite): per tabel/bucket wie wat mag
+node scripts/test-rls.mjs                             # RLS van 0021–0026 op lokale Postgres (PGlite): per tabel/bucket wie wat mag, 2FA, audit-log
+node scripts/test-beveiliging.mjs                     # 2FA-beslisregels, limieten, sessiecookie, CSP, log-maskering, systeemcliënt-allowlist
+node scripts/test-backup.mjs                          # back-upformaat (AES-GCM, geknoei/verkeerde sleutel), retentie, export, herstel (nagebootst)
 node scripts/test-drive.mjs                           # Google Drive: paden, namen, state (CSRF), token-kluis, Drive-API (nagebootst)
 node scripts/test-externals.mjs                       # serverExternalPackages (ook libheif-js) laden zonder require(esm); gebouwde mail-/uitgavenroutes (na build)
 node scripts/genereer-sql-editor.mjs --controleer     # SQL-bestanden actueel
@@ -984,7 +1087,14 @@ node --experimental-strip-types scripts/rooktest-render.mjs   # social-renderer 
 - 0024 (Google Drive): `drive_koppeling` voor niemand behalve de service-role (ook niet voor
   de eigenaar), `drive_mappen`/`drive_kopieen` alleen door de server te schrijven,
   `drive_bestanden` alleen teamleden;
-- de controletabel slaat alarm bij een policy zonder teamcheck of een openbare bucket.
+- de controletabel slaat alarm bij een policy zonder teamcheck of een openbare bucket;
+- 0026: inboxen één keer overgezet en voor niemand behalve de server leesbaar (ook een gedeelde
+  niet); met 2FA-factor op aal1 niets, op aal2 alles, zonder factor niet buitengesloten (tenzij
+  streng), noodstop; `audit_log` alleen voor de eigenaar en door niemand te wijzigen;
+  `backup_*`, `heartbeat` en `inlog_pogingen` niet voor leden of anon;
+- scenario C (de huidige stand, 0001–0025): `UITVOEREN_0026.sql` drie keer, elke regel `ok` met
+  per onderdeel een regel; de grote bestanden opnieuw zetten de 2FA-controle niet terug (de losse
+  0021 wel, en 0026 herstelt dat); de controle ziet geknoei en toont de noodstop.
 
 ## Een module toevoegen
 
@@ -1041,8 +1151,11 @@ Instellingen:
   de wasm zit als base64 in `wasm-bundle.js` (geen los bestand om mee te tracen). De
   prebuilt `sharp` kan geen HEIC lezen (geen HEVC-decoder) en wordt daarom niet gebruikt.
 
-**Let op — een gratis Supabase-project pauzeert na 1 week inactiviteit.** Zet het dan eerst
-weer aan in het Supabase-dashboard.
+**Een gratis Supabase-project pauzeert na 1 week inactiviteit.** Daarom schrijft de
+nachtelijke Vercel Cron (`vercel.json` → `/api/cron/dagelijks`, 03:00 UTC) een heartbeat, met
+GitHub Actions als reserve (zie "Back-ups en keep-alive"). Zet `CRON_SECRET` in Vercel; anders
+weigert de route. Toch gepauzeerd? Zet het project weer aan in het Supabase-dashboard en kijk
+in Vercel › Settings › Cron Jobs of de cron draait.
 
 ## Nieuwe git-remote toevoegen
 
