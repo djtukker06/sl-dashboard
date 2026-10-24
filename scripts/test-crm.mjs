@@ -6,7 +6,10 @@
 //     facturen-routes zijn niet aangeraakt.
 //   - lib/crm/projectstatus.ts (0023): deadlinekleur, dagen in een status, afgerond in de
 //     laatste 30 dagen, sorteren op deadline, buurstatus (Alt + ←/→);
-//   - bord, stappenbalk, dashboardkaart en "afgeronde klant → nieuw project" (bron).
+//   - bord, stappenbalk, dashboardkaart en "afgeronde klant → nieuw project" (bron);
+//   - lib/crm/opvolging.ts (0025): opvolgdatum (vandaag/te laat), sorteren, zoeken,
+//     belangrijkste projectstatus; volgende stap/opvolgdatum in de invoer; migratie 0025,
+//     UITVOEREN_0025.sql en dat de app vóór 0025 terugvalt (bron).
 // De RLS van client_notes/project_eigenaren en de omzetting van de projectstatus (0022 en
 // 0023) staan in scripts/test-rls.mjs (PGlite).
 //
@@ -20,10 +23,11 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const lees = (p) => fs.readFileSync(path.join(ROOT, p), "utf8");
 
-let inv, ps;
+let inv, ps, ov;
 try {
   inv = await import(pathToFileURL(path.join(ROOT, "lib", "crm", "invoer.ts")).href);
   ps = await import(pathToFileURL(path.join(ROOT, "lib", "crm", "projectstatus.ts")).href);
+  ov = await import(pathToFileURL(path.join(ROOT, "lib", "crm", "opvolging.ts")).href);
 } catch (e) {
   if (process.execArgv.includes("--experimental-strip-types")) throw e;
   const r = spawnSync(process.execPath, ["--experimental-strip-types", "--no-warnings", fileURLToPath(import.meta.url), ...process.argv.slice(2)], {
@@ -173,8 +177,8 @@ test("UITVOEREN_0023.sql: één transactie, controle per onderdeel, actueel", ()
   for (const r of ["projectstatus voorbereiding/bezig/wachten/afgerond", "kolom projects.status_sinds", "trigger status_sinds", "RLS projects ongewijzigd (teamlid)", "indexen 0023"]) assert.ok(sql.includes(`('${r}'`), r);
   for (const f of ["UITVOEREN_IN_SQL_EDITOR.sql", "UITVOEREN_0020_UITGAVEN.sql", "UITVOEREN_0021_TEAM.sql"]) {
     const delen = [...lees(`supabase/${f}`).matchAll(/^-- (\d{4}_[\w]+\.sql)$/gm)].map((m) => m[1]);
-    // Na 0023 volgt alleen nog 0024 (nieuwe Drive-tabellen met teamcheck).
-    assert.deepEqual(delen.slice(-4), ["0021_team_en_taken.sql", "0022_team_crm.sql", "0023_projectstatus.sql", "0024_drive.sql"], f);
+    // Na 0023 volgen alleen nog 0024 (nieuwe Drive-tabellen met teamcheck) en 0025 (kolommen).
+    assert.deepEqual(delen.slice(-5), ["0021_team_en_taken.sql", "0022_team_crm.sql", "0023_projectstatus.sql", "0024_drive.sql", "0025_crm_opvolging.sql"], f);
   }
   const r = spawnSync(process.execPath, [path.join(ROOT, "scripts/genereer-sql-editor.mjs"), "--controleer"], { encoding: "utf8" });
   assert.equal(r.status, 0, r.stderr);
@@ -190,19 +194,33 @@ test("API: status vóór 0023 opvangen (gepland i.p.v. voorbereiding) bij maken 
 test("nieuw project bij een afgeronde klant: alleen afgerond → actief", () => {
   const src = lees("app/api/projecten/route.ts");
   assert.match(src, /\.update\(\{ status: 'actief' \}\)\s*\.eq\('id', p\.waarde\.client_id\)\s*\.eq\('status', 'afgerond'\)/);
-  assert.match(lees("app/(app)/klanten/[id]/page.tsx"), /klant\.status === 'afgerond' &&[\s\S]*?<NieuwProject[^>]*klantAfgerond/);
+  assert.match(lees("components/crm/KlantInhoud.tsx"), /klant\.status === 'afgerond' &&[\s\S]*?<NieuwProject[^>]*klantAfgerond/);
+  assert.match(lees("app/(app)/klanten/[id]/page.tsx"), /<KlantInhoud /);
 });
-test("klantenlijst: afgerond blijft vindbaar (zoeken + filter), onderaan gegroepeerd", () => {
+test("klantenoverzicht: tabs Leads/Actief/Afgerond, zoeken over alle tabs, snel toevoegen", () => {
   const src = lees("components/crm/KlantenLijst.tsx");
-  assert.match(src, /'alle', 'lead', 'actief', 'afgerond'/);
-  assert.match(src, /kp-klanten-af/);
+  assert.match(src, /const TABS: KlantStatus\[\] = \['lead', 'actief', 'afgerond'\]/);
+  assert.match(src, /klanten\.filter\(\(k\) => klantPast\(k, q\)\)/, "zoeken telt over alle tabs (afgerond blijft vindbaar)");
+  assert.match(src, /Wel in/, "lege zoekstaat wijst naar de andere tab");
+  assert.match(src, /crmApi<\{ klant: \{ id: string \} \}>\('\/api\/klanten', 'POST', \{ naam, status \}\)/);
+  assert.match(src, /e\.key === '\/'/);
+  assert.match(lees("app/(app)/klanten/page.tsx"), /taakSneltoets=\{false\}/, "n = nieuwe klant, niet nieuwe taak");
+  assert.ok(!fs.existsSync(path.join(ROOT, "components/crm/SnelKlant.tsx")), "geen popup meer voor een nieuwe klant");
+});
+test("leads: gewonnen (→ actief, optioneel project) en afgewezen (→ afgerond, ongedaan maken)", () => {
+  const src = lees("components/crm/KlantActies.tsx");
+  assert.match(src, /status: 'actief'/);
+  assert.match(src, /agendaApi\.maakProject\(\{ naam, klantId: klant\.id/);
+  assert.match(src, /status: 'afgerond', \.\.\.\(opvolging \? \{ opvolgenOp: null \} : \{\}\)/, "vóór 0025 geen opvolgdatum meesturen");
+  assert.match(src, /Ongedaan maken/);
 });
 test("bord: slepen, keuzelijst en Alt+pijl; weergave en filter onthouden", () => {
   const src = lees("components/crm/ProjectenBord.tsx");
   for (const s of ["onDragStart", "onDrop", "aria-label={`Status van ${project.naam}`}", "e.altKey", "localStorage.setItem", "Alleen mijn projecten", "isRecentAfgerond", "id={`kolom-${status}`}"]) assert.ok(src.includes(s), s);
 });
 test("projectpagina: stappenbalk met sinds wanneer", () => {
-  assert.match(lees("app/(app)/projecten/[id]/page.tsx"), /<StatusStappen/);
+  assert.match(lees("app/(app)/projecten/[id]/page.tsx"), /<ProjectInhoud /);
+  assert.match(lees("components/crm/ProjectInhoud.tsx"), /<StatusStappen/);
   assert.match(lees("components/crm/StatusStappen.tsx"), /aria-current=\{i === huidig \? 'step' : undefined\}/);
   assert.ok(!/<option value="gepland">/.test(lees("components/crm/ProjectKop.tsx")), "geen oude statuskeuze meer");
 });
@@ -213,6 +231,115 @@ test("dashboard: kaart Projecten via de teamcheck van het dashboard, links naar 
   assert.match(w, /projectTellers\(bronVan\(lid\)/);
   assert.match(w, /href=\{`\/projecten\?weergave=bord#kolom-\$\{s\}`\}/);
   assert.ok(!/createServiceRoleClient|service_role/.test(w));
+});
+
+// ---------------------------------------------------------------------------------
+// Opvolgen (0025)
+// ---------------------------------------------------------------------------------
+test("opvolgStand: te laat, vandaag, binnenkort, later", () => {
+  assert.equal(ov.opvolgStand("2026-10-23", "2026-10-24"), "telaat");
+  assert.equal(ov.opvolgStand("2026-10-24", "2026-10-24"), "vandaag");
+  assert.equal(ov.opvolgStand("2026-10-31", "2026-10-24"), "binnenkort");
+  assert.equal(ov.opvolgStand("2026-11-01", "2026-10-24"), "later");
+  assert.equal(ov.opvolgStand(null, "2026-10-24"), null);
+  // Over de wintertijd (25 okt) en de jaargrens heen: hele kalenderdagen.
+  assert.equal(ov.opvolgStand("2026-10-26", "2026-10-25"), "binnenkort");
+  assert.equal(ov.opvolgTekst("2027-01-02", "2026-12-31"), "over 2 dagen");
+});
+test("opvolgTekst: kort en Nederlands", () => {
+  assert.equal(ov.opvolgTekst("2026-10-24", "2026-10-24"), "vandaag");
+  assert.equal(ov.opvolgTekst("2026-10-25", "2026-10-24"), "morgen");
+  assert.equal(ov.opvolgTekst("2026-10-23", "2026-10-24"), "gisteren");
+  assert.equal(ov.opvolgTekst("2026-10-21", "2026-10-24"), "3 dagen te laat");
+  assert.equal(ov.opvolgTekst("2026-11-12", "2026-10-24"), "12 nov");
+  assert.equal(ov.opvolgTekst("2027-02-01", "2026-10-24"), "1 feb 2027");
+});
+test("geledenKort: laatste contact", () => {
+  const nu = new Date("2026-10-24T12:00:00Z");
+  assert.equal(ov.geledenKort(null, nu), "—");
+  assert.equal(ov.geledenKort("2026-10-24T08:00:00Z", nu), "vandaag");
+  assert.equal(ov.geledenKort("2026-10-23T08:00:00Z", nu), "gisteren");
+  assert.equal(ov.geledenKort("2026-10-19T08:00:00Z", nu), "5 d");
+  assert.equal(ov.geledenKort("2026-09-20T08:00:00Z", nu), "4 wk");
+  assert.equal(ov.geledenKort("2026-06-01T08:00:00Z", nu), "4 mnd");
+});
+test("sorteren: opvolgdatum (zonder datum achteraan), omzet, laatst actief, naam", () => {
+  const r = (naam, x = {}) => ({ naam, contactpersoon: "", email: "", telefoon: "", volgendeStap: "", opvolgenOp: null, omzet: 0, laatstActief: "", ...x });
+  const lijst = [r("Bèta", { opvolgenOp: "2026-11-01", omzet: 5, laatstActief: "2026-10-01" }), r("Alfa"), r("Gamma", { opvolgenOp: "2026-10-20", omzet: 9, laatstActief: "2026-10-20" })];
+  assert.deepEqual(ov.sorteerKlanten(lijst, "opvolgen").map((k) => k.naam), ["Gamma", "Bèta", "Alfa"]);
+  assert.deepEqual(ov.sorteerKlanten(lijst, "omzet").map((k) => k.naam), ["Gamma", "Bèta", "Alfa"]);
+  assert.deepEqual(ov.sorteerKlanten(lijst, "actief").map((k) => k.naam), ["Gamma", "Bèta", "Alfa"]);
+  assert.deepEqual(ov.sorteerKlanten(lijst, "naam").map((k) => k.naam), ["Alfa", "Bèta", "Gamma"]);
+  assert.equal(lijst[0].naam, "Bèta", "sorteren laat de invoer staan");
+});
+test("zoeken: naam, contact, e-mail, telefoon en volgende stap", () => {
+  const k = { naam: "Atelier Mos", contactpersoon: "Mila", email: "mila@mos.nl", telefoon: "06 123", volgendeStap: "Offerte nabellen" };
+  for (const z of ["atelier", "MILA", "mos.nl", "06 1", "nabellen", "  "]) assert.ok(ov.klantPast(k, z), z);
+  assert.ok(!ov.klantPast(k, "bakker"));
+});
+test("belangrijkste projectstatus: wachten > bezig > voorbereiding", () => {
+  assert.equal(ov.belangrijksteStatus(["voorbereiding", "wachten", "bezig"]), "wachten");
+  assert.equal(ov.belangrijksteStatus(["voorbereiding", "bezig"]), "bezig");
+  assert.equal(ov.belangrijksteStatus(["afgerond"]), null);
+  assert.equal(ov.belangrijksteStatus([]), null);
+});
+test("dashboard Opvolgen: alleen niet-afgerond, vandaag of eerder", () => {
+  assert.ok(ov.moetOpvolgen({ status: "lead", opvolgenOp: "2026-10-24" }, "2026-10-24"));
+  assert.ok(ov.moetOpvolgen({ status: "actief", opvolgenOp: "2026-10-01" }, "2026-10-24"));
+  assert.ok(!ov.moetOpvolgen({ status: "lead", opvolgenOp: "2026-10-25" }, "2026-10-24"));
+  assert.ok(!ov.moetOpvolgen({ status: "afgerond", opvolgenOp: "2026-10-01" }, "2026-10-24"));
+  assert.ok(!ov.moetOpvolgen({ status: "lead", opvolgenOp: null }, "2026-10-24"));
+});
+test("invoer: volgende stap (max. 200, leeg → null) en opvolgdatum (echte datum of leeg)", () => {
+  assert.deepEqual(inv.parseKlant({ volgendeStap: "  Offerte   nabellen " }, false).waarde, { volgende_stap: "Offerte nabellen" });
+  assert.deepEqual(inv.parseKlant({ volgendeStap: "" }, false).waarde, { volgende_stap: null });
+  assert.equal(inv.parseKlant({ volgendeStap: "x".repeat(201) }, false).ok, false);
+  assert.deepEqual(inv.parseKlant({ opvolgenOp: "2026-11-02" }, false).waarde, { opvolgen_op: "2026-11-02" });
+  assert.deepEqual(inv.parseKlant({ opvolgenOp: null }, false).waarde, { opvolgen_op: null });
+  assert.deepEqual(inv.parseKlant({ opvolgenOp: "" }, false).waarde, { opvolgen_op: null });
+  for (const d of ["2026-02-30", "26-11-02", "morgen", 20261102]) assert.equal(inv.parseKlant({ opvolgenOp: d }, false).ok, false, String(d));
+  assert.deepEqual([...inv.OPVOLG_KOLOMMEN], ["volgende_stap", "opvolgen_op"]);
+});
+test("migratie 0025: idempotent, alleen toevoegen, RLS en facturen niet aangeraakt", () => {
+  const sql = lees("supabase/migrations/0025_crm_opvolging.sql");
+  for (const s of [
+    "add column if not exists volgende_stap text",
+    "add column if not exists opvolgen_op date",
+    "add column if not exists soort text not null default 'notitie'",
+    "check (soort in ('notitie', 'status'))",
+    "create index if not exists clients_opvolgen_idx",
+  ])
+    assert.ok(sql.includes(s), s);
+  const zonder = sql.replace(/--[^\n]*/g, "");
+  assert.ok(!/policy|grant |revoke |drop table|drop column|invoices|quotes|update public\./i.test(zonder), "geen policies, grants, facturen of datawijzigingen");
+});
+test("UITVOEREN_0025.sql: één transactie, controle per onderdeel, actueel", () => {
+  const sql = lees("supabase/UITVOEREN_0025.sql");
+  const tx = sql.slice(0, sql.lastIndexOf("-- Controle:"));
+  assert.equal((tx.match(/^begin;$/gm) || []).length, 1);
+  assert.equal((tx.match(/^commit;$/gm) || []).length, 1);
+  for (const r of ["kolommen clients.volgende_stap en opvolgen_op", "kolom client_notes.soort", "index opvolgen", "RLS clients en client_notes ongewijzigd (teamlid)"]) assert.ok(sql.includes(`('${r}'`), r);
+});
+test("vóór 0025: queries vallen terug, opslaan geeft een nette melding, dashboardkaart verdwijnt", () => {
+  const repo = lees("lib/crm/repo.ts");
+  assert.match(repo, /metTerugval<KlantDbRij\[\]>[\s\S]*?created_at' \+ OPVOLG, 'id,company_name,contact_name,email,telefoon,status,created_at'\]/);
+  assert.match(repo, /\['id,tekst,created_by,created_at,soort', 'id,tekst,created_by,created_at'\]/);
+  assert.match(repo, /return \{ klanten, opvolging: k\.set === 0 \}/);
+  assert.match(repo, /if \(kolomOntbreekt\(error\)\) return null;/, "opvolgLijst: null vóór 0025");
+  const api = lees("app/api/klanten/[id]/route.ts");
+  assert.match(api, /OPVOLG_KOLOMMEN\.some\(\(c\) => c in k\.waarde\)\) return fout\(503, OPVOLGEN_NA_0025, 'kolom_ontbreekt'\)/);
+  assert.match(api, /soort: 'status'/);
+  assert.match(api, /if \(e2 && !kolomOntbreekt\(e2\)\)/, "statusregel vóór 0025 overslaan");
+  const w = lees("components/dashboard/OpvolgenWidget.tsx");
+  assert.match(w, /if \(!lijst \|\| lijst\.length === 0\) return null;/);
+  assert.ok(!/createServiceRoleClient|service_role/.test(w));
+  assert.match(lees("app/(app)/page.tsx"), /<OpvolgenWidget lid=\{lid\} \/>/);
+});
+test("facturen alleen gelezen in klanten & projecten", () => {
+  for (const f of ["lib/crm/repo.ts", "components/crm/KlantInhoud.tsx", "app/api/klanten/[id]/route.ts", "app/api/klanten/route.ts"]) {
+    const src = lees(f);
+    assert.ok(!/from\('(invoices|quotes)'\)\s*\.(insert|update|upsert|delete)\(/.test(src), f);
+  }
 });
 
 // ---------------------------------------------------------------------------------

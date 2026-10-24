@@ -16,16 +16,20 @@ import type { Project, ProjectStatus, Taak } from '@/lib/agenda/types';
 import { kolomOntbreekt, tabelOntbreekt } from '@/lib/db/ontbreekt';
 import { isRecentAfgerond } from './projectstatus';
 import { likeLetterlijk } from './invoer';
+import { belangrijksteStatus } from './opvolging';
 import type { Klant, KlantNotitie, KlantRegel, KlantStatus } from './types';
 
 // Database-toegang voor Klanten & projecten. Altijd met de gebruikerscliënt (RLS), ná de
-// teamcheck in de pagina of route. Vereist migratie 0022; zonder die migratie gooit elke
+// teamcheck in de pagina of route. Facturen worden alleen gelezen. Opvolgen (volgende
+// stap, opvolgdatum, statusregels in de tijdlijn) vraagt 0025; daarvóór vallen de queries
+// terug op de kolommen van 0022. Vereist migratie 0022; zonder die migratie gooit elke
 // functie een AgendaFout 503 'tabel_ontbreekt' (de pagina toont dan "nog niet ingericht").
 //
 // Taken op de klant- en projectpagina zijn wat jij mag zien (RLS van 0022): taken in een
 // project ziet het hele team, een losse taak alleen de maker en wie hem kreeg.
 
-const KLANT_KOLOMMEN = 'id,company_name,contact_name,email,telefoon,address,postal_code,status';
+const KLANT_KOLOMMEN = 'id,company_name,contact_name,email,telefoon,address,postal_code,status,created_at';
+const OPVOLG = ',volgende_stap,opvolgen_op';
 
 interface KlantDbRij {
   id: string;
@@ -36,6 +40,9 @@ interface KlantDbRij {
   address?: string | null;
   postal_code?: string | null;
   status: string | null;
+  created_at?: string | null;
+  volgende_stap?: string | null;
+  opvolgen_op?: string | null;
 }
 
 function statusVan(s: unknown): KlantStatus {
@@ -51,7 +58,9 @@ function naarKlant(r: KlantDbRij): Klant {
     telefoon: r.telefoon ?? '',
     adres: r.address ?? '',
     postcode: r.postal_code ?? '',
-    status: statusVan(r.status)
+    status: statusVan(r.status),
+    volgendeStap: r.volgende_stap ?? '',
+    opvolgenOp: r.opvolgen_op ?? null
   };
 }
 
@@ -61,39 +70,139 @@ export function crmFout(error: unknown): AgendaFout {
   return dbFout(error);
 }
 
+/** Melding als je "volgende stap" of "opvolgen op" opslaat vóór migratie 0025. */
+export const OPVOLGEN_NA_0025 = 'Opvolgen (volgende stap en datum) werkt zodra migratie 0025 is uitgevoerd (supabase/UITVOEREN_0025.sql).';
+
 export function isNietIngericht(e: unknown): boolean {
   return e instanceof AgendaFout && e.code === 'tabel_ontbreekt';
+}
+
+type Antwoord<T> = PromiseLike<{ data: T | null; error: unknown }>;
+
+/**
+ * Probeert de kolomsets op volgorde en neemt de eerste die de database kent: zo werkt
+ * dezelfde query vóór en na een migratie die alleen kolommen toevoegt (0025, 0012/0013).
+ * Geeft ook terug welke set het werd (0 = de volledigste).
+ */
+async function metTerugval<T>(query: (kolommen: string) => Antwoord<T>, sets: string[]): Promise<{ data: T | null; set: number }> {
+  for (let i = 0; i < sets.length; i++) {
+    const r = await query(sets[i]);
+    if (!r.error) return { data: r.data, set: i };
+    const laatste = i === sets.length - 1;
+    if (laatste || !kolomOntbreekt(r.error) || tabelOntbreekt(r.error)) throw crmFout(r.error);
+  }
+  return { data: null, set: sets.length };
 }
 
 // Alles wat niet afgerond is telt als lopend (ook de oude waarden gepland/actief).
 const AFGEROND = '(afgerond,gearchiveerd)';
 
-/** Het klantenoverzicht: alle klanten met het aantal lopende projecten (één ronde). */
-export async function klantenLijst(bron: AgendaBron): Promise<KlantRegel[]> {
-  const [k, p] = await Promise.all([
-    bron.sb.from('clients').select('id,company_name,contact_name,email,status').order('company_name').limit(2000),
-    bron.sb.from('projects').select('client_id').not('status', 'in', AFGEROND).not('client_id', 'is', null).limit(5000)
+interface FactuurDbRij {
+  id: string;
+  client_id: string;
+  invoice_number?: string;
+  issued_at: string | null;
+  total?: number | null;
+  revenue_subtotal: number | null;
+  deposit_percentage?: number | null;
+  remainder_of_invoice_id?: string | null;
+}
+
+/** Open = aanbetaling zonder restfactuur (zelfde regel als het dashboard en het facturenoverzicht). */
+function openAanbetalingen(rijen: FactuurDbRij[]): FactuurDbRij[] {
+  const heeftRest = new Set(rijen.map((f) => f.remainder_of_invoice_id).filter(Boolean));
+  return rijen.filter((f) => typeof f.deposit_percentage === 'number' && !heeftRest.has(f.id));
+}
+
+export interface KlantenOverzicht {
+  klanten: KlantRegel[];
+  /** false vóór migratie 0025: "volgende stap" en "opvolgen op" verbergen. */
+  opvolging: boolean;
+}
+
+/**
+ * Het klantenoverzicht in één ronde (vier kleine queries tegelijk): klanten, lopende
+ * projecten, facturen (alleen bedragen, alleen lezen) en de laatste notities.
+ */
+export async function klantenLijst(bron: AgendaBron): Promise<KlantenOverzicht> {
+  const [k, p, f, n] = await Promise.all([
+    metTerugval<KlantDbRij[]>(
+      (kol) => bron.sb.from('clients').select(kol).order('company_name').limit(2000) as unknown as Antwoord<KlantDbRij[]>,
+      ['id,company_name,contact_name,email,telefoon,status,created_at' + OPVOLG, 'id,company_name,contact_name,email,telefoon,status,created_at']
+    ),
+    bron.sb.from('projects').select('client_id,status').not('status', 'in', AFGEROND).not('client_id', 'is', null).limit(5000),
+    metTerugval<FactuurDbRij[]>(
+      (kol) => bron.sb.from('invoices').select(kol).limit(10000) as unknown as Antwoord<FactuurDbRij[]>,
+      ['id,client_id,issued_at,revenue_subtotal,deposit_percentage,remainder_of_invoice_id', 'id,client_id,issued_at,revenue_subtotal']
+    ),
+    metTerugval<{ client_id: string; created_at: string; soort?: string }[]>(
+      (kol) =>
+        bron.sb.from('client_notes').select(kol).order('created_at', { ascending: false }).limit(5000) as unknown as Antwoord<
+          { client_id: string; created_at: string; soort?: string }[]
+        >,
+      ['client_id,created_at,soort', 'client_id,created_at']
+    )
   ]);
-  if (k.error) throw crmFout(k.error);
   if (p.error) throw crmFout(p.error);
-  const lopend = new Map<string, number>();
-  for (const r of p.data ?? []) lopend.set(r.client_id as string, (lopend.get(r.client_id as string) ?? 0) + 1);
-  return ((k.data ?? []) as KlantDbRij[])
-    .map((r) => ({
+
+  const projecten = new Map<string, ProjectStatus[]>();
+  for (const r of p.data ?? []) {
+    const id = r.client_id as string;
+    const lijst = projecten.get(id) ?? [];
+    lijst.push(projectStatusVan(r.status) ?? 'bezig');
+    projecten.set(id, lijst);
+  }
+  const facturen = (f.data ?? []) as FactuurDbRij[];
+  const omzet = new Map<string, number>();
+  const laatsteFactuur = new Map<string, string>();
+  for (const r of facturen) {
+    omzet.set(r.client_id, (omzet.get(r.client_id) ?? 0) + Number(r.revenue_subtotal || 0));
+    if (r.issued_at && r.issued_at > (laatsteFactuur.get(r.client_id) ?? '')) laatsteFactuur.set(r.client_id, r.issued_at);
+  }
+  const open = new Map<string, number>();
+  for (const r of openAanbetalingen(facturen)) open.set(r.client_id, (open.get(r.client_id) ?? 0) + 1);
+  const laatsteNotitie = new Map<string, string>();
+  for (const r of n.data ?? []) {
+    if (r.soort === 'status') continue;
+    if (!laatsteNotitie.has(r.client_id)) laatsteNotitie.set(r.client_id, r.created_at);
+  }
+
+  const klanten = (k.data ?? []).map((r): KlantRegel => {
+    const statussen = projecten.get(r.id) ?? [];
+    const contact = laatsteNotitie.get(r.id) ?? null;
+    const actief = [r.created_at ?? '', contact ?? '', laatsteFactuur.get(r.id) ?? ''].sort().pop() || '';
+    return {
       id: r.id,
       naam: r.company_name,
       contactpersoon: r.contact_name ?? '',
       email: r.email ?? '',
+      telefoon: r.telefoon ?? '',
       status: statusVan(r.status),
-      lopendeProjecten: lopend.get(r.id) ?? 0
-    }))
-    .sort((a, b) => a.naam.localeCompare(b.naam, 'nl'));
+      volgendeStap: r.volgende_stap ?? '',
+      opvolgenOp: r.opvolgen_op ?? null,
+      lopendeProjecten: statussen.length,
+      projectStatus: belangrijksteStatus(statussen),
+      omzet: Math.round((omzet.get(r.id) ?? 0) * 100) / 100,
+      openAanbetalingen: open.get(r.id) ?? 0,
+      laatsteContact: contact,
+      laatstActief: actief
+    };
+  });
+  klanten.sort((a, b) => a.naam.localeCompare(b.naam, 'nl'));
+  return { klanten, opvolging: k.set === 0 };
 }
 
 export async function klantOphalen(bron: AgendaBron, id: string): Promise<Klant | null> {
-  const { data, error } = await bron.sb.from('clients').select(KLANT_KOLOMMEN).eq('id', id).maybeSingle();
-  if (error) throw crmFout(error);
-  return data ? naarKlant(data as KlantDbRij) : null;
+  const r = await klantRijOphalen(bron, id);
+  return r.rij ? naarKlant(r.rij) : null;
+}
+
+async function klantRijOphalen(bron: AgendaBron, id: string): Promise<{ rij: KlantDbRij | null; opvolging: boolean }> {
+  const { data, set } = await metTerugval<KlantDbRij>(
+    (kol) => bron.sb.from('clients').select(kol).eq('id', id).maybeSingle() as unknown as Antwoord<KlantDbRij>,
+    [KLANT_KOLOMMEN + OPVOLG, KLANT_KOLOMMEN]
+  );
+  return { rij: data, opvolging: set === 0 };
 }
 
 export interface FactuurRegel {
@@ -101,6 +210,8 @@ export interface FactuurRegel {
   nummer: string;
   datum: string;
   totaal: number;
+  /** Aanbetaling zonder restfactuur. */
+  open: boolean;
 }
 
 export interface PrijsopgaveRegel {
@@ -111,14 +222,30 @@ export interface PrijsopgaveRegel {
   totaal: number;
 }
 
+export interface KlantCijfers {
+  /** Omzet excl. btw over alle facturen. */
+  omzet: number;
+  /** Omzet excl. btw in het huidige jaar. */
+  omzetDitJaar: number;
+  aantalFacturen: number;
+  openAanbetalingen: number;
+  /** Bedrag (incl. btw) van de open aanbetalingen. */
+  openBedrag: number;
+}
+
 export interface KlantPagina {
   klant: Klant;
+  /** ISO-moment waarop de klant is aangemaakt. */
+  aangemaakt: string | null;
+  /** false vóór migratie 0025. */
+  opvolging: boolean;
   notities: KlantNotitie[];
   projecten: Project[];
   /** Open taken bij deze klant of een van haar projecten (die jij mag zien). */
   taken: Taak[];
+  /** De laatste facturen (nieuwste eerst, max. 50). */
   facturen: FactuurRegel[];
-  aantalFacturen: number;
+  cijfers: KlantCijfers;
   prijsopgaven: PrijsopgaveRegel[];
 }
 
@@ -127,23 +254,30 @@ const LAATSTE = 5;
 /**
  * Alles voor de klantpagina in twee rondes: (1) klant, notities, projecten en facturen
  * tegelijk; (2) open taken (via de projecten) en prijsopgaven (via de naam: prijsopgaven
- * hebben bewust geen koppeling met clients, zie 0011).
+ * hebben bewust geen koppeling met clients, zie 0011). Facturen worden alleen gelezen.
  */
-export async function klantPagina(bron: AgendaBron, id: string): Promise<KlantPagina | null> {
-  const [klant, notities, projecten, facturen] = await Promise.all([
-    klantOphalen(bron, id),
-    bron.sb.from('client_notes').select('id,tekst,created_by,created_at').eq('client_id', id).order('created_at', { ascending: false }).limit(200),
+export async function klantPagina(bron: AgendaBron, id: string, jaar: number = new Date().getFullYear()): Promise<KlantPagina | null> {
+  const [klantRij, notities, projecten, facturen] = await Promise.all([
+    klantRijOphalen(bron, id),
+    metTerugval<{ id: string; tekst: string; created_by: string | null; created_at: string; soort?: string }[]>(
+      (kol) =>
+        bron.sb.from('client_notes').select(kol).eq('client_id', id).order('created_at', { ascending: false }).limit(200) as unknown as Antwoord<
+          { id: string; tekst: string; created_by: string | null; created_at: string; soort?: string }[]
+        >,
+      ['id,tekst,created_by,created_at,soort', 'id,tekst,created_by,created_at']
+    ),
     projectenLijst(bron, { selectie: 'alle', klantId: id, strikt: true }),
-    bron.sb
-      .from('invoices')
-      .select('id,invoice_number,issued_at,total', { count: 'exact' })
-      .eq('client_id', id)
-      .order('issued_at', { ascending: false })
-      .limit(LAATSTE)
+    metTerugval<FactuurDbRij[]>(
+      (kol) =>
+        bron.sb.from('invoices').select(kol).eq('client_id', id).order('issued_at', { ascending: false }).limit(1000) as unknown as Antwoord<FactuurDbRij[]>,
+      [
+        'id,client_id,invoice_number,issued_at,total,revenue_subtotal,deposit_percentage,remainder_of_invoice_id',
+        'id,client_id,invoice_number,issued_at,total,revenue_subtotal'
+      ]
+    )
   ]);
-  if (notities.error) throw crmFout(notities.error);
-  if (facturen.error) throw crmFout(facturen.error);
-  if (!klant) return null;
+  if (!klantRij.rij) return null;
+  const klant = naarKlant(klantRij.rij);
 
   const projectIds = projecten.map((p) => p.id);
   let tq = bron.sb.from('tasks').select(taakKolommen(true)).is('completed_at', null).limit(300);
@@ -160,23 +294,43 @@ export async function klantPagina(bron: AgendaBron, id: string): Promise<KlantPa
   if (taken.error) throw crmFout(taken.error);
   if (opgaven.error) throw crmFout(opgaven.error);
 
+  const alleFacturen = (facturen.data ?? []) as FactuurDbRij[];
+  const openIds = new Set(openAanbetalingen(alleFacturen).map((f) => f.id));
+  const cijfers: KlantCijfers = {
+    omzet: 0,
+    omzetDitJaar: 0,
+    aantalFacturen: alleFacturen.length,
+    openAanbetalingen: openIds.size,
+    openBedrag: 0
+  };
+  for (const f of alleFacturen) {
+    const bedrag = Number(f.revenue_subtotal || 0);
+    cijfers.omzet += bedrag;
+    if (f.issued_at && Number(f.issued_at.slice(0, 4)) === jaar) cijfers.omzetDitJaar += bedrag;
+    if (openIds.has(f.id)) cijfers.openBedrag += Number(f.total || 0);
+  }
+
   return {
     klant,
+    aangemaakt: klantRij.rij.created_at ?? null,
+    opvolging: klantRij.opvolging,
     notities: (notities.data ?? []).map((n) => ({
-      id: n.id as string,
-      tekst: n.tekst as string,
-      door: (n.created_by as string | null) ?? null,
-      op: n.created_at as string
+      id: n.id,
+      tekst: n.tekst,
+      door: n.created_by ?? null,
+      op: n.created_at,
+      soort: n.soort === 'status' ? 'status' : 'notitie'
     })),
     projecten,
     taken: ((taken.data ?? []) as unknown as TaakDbRij[]).map(naarTaak).sort(sorteerTaken),
-    facturen: (facturen.data ?? []).map((f) => ({
-      id: f.id as string,
-      nummer: f.invoice_number as string,
-      datum: f.issued_at as string,
-      totaal: Number(f.total)
+    facturen: alleFacturen.slice(0, 50).map((f) => ({
+      id: f.id,
+      nummer: f.invoice_number ?? '',
+      datum: f.issued_at ?? '',
+      totaal: Number(f.total || 0),
+      open: openIds.has(f.id)
     })),
-    aantalFacturen: facturen.count ?? (facturen.data ?? []).length,
+    cijfers,
     prijsopgaven: (opgaven.data ?? []).map((q) => ({
       id: q.id as string,
       nummer: (q.quote_number as string | null) ?? '',
@@ -185,6 +339,40 @@ export async function klantPagina(bron: AgendaBron, id: string): Promise<KlantPa
       totaal: Number(q.total)
     }))
   };
+}
+
+export interface OpvolgRegel {
+  id: string;
+  naam: string;
+  status: KlantStatus;
+  volgendeStap: string;
+  opvolgenOp: string;
+}
+
+/**
+ * Dashboardkaart "Opvolgen": klanten en leads (niet afgerond) met een opvolgdatum van
+ * vandaag of eerder. null vóór migratie 0025 (of 0022): de kaart verschijnt dan niet.
+ */
+export async function opvolgLijst(bron: AgendaBron, vandaag: string): Promise<OpvolgRegel[] | null> {
+  if (!bron.team) return null;
+  const { data, error } = await bron.sb
+    .from('clients')
+    .select('id,company_name,status,volgende_stap,opvolgen_op')
+    .lte('opvolgen_op', vandaag)
+    .neq('status', 'afgerond')
+    .order('opvolgen_op')
+    .limit(20);
+  if (error) {
+    if (kolomOntbreekt(error)) return null;
+    throw crmFout(error);
+  }
+  return ((data ?? []) as KlantDbRij[]).map((r) => ({
+    id: r.id,
+    naam: r.company_name,
+    status: statusVan(r.status),
+    volgendeStap: r.volgende_stap ?? '',
+    opvolgenOp: r.opvolgen_op as string
+  }));
 }
 
 export interface ProjectPagina {

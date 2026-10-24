@@ -9,6 +9,7 @@ import { InboxKaart, InboxKaartSkelet, NieuweMailKnop } from '@/components/dashb
 import { FacturenWidget } from '@/components/dashboard/FacturenWidget';
 import { SocialWidget } from '@/components/dashboard/SocialWidget';
 import { PlanningSkelet, PlanningWidgets } from '@/components/dashboard/PlanningWidgets';
+import { OpvolgenWidget } from '@/components/dashboard/OpvolgenWidget';
 import { ProjectenWidget } from '@/components/dashboard/ProjectenWidget';
 import { TaakKnop } from '@/components/dashboard/TaakKnop';
 import { UitgavenWidget } from '@/components/dashboard/UitgavenWidget';
@@ -21,7 +22,8 @@ export const metadata: Metadata = { title: 'Dashboard · Studio Levant' };
 // Dashboard "Vandaag": het eigen startpunt van elk teamlid. Elke widget is een eigen async
 // server-component in <Suspense>, zodat één trage of kapotte bron de rest niet blokkeert.
 //   - persoonlijk: begroeting, jouw afspraken en taken, wat je uitdeelde, jouw mailbox;
-//   - gedeeld met het team: projecten (tellers per status), facturen, bonnetjes en posts
+//   - gedeeld met het team: op te volgen leads/klanten (alleen als er iets is), projecten
+//     (tellers per status), facturen, bonnetjes en posts
 //     (met wie ze maakte).
 export default async function DashboardPage() {
   // Elke pagina controleert zelf sessie + teamlidmaatschap (de social-widget leest daarna
@@ -72,6 +74,10 @@ export default async function DashboardPage() {
 
           {/* Projecten (tellers per status), facturen en de laatste bonnetjes onder elkaar naast de posts. */}
           <div className="db-smal db-stapel">
+            {/* Opvolgen: alleen zichtbaar als er vandaag (of eerder) iets op te volgen is. */}
+            <Suspense fallback={null}>
+              <OpvolgenWidget lid={lid} />
+            </Suspense>
             <Suspense fallback={<KaartSkelet label="Projecten" regels={1} className="db-projecten" />}>
               <ProjectenWidget lid={lid} />
             </Suspense>

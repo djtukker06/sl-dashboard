@@ -185,13 +185,13 @@ function bestandenIn(map, filter) {
     const sql = lees(`supabase/${f}`);
     const delen = [...sql.matchAll(/^-- (\d{4}_[\w]+\.sql)$/gm)].map((m) => m[1]);
     // 0021 (alleen teamleden) en daarna 0022 (taken alleen voor betrokkenen) sluiten af;
-    // in de grote bestanden volgen alleen nog 0023 (projectstatus, geen policies) en 0024
-    // (nieuwe Drive-tabellen, policies met teamcheck).
+    // in de grote bestanden volgen alleen nog 0023 (projectstatus, geen policies), 0024
+    // (nieuwe Drive-tabellen, policies met teamcheck) en 0025 (kolommen, geen policies).
     const ok =
       f === "UITVOEREN_0022.sql"
         ? delen.join(",") === "0022_team_crm.sql"
-        : delen.slice(-4).join(",") === "0021_team_en_taken.sql,0022_team_crm.sql,0023_projectstatus.sql,0024_drive.sql";
-    check(ok, `${f} eindigt met 0021 + 0022 (+ 0023 + 0024)`, delen.slice(-4).join(", ") || "geen");
+        : delen.slice(-5).join(",") === "0021_team_en_taken.sql,0022_team_crm.sql,0023_projectstatus.sql,0024_drive.sql,0025_crm_opvolging.sql";
+    check(ok, `${f} eindigt met 0021 + 0022 (+ 0023 + 0024 + 0025)`, delen.slice(-5).join(", ") || "geen");
   }
   {
     const delen = [...lees("supabase/UITVOEREN_0023.sql").matchAll(/^-- (\d{4}_[\w]+\.sql)$/gm)].map((m) => m[1]);
@@ -474,7 +474,7 @@ console.log("Projectenbord (0023)");
   const pagina = lees("app/(app)/projecten/page.tsx");
   check(pagina.indexOf("vereisTeamlidPagina(") > 0 && pagina.indexOf("vereisTeamlidPagina(") < pagina.indexOf("projectenLijst("), "/projecten: teamcheck vóór de data");
   check(/<ProjectenBord/.test(pagina), "/projecten toont het bord");
-  check(/<StatusStappen/.test(lees("app/(app)/projecten/[id]/page.tsx")), "projectpagina: stappenbalk");
+  check(/<ProjectInhoud /.test(lees("app/(app)/projecten/[id]/page.tsx")) && /<StatusStappen/.test(lees("components/crm/ProjectInhoud.tsx")), "projectpagina: stappenbalk");
   check(/<ProjectenWidget lid=\{lid\} \/>/.test(lees("app/(app)/page.tsx")), "dashboard: kaart Projecten");
   const ui = ["components/crm/NieuwProject.tsx", "components/crm/ProjectKop.tsx", "components/crm/ProjectenBord.tsx", "components/crm/StatusStappen.tsx"].map(lees).join("\n");
   check(!/'gepland'|"gepland"/.test(ui), "UI biedt 'gepland' nergens meer als keuze");
@@ -499,7 +499,7 @@ console.log("Bestanden (Google Drive, 0024)");
   check(/bestanden:/.test(lees("lib/shell/iconen.ts")), "icoon 'bestanden' bestaat");
   const pagina = lees("app/(app)/bestanden/page.tsx");
   check(pagina.indexOf("vereisTeamlidPagina(") > 0 && pagina.indexOf("vereisTeamlidPagina(") < pagina.indexOf("driveStatus("), "/bestanden: teamcheck vóór de koppeling");
-  for (const f of ["app/(app)/klanten/[id]/page.tsx", "app/(app)/projecten/[id]/page.tsx"]) {
+  for (const f of ["components/crm/KlantInhoud.tsx", "components/crm/ProjectInhoud.tsx"]) {
     check(/<BestandenBlok /.test(lees(f)), `${f}: blok Bestanden`);
   }
   for (const f of bestandenIn("app/api/drive", (n) => n === "route.ts")) {

@@ -60,13 +60,14 @@ je vanuit elke module terug naar het dashboard.
 ## Database inrichten: één SQL-bestand
 
 Alles wat de nieuwe modules nodig hebben staat in **`supabase/UITVOEREN_IN_SQL_EDITOR.sql`**:
-de migraties 0014–0024 achter elkaar, in één transactie. Wie 0014–0019 al heeft uitgevoerd,
+de migraties 0014–0025 achter elkaar, in één transactie. Wie 0014–0019 al heeft uitgevoerd,
 draait **`supabase/UITVOEREN_0020_UITGAVEN.sql`** (uitgaven + team); wie 0014–0020 al heeft,
 **`supabase/UITVOEREN_0021_TEAM.sql`**; wie 0014–0021 al heeft, **`supabase/UITVOEREN_0022.sql`**
 en daarna **`supabase/UITVOEREN_0023.sql`**; wie 0014–0022 al heeft (de huidige situatie: 0023
 is nog niet uitgevoerd), **`supabase/UITVOEREN_0023.sql`** en daarna
-**`supabase/UITVOEREN_0024.sql`**; wie 0014–0023 al heeft, alleen **`supabase/UITVOEREN_0024.sql`**. Elk groot bestand eindigt met 0021 + 0022 (+ 0023,
-alleen de projectstatus, en 0024, alleen nieuwe Drive-tabellen met teamcheck), zodat opnieuw uitvoeren nooit de oude open policies of de open
+**`supabase/UITVOEREN_0024.sql`**; wie 0014–0023 al heeft, **`supabase/UITVOEREN_0024.sql`** en daarna **`supabase/UITVOEREN_0025.sql`**;
+wie 0014–0024 al heeft, alleen **`supabase/UITVOEREN_0025.sql`** (opvolgen van leads en klanten). Elk groot bestand eindigt met 0021 + 0022 (+ 0023,
+alleen de projectstatus, 0024, alleen nieuwe Drive-tabellen met teamcheck, en 0025, alleen kolommen), zodat opnieuw uitvoeren nooit de oude open policies of de open
 leesregels voor taken terugzet. 0022 opnieuw uitvoeren na 0023 laat de nieuwe projectstatussen
 staan. Onderaan elk
 bestand staat een controletabel (elke regel `ok`) en wie er toegang heeft.
@@ -83,6 +84,7 @@ bestand staat een controletabel (elke regel `ok`) en wie er toegang heeft.
 | `0021_team_en_taken.sql` | `team_members` (allowlist) + `profiles`, `is_teamlid()` in **alle** policies (ook facturen en Storage), `create_invoice`/`update_invoice` alleen nog voor de service-role, `projects`, `task_assignees`, `task_subtasks`, `event_attendees`, `user_mailboxes`; zaait het lidmaatschap van de oudste bestaande gebruiker (Daniel, eigenaar); andere bestaande accounts worden niet automatisch lid |
 | `0022_team_crm.sql` | team van twee: `profiles.welkom_klaar_op` (welkomstflow), taken/afspraken alleen leesbaar voor betrokkenen (`taak_zichtbaar()`), klanten (`email`, `telefoon`, `status`, `client_notes`), projecten (status gepland/bezig/afgerond, `deadline`, `project_eigenaren`), tellers in één query (`taak_tellingen`, `project_taak_tellingen`) en indexen. Alleen toevoegend; de facturen werken ongewijzigd |
 | `0024_drive.sql` | Google Drive (module Bestanden): `drive_koppeling` (één rij: Google-account, versleuteld refresh token, rootmap; RLS aan, **geen policies en geen rechten** voor `anon`/`authenticated`, alleen de server), `drive_mappen` (cache van map-id's; teamleden lezen, alleen de server schrijft), `drive_bestanden` (wie wat uploadde; teamleden), `drive_kopieen` (welke factuur/prijsopgave/bonnetje al in Drive staat; teamleden lezen, alleen de server schrijft). Alleen nieuwe tabellen |
+| `0025_crm_opvolging.sql` | opvolgen: `clients.volgende_stap` (max. 200 tekens) en `clients.opvolgen_op` (datum), `client_notes.soort` (`notitie`/`status`, bestaande notities worden `notitie`) en index `clients_opvolgen_idx`. Alleen kolommen; RLS en facturen ongewijzigd. De app werkt ook vóór 0025 (opvolgen verborgen) |
 | `0023_projectstatus.sql` | projectenbord: status `voorbereiding`/`bezig`/`wachten`/`afgerond` (`gepland` → `voorbereiding`, standaard `voorbereiding`), kolom `status_sinds` met trigger (zet "nu" bij elke statuswijziging; bestaande projecten krijgen hun laatste wijziging), indexen op status + status_sinds en deadline. RLS ongewijzigd |
 
 **Uitvoeren:** Supabase-dashboard → je project → **SQL Editor** → *New query* → plak het hele
@@ -420,37 +422,64 @@ projectpagina zie je de taken die jij mag zien (projecttaken ziet het hele team,
 taak alleen de maker en wie hem kreeg). Bewust simpel: geen pipeline, geen uren, geen
 tientallen velden.
 
-- **Klanten** (`/klanten`): zoeken, filter Alle · Lead · Actief · Afgerond, per klant het
-  aantal lopende projecten. Afgeronde klanten worden nooit verborgen: bij "Alle" staan ze
-  rustig onderaan in een eigen groep (gedimd), en zoeken vindt ze altijd. **+ Klant** (of `/klanten?nieuw=1`): bedrijfsnaam (verplicht),
-  contactpersoon, e-mail en status (standaard Lead); daarna sta je op de klantpagina. Het
-  zijn dezelfde klanten als in de facturen: een klant die via een factuur ontstaat, krijgt
-  status Actief.
-- **Klantpagina** (`/klanten/<id>`): status als knoppen Lead · Actief · Afgerond in de kop
-  (direct opgeslagen). Is de klant afgerond, dan staat bovenaan een rustige melding met
-  **+ Nieuw project**: een nieuw (niet-afgerond) project zet de klant vanzelf terug op Actief
-  (de popup zegt dat vooraf; de server doet het alleen als de klant echt afgerond was). Verder:
-  contact (e-mail opent een
-  nieuwe mail, één knop Bewerken), notities als tijdlijn (alleen je eigen notitie kun je
-  verwijderen), projecten met voortgang en **+ Project**, open taken met **+ Taak** (klant al
-  ingevuld), en de laatste 5 facturen en prijsopgaven met links naar Boekhouding.
-  Prijsopgaven hebben geen klantkoppeling (0011); ze worden op klantnaam gevonden. Een
-  klant verwijderen kan alleen in Facturen (met de bestaande controle).
-- **Projecten** (`/projecten`): een **bord** met vier kolommen — Voorbereiding, Bezig,
-  Wachten op goedkeuring, Afgerond — of een compacte **lijst** op deadline (schakelaar
-  Bord | Lijst, onthouden in de browser). Per kaart: naam, klant, deadline (rood = te laat,
-  oker = binnen 7 dagen), eigenaren, voortgang van de taken en hoe lang het project al in deze
-  status staat. Status wijzigen: kaart naar een andere kolom slepen, de statuskeuze op de
-  kaart, of **Alt + ←/→** op een kaart (toetsenbord). Afgerond toont standaard de laatste 30
-  dagen ("Toon alle …"). Filter **Alleen mijn projecten** (eigenaar = jij, onthouden). Op een
-  telefoon scrolt het bord horizontaal, één kolom per keer. `?weergave=bord|lijst` kiest de
-  weergave (het dashboard linkt zo naar een kolom, bv. `/projecten?weergave=bord#kolom-wachten`).
+- **Klanten** (`/klanten`): drie tabs **Leads · Actief · Afgerond** met tellers (de tab Leads
+  toont ook hoeveel er vandaag of te laat op te volgen zijn). Zoeken (`/`) telt over alle tabs:
+  vind je niets in de huidige tab, dan wijst de lege staat naar de tab waar het wél staat
+  (afgeronde klanten blijven dus altijd vindbaar). Sorteren: Leads op opvolgdatum (te laat
+  bovenaan), Actief op laatst actief, verder op naam of omzet. **Snel toevoegen**: één veld
+  bovenaan, naam + Enter (`n` of **+ Klant** zet de cursor erin; `/klanten?nieuw=1` ook);
+  in de tab Actief wordt het een actieve klant, anders een lead; details vul je later aan.
+  `?tab=leads|actief|afgerond` kiest de tab (anders de laatst gekozen tab, onthouden).
+  - *Leads*: per lead een rustige rij met contact, **volgende stap** en **opvolgen op**
+    (direct bewerkbaar; rood = te laat, zand = vandaag, oker = binnen 7 dagen) en
+    **Gewonnen** (→ Actief, met de optie meteen een project aan te maken) of **Afgewezen**
+    (→ Afgerond, met "Ongedaan maken").
+  - *Actief/Afgerond*: een tabel met klant + contact, lopende projecten (aantal + de
+    belangrijkste status: wachten > bezig > voorbereiding), omzet excl. btw (alleen gelezen
+    uit de facturen; "1 open" = aanbetaling zonder restfactuur), laatste contact (laatste
+    notitie) en opvolgen. Op een telefoon gestapelde rijen.
+- **Klantpagina** (`/klanten/<id>`): de naam is de titel (klik om te hernoemen), met in de kop
+  **Mailen** (eigen mail-module) en **Bellen** (`tel:`) en de status Lead · Actief · Afgerond.
+  Een lead krijgt bovenaan een blok **Lead opvolgen** (volgende stap, datum met snelknoppen
+  Morgen / Over een week / Over 2 weken, Gewonnen / Afgewezen); een actieve klant heeft
+  dezelfde velden opzij onder **Opvolgen**. Kerncijfers: omzet excl. btw (totaal en dit jaar),
+  facturen, open aanbetalingen (bedrag) en lopende projecten (bij een lead zonder facturen of
+  projecten weggelaten). Daaronder projecten (status, deadline, voortgang, eigenaren),
+  open taken en de **tijdlijn**: notities (Enter = opslaan), statuswijzigingen ("Lead →
+  Actief", automatisch na 0025), facturen en wanneer de klant is aangemaakt. Opzij: contact
+  (elk veld inline te bewerken: potlood of "+ Telefoonnummer"), facturen & prijsopgaven
+  (laatste 5, links naar Boekhouding) en bestanden. Is de klant afgerond, dan staat bovenaan
+  een rustige melding met **+ Nieuw project** (zet de klant weer op Actief). Prijsopgaven
+  hebben geen klantkoppeling (0011); ze worden op klantnaam gevonden. Een klant verwijderen
+  kan alleen in Facturen (met de bestaande controle).
+- **Projecten** (`/projecten`): een **bord** met vier kolommen (Voorbereiding, Bezig, Wachten
+  op goedkeuring, Afgerond; per kolom een kleurstip, het aantal en "x te laat") of een
+  **lijst**, gegroepeerd op status (wachten eerst) of op klant (schakelaar Bord | Lijst en de
+  groepering worden onthouden). Filters: **Iedereen | Mijn projecten** (eigenaar = jij,
+  onthouden), klant, en zoeken (`/`). Rustige kaarten: naam, klant, deadline-badge (rood = te
+  laat, oker = binnen 7 dagen; zonder deadline niets), voortgang en eigenaren; "34 dagen stil"
+  verschijnt pas na 14 dagen in dezelfde status. Status wijzigen: kaart slepen, de statuskeuze
+  (verschijnt bij aanwijzen; op een telefoon altijd), of **Alt + ←/→** op een kaart.
+  Afgerond toont standaard de laatste 30 dagen ("Toon alle …"). Op een telefoon scrolt het
+  bord horizontaal, één kolom per keer. `?weergave=bord|lijst` kiest de weergave (het
+  dashboard linkt zo naar een kolom, bv. `/projecten?weergave=bord#kolom-wachten`).
   **+ Project**: naam, klant, status (standaard Voorbereiding), deadline en eigenaar(s)
   (standaard jij). Ook vanuit de taak-popup kun je een project maken.
-- **Projectpagina** (`/projecten/<id>`): een stappenbalk Voorbereiding → Bezig → Wachten op
-  goedkeuring → Afgerond (één klik, direct opgeslagen) met "Bezig sinds 12 okt (11 dagen)";
-  naam, klant, deadline en eigenaren direct bewerkbaar; alle taken met voortgang (afgeronde ingeklapt) en **+ Taak** (project al
-  ingevuld, "voor wie" standaard jij); één notitieveld dat vanzelf opslaat.
+- **Projectpagina** (`/projecten/<id>`): de naam is de titel (klik om te hernoemen), met de
+  klant erboven als link; een stappenbalk Voorbereiding → Bezig → Wachten op goedkeuring →
+  Afgerond (één klik, direct opgeslagen) met "Bezig sinds 12 okt (11 dagen)"; op één regel
+  klant, deadline (met badge), voortgang en eigenaren, allemaal direct bewerkbaar; alle taken
+  (afgeronde ingeklapt) met **+ Taak** (project al ingevuld, "voor wie" standaard jij); één
+  notitieveld dat vanzelf opslaat; bestanden.
+- **Statuskleuren** zijn overal gelijk (klanten.css): blauw = nog niet begonnen (lead,
+  voorbereiding), groen = loopt (actief, bezig), oker = wacht op een ander, grijs = klaar;
+  rood is alleen voor te laat. Er staat altijd een label bij de kleur.
+- **Migratie 0025** (`supabase/UITVOEREN_0025.sql`, alleen kolommen): volgende stap,
+  opvolgdatum en de soort van een klantnotitie. **Werkt ook vóór 0025**: de queries vallen
+  terug op de kolommen van 0022, "volgende stap" en "opvolgen op" zijn dan verborgen (op de
+  klantpagina van een lead staat een korte uitleg), statuswijzigingen komen niet in de
+  tijdlijn en de dashboardkaart "Opvolgen" verschijnt niet; de API geeft bij opslaan een nette
+  503 `kolom_ontbreekt`.
 - **Migratie 0022** (stap 3, alleen toevoegend): `clients.email`, `clients.telefoon`,
   `clients.status` (standaard `actief`), tabel `client_notes`, `projects.deadline`, langere
   `projects.notitie` (5000), status `gepland`/`bezig`/`afgerond` (oude waarden worden
@@ -458,7 +487,8 @@ tientallen velden.
   (bestaande projecten krijgen hun maker als eigenaar). Zolang 0022 niet is uitgevoerd
   tonen `/klanten` en `/projecten` "nog niet ingericht"; de taak-popup en de facturen
   werken gewoon.
-- **Dashboard**: kaart **Projecten** met tellers Voorbereiding · Bezig · Wachten · Afgerond
+- **Dashboard**: kaart **Opvolgen** (alleen als er iets is: leads en klanten met een
+  opvolgdatum van vandaag of eerder, max. 5, met de volgende stap) en kaart **Projecten** met tellers Voorbereiding · Bezig · Wachten · Afgerond
   (laatste 30 dagen) en hoeveel lopende projecten over de deadline zijn; elke teller opent die
   kolom op het bord.
 - **Migratie 0023** (`supabase/UITVOEREN_0023.sql`): zie de tabel bij "Database inrichten".
@@ -466,9 +496,9 @@ tientallen velden.
   zodra de database 'voorbereiding' weigert; "Wachten op goedkeuring" geeft vóór 0023 een
   nette melding; "x dagen in deze status" en het 30-dagenfilter verschijnen pas na 0023
   (tot dan staan alle afgeronde projecten in de kolom).
-- Tests: `node scripts/test-crm.mjs` (invoer, projectstatus-hulpjes en bronbewaking) en
-  `node scripts/test-rls.mjs` (RLS van notities en eigenaren, omzetting van de status in 0022
-  en 0023, de status_sinds-trigger en opnieuw uitvoeren).
+- Tests: `node scripts/test-crm.mjs` (invoer, projectstatus- en opvolghulpjes, terugval vóór
+  0025 en bronbewaking) en `node scripts/test-rls.mjs` (RLS van notities en eigenaren,
+  omzetting van de status in 0022 en 0023, de status_sinds-trigger, 0025 en opnieuw uitvoeren).
 
 ## Boekhouding
 
@@ -806,9 +836,9 @@ sinds Klanten & projecten de nieuwe klantpagina (met een link naar de facturen v
 | `/api/invoices…`, `/api/quotes…`, `/api/clients/search` | Facturen-API (inhoudelijk ongewijzigd; nu met teamlid- en herkomstcontrole) |
 | `/agenda` | Agenda & taken (`?dag=`, `?weergave=maand`, `?taak=`, `?afspraak=`, `?lijst=uitgezet`, `?project=<id>`) |
 | `/agenda/projecten` | Oud adres: doorverwijzing naar `/projecten` |
-| `/klanten`, `/klanten/<id>` | Klanten (`?nieuw=1` opent "Nieuwe klant") en de klantpagina |
+| `/klanten`, `/klanten/<id>` | Klanten (`?tab=leads\|actief\|afgerond`, `?nieuw=1` zet de cursor in "Nieuwe klant") en de klantpagina |
 | `/projecten`, `/projecten/<id>` | Projecten en de projectpagina |
-| `/api/klanten`, `/api/klanten/<id>`, `/api/klanten/<id>/notities…` | Klant maken/wijzigen (niet verwijderen) en klantnotities (503 `tabel_ontbreekt` vóór 0022) |
+| `/api/klanten`, `/api/klanten/<id>`, `/api/klanten/<id>/notities…` | Klant maken/wijzigen (niet verwijderen; ook `volgendeStap`/`opvolgenOp`, een statuswijziging komt in de tijdlijn) en klantnotities (503 `tabel_ontbreekt` vóór 0022, `kolom_ontbreekt` voor opvolgen vóór 0025) |
 | `/api/dashboard` | Jouw planning voor het dashboard in één verzoek (zelfde gegevens als bij het laden) |
 | `/api/agenda`, `/api/taken…` (incl. `?filter=uitgezet`, `/[id]/subtaken…`), `/api/afspraken…` | Agenda-API; alleen jouw taken/afspraken (geen parameter voor die van een ander) (503 `tabel_ontbreekt` vóór de SQL, 403 als je iets van een ander wilt wijzigen) |
 | `/api/projecten…`, `/api/team` | Projecten (gedeeld; `?status=lopend\|afgerond\|alle`, met deadline en eigenaren) en de actieve teamleden (alleen naam, initialen, kleur) |

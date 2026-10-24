@@ -15,8 +15,11 @@
 --                            en sinds wanneer (status_sinds)
 --   0024       Bestanden     Google Drive-koppeling (drive_koppeling, alleen server),
 --                            mappen-cache, uploads en kopieën van facturen/bonnetjes
+--   0025       Opvolgen      volgende stap en opvolgdatum per klant/lead, statusregels
+--                            in de tijdlijn (client_notes.soort)
 -- Van de facturen-tabellen (0001–0013) veranderen alleen de toegangsregels (0021) en
--- komen er bij clients drie kolommen met standaardwaarden bij (0022).
+-- komen er bij clients drie kolommen met standaardwaarden bij (0022) en twee lege
+-- kolommen voor opvolgen (0025).
 --
 -- Zo voer je het uit:
 --   1. Supabase-dashboard -> je project -> SQL Editor -> "New query".
@@ -32,7 +35,8 @@
 -- Al eerder 0014–0020 uitgevoerd? Dan volstaat supabase/UITVOEREN_0021_TEAM.sql.
 -- Al eerder 0014–0021 uitgevoerd? Dan volstaat supabase/UITVOEREN_0022.sql (+ 0023).
 -- Al eerder 0014–0022 uitgevoerd? Dan volstaat supabase/UITVOEREN_0023.sql (+ 0024).
--- Al eerder 0014–0023 uitgevoerd? Dan volstaat supabase/UITVOEREN_0024.sql.
+-- Al eerder 0014–0023 uitgevoerd? Dan volstaat supabase/UITVOEREN_0024.sql (+ 0025).
+-- Al eerder 0014–0024 uitgevoerd? Dan volstaat supabase/UITVOEREN_0025.sql.
 --
 -- Daarna: importeer de oude social-projecten met
 --   scripts/importeer-social-projecten.mjs (zie README).
@@ -2038,6 +2042,57 @@ revoke insert, update, delete on public.drive_kopieen from authenticated;
 -- Anon heeft in public niets (0021); voor de zekerheid ook hier expliciet.
 revoke all on public.drive_mappen, public.drive_bestanden, public.drive_kopieen from anon;
 
+-- ------------------------------------------------------------------------------
+-- 0025_crm_opvolging.sql
+-- ------------------------------------------------------------------------------
+
+-- 0025: opvolgen van leads en klanten. Idempotent: twee keer uitvoeren geeft geen fout.
+-- Alleen toevoegen; RLS blijft zoals in 0021/0022 (is_teamlid) en de facturen-functionaliteit
+-- (tabellen invoices/quotes, RPC's) wordt niet aangeraakt. Vereist 0022.
+--
+--   - clients.volgende_stap: korte tekst "wat is de volgende stap" (max. 200 tekens);
+--   - clients.opvolgen_op:   datum waarop je de klant/lead opvolgt (voor "vandaag/te laat"
+--                            in het klantenoverzicht en de dashboardkaart "Opvolgen");
+--   - client_notes.soort:    'notitie' (zelf geschreven) of 'status' (automatisch bij een
+--                            statuswijziging, bv. "Lead → Actief"), voor de tijdlijn op de
+--                            klantpagina. Bestaande notities worden 'notitie'.
+--   - index voor de opvolglijst.
+--
+-- De app werkt vóór en na deze migratie: vóór 0025 zijn "volgende stap" en "opvolgen op"
+-- verborgen en worden statuswijzigingen niet in de tijdlijn gezet.
+
+alter table public.clients add column if not exists volgende_stap text;
+alter table public.clients add column if not exists opvolgen_op date;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.clients'::regclass and conname = 'clients_volgende_stap_lengte'
+  ) then
+    alter table public.clients add constraint clients_volgende_stap_lengte
+      check (volgende_stap is null or length(volgende_stap) <= 200);
+  end if;
+end
+$$;
+
+alter table public.client_notes add column if not exists soort text not null default 'notitie';
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.client_notes'::regclass and conname = 'client_notes_soort_check'
+  ) then
+    alter table public.client_notes add constraint client_notes_soort_check
+      check (soort in ('notitie', 'status'));
+  end if;
+end
+$$;
+
+-- Opvolglijst (dashboard, tab Leads): alleen klanten met een opvolgdatum.
+create index if not exists clients_opvolgen_idx on public.clients (opvolgen_op) where opvolgen_op is not null;
+
 commit;
 
 -- PostgREST (de API van Supabase) direct laten weten dat er nieuwe tabellen zijn.
@@ -2118,7 +2173,13 @@ from (values
   ('drive_koppeling zonder policies', not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'drive_koppeling')),
   ('drive_koppeling onleesbaar voor de app', not has_table_privilege('authenticated', 'public.drive_koppeling', 'select') and not has_table_privilege('anon', 'public.drive_koppeling', 'select')),
   ('drive-tabellen alleen voor teamleden', (select count(*) from pg_policies where schemaname = 'public' and tablename in ('drive_mappen', 'drive_bestanden', 'drive_kopieen') and (coalesce(qual, '') || ' ' || coalesce(with_check, '')) ~ 'is_teamlid\(') = 3),
-  ('drive_mappen en drive_kopieen alleen door de server te schrijven', not has_table_privilege('authenticated', 'public.drive_kopieen', 'insert') and not has_table_privilege('authenticated', 'public.drive_mappen', 'insert'))
+  ('drive_mappen en drive_kopieen alleen door de server te schrijven', not has_table_privilege('authenticated', 'public.drive_kopieen', 'insert') and not has_table_privilege('authenticated', 'public.drive_mappen', 'insert')),
+  ('kolommen clients.volgende_stap en opvolgen_op', (select count(*) from information_schema.columns where table_schema = 'public' and table_name = 'clients' and column_name in ('volgende_stap', 'opvolgen_op')) = 2),
+  ('check volgende stap max. 200 tekens', exists (select 1 from pg_constraint where conrelid = 'public.clients'::regclass and conname = 'clients_volgende_stap_lengte')),
+  ('kolom client_notes.soort', exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'client_notes' and column_name = 'soort' and is_nullable = 'NO')),
+  ('check notitiesoort notitie/status', exists (select 1 from pg_constraint where conrelid = 'public.client_notes'::regclass and conname = 'client_notes_soort_check')),
+  ('index opvolgen', exists (select 1 from pg_class where relname = 'clients_opvolgen_idx')),
+  ('RLS clients en client_notes ongewijzigd (teamlid)', not exists (select 1 from pg_policies where schemaname = 'public' and tablename in ('clients', 'client_notes') and (coalesce(qual, '') || ' ' || coalesce(with_check, '')) !~ 'is_teamlid\('))
 ) as c(onderdeel, aanwezig)
 union all
 select 'teamlid: ' || coalesce(p.naam, '?') || ' <' || coalesce(p.email, '?') || '> (' || m.rol || ')',

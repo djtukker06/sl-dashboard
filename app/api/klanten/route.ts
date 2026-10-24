@@ -1,5 +1,6 @@
-import { parseKlant } from '@/lib/crm/invoer';
-import { crmFout } from '@/lib/crm/repo';
+import { OPVOLG_KOLOMMEN, parseKlant } from '@/lib/crm/invoer';
+import { OPVOLGEN_NA_0025, crmFout } from '@/lib/crm/repo';
+import { kolomOntbreekt } from '@/lib/db/ontbreekt';
 import type { KlantInvoer } from '@/lib/crm/types';
 import { CRM_NIET_INGERICHT } from '@/lib/agenda/repo';
 import { fout, foutAntwoord, json, leesBody, metSessie } from '@/lib/agenda/api';
@@ -7,8 +8,9 @@ import { fout, foutAntwoord, json, leesBody, metSessie } from '@/lib/agenda/api'
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-// POST /api/klanten  { naam, contactpersoon?, email?, status? } → { klant: { id } }
-// Snel een klant toevoegen (standaard status 'lead'). Gedeeld met het hele team; de
+// POST /api/klanten  { naam, contactpersoon?, email?, status?, volgendeStap?, opvolgenOp? }
+// → { klant: { id } }. Snel een klant toevoegen (alleen een naam is genoeg; standaard
+// status 'lead'). Gedeeld met het hele team; de
 // facturen zien dezelfde klant (zelfde tabel clients).
 export async function POST(request: Request) {
   const s = await metSessie(request);
@@ -24,6 +26,7 @@ export async function POST(request: Request) {
     const { data, error } = await s.sb.from('clients').insert(k.waarde).select('id').single();
     if (error) {
       if (error.code === '23505') return fout(409, 'Er bestaat al een klant met die naam.');
+      if (kolomOntbreekt(error) && OPVOLG_KOLOMMEN.some((c) => c in k.waarde)) return fout(503, OPVOLGEN_NA_0025, 'kolom_ontbreekt');
       throw crmFout(error);
     }
     return json({ klant: { id: data.id as string } }, 201);

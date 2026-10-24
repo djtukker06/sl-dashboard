@@ -37,11 +37,12 @@ export default async function ProjectenPage({ searchParams }: { searchParams: Pr
       </CrmKop>
       <div className="kp kp-breed">
         {projecten.length === 0 ? (
-          <div className="db-melding">
-            <p className="db-melding-titel">Nog geen projecten</p>
-            <p className="db-melding-tekst">
+          <div className="kl-leeg">
+            <p className="kl-leeg-titel">Nog geen projecten</p>
+            <p className="kl-leeg-tekst">
               Maak een project met “+ Project”, of direct vanuit de taak-popup (veld Project). Een project hangt (optioneel) aan een klant.
             </p>
+            <NieuwProject klasse="db-knop" />
           </div>
         ) : (
           <ProjectenBord projecten={projecten} vandaag={vandaagNL()} nu={new Date().toISOString()} startWeergave={weergave} />

@@ -1,149 +1,72 @@
 'use client';
 
-import { useRouter } from 'next/navigation';
-import { useState } from 'react';
-import { useToast } from '@/components/agenda/Toast';
-import type { Klant } from '@/lib/crm/types';
-import { crmApi } from './CrmDialoog';
+import type { Klant, KlantInvoer } from '@/lib/crm/types';
+import { InlineTitel, InlineVeld } from './InlineVeld';
+import { useKlantWijzigen } from './KlantActies';
 
-type Velden = Pick<Klant, 'naam' | 'contactpersoon' | 'email' | 'telefoon' | 'adres' | 'postcode'>;
-
-/** Contactgegevens: lezen, en met één knop "Bewerken" alles tegelijk aanpassen. */
+/** Contactgegevens, elk veld direct bewerkbaar (potlood of "+ … toevoegen"). */
 export function KlantContact({ klant }: { klant: Klant }) {
-  const router = useRouter();
-  const toast = useToast();
-  const [bewerk, setBewerk] = useState(false);
-  const [v, setV] = useState<Velden>(klant);
-  const [bezig, setBezig] = useState(false);
-  const [fout, setFout] = useState('');
-
-  function zet<K extends keyof Velden>(k: K, w: string) {
-    setV((x) => ({ ...x, [k]: w }));
-  }
-
-  async function opslaan(e: React.FormEvent) {
-    e.preventDefault();
-    setBezig(true);
-    setFout('');
-    try {
-      await crmApi(`/api/klanten/${klant.id}`, 'PATCH', {
-        naam: v.naam,
-        contactpersoon: v.contactpersoon,
-        email: v.email,
-        telefoon: v.telefoon,
-        adres: v.adres,
-        postcode: v.postcode
-      });
-      setBewerk(false);
-      toast('Contactgegevens opgeslagen');
-      router.refresh();
-    } catch (err) {
-      setFout(err instanceof Error ? err.message : 'Opslaan mislukt.');
-    } finally {
-      setBezig(false);
-    }
-  }
-
-  if (!bewerk) {
-    const leeg = !klant.contactpersoon && !klant.email && !klant.telefoon && !klant.adres && !klant.postcode;
-    return (
-      <div className="kp-contact">
-        {leeg ? (
-          <p className="kp-leeg">Nog geen contactgegevens.</p>
-        ) : (
-          <dl className="kp-dl">
-            {klant.contactpersoon && (
-              <div>
-                <dt>Contactpersoon</dt>
-                <dd>{klant.contactpersoon}</dd>
-              </div>
-            )}
-            {klant.email && (
-              <div>
-                <dt>E-mail</dt>
-                <dd>
-                  <a href={`/mail?nieuw=1&aan=${encodeURIComponent(klant.email)}`} title="Mail schrijven">
-                    {klant.email}
-                  </a>
-                </dd>
-              </div>
-            )}
-            {klant.telefoon && (
-              <div>
-                <dt>Telefoon</dt>
-                <dd>
-                  <a href={`tel:${klant.telefoon.replace(/[^0-9+]/g, '')}`}>{klant.telefoon}</a>
-                </dd>
-              </div>
-            )}
-            {(klant.adres || klant.postcode) && (
-              <div>
-                <dt>Adres</dt>
-                <dd>{[klant.adres, klant.postcode].filter(Boolean).join(', ')}</dd>
-              </div>
-            )}
-          </dl>
-        )}
-        <button
-          type="button"
-          className="db-knop"
-          onClick={() => {
-            setV(klant);
-            setBewerk(true);
-          }}
-        >
-          Bewerken
-        </button>
-      </div>
-    );
-  }
+  const wijzig = useKlantWijzigen();
+  const bewaar = (body: KlantInvoer) => wijzig(klant.id, body, 'Opgeslagen');
 
   return (
-    <form
-      className="kp-form"
-      onSubmit={opslaan}
-      noValidate
-      onKeyDown={(e) => {
-        if (e.key === 'Escape') setBewerk(false);
-      }}
-    >
-      <label className="ag-label">
-        Bedrijfsnaam
-        <input className="ag-veld" value={v.naam} maxLength={200} onChange={(e) => zet('naam', e.target.value)} autoFocus />
-      </label>
-      <label className="ag-label">
-        Contactpersoon
-        <input className="ag-veld" value={v.contactpersoon} maxLength={200} onChange={(e) => zet('contactpersoon', e.target.value)} />
-      </label>
-      <label className="ag-label">
-        E-mail
-        <input className="ag-veld" type="email" value={v.email} maxLength={320} onChange={(e) => zet('email', e.target.value)} />
-      </label>
-      <label className="ag-label">
-        Telefoon
-        <input className="ag-veld" type="tel" value={v.telefoon} maxLength={40} onChange={(e) => zet('telefoon', e.target.value)} />
-      </label>
-      <label className="ag-label">
-        Adres
-        <input className="ag-veld" value={v.adres} maxLength={300} onChange={(e) => zet('adres', e.target.value)} />
-      </label>
-      <label className="ag-label">
-        Postcode en plaats
-        <input className="ag-veld" value={v.postcode} maxLength={20} onChange={(e) => zet('postcode', e.target.value)} />
-      </label>
-      {fout && (
-        <p className="ag-fout" role="alert">
-          {fout}
-        </p>
-      )}
-      <div className="kp-form-acties">
-        <button type="button" className="db-knop" onClick={() => setBewerk(false)}>
-          Annuleren
-        </button>
-        <button type="submit" className="db-knop db-knop-primair" disabled={bezig}>
-          {bezig ? 'Bezig…' : 'Opslaan'}
-        </button>
+    <dl className="kp-dl">
+      <div>
+        <dt>Contactpersoon</dt>
+        <dd>
+          <InlineVeld label="Contactpersoon" waarde={klant.contactpersoon} leeg="+ Contactpersoon" onBewaar={(v) => bewaar({ contactpersoon: v })} />
+        </dd>
       </div>
-    </form>
+      <div>
+        <dt>E-mail</dt>
+        <dd>
+          <InlineVeld
+            label="E-mail"
+            type="email"
+            max={320}
+            waarde={klant.email}
+            leeg="+ E-mailadres"
+            onBewaar={(v) => bewaar({ email: v })}
+            weergave={(w) => (
+              <a href={`/mail?nieuw=1&aan=${encodeURIComponent(w)}`} title="Mail schrijven">
+                {w}
+              </a>
+            )}
+          />
+        </dd>
+      </div>
+      <div>
+        <dt>Telefoon</dt>
+        <dd>
+          <InlineVeld
+            label="Telefoon"
+            type="tel"
+            max={40}
+            waarde={klant.telefoon}
+            leeg="+ Telefoonnummer"
+            onBewaar={(v) => bewaar({ telefoon: v })}
+            weergave={(w) => <a href={`tel:${w.replace(/[^0-9+]/g, '')}`}>{w}</a>}
+          />
+        </dd>
+      </div>
+      <div>
+        <dt>Adres</dt>
+        <dd>
+          <InlineVeld label="Adres" max={300} waarde={klant.adres} leeg="+ Adres" onBewaar={(v) => bewaar({ adres: v })} />
+        </dd>
+      </div>
+      <div>
+        <dt>Postcode en plaats</dt>
+        <dd>
+          <InlineVeld label="Postcode en plaats" max={20} waarde={klant.postcode} leeg="+ Postcode" onBewaar={(v) => bewaar({ postcode: v })} />
+        </dd>
+      </div>
+    </dl>
   );
+}
+
+/** De klantnaam als paginatitel, direct te hernoemen. */
+export function KlantTitel({ id, naam }: { id: string; naam: string }) {
+  const wijzig = useKlantWijzigen();
+  return <InlineTitel key={naam} waarde={naam} label="Bedrijfsnaam" onBewaar={(v) => wijzig(id, { naam: v }, 'Naam opgeslagen')} />;
 }

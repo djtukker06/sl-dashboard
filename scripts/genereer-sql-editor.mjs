@@ -1,11 +1,12 @@
 // Bouwt de bestanden voor de Supabase SQL Editor:
-//   supabase/UITVOEREN_IN_SQL_EDITOR.sql  0014–0024 (social, agenda, mail, uitgaven, team, klanten, Drive)
-//   supabase/UITVOEREN_0020_UITGAVEN.sql  0020 + 0021 + 0022 + 0023 + 0024 (voor wie 0014–0019 al heeft uitgevoerd)
-//   supabase/UITVOEREN_0021_TEAM.sql      0021 + 0022 + 0023 + 0024 (team, toegang en taken op naam)
+//   supabase/UITVOEREN_IN_SQL_EDITOR.sql  0014–0025 (social, agenda, mail, uitgaven, team, klanten, Drive, opvolgen)
+//   supabase/UITVOEREN_0020_UITGAVEN.sql  0020 t/m 0025 (voor wie 0014–0019 al heeft uitgevoerd)
+//   supabase/UITVOEREN_0021_TEAM.sql      0021 t/m 0025 (team, toegang en taken op naam)
 //   supabase/UITVOEREN_0022.sql           alleen 0022 (welkomstflow, wie-ziet-welke-taak,
 //                                         klanten & projecten, snelheid) — vereist 0021
 //   supabase/UITVOEREN_0023.sql           alleen 0023 (projectstatus voor het bord) — vereist 0022
 //   supabase/UITVOEREN_0024.sql           alleen 0024 (Google Drive / module Bestanden) — vereist 0022
+//   supabase/UITVOEREN_0025.sql           alleen 0025 (opvolgen van leads/klanten) — vereist 0022
 //
 // 0021 + 0022 (+ 0023 projectstatus en 0024 Drive, alleen nieuwe tabellen met teamcheck) sluiten ELK groot bestand af: 0014–0020 maken nog policies "auth.uid() is not null"
 // (open voor elk account) en 0021 laat elk teamlid alle taken lezen. Wie een ouder bestand
@@ -33,6 +34,7 @@ const DOEL_TEAM = path.join(ROOT, "supabase", "UITVOEREN_0021_TEAM.sql");
 const DOEL_0022 = path.join(ROOT, "supabase", "UITVOEREN_0022.sql");
 const DOEL_0023 = path.join(ROOT, "supabase", "UITVOEREN_0023.sql");
 const DOEL_0024 = path.join(ROOT, "supabase", "UITVOEREN_0024.sql");
+const DOEL_0025 = path.join(ROOT, "supabase", "UITVOEREN_0025.sql");
 
 const MIGRATIES = [
   "0014_social.sql",
@@ -46,6 +48,7 @@ const MIGRATIES = [
   "0022_team_crm.sql",
   "0023_projectstatus.sql",
   "0024_drive.sql",
+  "0025_crm_opvolging.sql",
 ];
 
 // Controle-regels per onderdeel (onderaan elk bestand; elke regel hoort "ok" te tonen).
@@ -131,6 +134,16 @@ const CONTROLE_0024 = [
   "  ('drive_mappen en drive_kopieen alleen door de server te schrijven', not has_table_privilege('authenticated', 'public.drive_kopieen', 'insert') and not has_table_privilege('authenticated', 'public.drive_mappen', 'insert'))",
 ];
 
+// Opvolgen van leads en klanten (0025).
+const CONTROLE_0025 = [
+  "  ('kolommen clients.volgende_stap en opvolgen_op', (select count(*) from information_schema.columns where table_schema = 'public' and table_name = 'clients' and column_name in ('volgende_stap', 'opvolgen_op')) = 2)",
+  "  ('check volgende stap max. 200 tekens', exists (select 1 from pg_constraint where conrelid = 'public.clients'::regclass and conname = 'clients_volgende_stap_lengte'))",
+  "  ('kolom client_notes.soort', exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'client_notes' and column_name = 'soort' and is_nullable = 'NO'))",
+  "  ('check notitiesoort notitie/status', exists (select 1 from pg_constraint where conrelid = 'public.client_notes'::regclass and conname = 'client_notes_soort_check'))",
+  "  ('index opvolgen', exists (select 1 from pg_class where relname = 'clients_opvolgen_idx'))",
+  "  ('RLS clients en client_notes ongewijzigd (teamlid)', not exists (select 1 from pg_policies where schemaname = 'public' and tablename in ('clients', 'client_notes') and (coalesce(qual, '') || ' ' || coalesce(with_check, '')) !~ 'is_teamlid\\('))",
+];
+
 // Onder de controle: wie er nu toegang heeft (zo zie je meteen of er iemand tussen staat
 // die er niet hoort). Zelfde kolommen als de controle, zodat het één tabel blijft.
 const TEAMLEDEN = `union all
@@ -204,8 +217,11 @@ function bouw() {
 --                            en sinds wanneer (status_sinds)
 --   0024       Bestanden     Google Drive-koppeling (drive_koppeling, alleen server),
 --                            mappen-cache, uploads en kopieën van facturen/bonnetjes
+--   0025       Opvolgen      volgende stap en opvolgdatum per klant/lead, statusregels
+--                            in de tijdlijn (client_notes.soort)
 -- Van de facturen-tabellen (0001–0013) veranderen alleen de toegangsregels (0021) en
--- komen er bij clients drie kolommen met standaardwaarden bij (0022).
+-- komen er bij clients drie kolommen met standaardwaarden bij (0022) en twee lege
+-- kolommen voor opvolgen (0025).
 --
 -- Zo voer je het uit:
 --   1. Supabase-dashboard -> je project -> SQL Editor -> "New query".
@@ -221,7 +237,8 @@ function bouw() {
 -- Al eerder 0014–0020 uitgevoerd? Dan volstaat supabase/UITVOEREN_0021_TEAM.sql.
 -- Al eerder 0014–0021 uitgevoerd? Dan volstaat supabase/UITVOEREN_0022.sql (+ 0023).
 -- Al eerder 0014–0022 uitgevoerd? Dan volstaat supabase/UITVOEREN_0023.sql (+ 0024).
--- Al eerder 0014–0023 uitgevoerd? Dan volstaat supabase/UITVOEREN_0024.sql.
+-- Al eerder 0014–0023 uitgevoerd? Dan volstaat supabase/UITVOEREN_0024.sql (+ 0025).
+-- Al eerder 0014–0024 uitgevoerd? Dan volstaat supabase/UITVOEREN_0025.sql.
 --
 -- Daarna: importeer de oude social-projecten met
 --   scripts/importeer-social-projecten.mjs (zie README).
@@ -256,6 +273,7 @@ ${controle([
   ...CONTROLE_0022,
   ...CONTROLE_0023,
   ...CONTROLE_0024,
+  ...CONTROLE_0025,
 ], TEAMLEDEN)}`;
 }
 
@@ -293,12 +311,13 @@ ${deel("0021_team_en_taken.sql")}
 ${deel("0022_team_crm.sql")}
 ${deel("0023_projectstatus.sql")}
 ${deel("0024_drive.sql")}
+${deel("0025_crm_opvolging.sql")}
 commit;
 
 -- PostgREST (de API van Supabase) direct laten weten dat er nieuwe tabellen zijn.
 notify pgrst, 'reload schema';
 
-${controle([...CONTROLE_UITGAVEN, ...CONTROLE_TEAM, ...CONTROLE_0022, ...CONTROLE_0023, ...CONTROLE_0024], TEAMLEDEN)}`;
+${controle([...CONTROLE_UITGAVEN, ...CONTROLE_TEAM, ...CONTROLE_0022, ...CONTROLE_0023, ...CONTROLE_0024, ...CONTROLE_0025], TEAMLEDEN)}`;
 }
 
 function bouwTeam() {
@@ -344,12 +363,13 @@ ${deel("0021_team_en_taken.sql")}
 ${deel("0022_team_crm.sql")}
 ${deel("0023_projectstatus.sql")}
 ${deel("0024_drive.sql")}
+${deel("0025_crm_opvolging.sql")}
 commit;
 
 -- PostgREST (de API van Supabase) direct laten weten dat er nieuwe tabellen zijn.
 notify pgrst, 'reload schema';
 
-${controle([...CONTROLE_TEAM, ...CONTROLE_0022, ...CONTROLE_0023, ...CONTROLE_0024], TEAMLEDEN)}`;
+${controle([...CONTROLE_TEAM, ...CONTROLE_0022, ...CONTROLE_0023, ...CONTROLE_0024, ...CONTROLE_0025], TEAMLEDEN)}`;
 }
 
 function bouw0022() {
@@ -479,6 +499,45 @@ notify pgrst, 'reload schema';
 ${controle(CONTROLE_0024, TEAMLEDEN)}`;
 }
 
+function bouw0025() {
+  return `-- ============================================================================
+-- Studio Levant-backoffice — opvolgen van leads en klanten (migratie 0025)
+-- ============================================================================
+--
+-- Wat dit doet (alleen toevoegen; RLS en de facturen-functionaliteit ongewijzigd):
+--   - clients.volgende_stap (korte tekst, max. 200 tekens) en clients.opvolgen_op (datum):
+--     voor de tab Leads, "vandaag/te laat" en de dashboardkaart "Opvolgen".
+--   - client_notes.soort: 'notitie' (zelf geschreven, alle bestaande notities) of 'status'
+--     (automatisch bij een statuswijziging, bv. "Lead → Actief") voor de tijdlijn.
+--   - index voor de opvolglijst.
+--
+-- Vereist 0022 (klanten & projecten). Nog niet uitgevoerd? Gebruik dan het grote
+-- UITVOEREN_0021_TEAM.sql (bevat 0021 t/m 0025).
+--
+-- Zo voer je het uit:
+--   1. Supabase-dashboard -> je project -> SQL Editor -> "New query".
+--   2. Plak dit hele bestand en klik op "Run".
+--   3. Onderaan: elke regel moet "ok" tonen, en daaronder staat wie er toegang heeft.
+--
+-- Veilig om nogmaals uit te voeren; alles draait in één transactie (gaat er iets mis, dan
+-- wordt niets half doorgevoerd). De app werkt vóór en na dit bestand: vóór 0025 zijn
+-- "volgende stap" en "opvolgen op" verborgen.
+--
+-- Gegenereerd met scripts/genereer-sql-editor.mjs uit supabase/migrations/0025_crm_opvolging.sql.
+-- Niet met de hand aanpassen; pas de migratie aan en genereer opnieuw.
+-- ============================================================================
+
+begin;
+
+${deel("0025_crm_opvolging.sql")}
+commit;
+
+-- PostgREST (de API van Supabase) direct laten weten dat er nieuwe kolommen zijn.
+notify pgrst, 'reload schema';
+
+${controle(CONTROLE_0025, TEAMLEDEN)}`;
+}
+
 const bestanden = [
   [DOEL, bouw()],
   [DOEL_UITGAVEN, bouwUitgaven()],
@@ -486,6 +545,7 @@ const bestanden = [
   [DOEL_0022, bouw0022()],
   [DOEL_0023, bouw0023()],
   [DOEL_0024, bouw0024()],
+  [DOEL_0025, bouw0025()],
 ];
 if (process.argv.includes("--controleer")) {
   let verouderd = false;
@@ -497,10 +557,10 @@ if (process.argv.includes("--controleer")) {
     }
   }
   if (verouderd) process.exit(1);
-  console.log("UITVOEREN_IN_SQL_EDITOR.sql, UITVOEREN_0020_UITGAVEN.sql, UITVOEREN_0021_TEAM.sql, UITVOEREN_0022.sql, UITVOEREN_0023.sql en UITVOEREN_0024.sql zijn actueel.");
+  console.log("UITVOEREN_IN_SQL_EDITOR.sql, UITVOEREN_0020_UITGAVEN.sql, UITVOEREN_0021_TEAM.sql, UITVOEREN_0022.sql, UITVOEREN_0023.sql, UITVOEREN_0024.sql en UITVOEREN_0025.sql zijn actueel.");
 } else {
   for (const [doel, inhoud] of bestanden) fs.writeFileSync(doel, inhoud);
   console.log(
-    `Geschreven: ${path.relative(ROOT, DOEL)} (${MIGRATIES.length} migraties), ${path.relative(ROOT, DOEL_UITGAVEN)}, ${path.relative(ROOT, DOEL_TEAM)}, ${path.relative(ROOT, DOEL_0022)}, ${path.relative(ROOT, DOEL_0023)} en ${path.relative(ROOT, DOEL_0024)}`,
+    `Geschreven: ${path.relative(ROOT, DOEL)} (${MIGRATIES.length} migraties), ${path.relative(ROOT, DOEL_UITGAVEN)}, ${path.relative(ROOT, DOEL_TEAM)}, ${path.relative(ROOT, DOEL_0022)}, ${path.relative(ROOT, DOEL_0023)}, ${path.relative(ROOT, DOEL_0024)} en ${path.relative(ROOT, DOEL_0025)}`,
   );
 }

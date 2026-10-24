@@ -15,6 +15,22 @@ export interface KlantRij {
   address?: string | null;
   postal_code?: string | null;
   status?: KlantStatus;
+  /** 0025 */
+  volgende_stap?: string | null;
+  /** 0025: 'YYYY-MM-DD' of null */
+  opvolgen_op?: string | null;
+}
+
+/** Velden die pas na migratie 0025 bestaan (om vóór 0025 een nette melding te geven). */
+export const OPVOLG_KOLOMMEN = ['volgende_stap', 'opvolgen_op'] as const;
+
+const DATUM = /^\d{4}-\d{2}-\d{2}$/;
+
+function isEchteDatum(s: string): boolean {
+  if (!DATUM.test(s)) return false;
+  const [j, m, d] = s.split('-').map(Number);
+  const t = new Date(Date.UTC(j, m - 1, d));
+  return t.getUTCFullYear() === j && t.getUTCMonth() === m - 1 && t.getUTCDate() === d && j >= 2000 && j <= 2100;
 }
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -35,7 +51,8 @@ export function isKlantStatus(v: unknown): v is KlantStatus {
 /**
  * Klant aanmaken (nieuw: bedrijfsnaam verplicht, status standaard 'lead') of wijzigen
  * (alleen de meegestuurde velden). Lege contactpersoon/adres/postcode → null, zoals in
- * de facturen; e-mail en telefoon → ''.
+ * de facturen; e-mail en telefoon → ''. Volgende stap (max. 200) en opvolgdatum (0025):
+ * leeg → null.
  */
 export function parseKlant(body: KlantInvoer, nieuw: boolean): Resultaat<KlantRij> {
   if (!body || typeof body !== 'object' || Array.isArray(body)) return { ok: false, fout: 'Ongeldige invoer.' };
@@ -72,6 +89,17 @@ export function parseKlant(body: KlantInvoer, nieuw: boolean): Resultaat<KlantRi
     const p = tekst(body.postcode, 20, 'postcode');
     if (!p.ok) return p;
     rij.postal_code = p.waarde ? p.waarde.toUpperCase() : null;
+  }
+  if ('volgendeStap' in body) {
+    const v = tekst(body.volgendeStap, 200, 'volgende stap');
+    if (!v.ok) return v;
+    rij.volgende_stap = v.waarde || null;
+  }
+  if ('opvolgenOp' in body) {
+    const d = body.opvolgenOp;
+    if (d === null || d === undefined || d === '') rij.opvolgen_op = null;
+    else if (typeof d !== 'string' || !isEchteDatum(d)) return { ok: false, fout: 'Ongeldige opvolgdatum.' };
+    else rij.opvolgen_op = d;
   }
   if ('status' in body) {
     if (!isKlantStatus(body.status)) return { ok: false, fout: 'Ongeldige status.' };

@@ -25,6 +25,8 @@
 //               mag, oude waarden niet; status_sinds behoudt de laatste wijziging en de
 //               trigger zet hem alleen bij een statuswijziging; opnieuw uitvoeren van 0022
 //               of 0023 laat statussen en status_sinds staan; RLS ongewijzigd.
+//             → UITVOEREN_0025.sql (2x): opvolgen (volgende stap, opvolgdatum, soort van een
+//               klantnotitie); vóór 0025 geeft de kolom 42703; RLS ongewijzigd.
 //             → UITVOEREN_0024.sql (2x): Google Drive. drive_koppeling (refresh token) is voor
 //               niemand behalve de service-role te lezen of te schrijven; drive_mappen en
 //               drive_kopieen lezen teamleden, alleen de server schrijft; drive_bestanden
@@ -342,6 +344,17 @@ async function scenarioA() {
   checkControle(await voerUit(db, sql0023, "UITVOEREN_0023.sql"), "A: UITVOEREN_0023 (1e keer)");
   checkControle(await voerUit(db, sql0023, "UITVOEREN_0023.sql (2x)"), "A: UITVOEREN_0023 (2e keer)");
 
+  // Vóór 0025 (zo staat Supabase nu): een notitie met 'soort' of een opvolgdatum geeft
+  // 42703 (onbekende kolom); de app herkent dat (kolomOntbreekt) en verbergt het opvolgen.
+  await db.exec(
+    "insert into public.clients (id, company_name) values ('aaaaaaaa-0000-4000-8000-0000000000f5', 'Opvolg BV');" +
+      "insert into public.client_notes (client_id, tekst, created_by) values ('aaaaaaaa-0000-4000-8000-0000000000f5', 'Oude notitie', '" + U.daniel + "')",
+  );
+  let r25 = await als(db, "mark", "insert into public.client_notes (client_id, tekst, soort) values ('aaaaaaaa-0000-4000-8000-0000000000f5', 'Lead → Actief', 'status')");
+  check(!r25.ok && r25.code === "42703", "vóór 0025: kolom client_notes.soort bestaat nog niet (42703)", uitleg(r25));
+  r25 = await als(db, "mark", "update public.clients set opvolgen_op = current_date");
+  check(!r25.ok && r25.code === "42703", "vóór 0025: kolom clients.opvolgen_op bestaat nog niet (42703)", uitleg(r25));
+
   // Opnieuw de oudere/grote bestanden: mogen de open policies van 0014–0020 én de open
   // leesregels voor taken van 0021 niet terugzetten (ze eindigen met 0021 + 0022).
   checkControle(await voerUit(db, team, "UITVOEREN_0021_TEAM.sql"), "A: 0021_TEAM opnieuw");
@@ -359,6 +372,7 @@ async function scenarioA() {
   await crm0022(db);
   await projectstatus0023(db);
   await drive0024(db);
+  await opvolging0025(db);
   await zichtbaarheid0022(db);
   await matrix(db);
 
@@ -858,7 +872,7 @@ async function crm0022(db) {
   check(geweigerd(r), "0022: notitie namens een ander geweigerd", uitleg(r));
   r = await als(db, "daniel", "insert into public.client_notes (client_id, tekst) values ('aaaaaaaa-0000-4000-8000-000000000001', '   ')");
   check(!r.ok && r.code === "23514", "0022: lege notitie geweigerd", uitleg(r));
-  r = await als(db, "daniel", "select count(*)::int as n from public.client_notes");
+  r = await als(db, "daniel", "select count(*)::int as n from public.client_notes where client_id <> 'aaaaaaaa-0000-4000-8000-0000000000f5'");
   check(r.ok && r.rows[0].n === 1, "0022: teamlid leest de notities van het team", uitleg(r));
   r = await als(db, "daniel", "delete from public.client_notes where id = 'eeeeeeee-0000-4000-8000-000000000001'");
   check(nietsGeraakt(r), "0022: notitie van een ander niet te verwijderen", uitleg(r));
@@ -866,7 +880,7 @@ async function crm0022(db) {
   check(r.ok && r.n === 1, "0022: eigen notitie verwijderen", uitleg(r));
   r = await als(db, "mark", "update public.client_notes set tekst = 'Aangepast'");
   check(geweigerd(r), "0022: notities zijn niet te wijzigen", uitleg(r));
-  r = await als(db, "service", "select count(*)::int as n from public.client_notes");
+  r = await als(db, "service", "select count(*)::int as n from public.client_notes where client_id <> 'aaaaaaaa-0000-4000-8000-0000000000f5'");
   check(r.ok && r.rows[0].n === 1, "0022: service-role leest notities", uitleg(r));
 
   // Projecteigenaren: alleen actieve teamleden.
@@ -1042,6 +1056,60 @@ async function drive0024(db) {
   const m24 = lees("supabase/migrations/0024_drive.sql").replace(/--[^\n]*/g, "");
   check(!/storage\.|invoices|quotes|expenses/.test(m24), "0024: geen buckets of facturen/uitgaven aangeraakt");
   if (fouten === fouten0) console.log("  0024 drive: ok");
+}
+
+// ---------------------------------------------------------------------------------
+// 0025: opvolgen van leads en klanten
+// ---------------------------------------------------------------------------------
+async function opvolging0025(db) {
+  const fouten0 = fouten;
+  const sql0025 = lees("supabase/UITVOEREN_0025.sql");
+  checkControle(await voerUit(db, sql0025, "UITVOEREN_0025.sql"), "A: UITVOEREN_0025 (1e keer)");
+  checkControle(await voerUit(db, sql0025, "UITVOEREN_0025.sql (2x)"), "A: UITVOEREN_0025 (2e keer)");
+  await voerUit(db, lees("supabase/migrations/0025_crm_opvolging.sql"), "0025_crm_opvolging.sql (los, 3x)");
+
+  const K = "aaaaaaaa-0000-4000-8000-0000000000f5";
+  // Bestaande notities worden 'notitie'.
+  const oud = (await db.query("select soort from public.client_notes where tekst = 'Oude notitie'")).rows[0];
+  check(oud?.soort === "notitie", "0025: bestaande notitie krijgt soort 'notitie'", JSON.stringify(oud));
+  const anders = (await db.query("select count(*)::int as n from public.client_notes where soort <> 'notitie'")).rows[0].n;
+  check(anders === 0, "0025: geen bestaande notitie als 'status' gemarkeerd", `${anders}`);
+
+  // Teamlid: volgende stap + opvolgdatum zetten, statusregel schrijven.
+  let r = await als(db, "mark", `update public.clients set volgende_stap = 'Offerte nabellen', opvolgen_op = current_date + 3 where id = '${K}' returning volgende_stap, opvolgen_op`);
+  check(r.ok && r.n === 1 && r.rows[0].volgende_stap === "Offerte nabellen", "0025: teamlid zet volgende stap en opvolgdatum", uitleg(r));
+  r = await als(db, "mark", `update public.clients set volgende_stap = repeat('x', 201) where id = '${K}'`);
+  check(!r.ok && r.code === "23514", "0025: volgende stap langer dan 200 tekens geweigerd", uitleg(r));
+  r = await als(db, "mark", `insert into public.client_notes (client_id, tekst, soort) values ('${K}', 'Lead → Actief', 'status') returning created_by, soort`);
+  check(r.ok && r.rows[0].created_by === U.mark && r.rows[0].soort === "status", "0025: teamlid schrijft een statusregel (door = zichzelf)", uitleg(r));
+  r = await als(db, "mark", `insert into public.client_notes (client_id, tekst, soort) values ('${K}', 'x', 'onzin')`);
+  check(!r.ok && r.code === "23514", "0025: onbekende notitiesoort geweigerd", uitleg(r));
+  r = await als(db, "mark", `insert into public.client_notes (client_id, tekst, soort, created_by) values ('${K}', 'x', 'status', '${U.daniel}')`);
+  check(geweigerd(r), "0025: statusregel op naam van een ander geweigerd (RLS ongewijzigd)", uitleg(r));
+  r = await als(db, "mark", "update public.client_notes set soort = 'status'");
+  check(geweigerd(r) || nietsGeraakt(r), "0025: notities blijven onwijzigbaar", uitleg(r));
+
+  // Niet-teamleden: niets lezen of wijzigen.
+  for (const wie of ["indringer", "anon"]) {
+    r = await als(db, wie, "select volgende_stap, opvolgen_op from public.clients");
+    check(leeg(r), `0025: ${wie} leest geen opvolging`, uitleg(r));
+    r = await als(db, wie, "update public.clients set opvolgen_op = current_date");
+    check(nietsGeraakt(r), `0025: ${wie} wijzigt geen opvolgdatum`, uitleg(r));
+    r = await als(db, wie, `insert into public.client_notes (client_id, tekst, soort) values ('${K}', 'x', 'status')`);
+    check(geweigerd(r) || (!r.ok), `0025: ${wie} schrijft geen statusregel`, uitleg(r));
+  }
+
+  // Opnieuw 0022 (los) na 0025: kolommen en waarden blijven staan.
+  await db.query(`update public.clients set volgende_stap = 'Blijft', opvolgen_op = '2026-11-02' where id = '${K}'`);
+  await voerUit(db, lees("supabase/migrations/0022_team_crm.sql"), "0022_team_crm.sql (na 0025)");
+  checkControle(await voerUit(db, sql0025, "UITVOEREN_0025.sql (3x)"), "A: UITVOEREN_0025 (3e keer)");
+  const na = (await db.query(`select volgende_stap, opvolgen_op::text as d from public.clients where id = '${K}'`)).rows[0];
+  check(na.volgende_stap === "Blijft" && na.d === "2026-11-02", "0025: opnieuw uitvoeren laat opvolging staan", JSON.stringify(na));
+  const pol = (await db.query("select qual, with_check from pg_policies where tablename in ('clients', 'client_notes')")).rows;
+  check(pol.length > 0 && pol.every((p) => /is_teamlid\(/.test(`${p.qual} ${p.with_check}`)), "0025: policies op clients/client_notes vereisen nog steeds teamlid", `${pol.length}`);
+  const m25 = lees("supabase/migrations/0025_crm_opvolging.sql").replace(/--[^\n]*/g, "");
+  check(!/policy|grant |drop table|drop column|invoices|quotes|storage\./i.test(m25), "0025: geen policies, grants, facturen of buckets aangeraakt");
+  if (fouten === fouten0) console.log("  0025 opvolgen: ok");
 }
 
 // ---------------------------------------------------------------------------------

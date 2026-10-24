@@ -7,10 +7,11 @@ import { TakenProvider, useTaakGebeurtenis } from '@/components/taken/TakenProvi
 // Client-omhulsel voor de pagina's Klanten & projecten: meldingen, de taak-popup (sneltoets
 // n) en na elke taakwijziging de servergegevens opnieuw ophalen (router.refresh). De pagina's
 // zelf zijn servercomponenten; alleen de bewerkbare stukjes zijn client-eilanden.
-export function CrmProviders({ children }: { children: React.ReactNode }) {
+//   taakSneltoets={false}: n is op die pagina iets anders (klantenoverzicht: nieuwe klant).
+export function CrmProviders({ children, taakSneltoets = true }: { children: React.ReactNode; taakSneltoets?: boolean }) {
   return (
     <ToastProvider>
-      <TakenProvider>
+      <TakenProvider sneltoets={taakSneltoets}>
         <Verversen />
         {children}
       </TakenProvider>
