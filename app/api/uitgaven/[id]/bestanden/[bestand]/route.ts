@@ -3,6 +3,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { dbFout, fout, isUuid, json, uitgavenRoute } from '@/lib/uitgaven/api';
 import { bekijkUrl, verwijder } from '@/lib/uitgaven/opslag';
 import { moetUitgave } from '@/lib/uitgaven/repo';
+import { logAudit } from '@/lib/audit';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -38,13 +39,14 @@ export const GET = uitgavenRoute(async (request, ctx: Ctx, sb) => {
 });
 
 // DELETE /api/uitgaven/[id]/bestanden/[bestand] → { uitgave }
-export const DELETE = uitgavenRoute(async (_request, ctx: Ctx, sb) => {
+export const DELETE = uitgavenRoute(async (request, ctx: Ctx, sb, lid) => {
   const { id, bestand } = await ctx.params;
   const rij = await zoekBestand(sb, id, bestand);
   if (!rij) return fout(404, 'Dit bestand bestaat niet (meer).');
   const { error } = await sb.from('expense_files').delete().eq('id', bestand).eq('expense_id', id);
   if (error) throw dbFout(error);
   await verwijder([rij.storage_path]);
+  await logAudit('verwijderd_bonnetje', { lid, doel: `${id}/${bestand}` }, request);
   const { uitgave } = await moetUitgave(sb, id);
   return json({ uitgave });
 });

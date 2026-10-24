@@ -30,6 +30,8 @@ export interface RailAccount {
   naam: string;
   initialen: string;
   kleur: string;
+  /** Eigenaar: ziet ook "Beveiliging & audit" in het accountmenu. */
+  eigenaar?: boolean;
 }
 
 /** Kleur van de avatar als CSS-variabelen (alleen een geldige #rrggbb-kleur). */
@@ -64,6 +66,7 @@ export function railHtml(actief: string, acc: RailAccount): string {
     `<p class="sl-account-naam">${esc(acc.naam)}</p>` +
     `<p class="sl-account-mail">${esc(acc.email)}</p>` +
     `<a class="sl-account-link" href="/account">Account &amp; mail</a>` +
+    (acc.eigenaar ? `<a class="sl-account-link" href="/beveiliging">Beveiliging &amp; audit</a>` : '') +
     `<a class="sl-account-link" href="/nieuw-wachtwoord">Wachtwoord wijzigen</a>` +
     `<form method="post" action="/auth/uitloggen"><button type="submit" class="sl-account-link">Uitloggen</button></form>` +
     `</div></details></div></nav>`

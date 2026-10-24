@@ -29,16 +29,7 @@
 //   --site <https://…>     basis-URL voor de uitnodigingslink (standaard NEXT_PUBLIC_SITE_URL)
 //   --dry-run              alleen laten zien wat er zou gebeuren; niets wijzigen
 //   --help
-import {
-  adminClient,
-  controleerEmail,
-  fout,
-  initialenVan,
-  KLEUREN,
-  leesArgumenten,
-  tabelFout,
-  vindGebruiker,
-} from "./teamlid-gemeen.mjs";
+import { KLEUREN, adminClient, auditScript, controleerEmail, fout, initialenVan, leesArgumenten, tabelFout, vindGebruiker } from "./teamlid-gemeen.mjs";
 
 const HELP = `Gebruik: node --env-file=.env.local scripts/teamlid-toevoegen.mjs --email <adres> --naam "<naam>"
                 [--initialen XY] [--kleur #rrggbb] [--rol lid|eigenaar] [--site https://…]
@@ -165,4 +156,5 @@ const lid = await sb
 if (lid.error) fout(`lidmaatschap opslaan mislukt: ${lid.error.message}`);
 
 console.log(`Klaar: ${naam} <${email}> is actief teamlid (rol: ${rol}).`);
+await auditScript(sb, "team_toegevoegd", { doel: gebruiker.id, details: { soort: rol } });
 if (bestaand && !bestaand.actief) console.log("Let op: dit lid was gedeactiveerd en heeft nu weer toegang.");

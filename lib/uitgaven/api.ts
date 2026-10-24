@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { controleerRoute, metTeamlid, type Teamlid } from '@/lib/auth/team';
 import { bucketOntbreekt, tabelOntbreekt } from '@/lib/db/ontbreekt';
+import { logFout } from '@/lib/log';
 
 // Gedeelde stukken voor de uitgaven-API (/api/uitgaven/**). Elke route:
 //   1. controleert sessie + teamlidmaatschap (lib/auth/team.ts; 401/403);
@@ -39,7 +40,7 @@ export function fout(status: number, error: string, code?: string) {
 export function dbFout(error: unknown): UitgavenFout {
   if (tabelOntbreekt(error)) return new UitgavenFout(503, NIET_INGERICHT, 'tabel_ontbreekt');
   if (bucketOntbreekt(error)) return new UitgavenFout(503, OPSLAG_NIET_INGERICHT, 'opslag_ontbreekt');
-  console.error('[uitgaven]', error);
+  logFout('[uitgaven]', error);
   const code = (error as { code?: string } | null)?.code;
   if (code === '23503') return new UitgavenFout(400, 'Die klant bestaat niet (meer).');
   if (code === '23514') return new UitgavenFout(400, 'De invoer voldoet niet aan de regels. Controleer de velden.');
@@ -63,7 +64,7 @@ export function uitgavenRoute<C>(fn: Handler<C>) {
       return await metTeamlid(c.lid, () => fn(request, ctx, c.lid.sb, c.lid));
     } catch (e) {
       if (e instanceof UitgavenFout) return fout(e.status, e.message, e.code);
-      console.error('[uitgaven]', e);
+      logFout('[uitgaven]', e);
       return fout(500, 'Er ging iets mis. Probeer het opnieuw.');
     }
   };

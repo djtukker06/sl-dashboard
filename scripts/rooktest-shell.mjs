@@ -74,6 +74,11 @@
 //     beheer.ts, wijzigen/ontkoppelen alleen eigen rijen, ontsleutelen met eigenaar_id,
 //     IMAP/SMTP via het gecontroleerde openbare IP, de koppelroutes via lib/mail/beheer.ts.
 // Live: /api/mail/inboxen en /api/account/mailboxen(/<id>) zonder sessie -> 401 (automatisch).
+// 14. Beveiliging (0026 deel 2): elke /api/beveiliging-route via eigenaarRoute/tfaRoute; de
+//     proxy zet de CSP (nonce) en het sessiebeleid.
+// Live: CSP met nonce op pagina's (en de nonce op elk script), HSTS, COOP en CORP; de openbare
+//       logo's zonder CORP; API's met Cache-Control no-store; /login/2fa, /beveiliging en
+//       /beveiliging/instellen zonder sessie -> /login; /login?reden=verlopen toont uitleg.
 //
 // Gebruik:  node scripts/rooktest-shell.mjs [http://localhost:3107]
 //           node scripts/rooktest-shell.mjs --alleen-statisch
@@ -136,7 +141,9 @@ function bestandenIn(map, filter) {
   return uit;
 }
 {
-  const WRAPPERS = /\b(teamlidRoute|controleerRoute|metSessie|mailRoute|uitgavenRoute|driveRoute|route)\(/;
+  // eigenaarRoute = teamlidRoute + eigenaar + aal2; tfaRoute = sessie van een teamlid (ook
+  // vóór de 2FA-code), alleen voor de 2FA-routes zelf (geen service-role).
+  const WRAPPERS = /\b(teamlidRoute|controleerRoute|metSessie|mailRoute|uitgavenRoute|driveRoute|eigenaarRoute|tfaRoute|route)(?:<\w+>)?\(/;
   for (const f of bestandenIn("app/api", (n) => n === "route.ts")) {
     check(WRAPPERS.test(lees(f)), `${f} gebruikt de teamlidcontrole`);
   }
@@ -151,8 +158,8 @@ function bestandenIn(map, filter) {
   for (const f of ["app/actions/invoices.ts", "app/actions/quotes.ts", "app/actions/clients.ts"]) {
     check(/vereisTeamlid\(/.test(lees(f)), `${f} controleert het lidmaatschap`);
   }
-  check(/controleerLid\(/.test(lees("app/actions/login.ts")), "inloggen controleert het lidmaatschap");
-  check(/controleerLid\(/.test(lees("app/auth/callback/route.ts")), "/auth/callback controleert het lidmaatschap");
+  check(/(controleerLid|toegangStatus)\(/.test(lees("app/actions/login.ts")), "inloggen controleert het lidmaatschap");
+  check(/(controleerLid|toegangStatus)\(/.test(lees("app/auth/callback/route.ts")), "/auth/callback controleert het lidmaatschap");
   check(/veiligVervolg\(/.test(lees("app/auth/callback/route.ts")), "/auth/callback gebruikt veiligVervolg");
   check(!/x-forwarded-host|h\.get\('host'\)/.test(lees("app/actions/wachtwoord.ts")), "herstellink niet uit de Host-kop");
 
@@ -177,7 +184,7 @@ function bestandenIn(map, filter) {
 
   const proxy = lees("proxy.ts");
   check(/'\/geen-toegang'/.test(proxy), "proxy kent /geen-toegang");
-  check(/controleerLid\(/.test(proxy) && /signOut\(/.test(proxy), "proxy logt niet-teamleden uit");
+  check(/(controleerLid|toegangStatus)\(/.test(proxy) && /signOut\(/.test(proxy), "proxy logt niet-teamleden uit");
   check(!/svg\|png\|jpg/.test(proxy), "proxy-matcher zonder algemene beeld-uitzondering");
 
   const m21 = lees("supabase/migrations/0021_team_en_taken.sql").replace(/--[^\n]*/g, ""); // zonder commentaar
@@ -272,7 +279,7 @@ console.log("Boekhouding en Account & mail");
   const beheer = lees("lib/mail/beheer.ts");
   const wijzigMb = [...beheer.matchAll(/from\('mailboxen'\)\s*\.(update|delete)\([^)]*\)([^;]*);/g)];
   check(wijzigMb.length >= 4 && wijzigMb.every((w) => /\.eq\('eigenaar_id', lid\.userId\)/.test(w[2])), "mailboxen: wijzigen en ontkoppelen alleen eigen rijen", `${wijzigMb.length}`);
-  check(/ontsleutel\(rij\.wachtwoord_enc, rij\.eigenaar_id\)/.test(lees("lib/mail/mailboxen.ts")) && /isZichtbaar\(/.test(lees("lib/mail/mailboxen.ts")), "mailboxen: ontsleutelen met eigenaar_id, zichtbaarheid server-side");
+  check(/ontsleutelMailbox\(rij\.wachtwoord_enc, rij\.eigenaar_id, rij\.id\)/.test(lees("lib/mail/mailboxen.ts")) && /isZichtbaar\(/.test(lees("lib/mail/mailboxen.ts")), "mailboxen: ontsleutelen met eigenaar_id + mailbox-id (v2) of eigenaar_id (v1), zichtbaarheid server-side");
   const metMailboxen = [...bestandenIn("app", (n) => /\.tsx?$/.test(n)), ...bestandenIn("lib", (n) => /\.tsx?$/.test(n)), ...bestandenIn("components", (n) => /\.tsx?$/.test(n))].filter((f) => /from\('mailboxen'\)/.test(lees(f)));
   check(metMailboxen.every((f) => f === "lib/mail/mailboxen.ts" || f === "lib/mail/beheer.ts"), "tabel mailboxen alleen in lib/mail/mailboxen.ts en beheer.ts", metMailboxen.join(", "));
 }
@@ -368,12 +375,18 @@ console.log("Afronding (SQL, documentatie, RLS-test)");
 console.log("Welkomstflow en mailbox met één knop");
 {
   const welkom = lees("app/welkom/page.tsx");
-  check(/vereisTeamlidPagina\('\/welkom'\)/.test(welkom), "/welkom begint met vereisTeamlidPagina()");
+  // Sinds 2FA: /welkom leest de status zelf (ook de 2FA-stap vóór de code) en stuurt anoniem,
+  // geen-lid en storing net zo door als vereisTeamlidPagina().
+  check(
+    /vereisTeamlidPagina\('\/welkom'\)/.test(welkom) ||
+      (/huidigTeamlid\(\)/.test(welkom) && /'anoniem'\) redirect\('\/login/.test(welkom) && /'geen_toegang'\) redirect\('\/geen-toegang'\)/.test(welkom)),
+    "/welkom controleert sessie en lidmaatschap"
+  );
   check(/if \(lid\.welkomKlaar\) redirect\('\/'\)/.test(welkom), "/welkom stuurt door als de flow al klaar is");
   const layout = lees("app/(app)/layout.tsx");
   check(/if \(!lid\.welkomKlaar\) redirect\('\/welkom'\)/.test(layout), "layout stuurt een nieuw teamlid naar /welkom");
   const team = lees("lib/auth/team.ts");
-  check(/welkomKlaar: true,\s*overgang: true/.test(team) && /welkomKlaar: welkomKlaarVan\(/.test(team), "team.ts: welkomKlaar (overgang = klaar)");
+  check(/welkomKlaar: true,\s*overgang: true/.test(team) && /welkomKlaar = welkomKlaarVan\(|welkomKlaar: welkomKlaarVan\(/.test(team), "team.ts: welkomKlaar (overgang = klaar)");
   const api = lees("app/api/account/welkom/route.ts");
   check(/teamlidRoute\(/.test(api) && /\.eq\('id', lid\.userId\)/.test(api) && !/createServiceRoleClient/.test(api), "/api/account/welkom: teamcheck, eigen profiel, geen service-role");
   const mb = lees("lib/mail/beheer.ts");
@@ -712,6 +725,39 @@ for (const [van, naar] of [
   const res = await vraag(van);
   const loc = new URL(res.headers.get("location") || "/", BASIS);
   check(res.status === 307 && loc.pathname + loc.search === naar, `${van} -> ${naar}`, `status ${res.status} ${res.headers.get("location") || ""}`);
+}
+
+console.log("Beveiliging: CSP, HSTS, COOP/CORP, no-store, 2FA-pagina's");
+{
+  const res = await vraag("/login");
+  const csp = res.headers.get("content-security-policy") || "";
+  const tekst = res.status === 200 ? await res.text() : "";
+  const nonce = /'nonce-([A-Za-z0-9+/=]+)'/.exec(csp)?.[1];
+  check(Boolean(nonce), "/login: CSP met nonce", csp.slice(0, 120) || "ontbreekt");
+  check(/frame-ancestors 'self'/.test(csp) && /object-src 'none'/.test(csp) && /base-uri 'none'/.test(csp), "/login: CSP frame-ancestors/object-src/base-uri");
+  check(!/script-src[^;]*'unsafe-inline'/.test(csp), "/login: geen unsafe-inline in script-src");
+  const scripts = [...tekst.matchAll(/<script\b[^>]*>/g)].map((m) => m[0]);
+  check(scripts.length > 0 && scripts.every((t) => t.includes(`nonce="${nonce}"`) || /\ssrc="\/_next\//.test(t)), "/login: elk inline script heeft de nonce", scripts.filter((t) => !t.includes("nonce")).slice(0, 2).join(" "));
+  const tweede = await vraag("/login");
+  check(/'nonce-([A-Za-z0-9+/=]+)'/.exec(tweede.headers.get("content-security-policy") || "")?.[1] !== nonce, "/login: nieuwe nonce per verzoek");
+  for (const url of ["/login", "/api/taken", "/shell/shell.js"]) {
+    const r = url === "/login" ? res : await vraag(url);
+    check(/max-age=\d{8,}/.test(r.headers.get("strict-transport-security") || ""), `${url}: HSTS`, r.headers.get("strict-transport-security") || "ontbreekt");
+    check(r.headers.get("cross-origin-opener-policy") === "same-origin", `${url}: COOP`);
+    check(r.headers.get("cross-origin-resource-policy") === "same-origin", `${url}: CORP`);
+  }
+  const logo = await vraag("/brand/beeldmerk-licht.png");
+  check(!logo.headers.get("cross-origin-resource-policy"), "/brand/: geen CORP (logo in mailhandtekening)");
+  const api = await vraag("/api/taken");
+  check(/no-store/.test(api.headers.get("cache-control") || ""), "/api/taken: Cache-Control no-store", api.headers.get("cache-control") || "");
+  for (const url of ["/login/2fa", "/login/2fa?next=/facturen", "/beveiliging", "/beveiliging/instellen"]) {
+    const r = await vraag(url);
+    check(naarLogin(r), `${url} zonder sessie -> /login`, `status ${r.status} ${r.headers.get("location") || ""}`);
+  }
+  const verlopen = await vraag("/login?reden=verlopen");
+  check(/automatisch uitgelogd/.test(await verlopen.text()), "/login?reden=verlopen legt uit waarom");
+  const tfa = await vraag("/api/beveiliging/2fa/uitdagen", { method: "POST", headers: { "content-type": "application/json", origin: "https://evil.example" }, body: '{"code":"123456"}' });
+  check(tfa.status === 401, "POST /api/beveiliging/2fa/uitdagen zonder sessie -> 401", `status ${tfa.status}`);
 }
 
 console.log("Uitloggen");

@@ -1,4 +1,5 @@
 import 'server-only';
+import { randomUUID } from 'node:crypto';
 import type { Teamlid } from '@/lib/auth/team';
 import { createServiceRoleClient } from '@/lib/supabase/service-role';
 import { tabelOntbreekt } from '@/lib/db/ontbreekt';
@@ -7,7 +8,7 @@ import { teamProfielen } from '@/lib/team/profielen';
 import { valideerMailbox, type MailboxInvoer } from '@/lib/account/types';
 import { eigenMailboxRij, type MailboxRij } from './config';
 import { KOPPEL_MELDING, MailFout, type AppWachtwoordHint } from './fout';
-import { kluisBeschikbaar, ontsleutel, SLEUTEL_VERSIE, versleutel } from './kluis';
+import { kluisBeschikbaar, ontsleutel, ontsleutelMailbox, SLEUTEL_VERSIE, versleutel, versleutelMailbox } from './kluis';
 import { magProberen, testMailbox } from './koppelen';
 import { MAILBOXEN_KOLOMMEN, vergeetMailboxen, zichtbareMailboxen, type MailboxenRij, type Mailbox, type MailboxOpslag } from './mailboxen';
 import { zoekMx } from './mx';
@@ -209,7 +210,12 @@ export async function koppelMailbox(lid: Teamlid, o: Record<string, unknown>, re
     // Het opgeslagen wachtwoord alleen hergebruiken als de HELE verbinding gelijk blijft;
     // anders zou een gestolen sessie het naar een eigen server kunnen laten sturen.
     const zelfde = bestaand !== null && zelfdeVerbinding(bestaand, invoer);
-    const bewaard = bestaand && zelfde ? ontsleutel(bestaand.wachtwoord_enc, lid.userId) : null;
+    const bewaard =
+      bestaand && zelfde
+        ? huidig.opslag === 'nieuw'
+          ? ontsleutelMailbox(bestaand.wachtwoord_enc, lid.userId, (bestaand as MailboxenRij).id)
+          : ontsleutel(bestaand.wachtwoord_enc, lid.userId)
+        : null;
     if (!bewaard) {
       return mis(
         400,
@@ -237,14 +243,17 @@ export async function koppelMailbox(lid: Teamlid, o: Record<string, unknown>, re
     smtp_port: invoer.smtpPort,
     from_name: invoer.fromName,
     handtekening: invoer.handtekening,
-    wachtwoord_enc: versleutel(invoer.wachtwoord, lid.userId),
     sleutel_versie: SLEUTEL_VERSIE,
     geverifieerd_op: new Date().toISOString()
   };
 
+  // user_mailboxes (vóór 0026): v1, AAD = user-id. mailboxen: v2, AAD = eigenaar + mailbox-id
+  // (een nieuwe rij krijgt daarom hier al zijn id).
   let id = OUDE_MAILBOX_ID;
   if (huidig.opslag === 'oud') {
-    const { error } = await sb.from('user_mailboxes').upsert({ user_id: lid.userId, ...verbinding }, { onConflict: 'user_id' });
+    const { error } = await sb
+      .from('user_mailboxes')
+      .upsert({ user_id: lid.userId, ...verbinding, wachtwoord_enc: versleutel(invoer.wachtwoord, lid.userId) }, { onConflict: 'user_id' });
     if (error) {
       console.error('[mailboxen] opslaan mislukt', error.code ?? '');
       return mis(500, 'Opslaan is niet gelukt. Probeer het opnieuw.');
@@ -253,7 +262,7 @@ export async function koppelMailbox(lid: Teamlid, o: Record<string, unknown>, re
     id = (bestaand as MailboxenRij).id;
     const { error } = await sb
       .from('mailboxen')
-      .update({ ...verbinding, ...metaKolommen(meta.waarde) })
+      .update({ ...verbinding, wachtwoord_enc: versleutelMailbox(invoer.wachtwoord, lid.userId, id), ...metaKolommen(meta.waarde) })
       .eq('id', id)
       .eq('eigenaar_id', lid.userId);
     if (error) {
@@ -262,11 +271,14 @@ export async function koppelMailbox(lid: Teamlid, o: Record<string, unknown>, re
     }
   } else {
     const volgorde = huidig.rijen.reduce((max, r) => Math.max(max, r.volgorde ?? 0), -1) + 1;
+    const nieuwId = randomUUID();
     const { data, error } = await sb
       .from('mailboxen')
       .insert({
+        id: nieuwId,
         eigenaar_id: lid.userId,
         ...verbinding,
+        wachtwoord_enc: versleutelMailbox(invoer.wachtwoord, lid.userId, nieuwId),
         label: meta.waarde.label ?? standaardLabel(invoer.email),
         kleur: meta.waarde.kleur ?? volgendeKleur(huidig.rijen.map((r) => r.kleur)),
         zichtbaarheid: meta.waarde.zichtbaarheid ?? 'prive',

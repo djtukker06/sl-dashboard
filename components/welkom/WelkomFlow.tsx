@@ -3,11 +3,24 @@
 import { useState, type CSSProperties } from 'react';
 import { initialenUit, KLEUREN, valideerProfiel, type ProfielInvoer } from '@/lib/account/types';
 import { MailboxSnelKoppelen } from '@/components/account/MailboxSnelKoppelen';
+import { TfaInstellen } from '@/components/beveiliging/TfaInstellen';
 
-// De welkomstflow (app/welkom/page.tsx): drie stappen op één pagina.
+// De welkomstflow (app/welkom/page.tsx): stappen op één pagina.
+//   0. tweestapsverificatie (2FA) instellen. Verplicht zolang afdwingen aan staat (dan kan
+//      er vóór deze stap verder niets: geen profiel opslaan, geen data); anders aangeboden met
+//      "Later". Bewust de EERSTE stap: daarna staat de sessie op aal2 en werken alle routes.
 //   1. profiel bevestigen (al ingevuld vanuit de uitnodiging; aanpassen mag)
 //   2. inbox koppelen met één knop (of "Later doen")
 //   3. klaar: de vlag welkom_klaar_op wordt gezet zodra deze stap verschijnt
+
+export interface WelkomTfa {
+  /** De stap Beveiliging tonen. */
+  toon: boolean;
+  /** Al ingesteld (bv. net gedaan en de pagina opnieuw geladen). */
+  klaar: boolean;
+  /** Verplicht: geen "Later". */
+  verplicht: boolean;
+}
 
 export interface WelkomMailbox {
   /** Koppelen kan (tabel + sleutel op de server aanwezig). */
@@ -18,7 +31,7 @@ export interface WelkomMailbox {
   gekoppeld: string | null;
 }
 
-type Stap = 1 | 2 | 3;
+type Stap = 0 | 1 | 2 | 3;
 
 async function verstuur(url: string, method: string, body?: unknown): Promise<void> {
   let res: Response;
@@ -42,8 +55,18 @@ async function verstuur(url: string, method: string, body?: unknown): Promise<vo
   }
 }
 
-export function WelkomFlow({ email, profiel, mailbox }: { email: string; profiel: ProfielInvoer; mailbox: WelkomMailbox }) {
-  const [stap, setStap] = useState<Stap>(1);
+export function WelkomFlow({
+  email,
+  profiel,
+  mailbox,
+  tfa
+}: {
+  email: string;
+  profiel: ProfielInvoer;
+  mailbox: WelkomMailbox;
+  tfa: WelkomTfa;
+}) {
+  const [stap, setStap] = useState<Stap>(tfa.toon && !tfa.klaar ? 0 : 1);
   const [p, setP] = useState(profiel);
   const [initialenZelf, setInitialenZelf] = useState(profiel.initialen !== initialenUit(profiel.naam));
   const [gekoppeld, setGekoppeld] = useState(mailbox.gekoppeld);
@@ -107,13 +130,45 @@ export function WelkomFlow({ email, profiel, mailbox }: { email: string; profiel
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img className="wk-logo" src="/brand/banner-licht.png" alt="Studio Levant" width={800} height={297} />
         <ol className="wk-stappen" aria-label="Stappen">
-          {(['Profiel', 'Inbox', 'Klaar'] as const).map((naam, i) => (
-            <li key={naam} className={stap === i + 1 ? 'is-nu' : stap > i + 1 ? 'is-klaar' : ''} aria-current={stap === i + 1 ? 'step' : undefined}>
+          {(
+            [
+              ...(tfa.toon ? [{ naam: 'Beveiliging', nr: 0 as Stap }] : []),
+              { naam: 'Profiel', nr: 1 as Stap },
+              { naam: 'Inbox', nr: 2 as Stap },
+              { naam: 'Klaar', nr: 3 as Stap }
+            ] as const
+          ).map((s, i) => (
+            <li key={s.naam} className={stap === s.nr ? 'is-nu' : stap > s.nr ? 'is-klaar' : ''} aria-current={stap === s.nr ? 'step' : undefined}>
               <span className="wk-stap-nr">{i + 1}</span>
-              {naam}
+              {s.naam}
             </li>
           ))}
         </ol>
+
+        {stap === 0 && (
+          <div className="wk-blok">
+            <h1 className="wk-titel">Welkom{voornaam && voornaam !== 'Teamlid' ? `, ${voornaam}` : ''}. Eerst je account beveiligen</h1>
+            <p className="wk-tekst">
+              In de backoffice staan facturen, klantgegevens en mail. Daarom vragen we naast je wachtwoord een code uit een
+              app op je telefoon: tweestapsverificatie. Dat duurt een minuut.
+            </p>
+            <TfaInstellen
+              naam="Telefoon"
+              autoStart={tfa.verplicht}
+              onKlaar={() => {
+                // Opnieuw laden: de sessie staat nu op aal2, de server geeft de rest van de flow vrij.
+                window.location.href = '/welkom';
+              }}
+            />
+            {!tfa.verplicht && (
+              <div className="ac-acties">
+                <button type="button" className="bv-link" onClick={() => setStap(1)}>
+                  Later doen
+                </button>
+              </div>
+            )}
+          </div>
+        )}
 
         {stap === 1 && (
           <form className="wk-blok" onSubmit={profielBevestigen}>

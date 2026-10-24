@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { isUuid, vereisTeamlid } from '@/lib/auth/team';
+import { logAudit } from '@/lib/audit';
 
 export interface KlantGegevens {
   company_name: string;
@@ -91,8 +92,9 @@ export async function deleteClient(id: string): Promise<KlantActieResultaat> {
     if (error.code === '23503') {
       return { error: 'Deze klant heeft nog facturen in het archief en kan daarom niet verwijderd worden.' };
     }
-    return { error: `Verwijderen mislukt: ${error.message}` };
+    return { error: 'Verwijderen mislukt. Probeer het opnieuw.' };
   }
+  await logAudit('verwijderd_klant', { lid, doel: id });
 
   revalidatePath('/facturen');
   redirect('/facturen');

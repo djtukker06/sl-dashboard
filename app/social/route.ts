@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { NextResponse } from 'next/server';
-import { huidigTeamlid } from '@/lib/auth/team';
+import { huidigTeamlid, tfaDoel } from '@/lib/auth/team';
 import { railHtml } from '@/lib/shell/rail';
 
 export const runtime = 'nodejs';
@@ -31,6 +31,7 @@ export async function GET(request: Request) {
     return NextResponse.redirect(url);
   }
   if (s.soort === 'geen_toegang') return NextResponse.redirect(new URL('/geen-toegang', request.url));
+  if (s.soort === 'tfa') return NextResponse.redirect(new URL(tfaDoel(s, '/social'), request.url));
   if (s.soort === 'storing') {
     return new Response('De toegangscontrole is tijdelijk niet beschikbaar. Probeer het zo opnieuw.', {
       status: 503,
@@ -44,14 +45,21 @@ export async function GET(request: Request) {
     email: lid.email,
     naam: lid.profiel.naam,
     initialen: lid.profiel.initialen,
-    kleur: lid.profiel.kleur
+    kleur: lid.profiel.kleur,
+    eigenaar: lid.rol === 'eigenaar'
   });
+  // Nonce van de Content-Security-Policy (proxy.ts): de scripts van deze statische HTML
+  // krijgen hem expliciet (alleen base64-tekens, dus veilig in een attribuut).
+  const nonceKop = request.headers.get('x-nonce') ?? '';
+  const nonce = /^[A-Za-z0-9+/=]{16,64}$/.test(nonceKop) ? nonceKop : '';
+  const nonceAttr = nonce ? ` nonce="${nonce}"` : '';
   // Functies als vervanging: dan worden $-tekens in bv. een e-mailadres niet als patroon gelezen.
   const html = (await leesHtml())
+    .replace(/<script\b(?![^>]*\bnonce=)/g, () => `<script${nonceAttr}`)
     .replace('</head>', () => '<link rel="stylesheet" href="/shell/shell.css">\n</head>')
     .replace(
       '<body>',
-      () => `<body class="sl-met-rail">\n${rail}\n<script src="/shell/shell.js" defer></script>`
+      () => `<body class="sl-met-rail">\n${rail}\n<script src="/shell/shell.js" defer${nonceAttr}></script>`
     );
 
   return new Response(html, {

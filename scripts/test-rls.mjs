@@ -35,6 +35,12 @@
 //               user_mailboxes worden één keer overgezet (zelfde ciphertext, label, profielkleur,
 //               privé); opnieuw uitvoeren zet niets dubbel of terug; anon/authenticated lezen
 //               of schrijven niets (ook geen gedeelde inbox), alleen de service-role.
+//             → 0026 deel 2 (beveiliging): wie een geverifieerde 2FA-factor heeft, leest
+//               op aal1 niets en op aal2 alles; zonder factor niet buitengesloten (tenzij
+//               streng); de noodstop werkt en blijft staan bij opnieuw uitvoeren;
+//               toegang_status/is_eigenaar; audit_log alleen leesbaar voor de eigenaar
+//               (aal2), door niemand te wijzigen of te verwijderen (trigger, ook truncate),
+//               opruimen alleen via audit_opruimen(); inlog_pogingen alleen service-role.
 //             Daarna de toegangsmatrix:
 //               - niet-teamleden (ingelogd zonder lidmaatschap, onbevestigd, gedeactiveerd,
 //                 en anon zonder sessie): op ELKE tabel in public en in ELKE bucket niets
@@ -102,6 +108,22 @@ create function auth.uid() returns uuid language sql stable as $$
   ), '')::uuid
 $$;
 
+-- Zoals Supabase: auth.jwt() uit de claims van PostgREST, en de MFA-factoren (2FA).
+create function auth.jwt() returns jsonb language sql stable as $$
+  select coalesce(
+    nullif(current_setting('request.jwt.claim', true), ''),
+    nullif(current_setting('request.jwt.claims', true), '')
+  )::jsonb
+$$;
+create table auth.mfa_factors (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users (id) on delete cascade,
+  friendly_name text,
+  factor_type text not null default 'totp',
+  status text not null default 'unverified',
+  created_at timestamptz not null default now()
+);
+
 create table storage.buckets (
   id text primary key,
   name text not null,
@@ -127,6 +149,7 @@ alter table storage.objects enable row level security;
 
 grant usage on schema public, auth, storage to anon, authenticated, service_role;
 grant execute on function auth.uid() to anon, authenticated, service_role;
+grant execute on function auth.jwt() to anon, authenticated, service_role;
 grant all on storage.buckets, storage.objects to anon, authenticated, service_role;
 grant select on auth.users to service_role;
 
@@ -185,6 +208,20 @@ async function als(db, wie, sql, params = []) {
       await db.query("select set_config('request.jwt.claim.sub', $1, true)", [U[wie]]);
       await db.exec("set local role authenticated");
     }
+    const r = await db.query(sql, params);
+    return { ok: true, rows: r.rows, n: r.affectedRows ?? 0 };
+  } catch (e) {
+    return { ok: false, code: e.code, msg: e.message };
+  } finally {
+    await db.exec("rollback");
+  }
+}
+// Zoals als(), maar met een JWT-claim aal ('aal1' = alleen wachtwoord, 'aal2' = na de 2FA-code).
+async function alsMetAal(db, wie, aal, sql, params = []) {
+  await db.exec("begin");
+  try {
+    await db.query("select set_config('request.jwt.claims', $1, true)", [JSON.stringify({ sub: U[wie], role: "authenticated", aal })]);
+    await db.exec("set local role authenticated");
     const r = await db.query(sql, params);
     return { ok: true, rows: r.rows, n: r.affectedRows ?? 0 };
   } catch (e) {
@@ -378,6 +415,7 @@ async function scenarioA() {
   await drive0024(db);
   await opvolging0025(db);
   await mailboxen0026(db);
+  await beveiliging0026(db);
   await zichtbaarheid0022(db);
   await matrix(db);
 
@@ -460,9 +498,9 @@ async function matrix(db) {
     const fac = await als(
       db,
       wie,
-      "select p.oid::regprocedure::text as f, has_function_privilege(current_user, p.oid, 'execute') as mag from pg_proc p where p.proname in ('create_invoice','update_invoice','social_restore_latest','team_eigenaar')",
+      "select p.oid::regprocedure::text as f, has_function_privilege(current_user, p.oid, 'execute') as mag from pg_proc p where p.proname in ('create_invoice','update_invoice','social_restore_latest','team_eigenaar','audit_opruimen')",
     );
-    check(fac.ok && fac.rows.length >= 4 && fac.rows.every((r) => !r.mag), `${wie}: factuur-/beheerfuncties niet uitvoerbaar`, JSON.stringify(fac.rows ?? fac.msg));
+    check(fac.ok && fac.rows.length >= 5 && fac.rows.every((r) => !r.mag), `${wie}: factuur-/beheerfuncties niet uitvoerbaar`, JSON.stringify(fac.rows ?? fac.msg));
     if (wie !== "anon") {
       const lid = await als(db, wie, "select public.is_teamlid() as lid, public.is_actief_teamlid($1) as ander", [U.daniel]);
       check(lid.ok && lid.rows[0].lid === false && lid.rows[0].ander === false, `${wie}: is_teamlid() = false en verraadt niets`, uitleg(lid));
@@ -486,8 +524,10 @@ async function matrix(db) {
   for (const wie of ["daniel", "mark"]) {
     for (const t of tabellen) {
       const sel = await als(db, wie, `select count(*)::int as n from public.${t}`);
-      if (t === "user_mailboxes" || t === "drive_koppeling" || t === "mailboxen") {
+      if (t === "user_mailboxes" || t === "drive_koppeling" || t === "mailboxen" || t === "inlog_pogingen") {
         check(geweigerd(sel), `${wie}: ${t} niet leesbaar (alleen server)`, uitleg(sel));
+      } else if (t === "audit_log" && wie !== "daniel") {
+        check(sel.ok && sel.rows[0].n === 0, `${wie}: audit-log niet leesbaar (alleen eigenaar)`, uitleg(sel));
       } else if (ZICHTBAAR[t]) {
         const echt = (await db.query(ZICHTBAAR[t], [U[wie]])).rows[0].n;
         check(sel.ok && sel.rows[0].n === echt, `${wie}: leest alleen eigen/betrokken rijen uit ${t}`, `${uitleg(sel)} verwacht ${echt}`);
@@ -1182,6 +1222,201 @@ async function mailboxen0026(db) {
   // Voor de toegangsmatrix hierna: de oude rij weer terug (code vóór 0026 blijft werken).
   await db.query("insert into public.user_mailboxes (user_id, email, wachtwoord_enc) values ($1, 'daniel@studio-levant.nl', $2)", [U.daniel, oud.wachtwoord_enc]);
   if (fouten === fouten0) console.log("  0026 mailboxen: ok");
+}
+
+// ---------------------------------------------------------------------------------
+// 0026 deel 2: 2FA in RLS, toegang_status, audit-log, inlogpogingen
+// ---------------------------------------------------------------------------------
+async function beveiliging0026(db) {
+  const fouten0 = fouten;
+  const m26 = lees("supabase/migrations/0026_beveiliging_mailboxen_backups.sql");
+  const telKlanten = (r) => (r.ok ? r.rows[0].n : -1);
+  const KLANTEN = "select count(*)::int as n from public.clients";
+  const totaal = (await db.query(KLANTEN)).rows[0].n;
+  check(totaal > 0, "2FA: er zijn klanten om mee te testen");
+
+  // Zonder factor: gewoon toegang (niemand buitengesloten), op aal1 en zonder aal-claim.
+  let r = await alsMetAal(db, "daniel", "aal1", KLANTEN);
+  check(telKlanten(r) === totaal, "2FA: zonder factor ziet een teamlid alles (aal1)", uitleg(r));
+  r = await als(db, "mark", KLANTEN);
+  check(r.ok && r.rows[0].n === totaal, "2FA: zonder factor en zonder aal-claim ook", uitleg(r));
+
+  // Een onbevestigde factor telt niet.
+  await db.query("insert into auth.mfa_factors (user_id, friendly_name, status) values ($1, 'Half', 'unverified')", [U.daniel]);
+  r = await alsMetAal(db, "daniel", "aal1", KLANTEN);
+  check(telKlanten(r) === totaal, "2FA: onbevestigde factor telt niet mee", uitleg(r));
+
+  // Wel een factor: op aal1 (alleen wachtwoord) NIETS, op aal2 alles.
+  await db.query("insert into auth.mfa_factors (user_id, friendly_name, status) values ($1, 'Telefoon', 'verified')", [U.daniel]);
+  r = await alsMetAal(db, "daniel", "aal1", KLANTEN);
+  check(telKlanten(r) === 0, "2FA: met factor op aal1 leest RLS niets (gestolen wachtwoord geeft niets)", uitleg(r));
+  r = await als(db, "daniel", KLANTEN);
+  check(r.ok && r.rows[0].n === 0, "2FA: met factor en zonder aal-claim ook niets", uitleg(r));
+  r = await alsMetAal(db, "daniel", "aal1", "select count(*)::int as n from public.invoices");
+  check(r.ok && r.rows[0].n === 0, "2FA: met factor op aal1 geen facturen", uitleg(r));
+  r = await alsMetAal(db, "daniel", "aal1", "select count(*)::int as n from storage.objects where bucket_id = 'invoices'");
+  check(r.ok && r.rows[0].n === 0, "2FA: met factor op aal1 geen factuur-pdf's", uitleg(r));
+  r = await alsMetAal(db, "daniel", "aal1", "insert into public.clients (company_name) values ('Via gestolen wachtwoord')");
+  check(!r.ok, "2FA: met factor op aal1 niets schrijven", uitleg(r));
+  r = await alsMetAal(db, "daniel", "aal2", KLANTEN);
+  check(telKlanten(r) === totaal, "2FA: met factor op aal2 alles", uitleg(r));
+  // Eigen lidmaatschap blijft leesbaar (de app ziet "lid, eerst de code").
+  r = await alsMetAal(db, "daniel", "aal1", "select user_id from public.team_members where user_id = $1", [U.daniel]);
+  check(r.ok && r.rows.length === 1, "2FA: op aal1 eigen lidmaatschap nog leesbaar", uitleg(r));
+
+  // toegang_status: lidmaatschap + aal + factor in één keer.
+  r = await alsMetAal(db, "daniel", "aal1", "select public.toegang_status() as s");
+  let st = r.ok ? r.rows[0].s : null;
+  check(st && st.lid === true && st.rol === "eigenaar" && st.aal === "aal1" && st.heeft_factor === true && st.tfa_rls === true && st.versie === 26, "toegang_status: eigenaar op aal1 met factor", JSON.stringify(st ?? r));
+  r = await alsMetAal(db, "mark", "aal1", "select public.toegang_status() as s");
+  st = r.ok ? r.rows[0].s : null;
+  check(st && st.lid === true && st.rol === "lid" && st.heeft_factor === false, "toegang_status: lid zonder factor", JSON.stringify(st ?? r));
+  r = await als(db, "indringer", "select public.toegang_status() as s");
+  check(r.ok && r.rows[0].s.lid === false && r.rows[0].s.rol === null, "toegang_status: niet-lid krijgt lid=false", uitleg(r));
+  r = await als(db, "oudlid", "select public.toegang_status() as s");
+  check(r.ok && r.rows[0].s.lid === false, "toegang_status: gedeactiveerd lid krijgt lid=false", uitleg(r));
+  r = await als(db, "anon", "select public.toegang_status()");
+  check(geweigerd(r), "toegang_status: niet uitvoerbaar voor anon", uitleg(r));
+  r = await als(db, "indringer", "select count(*)::int as n from auth.mfa_factors");
+  check(geweigerd(r), "auth.mfa_factors niet direct leesbaar voor authenticated", uitleg(r));
+
+  // is_eigenaar
+  r = await alsMetAal(db, "daniel", "aal2", "select public.is_eigenaar() as e");
+  check(r.ok && r.rows[0].e === true, "is_eigenaar: eigenaar op aal2", uitleg(r));
+  r = await alsMetAal(db, "daniel", "aal1", "select public.is_eigenaar() as e");
+  check(r.ok && r.rows[0].e === false, "is_eigenaar: eigenaar met factor op aal1 niet", uitleg(r));
+  r = await als(db, "mark", "select public.is_eigenaar() as e");
+  check(r.ok && r.rows[0].e === false, "is_eigenaar: lid niet", uitleg(r));
+
+  // Streng: wie geen factor heeft, ziet ook niets. Daarna weer uit.
+  await db.exec("update public.app_instellingen set tfa_rls_streng = true where id = 1");
+  r = await als(db, "mark", KLANTEN);
+  check(r.ok && r.rows[0].n === 0, "streng: lid zonder factor ziet niets", uitleg(r));
+  r = await alsMetAal(db, "daniel", "aal2", KLANTEN);
+  check(telKlanten(r) === totaal, "streng: lid met factor op aal2 ziet alles", uitleg(r));
+  await db.exec("update public.app_instellingen set tfa_rls_streng = false where id = 1");
+
+  // Noodstop: 2FA telt even niet mee. Opnieuw 0026 uitvoeren zet hem NIET terug.
+  await db.exec("update public.app_instellingen set tfa_rls = false where id = 1");
+  r = await alsMetAal(db, "daniel", "aal1", KLANTEN);
+  check(telKlanten(r) === totaal, "noodstop: met factor op aal1 weer toegang", uitleg(r));
+  await voerUit(db, m26, "0026 (4e keer, met noodstop)");
+  const inst = (await db.query("select tfa_rls, tfa_rls_streng from public.app_instellingen")).rows;
+  check(inst.length === 1 && inst[0].tfa_rls === false, "0026 opnieuw: schakelaars blijven staan (één rij)", JSON.stringify(inst));
+  await db.exec("update public.app_instellingen set tfa_rls = true where id = 1");
+  r = await alsMetAal(db, "daniel", "aal1", KLANTEN);
+  check(telKlanten(r) === 0, "noodstop uit: met factor op aal1 weer niets", uitleg(r));
+
+  // Zonder rij app_instellingen: veilige standaard (2FA telt, niet streng).
+  await db.exec("delete from public.app_instellingen");
+  r = await alsMetAal(db, "daniel", "aal1", KLANTEN);
+  check(telKlanten(r) === 0, "zonder instellingen: 2FA telt (standaard)", uitleg(r));
+  r = await als(db, "mark", KLANTEN);
+  check(r.ok && r.rows[0].n === totaal, "zonder instellingen: zonder factor niet buitengesloten", uitleg(r));
+  await voerUit(db, m26, "0026 (5e keer)");
+  check((await db.query("select count(*)::int as n from public.app_instellingen")).rows[0].n === 1, "0026 opnieuw: instellingen-rij terug");
+
+  // app_instellingen: teamleden lezen, niemand schrijft (behalve de service-role).
+  r = await als(db, "mark", "select tfa_rls from public.app_instellingen");
+  check(r.ok && r.rows.length === 1, "app_instellingen: teamlid leest", uitleg(r));
+  r = await als(db, "mark", "update public.app_instellingen set tfa_rls = false");
+  check(nietsGeraakt(r), "app_instellingen: teamlid zet de noodstop niet", uitleg(r));
+  r = await alsMetAal(db, "daniel", "aal2", "update public.app_instellingen set tfa_rls = false");
+  check(nietsGeraakt(r), "app_instellingen: ook de eigenaar niet via de API", uitleg(r));
+  r = await als(db, "service", "update public.app_instellingen set tfa_rls = true returning tfa_rls");
+  check(r.ok && r.n === 1, "app_instellingen: service-role schrijft", uitleg(r));
+
+  // ---- audit_log ----
+  r = await als(db, "service", "insert into public.audit_log (user_id, actie, doel, details, ip_hash, ua) values ($1, 'inloggen', null, '{\"methode\":\"wachtwoord\"}', 'abcd', 'test') returning id", [U.daniel]);
+  check(r.ok, "audit: service-role voegt toe", uitleg(r));
+  await db.exec(`insert into public.audit_log (user_id, actie, details) values ('${U.daniel}', 'inloggen', '{"methode":"wachtwoord"}')`);
+  await db.exec(`insert into public.audit_log (op, user_id, actie) values (now() - interval '500 days', '${U.mark}', 'inloggen'),
+                                                                         (now() - interval '10 days', '${U.mark}', 'uitloggen')`);
+  r = await als(db, "service", "insert into public.audit_log (actie) values ('Ongeldig!')");
+  check(!r.ok && r.code === "23514", "audit: ongeldige actie geweigerd", uitleg(r));
+  r = await als(db, "service", "insert into public.audit_log (actie, details) values ('x_y', '[1,2]')");
+  check(!r.ok && r.code === "23514", "audit: details moet een object zijn", uitleg(r));
+  r = await alsMetAal(db, "daniel", "aal2", "select count(*)::int as n from public.audit_log");
+  check(r.ok && r.rows[0].n === 3, "audit: eigenaar (aal2) leest", uitleg(r));
+  r = await alsMetAal(db, "daniel", "aal1", "select count(*)::int as n from public.audit_log");
+  check(r.ok && r.rows[0].n === 0, "audit: eigenaar met factor op aal1 leest niets", uitleg(r));
+  for (const wie of ["mark", "indringer", "oudlid"]) {
+    r = await als(db, wie, "select count(*)::int as n from public.audit_log");
+    check(r.ok && r.rows[0].n === 0, `audit: ${wie} leest niets`, uitleg(r));
+    r = await als(db, wie, "insert into public.audit_log (actie) values ('nep')");
+    check(geweigerd(r), `audit: ${wie} schrijft niets`, uitleg(r));
+  }
+  r = await als(db, "anon", "select * from public.audit_log");
+  check(geweigerd(r), "audit: anon leest niets", uitleg(r));
+  for (const wie of ["daniel", "service"]) {
+    r = wie === "daniel" ? await alsMetAal(db, wie, "aal2", "update public.audit_log set actie = 'gewist'") : await als(db, wie, "update public.audit_log set actie = 'gewist'");
+    check(geweigerd(r) || nietsGeraakt(r), `audit: ${wie} wijzigt niets`, uitleg(r));
+    r = wie === "daniel" ? await alsMetAal(db, wie, "aal2", "delete from public.audit_log") : await als(db, wie, "delete from public.audit_log");
+    check(geweigerd(r) || nietsGeraakt(r), `audit: ${wie} verwijdert niets`, uitleg(r));
+  }
+  // Zelfs de eigenaar van de tabel (SQL Editor) niet: de trigger blokkeert.
+  let blok = null;
+  try {
+    await db.exec("update public.audit_log set actie = 'gewist'");
+  } catch (e) {
+    blok = e.code;
+  }
+  check(blok === "42501", "audit: trigger blokkeert wijzigen, ook voor de tabeleigenaar", String(blok));
+  blok = null;
+  try {
+    await db.exec("delete from public.audit_log");
+  } catch (e) {
+    blok = e.code;
+  }
+  check(blok === "42501", "audit: trigger blokkeert verwijderen, ook voor de tabeleigenaar", String(blok));
+  blok = null;
+  try {
+    await db.exec("truncate public.audit_log");
+  } catch (e) {
+    blok = e.code;
+  }
+  check(blok === "42501", "audit: trigger blokkeert truncate", String(blok));
+  r = await als(db, "mark", "select public.audit_opruimen(0)");
+  check(geweigerd(r), "audit: opruimen niet voor teamleden", uitleg(r));
+  // Echt uitvoeren (niet terugdraaien) als service-role.
+  await db.exec("set role service_role");
+  const opgeruimd = (await db.query("select public.audit_opruimen(10) as n")).rows[0].n;
+  await db.exec("reset role");
+  check(opgeruimd === 1, "audit: opruimen (service) verwijdert alleen regels ouder dan 90 dagen (minimum)", `${opgeruimd}`);
+  const over = (await db.query("select count(*)::int as n from public.audit_log")).rows[0].n;
+  check(over === 2, "audit: recente regels blijven staan", `${over}`);
+  blok = null;
+  try {
+    await db.exec("delete from public.audit_log");
+  } catch (e) {
+    blok = e.code;
+  }
+  check(blok === "42501", "audit: na opruimen is de blokkade weer actief", String(blok));
+  const pol = (await db.query("select qual from pg_policies where tablename = 'audit_log'")).rows;
+  check(pol.length === 1 && /is_teamlid\(/.test(pol[0].qual) && /is_eigenaar\(/.test(pol[0].qual), "audit: één policy (teamlid + eigenaar)", JSON.stringify(pol));
+
+  // ---- inlog_pogingen ----
+  r = await als(db, "service", "insert into public.inlog_pogingen (sleutel) values ('e:0123456789abcdef0123456789abcdef') returning id");
+  check(r.ok, "pogingen: service-role voegt toe", uitleg(r));
+  await db.exec("insert into public.inlog_pogingen (sleutel) values ('i:0123456789abcdef0123456789abcdef')");
+  r = await als(db, "service", "insert into public.inlog_pogingen (sleutel) values ('jan@example.com')");
+  check(!r.ok && r.code === "23514", "pogingen: alleen hashes (geen e-mailadres)", uitleg(r));
+  for (const wie of ["daniel", "mark", "indringer", "anon"]) {
+    r = await als(db, wie, "select * from public.inlog_pogingen");
+    check(geweigerd(r), `pogingen: ${wie} leest niets`, uitleg(r));
+    r = await als(db, wie, "delete from public.inlog_pogingen");
+    check(geweigerd(r), `pogingen: ${wie} wist niets`, uitleg(r));
+  }
+
+  // Twee keer uitvoeren: niets dubbel, audit blijft, functies werken nog.
+  await voerUit(db, m26, "0026 (6e keer)");
+  check((await db.query("select count(*)::int as n from public.audit_log")).rows[0].n === 2, "0026 opnieuw: audit-log ongemoeid");
+  r = await alsMetAal(db, "daniel", "aal1", KLANTEN);
+  check(telKlanten(r) === 0, "0026 opnieuw: 2FA-controle nog actief", uitleg(r));
+
+  // Opruimen voor de toegangsmatrix: Daniel weer zonder factor.
+  await db.query("delete from auth.mfa_factors where user_id = $1", [U.daniel]);
+  if (fouten === fouten0) console.log("  0026 beveiliging (2FA, audit-log, pogingen): ok");
 }
 
 // ---------------------------------------------------------------------------------

@@ -7,6 +7,7 @@ import { parseFactuurInvoer, type FactuurInvoerBody } from '@/lib/invoice/invoer
 import { bewaarFactuurPdf, upsertKlant } from '@/lib/invoice/opslag';
 import { bedrijf } from '@/lib/config';
 import { naDrive } from '@/lib/drive/kopieen';
+import { logAudit } from '@/lib/audit';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -186,9 +187,10 @@ export async function DELETE(
   const { error: deleteError } = await service.from('invoices').delete().eq('id', id);
 
   if (deleteError) {
-    console.error('[facturen] verwijderen mislukt', deleteError.code ?? '', deleteError.message);
+    console.error('[facturen] verwijderen mislukt', deleteError.code ?? '');
     return NextResponse.json({ error: 'Verwijderen is mislukt. Probeer het opnieuw.' }, { status: 500 });
   }
 
+  await logAudit('verwijderd_factuur', { lid, doel: id }, request);
   return NextResponse.json({ success: true });
 }

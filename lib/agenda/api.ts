@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { controleerRoute, type Teamlid } from '@/lib/auth/team';
 import { AgendaFout, type AgendaBron } from './repo';
+import { logFout } from '@/lib/log';
 
 // Gedeelde stukken voor de agenda-API-routes (/api/agenda, /api/taken, /api/afspraken).
 
@@ -36,7 +37,7 @@ export function bronVan(lid: Teamlid): AgendaBron {
 /** Vangt fouten af tot een nette JSON-fout (503 tabel_ontbreekt vóór de migratie). */
 export function foutAntwoord(e: unknown) {
   if (e instanceof AgendaFout) return fout(e.status, e.message, e.code);
-  console.error('[agenda]', e);
+  logFout('[agenda]', e);
   return fout(500, 'Er ging iets mis. Probeer het opnieuw.');
 }
 

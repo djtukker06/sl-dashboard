@@ -6,6 +6,7 @@ import { ModuleKop } from '@/components/shell/ModuleKop';
 import { initialenUit, KLEUREN, valideerProfiel, type ProfielInvoer } from '@/lib/account/types';
 import type { MailboxenOverzicht } from '@/lib/mail/beheer';
 import { Mailboxen } from './Mailboxen';
+import { BeveiligingAccount, type BeveiligingAccountData } from '@/components/beveiliging/BeveiligingAccount';
 
 type Melding = { soort: 'ok' | 'fout'; tekst: string } | null;
 
@@ -35,13 +36,15 @@ export function AccountApp({
   rol,
   overgang,
   profiel,
-  mailboxen
+  mailboxen,
+  beveiliging
 }: {
   email: string;
   rol: 'eigenaar' | 'lid';
   overgang: boolean;
   profiel: ProfielInvoer;
   mailboxen: MailboxenOverzicht | null;
+  beveiliging: BeveiligingAccountData;
 }) {
   return (
     <div className="ac">
@@ -49,25 +52,7 @@ export function AccountApp({
       <div className="ac-inhoud">
         <ProfielBlok email={email} rol={rol} overgang={overgang} start={profiel} />
         <Mailboxen start={mailboxen} email={email} />
-        <section className="ac-blok" aria-labelledby="ac-beveiliging">
-          <header className="ac-blok-kop">
-            <h2 id="ac-beveiliging" className="ac-blok-titel">Beveiliging</h2>
-            <p className="ac-blok-uitleg">
-              Accounts maakt de eigenaar aan; zelf registreren kan niet. Alleen actieve teamleden kunnen inloggen en
-              facturen, bonnetjes en klanten zien.
-            </p>
-          </header>
-          <div className="ac-acties">
-            <a className="db-knop" href="/nieuw-wachtwoord">
-              Wachtwoord wijzigen
-            </a>
-            <form method="post" action="/auth/uitloggen">
-              <button type="submit" className="db-knop">
-                Uitloggen
-              </button>
-            </form>
-          </div>
-        </section>
+        <BeveiligingAccount data={beveiliging} />
       </div>
     </div>
   );

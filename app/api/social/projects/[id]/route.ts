@@ -3,6 +3,8 @@ import { setCanvas } from "@/lib/social/brand-guard";
 import { getFormat, isFormat } from "@/lib/social/formats";
 import { checkProjectId, readBody, requireUser, route } from "@/lib/social/http";
 import { getProject, readSlides, refreshChrome, saveProject, softDeleteProject, versionCount } from "@/lib/social/repo";
+import { logAudit } from "@/lib/audit";
+import { teamlidUitContext } from "@/lib/auth/team";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -47,11 +49,12 @@ export const PUT = route(async (request: Request, { params }: Ctx) => {
 });
 
 // server.js:191-196: naar de prullenbak (zacht verwijderen via deleted_at).
-export const DELETE = route(async (_request: Request, { params }: Ctx) => {
+export const DELETE = route(async (request: Request, { params }: Ctx) => {
   await requireUser();
   const { id } = await params;
   checkProjectId(id);
   await getProject(id);
   await softDeleteProject(id);
+  await logAudit("verwijderd_social_project", { lid: teamlidUitContext(), doel: id }, request);
   return NextResponse.json({ ok: true });
 });

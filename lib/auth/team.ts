@@ -8,7 +8,9 @@ import { createClient } from '@/lib/supabase/server';
 import { tabelOntbreekt } from '@/lib/db/ontbreekt';
 import { veiligVervolg } from '@/lib/vervolg';
 import { welkomKlaarVan } from '@/lib/account/types';
+import { logFout } from '@/lib/log';
 import { eigenHerkomst, isWijzigend } from './herkomst';
+import { afdwingenUitEnv, alsAal, tfaStap, type Aal, type TfaStap } from './tfa-kern';
 
 // DE centrale toegangscontrole van de backoffice. Elke pagina, server action en API-route
 // gaat hierlangs vóór er data wordt gelezen of geschreven — en zeker vóór de service-role.
@@ -28,10 +30,18 @@ import { eigenHerkomst, isWijzigend } from './herkomst';
 // van 2 telt pas als 1 is gelukt. Zo heeft de shell (avatars, kiezers;
 // lib/team/profielen.ts) daarna ook niets meer op te vragen.
 //
+//   3. tweestapsverificatie (2FA, migratie 0026): heeft iemand een factor en staat zijn sessie
+//      nog op aal1, dan eerst de code (status 'tfa', stap 'uitdaging'); heeft hij er geen en
+//      staat afdwingen aan (MFA_AFDWINGEN, standaard aan) en is 0026 uitgevoerd, dan eerst
+//      instellen (stap 'instellen'). Zie lib/auth/tfa-kern.ts. Zo'n sessie krijgt GEEN bewijs
+//      (dus geen service-role) en alleen de 2FA-routes en -pagina's werken.
+//
 // Overgangsmodus: zolang migratie 0021 niet is uitgevoerd (tabel team_members bestaat
 // nog niet) geldt elke ingelogde, niet-anonieme gebruiker als lid — precies de
-// beveiliging van vóór 0021 — en toont de shell een banner. Elke andere fout bij het
-// controleren laat NIEMAND door (fail closed).
+// beveiliging van vóór 0021 — en toont de shell een banner. Sinds 0021 overal is
+// uitgevoerd staat dat standaard UIT (TEAM_VEREIST, standaard aan): een ontbrekende tabel
+// (bv. een hapering in de schema-cache) geeft dan een storing in plaats van open deuren.
+// Elke andere fout bij het controleren laat NIEMAND door (fail closed).
 
 // ---------------------------------------------------------------------------------
 // Bewijs: alleen deze module kan het maken. De service-role client eist er een,
@@ -51,6 +61,18 @@ function maakBewijs(): TeamlidBewijs {
 
 export function isGeldigBewijs(b: unknown): b is TeamlidBewijs {
   return typeof b === 'object' && b !== null && uitgegeven.has(b);
+}
+
+/**
+ * Bewijs voor een vaste lijst systeemtaken zonder ingelogd teamlid (audit-log, de
+ * pogingenlimiet, de cron na controle van CRON_SECRET). ALLEEN voor lib/supabase/systeem.ts;
+ * scripts/test-beveiliging.mjs controleert dat niemand anders dit importeert.
+ */
+export type SysteemDoel = 'audit' | 'inlogpogingen' | 'cron';
+const SYSTEEM_DOELEN = new Set<SysteemDoel>(['audit', 'inlogpogingen', 'cron']);
+export function systeemBewijs(doel: SysteemDoel): TeamlidBewijs {
+  if (!SYSTEEM_DOELEN.has(doel)) throw new Error('Onbekend systeemdoel.');
+  return maakBewijs();
 }
 
 // Voor diep liggende code (Storage-hulpjes van social/uitgaven) die binnen een
@@ -81,6 +103,25 @@ export function bewijsUitContext(): TeamlidBewijs {
 // ---------------------------------------------------------------------------------
 export type Rol = 'eigenaar' | 'lid';
 
+export interface Factor {
+  id: string;
+  naam: string;
+  aangemaakt: string;
+}
+
+/** Hoe 2FA er voor deze sessie bij staat. */
+export interface TfaInfo {
+  /** Geverifieerde TOTP-factoren. */
+  factoren: Factor[];
+  aal: Aal;
+  /** Afdwingen staat aan (MFA_AFDWINGEN niet 'uit'). */
+  afdwingen: boolean;
+  /** Migratie 0026 is uitgevoerd (toegang_status bestaat). */
+  migratie: boolean;
+  /** Database-noodstop: false = 2FA telt in RLS even niet mee. */
+  rls: boolean;
+}
+
 export interface Profiel {
   naam: string;
   voornaam: string;
@@ -102,6 +143,7 @@ export interface Teamlid {
   /** Gebruikerscliënt (RLS geldt). */
   sb: SupabaseClient;
   bewijs: TeamlidBewijs;
+  tfa: TfaInfo;
   /** De profielen en lidmaatschappen van het team, al opgehaald bij de controle (voor
    *  lib/team/profielen.ts). Alleen wat RLS dit teamlid laat zien. */
   team?: TeamRijen;
@@ -112,11 +154,33 @@ export interface TeamRijen {
   leden: { user_id: string; actief: boolean }[];
 }
 
+/** Een ingelogd teamlid dat eerst nog iets met 2FA moet (geen bewijs, geen data). */
+export interface TfaSessie {
+  userId: string;
+  email: string;
+  naam: string;
+  profiel: Profiel;
+  rol: Rol;
+  welkomKlaar: boolean;
+  sb: SupabaseClient;
+  tfa: TfaInfo;
+  stap: TfaStap;
+}
+
 export type TeamStatus =
   | { soort: 'anoniem' }
   | { soort: 'geen_toegang' }
   | { soort: 'storing' }
+  | { soort: 'tfa'; stap: 'uitdaging' | 'instellen'; sessie: TfaSessie }
   | { soort: 'lid'; lid: Teamlid };
+
+export function mfaAfdwingen(): boolean {
+  return afdwingenUitEnv(process.env.MFA_AFDWINGEN);
+}
+
+function teamVereist(): boolean {
+  return process.env.TEAM_VEREIST !== '0';
+}
 
 export const STANDAARD_KLEUR = '#c8a97e';
 const GENERIEK = new Set(['info', 'hallo', 'hello', 'contact', 'admin', 'mail', 'studio', 'office', 'team']);
@@ -149,18 +213,28 @@ export function maakProfiel(
   };
 }
 
+interface ToegangRpc {
+  lid?: boolean;
+  rol?: string | null;
+  aal?: string;
+  heeft_factor?: boolean;
+  tfa_rls?: boolean;
+  versie?: number;
+}
+
 async function bepaalStatus(): Promise<TeamStatus> {
   const sb = await createClient();
 
-  // Eén parallelle ronde: de sessie (Auth-server) + lidmaatschappen en profielen van het
-  // team (database, met hetzelfde token; RLS: een niet-lid ziet alleen zijn eigen
-  // lidmaatschap en geen profielen).
-  const [userRes, lidRes, profielRes] = await Promise.all([
+  // Eén parallelle ronde: de sessie (Auth-server, met de 2FA-factoren) + lidmaatschappen en
+  // profielen van het team + toegang_status() (0026: is de migratie er, staat de noodstop
+  // aan?). Alles met hetzelfde token; RLS: een niet-lid ziet alleen zijn eigen lidmaatschap.
+  const [userRes, lidRes, profielRes, toegangRes] = await Promise.all([
     sb.auth.getUser(),
     sb.from('team_members').select('user_id, actief, rol').limit(200),
     // select('*') i.p.v. losse kolommen: zo geeft een ontbrekende kolom welkom_klaar_op
     // (0022 nog niet uitgevoerd) geen fout en blijft het profiel gewoon leesbaar.
-    sb.from('profiles').select('*').limit(200)
+    sb.from('profiles').select('*').limit(200),
+    sb.rpc('toegang_status')
   ]);
   const user = userRes.data.user;
   if (!user) return { soort: 'anoniem' };
@@ -169,8 +243,30 @@ async function bepaalStatus(): Promise<TeamStatus> {
   const userId = user.id;
   const email = user.email ?? '';
 
+  // 2FA: factoren uit de (bij de Auth-server gecontroleerde) gebruiker; aal uit het token
+  // van dezelfde sessie (lokaal gedecodeerd, geen extra rondgang).
+  const factoren: Factor[] = (user.factors ?? [])
+    .filter((f) => f.status === 'verified' && f.factor_type === 'totp')
+    .map((f) => ({ id: f.id, naam: f.friendly_name || 'Authenticator-app', aangemaakt: f.created_at }));
+  let aal: Aal = 'aal1';
+  try {
+    const { data } = await sb.auth.mfa.getAuthenticatorAssuranceLevel();
+    aal = alsAal(data?.currentLevel);
+  } catch {
+    aal = 'aal1';
+  }
+  const toegang = toegangRes.error ? null : ((toegangRes.data ?? null) as ToegangRpc | null);
+  if (toegangRes.error && !tabelOntbreekt(toegangRes.error)) logFout('[team] toegang_status', toegangRes.error);
+  const tfa: TfaInfo = {
+    factoren,
+    aal,
+    afdwingen: mfaAfdwingen(),
+    migratie: Boolean(toegang && toegang.versie),
+    rls: toegang?.tfa_rls !== false
+  };
+
   if (lidRes.error) {
-    if (tabelOntbreekt(lidRes.error)) {
+    if (tabelOntbreekt(lidRes.error) && !teamVereist()) {
       console.warn('[team] tabel team_members ontbreekt: overgangsmodus (voer supabase/UITVOEREN_0021_TEAM.sql uit).');
       const profiel = maakProfiel(null, email);
       return {
@@ -184,11 +280,12 @@ async function bepaalStatus(): Promise<TeamStatus> {
           welkomKlaar: true,
           overgang: true,
           sb,
-          bewijs: maakBewijs()
+          bewijs: maakBewijs(),
+          tfa
         }
       };
     }
-    console.error('[team] lidmaatschap controleren mislukt', lidRes.error.code ?? '', lidRes.error.message);
+    logFout('[team] lidmaatschap controleren mislukt', lidRes.error);
     return { soort: 'storing' };
   }
 
@@ -199,6 +296,18 @@ async function bepaalStatus(): Promise<TeamStatus> {
   const profielen = profielRes.error ? null : ((profielRes.data ?? []) as (TeamRijen['profielen'][number] & { welkom_klaar_op?: string | null })[]);
   const profielRij = profielen?.find((p) => p.id === userId) ?? null;
   const profiel = maakProfiel(profielRij, email);
+  const rol: Rol = rij.rol === 'eigenaar' ? 'eigenaar' : 'lid';
+  const welkomKlaar = welkomKlaarVan(profielRij);
+
+  const stap = tfaStap({ heeftFactor: factoren.length > 0, aal, afdwingen: tfa.afdwingen, migratie: tfa.migratie });
+  if (stap !== 'ok') {
+    return {
+      soort: 'tfa',
+      stap,
+      sessie: { userId, email, naam: profiel.naam, profiel, rol, welkomKlaar, sb, tfa, stap }
+    };
+  }
+
   return {
     soort: 'lid',
     lid: {
@@ -206,11 +315,12 @@ async function bepaalStatus(): Promise<TeamStatus> {
       email,
       naam: profiel.naam,
       profiel,
-      rol: rij.rol === 'eigenaar' ? 'eigenaar' : 'lid',
-      welkomKlaar: welkomKlaarVan(profielRij),
+      rol,
+      welkomKlaar,
       overgang: false,
       sb,
       bewijs: maakBewijs(),
+      tfa,
       team: profielen ? { profielen, leden: leden.map((l) => ({ user_id: l.user_id, actief: l.actief === true })) } : undefined
     }
   };
@@ -237,7 +347,42 @@ export async function vereisTeamlidPagina(next?: string): Promise<Teamlid> {
     redirect(vervolg !== '/' ? `/login?next=${encodeURIComponent(vervolg)}` : '/login');
   }
   if (s.soort === 'geen_toegang') redirect('/geen-toegang');
+  if (s.soort === 'tfa') redirect(tfaDoel(s, next));
   throw new Error('De toegangscontrole is tijdelijk niet beschikbaar. Probeer het zo opnieuw.');
+}
+
+/** Waar een sessie heen moet die eerst iets met 2FA moet. */
+export function tfaDoel(s: { stap: 'uitdaging' | 'instellen'; sessie: TfaSessie }, next?: string): string {
+  const vervolg = next ? veiligVervolg(next) : '/';
+  const q = vervolg !== '/' ? `?next=${encodeURIComponent(vervolg)}` : '';
+  if (s.stap === 'uitdaging') return `/login/2fa${q}`;
+  // Nieuw teamlid: 2FA is de eerste stap van de welkomstflow.
+  if (!s.sessie.welkomKlaar) return '/welkom';
+  return `/beveiliging/instellen${q}`;
+}
+
+/**
+ * Voor de 2FA-pagina's en -routes: de sessie van een teamlid, ook als hij nog een code moet
+ * invoeren of 2FA moet instellen. Geeft null zonder sessie of zonder lidmaatschap.
+ */
+export async function tfaSessie(): Promise<TfaSessie | null> {
+  const s = await huidigTeamlid();
+  if (s.soort === 'tfa') return s.sessie;
+  if (s.soort === 'lid' && !s.lid.overgang) {
+    const { lid } = s;
+    return {
+      userId: lid.userId,
+      email: lid.email,
+      naam: lid.naam,
+      profiel: lid.profiel,
+      rol: lid.rol,
+      welkomKlaar: lid.welkomKlaar,
+      sb: lid.sb,
+      tfa: lid.tfa,
+      stap: 'ok'
+    };
+  }
+  return null;
 }
 
 /** Voor server actions: gooit bij geen toegang (de actie doet dan niets). */
@@ -256,6 +401,16 @@ export function weigering(s: Exclude<TeamStatus, { soort: 'lid' }>): NextRespons
   }
   if (s.soort === 'geen_toegang') {
     return NextResponse.json({ error: 'Geen toegang.', code: 'geen_toegang' }, { status: 403, headers: GEEN_CACHE });
+  }
+  if (s.soort === 'tfa') {
+    return NextResponse.json(
+      {
+        error: s.stap === 'uitdaging' ? 'Vul eerst je code uit de authenticator-app in.' : 'Stel eerst tweestapsverificatie in.',
+        code: 'tfa_nodig',
+        stap: s.stap
+      },
+      { status: 401, headers: GEEN_CACHE }
+    );
   }
   return NextResponse.json(
     { error: 'De toegangscontrole is tijdelijk niet beschikbaar. Probeer het zo opnieuw.', code: 'storing' },
@@ -291,10 +446,29 @@ export function teamlidRoute<C>(fn: RouteFn<C>, opties: { label?: string } = {})
     try {
       return await metTeamlid(c.lid, () => fn(request, ctx, c.lid));
     } catch (e) {
-      console.error(`[${opties.label ?? 'api'}]`, e);
+      logFout(`[${opties.label ?? 'api'}]`, e);
       return NextResponse.json({ error: 'Er ging iets mis. Probeer het opnieuw.' }, { status: 500, headers: GEEN_CACHE });
     }
   };
+}
+
+/**
+ * Voor routes die alleen de eigenaar mag gebruiken (beveiliging, audit-log, back-ups): naast
+ * de gewone teamcheck rol 'eigenaar' én een sessie op aal2 (2FA), ook als afdwingen uit staat.
+ */
+export function eigenaarRoute<C>(fn: RouteFn<C>, opties: { label?: string } = {}) {
+  return teamlidRoute<C>(async (request, ctx, lid) => {
+    if (lid.rol !== 'eigenaar') {
+      return NextResponse.json({ error: 'Alleen voor de eigenaar.', code: 'geen_eigenaar' }, { status: 403, headers: GEEN_CACHE });
+    }
+    if (lid.tfa.aal !== 'aal2') {
+      return NextResponse.json(
+        { error: 'Stel eerst tweestapsverificatie in en log opnieuw in met je code.', code: 'aal2_nodig' },
+        { status: 403, headers: GEEN_CACHE }
+      );
+    }
+    return fn(request, ctx, lid);
+  }, opties);
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

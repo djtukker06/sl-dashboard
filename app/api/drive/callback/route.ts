@@ -7,6 +7,8 @@ import { vergeetMappen } from '@/lib/drive/mappen';
 import { controleerState, STATE_COOKIE, stateGeheim } from '@/lib/drive/state';
 import { createServiceRoleClient } from '@/lib/supabase/service-role';
 import { tabelOntbreekt } from '@/lib/db/ontbreekt';
+import { logAudit } from '@/lib/audit';
+import { logFout } from '@/lib/log';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -80,19 +82,20 @@ export async function GET(request: NextRequest) {
     );
     if (error) {
       if (tabelOntbreekt(error)) return terug('tabel_ontbreekt');
-      console.error('[drive] koppeling opslaan', error.code ?? '', error.message);
+      console.error('[drive] koppeling opslaan', error.code ?? '');
       return terug('fout');
     }
     vergeetToken();
     vergeetMappen();
     onthoudToken(enc, t.accessToken, t.verlooptOver);
+    await logAudit('drive_gekoppeld', { lid }, request);
     return terug('gekoppeld');
   } catch (e) {
     if (e instanceof DriveFout) {
       if (e.code === 'opnieuw_koppelen') return terug('ongeldig');
       if (e.code === 'niet_ingericht') return terug('client');
     }
-    console.error('[drive] koppelen mislukt', (e as Error)?.message ?? e);
+    logFout('[drive] koppelen mislukt', e);
     return terug('fout');
   }
 }

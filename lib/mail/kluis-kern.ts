@@ -3,13 +3,21 @@ import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
 // De kern van de mailkluis: AES-256-GCM, zonder env of '@/'-imports (zodat
 // scripts/test-account.mjs dit los kan testen). De server-kant staat in lib/mail/kluis.ts.
 //
-// Formaat: "v1:<iv base64>.<tag base64>.<ciphertext base64>"
+// Formaat: "v1:<iv base64>.<tag base64>.<ciphertext base64>" (of "v2:…", zelfde opbouw)
 //   - iv: 12 willekeurige bytes per keer versleutelen (nooit hergebruikt);
 //   - tag: 16 bytes (GCM): elke wijziging aan iv, tag, ciphertext of AAD laat ontsleutelen falen;
-//   - AAD: het user-id. Een ciphertext die naar het record van een ander wordt gekopieerd,
-//     is daar dus onbruikbaar.
+//   - AAD: v1 = het user-id; v2 = "mailbox:<eigenaar-id>:<mailbox-id>" (lib/mail/kluis.ts).
+//     Een ciphertext die naar het record van een ander (of een andere mailbox) wordt
+//     gekopieerd, is daar dus onbruikbaar. Het voorvoegsel zegt welke AAD hoort.
 
 export const KLUIS_VERSIE = 'v1';
+export type KluisVersie = 'v1' | 'v2';
+
+/** De versie van een opgeslagen waarde, of null bij een onbekend formaat. */
+export function kluisVersieVan(waarde: string): KluisVersie | null {
+  const m = /^(v[12]):/.exec(waarde);
+  return m ? (m[1] as KluisVersie) : null;
+}
 
 /** 32 bytes uit base64 (`openssl rand -base64 32`), anders null. */
 export function leesSleutel(waarde: string | undefined | null): Buffer | null {
@@ -20,7 +28,7 @@ export function leesSleutel(waarde: string | undefined | null): Buffer | null {
   return k.length === 32 ? k : null;
 }
 
-export function versleutelMet(sleutel: Buffer, tekst: string, aad: string): string {
+export function versleutelMet(sleutel: Buffer, tekst: string, aad: string, versie: KluisVersie = 'v1'): string {
   if (sleutel.length !== 32) throw new Error('Ongeldige sleutel.');
   if (!aad) throw new Error('AAD ontbreekt.');
   const iv = randomBytes(12);
@@ -28,13 +36,13 @@ export function versleutelMet(sleutel: Buffer, tekst: string, aad: string): stri
   c.setAAD(Buffer.from(aad, 'utf8'));
   const ct = Buffer.concat([c.update(tekst, 'utf8'), c.final()]);
   const tag = c.getAuthTag();
-  return `${KLUIS_VERSIE}:${iv.toString('base64')}.${tag.toString('base64')}.${ct.toString('base64')}`;
+  return `${versie}:${iv.toString('base64')}.${tag.toString('base64')}.${ct.toString('base64')}`;
 }
 
 /** Gooit bij een ander formaat, een verkeerde sleutel, een andere AAD of geknoei. */
 export function ontsleutelMet(sleutel: Buffer, waarde: string, aad: string): string {
   if (sleutel.length !== 32) throw new Error('Ongeldige sleutel.');
-  const m = /^v1:([A-Za-z0-9+/=]+)\.([A-Za-z0-9+/=]+)\.([A-Za-z0-9+/=]*)$/.exec(waarde);
+  const m = /^v[12]:([A-Za-z0-9+/=]+)\.([A-Za-z0-9+/=]+)\.([A-Za-z0-9+/=]*)$/.exec(waarde);
   if (!m) throw new Error('Onbekend formaat.');
   const iv = Buffer.from(m[1], 'base64');
   const tag = Buffer.from(m[2], 'base64');

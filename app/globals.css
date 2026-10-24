@@ -597,3 +597,14 @@ input:focus { outline: none; border-color: var(--cream-dim); }
   text-decoration: none;
 }
 .login-link:hover { color: var(--cream); }
+.login-link-knop { width: 100%; background: none; border: 0; padding: 0; cursor: pointer; font-family: inherit; }
+.login-card select {
+  background: var(--bg-page);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--cream);
+  padding: 11px 12px;
+  font: inherit;
+  font-size: 14px;
+}
+.login-melding { margin: 0 0 16px; font-size: 13px; color: var(--cream-dim); }

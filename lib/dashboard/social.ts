@@ -2,6 +2,7 @@ import { metTeamlid, type Teamlid } from '@/lib/auth/team';
 import { HttpError } from '@/lib/social/http';
 import { listProjects } from '@/lib/social/repo';
 import { getFormat } from '@/lib/social/formats';
+import { logFout } from '@/lib/log';
 
 // Recente social-posts voor het dashboard. listProjects() gebruikt de service-role
 // client: daarom vraagt deze functie het (gecontroleerde) teamlid van de pagina.
@@ -24,7 +25,7 @@ async function makers(lid: Teamlid, ids: string[]): Promise<Map<string, string>>
   if (!ids.length || lid.overgang) return new Map();
   const { data, error } = await lid.sb.from('social_projects').select('id, created_by').in('id', ids);
   if (error) {
-    if (error.code !== '42703' && error.code !== 'PGRST204') console.error('[dashboard] makers van posts', error.code ?? '', error.message);
+    if (error.code !== '42703' && error.code !== 'PGRST204') logFout('[dashboard] makers van posts', error);
     return new Map();
   }
   return new Map((data ?? []).filter((r) => r.created_by).map((r) => [r.id as string, r.created_by as string]));
@@ -59,7 +60,7 @@ export async function recentePosts(
   } catch (err) {
     // repo.dbFail zet ontbrekende tabellen om naar een 503 (zie lib/social/repo.ts).
     if (err instanceof HttpError && err.status === 503) return { ok: false, reden: 'niet-ingericht' };
-    console.error(err);
+    logFout('[dashboard] social', err);
     return { ok: false, reden: 'fout' };
   }
 }

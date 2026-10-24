@@ -4,7 +4,7 @@ import { createServiceRoleClient } from '@/lib/supabase/service-role';
 import { tabelOntbreekt } from '@/lib/db/ontbreekt';
 import { teamProfielen } from '@/lib/team/profielen';
 import { configUitRij, eigenMailboxRij, envMailConfig, magEnvMailbox, type MailConfig, type MailboxRij } from './config';
-import { ontsleutel } from './kluis';
+import { ontsleutel, ontsleutelMailbox } from './kluis';
 import {
   ENV_MAILBOX_ID,
   isZichtbaar,
@@ -73,7 +73,7 @@ export const MAILBOXEN_KOLOMMEN =
   'id, eigenaar_id, email, label, kleur, zichtbaarheid, volgorde, imap_host, imap_port, smtp_host, smtp_port, from_name, handtekening, wachtwoord_enc, sleutel_versie, geverifieerd_op, gekoppeld_op';
 
 function uitRij(rij: MailboxenRij, viewerId: string, namen: Map<string, string>): Mailbox {
-  const wachtwoord = ontsleutel(rij.wachtwoord_enc, rij.eigenaar_id);
+  const wachtwoord = ontsleutelMailbox(rij.wachtwoord_enc, rij.eigenaar_id, rij.id);
   if (wachtwoord === null) console.warn('[mail] een inbox is niet te ontsleutelen (andere MAIL_ENCRYPTION_KEY?): opnieuw koppelen via /account.');
   return {
     id: rij.id,

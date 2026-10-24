@@ -3,6 +3,7 @@ import { naarItem, uploaders } from '@/lib/drive/bestanden';
 import { DriveFout, MELDING, schoneNaam } from '@/lib/drive/kern';
 import { verbind } from '@/lib/drive/koppeling';
 import { beschermdeMappen, binnen } from '@/lib/drive/mappen';
+import { logAudit } from '@/lib/audit';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -25,11 +26,12 @@ export const PATCH = driveRoute(async (request, ctx: Ctx, lid) => {
   return json({ item: naarItem(nieuw, door.get(nieuw.id) ?? null) });
 });
 
-export const DELETE = driveRoute(async (_request, ctx: Ctx, lid) => {
+export const DELETE = driveRoute(async (request, ctx: Ctx, lid) => {
   const { id } = await ctx.params;
   const v = await verbind(lid.bewijs);
   const bestand = await binnen(v, id);
   if ((await beschermdeMappen(v)).has(bestand.id)) throw new DriveFout('beschermd', MELDING.beschermd);
   await v.client.wijzig(bestand.id, { trashed: true });
+  await logAudit('verwijderd_drive_bestand', { lid, doel: bestand.id, details: { naam: bestand.name ?? '' } }, request);
   return json({ ok: true });
 });

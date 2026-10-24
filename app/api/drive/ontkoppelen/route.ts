@@ -4,6 +4,7 @@ import { trekIn } from '@/lib/drive/kern';
 import { leesKoppeling, vergeetToken } from '@/lib/drive/koppeling';
 import { vergeetMappen } from '@/lib/drive/mappen';
 import { createServiceRoleClient } from '@/lib/supabase/service-role';
+import { logAudit } from '@/lib/audit';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -13,7 +14,7 @@ export const dynamic = 'force-dynamic';
 // mappen-cache en de kopie-administratie zijn per rootmap, dus opnieuw koppelen met
 // hetzelfde account gaat verder waar het was (geen dubbele kopieën).
 export const POST = driveRoute(
-  async (_request, _ctx, lid) => {
+  async (request, _ctx, lid) => {
     const service = createServiceRoleClient(lid.bewijs);
     const k = await leesKoppeling(service);
     if (k) {
@@ -24,6 +25,7 @@ export const POST = driveRoute(
     }
     vergeetToken();
     vergeetMappen();
+    await logAudit('drive_ontkoppeld', { lid }, request);
     return json({ ok: true });
   },
   { alleenEigenaar: true }

@@ -63,6 +63,20 @@ test("heen en terug", () => {
   assert.ok(!enc.includes("geheim"));
   assert.equal(kluis.ontsleutelMet(sleutel, enc, daniel), "geheim wachtwoord €");
 });
+test("v2 (mailboxen, 0026): AAD = eigenaar + mailbox-id; andere rij of v1-AAD faalt", () => {
+  const mb1 = "aaaaaaaa-0000-4000-8000-000000000001";
+  const mb2 = "aaaaaaaa-0000-4000-8000-000000000002";
+  const aad = (e, m) => `mailbox:${e}:${m}`;
+  const enc = kluis.versleutelMet(sleutel, "inbox-geheim", aad(daniel, mb1), "v2");
+  assert.match(enc, /^v2:/);
+  assert.equal(kluis.kluisVersieVan(enc), "v2");
+  assert.equal(kluis.kluisVersieVan(kluis.versleutelMet(sleutel, "x", daniel)), "v1");
+  assert.equal(kluis.kluisVersieVan("geheim"), null);
+  assert.equal(kluis.ontsleutelMet(sleutel, enc, aad(daniel, mb1)), "inbox-geheim");
+  assert.throws(() => kluis.ontsleutelMet(sleutel, enc, aad(daniel, mb2)));
+  assert.throws(() => kluis.ontsleutelMet(sleutel, enc, aad(mark, mb1)));
+  assert.throws(() => kluis.ontsleutelMet(sleutel, enc, daniel));
+});
 test("elke keer een andere IV/ciphertext", () => {
   assert.notEqual(kluis.versleutelMet(sleutel, "x", daniel), kluis.versleutelMet(sleutel, "x", daniel));
 });
@@ -415,7 +429,7 @@ test("volgorde in Mail: eigen, dan standaard, dan gedeeld (op naam)", () => {
   });
   test("zichtbare inboxen: ontsleutelen met eigenaar_id, team-inboxen alleen van actieve leden", () => {
     const src = lees("lib", "mail", "mailboxen.ts");
-    assert.match(src, /ontsleutel\(rij\.wachtwoord_enc, rij\.eigenaar_id\)/);
+    assert.match(src, /ontsleutelMailbox\(rij\.wachtwoord_enc, rij\.eigenaar_id, rij\.id\)/);
     assert.match(src, /isZichtbaar\(r, lid\.userId, team\.actief\)/);
     assert.match(src, /^import 'server-only';/m);
   });

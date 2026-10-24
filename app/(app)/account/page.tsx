@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { vereisTeamlidPagina } from '@/lib/auth/team';
 import { mailboxenOverzicht, type MailboxenOverzicht } from '@/lib/mail/beheer';
 import { AccountApp } from '@/components/account/AccountApp';
+import { MAX_FACTOREN } from '@/lib/auth/tfa-kern';
 
 export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'Account & mail · Studio Levant' };
@@ -27,6 +28,12 @@ export default async function AccountPage() {
       overgang={lid.overgang}
       profiel={{ naam: lid.profiel.naam, initialen: lid.profiel.initialen, kleur: lid.profiel.kleur }}
       mailboxen={mailboxen}
+      beveiliging={{
+        factoren: lid.tfa.factoren,
+        verplicht: lid.tfa.afdwingen && lid.tfa.migratie,
+        migratie: lid.tfa.migratie,
+        max: MAX_FACTOREN
+      }}
     />
   );
 }

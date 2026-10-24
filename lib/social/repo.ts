@@ -8,6 +8,7 @@ import { bucketOntbreekt, tabelOntbreekt } from "@/lib/db/ontbreekt";
 import { applyChrome, stripChrome } from "./brand-guard";
 import { BUCKET, HttpError, db, NIET_INGERICHT, BUCKET_NIET_INGERICHT } from "./http";
 import { safe } from "./ids";
+import { logFout } from "@/lib/log";
 
 export type Asset = { file: string; kind: "beeld" | "inspiratie"; note: string };
 export type FeedbackEntry = { at: string; mode: string; feedback: string };
@@ -50,7 +51,7 @@ export type Slide = { file: string; html: string };
 const iso = (ts: string | null | undefined) => (ts ? new Date(ts).toISOString() : new Date().toISOString());
 
 function dbFail(err: unknown, message = "Er ging iets mis met de database."): never {
-  console.error(err);
+  logFout("[social]", err);
   // Tabellen/RPC nog niet aangemaakt (migraties 0014–0017 niet uitgevoerd): geen
   // algemene 500, maar een duidelijke 503. De frontend toont dan een setupmelding in
   // plaats van een lege lijst die leest als "al je posts zijn weg".
@@ -126,7 +127,7 @@ export async function saveProject(p: Project): Promise<Project> {
  */
 export async function markeerMaker(pid: string, userId: string): Promise<void> {
   const { error } = await db().from("social_projects").update({ created_by: userId }).eq("id", pid).is("created_by", null);
-  if (error && error.code !== "42703" && error.code !== "PGRST204") console.error("[social] maker vastleggen", error.message);
+  if (error && error.code !== "42703" && error.code !== "PGRST204") logFout("[social] maker vastleggen", error);
 }
 
 /** server.js:131-139: lijst zonder verwijderde projecten, nieuwste eerst. */
@@ -348,7 +349,7 @@ export async function listAssetObjects(pid: string): Promise<{ name: string; siz
 export async function removeAssetObject(pid: string, file: string): Promise<void> {
   if (!safe(pid) || !safe(file)) return;
   const { error } = await db().storage.from(BUCKET).remove([assetPath(pid, file)]);
-  if (error) console.error(error);
+  if (error) logFout("[social]", error);
 }
 
 /** Zoekt één object op (bestaat het, en hoe groot is het). */

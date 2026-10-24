@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { isUuid, vereisTeamlid } from '@/lib/auth/team';
 import { createServiceRoleClient } from '@/lib/supabase/service-role';
+import { logAudit } from '@/lib/audit';
 
 export async function deleteQuote(id: string) {
   // Sessie + teamlidmaatschap vóór de service-role (lib/auth/team.ts).
@@ -27,6 +28,7 @@ export async function deleteQuote(id: string) {
   }
 
   await service.from('quotes').delete().eq('id', id);
+  await logAudit('verwijderd_prijsopgave', { lid, doel: id });
 
   revalidatePath('/facturen/prijsopgaven');
 }

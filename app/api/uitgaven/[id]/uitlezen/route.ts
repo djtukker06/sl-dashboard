@@ -2,6 +2,7 @@ import { vandaag as vandaagNL } from '@/lib/agenda/datum';
 import { fout, isUuid, json, uitgavenRoute } from '@/lib/uitgaven/api';
 import { leesUitgaveUit } from '@/lib/uitgaven/uitlezen';
 import { naDriveUitgave } from '@/lib/drive/kopieen';
+import { binnenGebruikslimiet } from '@/lib/auth/inlogpogingen';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -17,6 +18,8 @@ type Ctx = { params: Promise<{ id: string }> };
 export const POST = uitgavenRoute(async (_request, ctx: Ctx, sb, lid) => {
   const { id } = await ctx.params;
   if (!isUuid(id)) return fout(404, 'Deze uitgave bestaat niet (meer).');
+  // Dure AI-aanroep: hooguit 60 per uur per persoon.
+  if (!binnenGebruikslimiet(`ai-bon:${lid.userId}`, 60)) return fout(429, 'Je hebt het afgelopen uur veel bonnetjes laten uitlezen. Probeer het straks opnieuw.');
   const uitgave = await leesUitgaveUit(sb, id, vandaagNL());
   naDriveUitgave(lid, id);
   return json({ uitgave });

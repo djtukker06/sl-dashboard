@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { tabelOntbreekt } from '@/lib/db/ontbreekt';
+import { logFout } from '@/lib/log';
 
 // Alleen-lezen-snapshot van de facturen voor het dashboard. Gebruikt exact dezelfde
 // regels als het facturenoverzicht (app/(app)/facturen/page.tsx):
@@ -39,7 +40,7 @@ export async function factuurSnapshot(
   // Alle kolommen (zoals het overzicht), zodat een ontbrekende restfactuur-kolom niets breekt.
   const { data, error } = await supabase.from('invoices').select('*').order('invoice_number', { ascending: false });
   if (error) {
-    console.error(error);
+    logFout('[dashboard] facturen', error);
     return { ok: false, reden: tabelOntbreekt(error) ? 'niet-ingericht' : 'fout' };
   }
   const rijen = (data ?? []) as Rij[];

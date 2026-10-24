@@ -4,6 +4,7 @@ import { createServiceRoleClient } from '@/lib/supabase/service-role';
 import { bucketOntbreekt } from '@/lib/db/ontbreekt';
 import { OPSLAG_NIET_INGERICHT, UitgavenFout } from './api';
 import { extensieVoor, slug, type BestandsType } from './model';
+import { logFout } from '@/lib/log';
 
 // Supabase Storage voor uitgaven. Alleen aanroepen ná de sessiecheck in de route: de
 // service-role omzeilt RLS (de buckets hebben bewust geen policies).
@@ -32,7 +33,7 @@ export function isPadVan(uitgaveId: string, pad: unknown): pad is string {
 
 function opslagFout(error: unknown, melding: string): UitgavenFout {
   if (bucketOntbreekt(error)) return new UitgavenFout(503, OPSLAG_NIET_INGERICHT, 'opslag_ontbreekt');
-  console.error('[uitgaven] opslag', (error as { message?: string })?.message ?? error);
+  logFout('[uitgaven] opslag', error);
   return new UitgavenFout(500, melding);
 }
 
@@ -85,7 +86,7 @@ export async function bekijkUrls(paden: string[], seconden = 600): Promise<Map<s
   const { data, error } = await opslag().from(BUCKET).createSignedUrls(paden, seconden);
   if (error) {
     // Thumbnails zijn een extraatje: zonder blijft de lijst gewoon werken.
-    console.error('[uitgaven] voorbeelden', error.message);
+    logFout('[uitgaven] voorbeelden', error);
     return uit;
   }
   for (const r of data ?? []) if (r.path && r.signedUrl && !r.error) uit.set(r.path, r.signedUrl);
@@ -96,7 +97,7 @@ export async function bekijkUrls(paden: string[], seconden = 600): Promise<Map<s
 export async function verwijder(paden: string[]): Promise<void> {
   for (let i = 0; i < paden.length; i += 100) {
     const { error } = await opslag().from(BUCKET).remove(paden.slice(i, i + 100));
-    if (error) console.error('[uitgaven] verwijderen uit opslag', error.message);
+    if (error) logFout('[uitgaven] verwijderen uit opslag', error);
   }
 }
 
@@ -112,7 +113,7 @@ async function ruimExportsOp() {
       if (paden.length) await st.remove(paden);
     }
   } catch (e) {
-    console.error('[uitgaven] exports opruimen', e);
+    logFout('[uitgaven] exports opruimen', e);
   }
 }
 

@@ -3,6 +3,7 @@ import { bucketOntbreekt } from "@/lib/db/ontbreekt";
 import { BUCKET, BUCKET_NIET_INGERICHT, db, httpError, readBody, requireUser, route } from "@/lib/social/http";
 import { id as randomId } from "@/lib/social/ids";
 import { assetPath, getProject } from "@/lib/social/repo";
+import { logFout } from "@/lib/log";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -33,7 +34,7 @@ export const POST = route(async (request: Request, { params }: Ctx) => {
 
   const { data, error } = await db().storage.from(BUCKET).createSignedUploadUrl(assetPath(p.id, file));
   if (error || !data?.signedUrl) {
-    console.error(error);
+    logFout("[social] upload-url", error);
     if (bucketOntbreekt(error)) throw httpError(503, BUCKET_NIET_INGERICHT);
     throw httpError(500, "Kon de upload niet voorbereiden.");
   }

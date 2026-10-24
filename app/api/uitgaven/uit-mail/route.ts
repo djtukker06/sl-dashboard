@@ -13,6 +13,8 @@ import { nieuwPad, upload, verwijder } from '@/lib/uitgaven/opslag';
 import { heeftSoortKolom, kolomOntbreekt, moetUitgave } from '@/lib/uitgaven/repo';
 import { leesUitgaveUit } from '@/lib/uitgaven/uitlezen';
 import { naDriveUitgave } from '@/lib/drive/kopieen';
+import { logFout } from '@/lib/log';
+import { binnenGebruikslimiet } from '@/lib/auth/inlogpogingen';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -23,6 +25,8 @@ export const maxDuration = 120;
 // "Opslaan als uitgave" in de mail-lezer: haalt de bijlage server-side op via IMAP (zoals de
 // download-route), zet hem in de bucket uitgaven, maakt een concept en leest het uit.
 export const POST = uitgavenRoute(async (request, _ctx, sb, lid) => {
+  // Dure AI-aanroep (uitlezen): zelfde limiet als bij een losse upload.
+  if (!binnenGebruikslimiet(`ai-bon:${lid.userId}`, 60)) return fout(429, 'Je hebt het afgelopen uur veel bonnetjes laten uitlezen. Probeer het straks opnieuw.');
   const b = await leesJson(request);
   const deel = typeof b.deel === 'string' ? b.deel : '';
   const mapNaam = typeof b.map === 'string' ? b.map : 'INBOX';
@@ -95,7 +99,7 @@ export const POST = uitgavenRoute(async (request, _ctx, sb, lid) => {
     naDriveUitgave(lid, id);
     return json({ uitgave }, 201);
   } catch (e) {
-    console.error('[uitgaven] uitlezen na mail', (e as Error)?.message ?? e);
+    logFout('[uitgaven] uitlezen na mail', e);
     naDriveUitgave(lid, id);
     const { uitgave } = await moetUitgave(sb, id);
     return json({ uitgave }, 201);

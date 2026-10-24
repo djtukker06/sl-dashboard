@@ -2,8 +2,9 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import type { EmailOtpType } from '@supabase/supabase-js';
 import { createClient } from '@/lib/supabase/server';
-import { controleerLid } from '@/lib/auth/lidcheck';
+import { toegangStatus } from '@/lib/auth/lidcheck';
 import { veiligVervolg } from '@/lib/vervolg';
+import { verseSessieCookie } from '@/lib/auth/sessie';
 
 export const dynamic = 'force-dynamic';
 
@@ -38,11 +39,24 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(`${origin}/wachtwoord-vergeten?error=${fout}`);
   }
 
-  const lid = await controleerLid(supabase);
-  if (lid === 'geen' || lid === 'storing') {
+  const toegang = await toegangStatus(supabase);
+  if (toegang.lid === 'geen' || toegang.lid === 'storing') {
     await supabase.auth.signOut();
     return NextResponse.redirect(`${origin}/geen-toegang`);
   }
 
-  return NextResponse.redirect(`${origin}${next}`);
+  // Nieuwe sessie: het sessiebeleid (proxy.ts) begint opnieuw.
+  const cookie = await verseSessieCookie();
+  const metSessie = (res: NextResponse) => {
+    if (cookie) res.cookies.set(cookie);
+    return res;
+  };
+
+  // Met tweestapsverificatie: eerst de code, dan pas verder (bv. naar /nieuw-wachtwoord).
+  if (toegang.heeftFactor && toegang.aal !== 'aal2') {
+    const q = next !== '/' ? `?next=${encodeURIComponent(next)}` : '';
+    return metSessie(NextResponse.redirect(`${origin}/login/2fa${q}`));
+  }
+
+  return metSessie(NextResponse.redirect(`${origin}${next}`));
 }

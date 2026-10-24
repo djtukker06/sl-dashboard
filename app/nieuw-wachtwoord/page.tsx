@@ -13,7 +13,8 @@ export default async function NieuwWachtwoordPage({
 }) {
   const { error, gelukt } = await searchParams;
   const status = await huidigTeamlid();
-  const nieuw = status.soort === 'lid' && !status.lid.welkomKlaar;
+  const nieuw =
+    (status.soort === 'lid' && !status.lid.welkomKlaar) || (status.soort === 'tfa' && !status.sessie.welkomKlaar);
 
   return (
     <div className="login-wrap">
@@ -38,13 +39,14 @@ export default async function NieuwWachtwoordPage({
           </>
         ) : (
           <form action={zetNieuwWachtwoord}>
+            <p className="section-hint">Minstens 12 tekens. Een zin van een paar woorden werkt goed en is makkelijk te onthouden.</p>
             <label>
               Nieuw wachtwoord
-              <input type="password" name="password" required minLength={8} autoFocus autoComplete="new-password" />
+              <input type="password" name="password" required minLength={12} autoFocus autoComplete="new-password" />
             </label>
             <label>
               Herhaal nieuw wachtwoord
-              <input type="password" name="password2" required minLength={8} autoComplete="new-password" />
+              <input type="password" name="password2" required minLength={12} autoComplete="new-password" />
             </label>
             <button type="submit" className="btn-primair">
               Wachtwoord opslaan

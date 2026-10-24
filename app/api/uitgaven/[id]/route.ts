@@ -11,6 +11,7 @@ import {
   zonderSoortAlsNodig,
   type UitgaveRij
 } from '@/lib/uitgaven/repo';
+import { logAudit } from '@/lib/audit';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -67,7 +68,7 @@ export const PATCH = uitgavenRoute(async (request, ctx: Ctx, sb, lid) => {
 });
 
 // DELETE /api/uitgaven/[id] → { ok: true }   (verwijdert ook de bestanden uit de opslag)
-export const DELETE = uitgavenRoute(async (_request, ctx: Ctx, sb) => {
+export const DELETE = uitgavenRoute(async (request, ctx: Ctx, sb, lid) => {
   const { id } = await ctx.params;
   if (!isUuid(id)) return fout(404, 'Deze uitgave bestaat niet (meer).');
   const bestanden = await bestandenVan(sb, id);
@@ -77,5 +78,6 @@ export const DELETE = uitgavenRoute(async (_request, ctx: Ctx, sb) => {
   // Eerst de rij (cascade naar expense_files), dan de bestanden: mislukt dat laatste, dan
   // blijft er hooguit een los bestand achter (gelogd), nooit een uitgave zonder bonnetje.
   await verwijder(bestanden.map((b) => b.storage_path));
+  await logAudit('verwijderd_uitgave', { lid, doel: id, details: { aantal: bestanden.length } }, request);
   return json({ ok: true });
 });

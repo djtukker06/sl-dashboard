@@ -2,6 +2,7 @@ import { contentDisposition, fout, json, uitgavenRoute } from '@/lib/uitgaven/ap
 import { maakZipExport, exportNamen } from '@/lib/uitgaven/export';
 import { filterUitgaven, isDatum, maakCsv } from '@/lib/uitgaven/model';
 import { uitgavenInPeriode } from '@/lib/uitgaven/repo';
+import { logAudit } from '@/lib/audit';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -13,7 +14,7 @@ export const maxDuration = 300;
 //   GET /api/uitgaven/export?formaat=zip&van=…&tot=…[…]
 //       → { delen: [{ naam, url, aantal }] }  ZIP('s) met bonnetjes + CSV via een signed URL
 // Uitgaven zonder datum tellen niet mee (die horen bij geen enkele periode).
-export const GET = uitgavenRoute(async (request, _ctx, sb) => {
+export const GET = uitgavenRoute(async (request, _ctx, sb, lid) => {
   const sp = new URL(request.url).searchParams;
   const van = sp.get('van');
   const tot = sp.get('tot');
@@ -32,6 +33,7 @@ export const GET = uitgavenRoute(async (request, _ctx, sb) => {
   if (!uitgaven.length) return fout(404, 'Er zijn geen uitgaven in deze periode om te exporteren.');
 
   const basisNaam = `uitgaven_${van}_${tot}`;
+  await logAudit('export_bonnetjes', { lid, doel: `${van} t/m ${tot}`, details: { soort: formaat, aantal: uitgaven.length } }, request);
   if (formaat === 'csv') {
     const { namen } = await exportNamen(sb, uitgaven);
     const csv = maakCsv(uitgaven, namen);

@@ -1,4 +1,5 @@
 import Script from 'next/script';
+import { headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { vereisTeamlidPagina } from '@/lib/auth/team';
 import { teamProfielen } from '@/lib/team/profielen';
@@ -27,11 +28,13 @@ export default async function AppLayout({ children }: Readonly<{ children: React
   // profiles.welkom_klaar_op bestaat en leeg is (migratie 0022); zie lib/auth/team.ts.
   if (!lid.welkomKlaar) redirect('/welkom');
   const leden = await teamProfielen(lid);
+  // Nonce van de Content-Security-Policy (proxy.ts) voor het losse shell-script.
+  const nonce = (await headers()).get('x-nonce') ?? undefined;
 
   return (
     <div className="sl-shell" data-gebruiker={lid.userId}>
       <Rail
-        account={{ id: lid.userId, email: lid.email, naam: lid.profiel.naam, initialen: lid.profiel.initialen, kleur: lid.profiel.kleur }}
+        account={{ id: lid.userId, email: lid.email, naam: lid.profiel.naam, initialen: lid.profiel.initialen, kleur: lid.profiel.kleur, eigenaar: lid.rol === 'eigenaar' }}
       />
       <main className="sl-main">
         {lid.overgang && (
@@ -46,7 +49,7 @@ export default async function AppLayout({ children }: Readonly<{ children: React
           {children}
         </TeamProvider>
       </main>
-      <Script src="/shell/shell.js" strategy="afterInteractive" />
+      <Script src="/shell/shell.js" strategy="afterInteractive" nonce={nonce} />
     </div>
   );
 }

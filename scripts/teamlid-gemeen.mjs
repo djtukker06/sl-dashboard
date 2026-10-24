@@ -72,3 +72,23 @@ export async function vindGebruiker(sb, email) {
 export function tabelFout(error) {
   return error && ["PGRST205", "42P01"].includes(error.code);
 }
+
+/**
+ * Regel in de audit-log (migratie 0026) met bron 'script'. Best effort: zonder tabel of bij
+ * een fout alleen een waarschuwing. Nooit wachtwoorden, tokens of codes in details.
+ */
+export async function auditScript(sb, actie, { userId = null, doel = null, details = {} } = {}) {
+  try {
+    const { error } = await sb.from("audit_log").insert({
+      user_id: userId,
+      actie,
+      doel: doel ? String(doel).slice(0, 200) : null,
+      details,
+      ua: "script",
+      bron: "script",
+    });
+    if (error && !tabelFout(error) && error.code !== "PGRST204") console.error(`Waarschuwing: audit-log niet bijgewerkt (${error.code ?? "fout"}).`);
+  } catch {
+    console.error("Waarschuwing: audit-log niet bijgewerkt.");
+  }
+}

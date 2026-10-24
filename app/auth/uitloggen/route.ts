@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { SESSIE_COOKIE, SESSIE_COOKIE_OPTIES } from '@/lib/auth/sessie-kern';
+import { logAudit } from '@/lib/audit';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -27,8 +29,13 @@ export async function POST(request: Request) {
   const {
     data: { user }
   } = await supabase.auth.getUser();
-  if (user) await supabase.auth.signOut();
+  if (user) {
+    await supabase.auth.signOut();
+    await logAudit('uitloggen', { userId: user.id }, request);
+  }
 
-  // 303: na een POST met GET naar de loginpagina.
-  return NextResponse.redirect(new URL('/login', request.url), 303);
+  // 303: na een POST met GET naar de loginpagina. De sessiecookie van het sessiebeleid weg.
+  const res = NextResponse.redirect(new URL('/login', request.url), 303);
+  res.cookies.set(SESSIE_COOKIE, '', { ...SESSIE_COOKIE_OPTIES, maxAge: 0 });
+  return res;
 }

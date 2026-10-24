@@ -197,3 +197,74 @@
 .ac-kleuren-veld { margin: 0; padding: 0; border: 0; display: grid; gap: 8px; min-width: 0; }
 .ac-kleuren-klein .ac-kleur-stip { width: 22px; height: 22px; }
 .ac-waarschuwing-zacht { color: var(--sl-muted); border-color: var(--sl-line); }
+
+/* ----------------------------------------------------------
+   Beveiliging (bv-): 2FA instellen, apparaten, eigenaarspagina
+   ---------------------------------------------------------- */
+.bv-instellen { display: grid; gap: 16px; }
+.bv-uitleg-stappen { margin: 0; padding-left: 20px; display: grid; gap: 6px; font-size: 13px; line-height: 1.55; color: var(--sl-muted); }
+.bv-uitleg-stappen strong { color: var(--sl-text); font-weight: 600; }
+.bv-scan { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 20px; align-items: start; }
+.bv-qr-vlak { padding: 10px; border-radius: 6px; background: #fff; line-height: 0; }
+.bv-qr { display: block; width: 176px; height: 176px; }
+.bv-scan-rechts { display: grid; gap: 12px; min-width: 0; }
+.bv-sleutel { margin: 0; display: grid; gap: 4px; }
+.bv-sleutel-label { font-size: 11.5px; color: var(--sl-muted); }
+.bv-sleutel code {
+  font-family: var(--sl-mono);
+  font-size: 13px;
+  letter-spacing: .06em;
+  word-break: break-all;
+  padding: 8px 10px;
+  border: 1px solid var(--sl-line);
+  border-radius: 4px;
+  background: var(--sl-bg);
+  user-select: all;
+}
+.bv-code { font-family: var(--sl-mono); font-size: 18px; letter-spacing: .3em; max-width: 180px; }
+.bv-link {
+  justify-self: start;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--sl-sand);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.bv-link:hover { color: var(--sl-sand-hover); }
+.bv-status { display: flex; align-items: center; gap: 10px; font-size: 13.5px; }
+.bv-stip { flex: none; width: 9px; height: 9px; border-radius: 50%; background: var(--sl-faint); }
+.bv-stip.is-aan { background: #8fb38a; }
+.bv-stip.is-uit { background: var(--sl-danger); }
+.bv-apparaten { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.bv-apparaat {
+  display: grid;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--sl-line);
+  border-radius: 4px;
+  background: var(--sl-bg);
+}
+.bv-apparaat-kop { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 14px; }
+.bv-apparaat-naam { font-size: 14px; font-weight: 600; }
+.bv-apparaat-sub { font-size: 12px; color: var(--sl-muted); }
+.bv-rij-form { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; }
+.bv-tabel-wrap { overflow-x: auto; border: 1px solid var(--sl-line); border-radius: 4px; }
+.bv-tabel { width: 100%; border-collapse: collapse; font-size: 13px; }
+.bv-tabel th, .bv-tabel td { padding: 9px 12px; text-align: left; border-bottom: 1px solid var(--sl-line-soft); vertical-align: top; }
+.bv-tabel th { font-family: var(--sl-mono); font-size: 10.5px; font-weight: 500; letter-spacing: .08em; text-transform: uppercase; color: var(--sl-muted); white-space: nowrap; }
+.bv-tabel tr:last-child td { border-bottom: 0; }
+.bv-tabel .bv-klein { font-size: 12px; color: var(--sl-muted); }
+.bv-tabel .bv-nowrap { white-space: nowrap; }
+.bv-actie { font-family: var(--sl-mono); font-size: 12px; }
+.bv-actie.is-gevaar { color: var(--sl-danger); }
+.bv-filters { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; }
+.bv-filters .ag-label { min-width: 180px; }
+.bv-paginering { display: flex; align-items: center; gap: 10px; font-size: 12.5px; color: var(--sl-muted); }
+@media (max-width: 640px) {
+  .bv-scan { grid-template-columns: 1fr; }
+  .bv-qr-vlak { justify-self: start; }
+}

@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
-import { huidigTeamlid, metTeamlid, teamlidUitContext } from "@/lib/auth/team";
+import { huidigTeamlid, metTeamlid, teamlidUitContext, weigering } from "@/lib/auth/team";
+import { logFout } from "@/lib/log";
+import { logAudit } from "@/lib/audit";
 import { eigenHerkomst, isWijzigend } from "@/lib/auth/herkomst";
 import { createServiceRoleClient } from "@/lib/supabase/service-role";
 import { bucketOntbreekt } from "@/lib/db/ontbreekt";
@@ -48,6 +50,7 @@ export async function requireUser(): Promise<{ id: string; email: string | null 
   if (s.soort === "anoniem") throw new HttpError(401, "Niet ingelogd.");
   if (s.soort === "geen_toegang") throw new HttpError(403, "Geen toegang.");
   if (s.soort === "storing") throw new HttpError(503, "De toegangscontrole is tijdelijk niet beschikbaar.");
+  if (s.soort === "tfa") throw new HttpError(401, "Vul eerst je 2FA-code in.");
   return { id: s.lid.userId, email: s.lid.email || null };
 }
 
@@ -83,18 +86,16 @@ export async function readBody(request: Request): Promise<Record<string, unknown
 export function route<C>(fn: (request: Request, context: C) => Promise<Response>) {
   return async (request: Request, context: C): Promise<Response> => {
     const s = await huidigTeamlid();
-    if (s.soort === "anoniem") return jsonError(401, "Niet ingelogd.");
-    if (s.soort === "geen_toegang") return jsonError(403, "Geen toegang.");
-    if (s.soort === "storing") return jsonError(503, "De toegangscontrole is tijdelijk niet beschikbaar.");
+    if (s.soort !== "lid") return weigering(s);
     if (isWijzigend(request.method) && !eigenHerkomst(request)) return jsonError(403, "Ongeldige herkomst.");
     try {
       return await metTeamlid(s.lid, () => fn(request, context));
     } catch (err) {
       if (err instanceof HttpError) {
-        if (err.status >= 500) console.error(err);
+        if (err.status >= 500) logFout("[social]", err);
         return jsonError(err.status, err.message || "Er ging iets mis.");
       }
-      console.error(err);
+      logFout("[social]", err);
       return jsonError(500, "Er ging iets mis. Probeer het opnieuw.");
     }
   };
@@ -129,7 +130,7 @@ async function removeOldExports(projectId: string) {
       if (rmErr) throw rmErr;
     }
   } catch (err) {
-    console.error(err);
+    logFout("[social] oude exports opruimen", err);
   }
 }
 
@@ -149,14 +150,16 @@ export async function redirectToSigned(
   const objectPath = `exports/${projectId}/${Date.now()}-${name}`;
   const { error: upErr } = await storage.upload(objectPath, bytes, { contentType, upsert: true });
   if (upErr) {
-    console.error(upErr);
+    logFout("[social] export klaarzetten", upErr);
     if (bucketOntbreekt(upErr)) throw new HttpError(503, BUCKET_NIET_INGERICHT);
     throw new HttpError(500, "Kon de export niet klaarzetten.");
   }
   const { data, error } = await storage.createSignedUrl(objectPath, 300, { download: name });
   if (error || !data?.signedUrl) {
-    console.error(error);
+    logFout("[social] export klaarzetten", error);
     throw new HttpError(500, "Kon de export niet klaarzetten.");
   }
+  const lid = teamlidUitContext();
+  await logAudit("export_social", { lid, doel: projectId, details: { soort: name.split(".").pop() ?? "", naam: name } });
   return NextResponse.redirect(data.signedUrl, 302);
 }

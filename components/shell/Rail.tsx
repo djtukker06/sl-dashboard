@@ -34,6 +34,11 @@ export function Rail({ account }: { account: RailAccount }) {
             <a className="sl-account-link" href="/account">
               Account &amp; mail
             </a>
+            {account.eigenaar && (
+              <a className="sl-account-link" href="/beveiliging">
+                Beveiliging &amp; audit
+              </a>
+            )}
             <a className="sl-account-link" href="/nieuw-wachtwoord">
               Wachtwoord wijzigen
             </a>

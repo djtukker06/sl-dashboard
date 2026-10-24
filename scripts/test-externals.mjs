@@ -134,6 +134,8 @@ if (!fs.existsSync(SERVER)) {
         try {
           let m = require(path.join(${JSON.stringify(SERVER)}, r, 'route.js'));
           if (m && typeof m.then === 'function') m = await m;
+          // Next >= 16.4 laadt routes met async (ESM-)externals lui: eerst afwachten.
+          if (m.routeModule && typeof m.routeModule.ensureUserland === 'function') await m.routeModule.ensureUserland();
           const u = m.routeModule && m.routeModule.userland;
           const methoden = u ? Object.keys(u).filter((k) => /^[A-Z]+$/.test(k)) : [];
           console.log(JSON.stringify({ r, ok: methoden.length > 0, methoden }));

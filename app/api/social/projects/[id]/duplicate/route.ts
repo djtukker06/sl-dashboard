@@ -11,6 +11,7 @@ import {
   writeSlides,
   type Project,
 } from "@/lib/social/repo";
+import { logFout } from "@/lib/log";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -32,7 +33,7 @@ export const POST = route(async (_request: Request, { params }: Ctx) => {
   const storage = db().storage.from(BUCKET);
   for (const o of await listAssetObjects(src.id)) {
     const { error } = await storage.copy(assetPath(src.id, o.name), assetPath(p.id, o.name));
-    if (error) console.error(`Kon ${o.name} niet kopiëren:`, error);
+    if (error) logFout("[social] kopiëren mislukt", error);
   }
   return NextResponse.json(p);
 });

@@ -13,7 +13,7 @@
 //   node --env-file=.env.local scripts/teamlid-verwijderen.mjs --email mark@studio-levant.nl
 //
 // Opties: --email <adres> (verplicht), --definitief --ja, --dry-run, --help
-import { adminClient, controleerEmail, fout, leesArgumenten, tabelFout, vindGebruiker } from "./teamlid-gemeen.mjs";
+import { adminClient, auditScript, controleerEmail, fout, leesArgumenten, tabelFout, vindGebruiker } from "./teamlid-gemeen.mjs";
 
 const HELP = `Gebruik: node --env-file=.env.local scripts/teamlid-verwijderen.mjs --email <adres> [--definitief --ja] [--dry-run]
 
@@ -67,6 +67,7 @@ const uit = await sb
   .upsert({ user_id: gebruiker.id, actief: false, rol: rij?.rol ?? "lid", gedeactiveerd_op: new Date().toISOString() }, { onConflict: "user_id" });
 if (uit.error) fout(`deactiveren mislukt: ${uit.error.message}`);
 console.log("Lidmaatschap gedeactiveerd.");
+await auditScript(sb, "team_gedeactiveerd", { doel: gebruiker.id, details: { reden: "teamlid-verwijderen.mjs" } });
 
 // 2. Account blokkeren (geen nieuwe sessies en geen verversing van bestaande).
 const ban = await sb.auth.admin.updateUserById(gebruiker.id, { ban_duration: "876000h" });
@@ -87,6 +88,7 @@ if (args.definitief) {
   const weg = await sb.auth.admin.deleteUser(gebruiker.id);
   if (weg.error) fout(`account verwijderen mislukt: ${weg.error.message} (het lid is wel gedeactiveerd en geblokkeerd)`);
   console.log(`Account ${email} definitief verwijderd.`);
+  await auditScript(sb, "team_verwijderd", { doel: gebruiker.id });
 } else {
   console.log(`Klaar: ${email} heeft geen toegang meer. Terugdraaien: scripts/teamlid-toevoegen.mjs --email ${email} --naam "…"`);
 }

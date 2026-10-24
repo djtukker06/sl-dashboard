@@ -3,6 +3,7 @@ import type { Teamlid } from '@/lib/auth/team';
 import { createServiceRoleClient } from '@/lib/supabase/service-role';
 import { bucketOntbreekt } from '@/lib/db/ontbreekt';
 import { MailFout } from './fout';
+import { logFout } from '@/lib/log';
 
 // Grote bijlagen (> 4 MB) passen niet in een Vercel-respons (max. 4,5 MB). Die gaan eerst
 // naar de privé-bucket "mail-tmp" (migratie 0019) en de browser downloadt ze via een
@@ -34,7 +35,7 @@ async function ruimOp(lid: Teamlid) {
       if (paden.length) await storage.remove(paden);
     }
   } catch (e) {
-    console.error('[mail] opruimen mail-tmp', e);
+    logFout('[mail] opruimen mail-tmp', e);
   }
 }
 
@@ -45,7 +46,7 @@ export async function signedDownload(lid: Teamlid, naam: string, inhoud: Buffer)
   const pad = `${lid.userId}/${Date.now()}-${randomBytes(8).toString('hex')}/${veiligeNaam}`;
   const { error: upErr } = await storage.upload(pad, inhoud, { contentType: 'application/octet-stream', upsert: false });
   if (upErr) {
-    console.error('[mail] upload mail-tmp', upErr.message);
+    logFout('[mail] upload mail-tmp', upErr);
     if (bucketOntbreekt(upErr)) {
       throw new MailFout(
         503,

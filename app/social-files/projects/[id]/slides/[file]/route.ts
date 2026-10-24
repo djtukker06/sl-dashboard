@@ -7,7 +7,10 @@ export const dynamic = "force-dynamic";
 type Ctx = { params: Promise<{ id: string; file: string }> };
 
 // Vervangt de statische map /projects/<id>/slides/ van de oude Express-server. De slide
-// wordt in een iframe getoond; de CSP zorgt dat scripts in slide-HTML nooit draaien.
+// wordt in een iframe getoond. De slide-HTML komt van de AI of is met de hand bewerkt, dus
+// streng: geen scripts, geen formulieren, geen <base>, geen plug-ins, en "sandbox" (ook
+// als iemand de slide los in een tabblad opent). allow-same-origin is nodig voor de
+// thumbnails/editor (die al met sandbox="allow-same-origin" laden) en de eigen stylesheets.
 export const GET = route(async (_request: Request, { params }: Ctx) => {
   await requireUser();
   const { id, file } = await params;
@@ -20,7 +23,10 @@ export const GET = route(async (_request: Request, { params }: Ctx) => {
     headers: {
       "Content-Type": "text/html; charset=utf-8",
       "Cache-Control": "private, no-store",
-      "Content-Security-Policy": "script-src 'none'; object-src 'none'; base-uri 'self'",
+      "Content-Security-Policy":
+        "sandbox allow-same-origin; default-src 'none'; script-src 'none'; img-src 'self' data: https:; " +
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; " +
+        "form-action 'none'; base-uri 'none'; object-src 'none'; frame-ancestors 'self'",
       "X-Content-Type-Options": "nosniff",
     },
   });

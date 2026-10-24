@@ -30,10 +30,20 @@ const nextConfig: NextConfig = {
     // /social leest de social-HTML via fs in en zet de gedeelde rail erin (app/social/route.ts).
     '/social': ['./assets/social-app/index.html']
   },
-  // Beveiligingskoppen voor elk antwoord (pagina's, API's en bestanden):
+  // Geen beeldoptimalisatie nodig (geen next/image): zo is /_next/image (bekende lekken in
+  // oudere versies, SSRF/DoS-gevoelig) helemaal dicht.
+  images: { unoptimized: true },
+  // Geen "X-Powered-By: Next.js" (verraadt alleen de versie-familie).
+  poweredByHeader: false,
+  // Beveiligingskoppen voor elk antwoord (pagina's, API's en bestanden). De
+  // Content-Security-Policy (met nonce per verzoek) zet proxy.ts.
   //   - niet in een frame van een ander domein (clickjacking); eigen iframes (social-slides) mogen;
   //   - Referer alleen binnen de eigen site: signed URL's en ?-parameters lekken niet naar buiten;
-  //   - geen MIME-sniffing; camera alleen voor de eigen site (bonnetje fotograferen), de rest uit.
+  //   - geen MIME-sniffing; camera alleen voor de eigen site (bonnetje fotograferen), de rest uit;
+  //   - HSTS: twee jaar alleen https (ook subdomeinen);
+  //   - COOP: geen venster van een ander domein kan bij dit venster (window.opener);
+  //   - CORP: bestanden van de backoffice zijn niet in te sluiten op andere sites (behalve de
+  //     openbare logo's in /brand/, die bv. in een mailhandtekening staan).
   async headers() {
     return [
       {
@@ -42,8 +52,15 @@ const nextConfig: NextConfig = {
           { key: 'X-Frame-Options', value: 'SAMEORIGIN' },
           { key: 'Referrer-Policy', value: 'same-origin' },
           { key: 'X-Content-Type-Options', value: 'nosniff' },
-          { key: 'Permissions-Policy', value: 'camera=(self), microphone=(), geolocation=(), payment=()' }
+          { key: 'Permissions-Policy', value: 'camera=(self), microphone=(), geolocation=(), payment=(), usb=(), interest-cohort=()' },
+          { key: 'Strict-Transport-Security', value: 'max-age=63072000; includeSubDomains' },
+          { key: 'Cross-Origin-Opener-Policy', value: 'same-origin' },
+          { key: 'X-Permitted-Cross-Domain-Policies', value: 'none' }
         ]
+      },
+      {
+        source: '/((?!brand/).*)',
+        headers: [{ key: 'Cross-Origin-Resource-Policy', value: 'same-origin' }]
       }
     ];
   },

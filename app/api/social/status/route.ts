@@ -3,6 +3,7 @@ import { hasApiKey } from "@/lib/social/claude";
 import { FORMATS } from "@/lib/social/formats";
 import { BUCKET, db, requireUser, route } from "@/lib/social/http";
 import { getBrand } from "@/lib/social/repo";
+import { logFout } from "@/lib/log";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -18,7 +19,7 @@ export const GET = route(async () => {
       .from("social_projects")
       .select("id", { head: true, count: "exact" })
       .then(({ error }) => {
-        if (error) console.error(error);
+        if (error) logFout("[social] status", error);
         return !error;
       }),
     getBrand().then(

@@ -2,6 +2,7 @@ import { ImapFlow } from 'imapflow';
 import type { MailConfig } from './config';
 import { MailFout, naarMailFout, NIET_GEKOPPELD } from './fout';
 import { openbaarAdres } from './dns';
+import { logFout } from '@/lib/log';
 
 // Eén IMAP-sessie per request: openen, werk doen, altijd netjes uitloggen. Geen IDLE en
 // geen verbindingen die blijven openstaan — dat past bij serverless (Vercel).
@@ -29,13 +30,13 @@ export async function metImap<T>(cfg: MailConfig | null, fn: (client: ImapFlow) 
   });
   // Zonder listener zou een socketfout na afloop als "unhandled error" het proces raken.
   client.on('error', (err: unknown) => {
-    console.error('[mail] imap', (err as { code?: string })?.code ?? err);
+    logFout('[mail] imap', err);
   });
 
   try {
     await client.connect();
   } catch (e) {
-    console.error('[mail] verbinden mislukt', (e as { code?: string })?.code ?? '', (e as Error)?.message ?? '');
+    logFout('[mail] verbinden mislukt', e);
     throw naarMailFout(e);
   }
 
@@ -43,7 +44,7 @@ export async function metImap<T>(cfg: MailConfig | null, fn: (client: ImapFlow) 
     return await fn(client);
   } catch (e) {
     if (!(e instanceof MailFout)) {
-      console.error('[mail] imap-opdracht mislukt', (e as { code?: string })?.code ?? '', (e as Error)?.message ?? '');
+      logFout('[mail] imap-opdracht mislukt', e);
     }
     throw naarMailFout(e);
   } finally {
