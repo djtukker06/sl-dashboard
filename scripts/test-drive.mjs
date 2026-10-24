@@ -363,6 +363,27 @@ test("binnenRoot: keten omhoog tot de root, anders null", async () => {
   await kern.binnenRoot(geteld, "root0001", "offerte1", bekend);
   assert.equal(n, 1, "alleen het bestand zelf, de ouder is al bekend");
 });
+test("binnenRoot: alles onder de Back-ups-map (verboden) telt als buiten de root", async () => {
+  const d = nepDrive({
+    root0001: { parents: ["mijndrive"] },
+    backups1: { parents: ["root0001"] },
+    jaar2026: { parents: ["backups1"] },
+    dag00001: { parents: ["jaar2026"] },
+    losbak01: { parents: ["backups1"] },
+    eigenmap: { parents: ["backups1"] },
+    diepbak1: { parents: ["eigenmap"] },
+    klanten1: { parents: ["root0001"] },
+  });
+  const verboden = new Set(["backups1", "jaar2026"]);
+  // Ook als de mappen al in de procescache (bekend) staan, wint verboden.
+  const bekend = new Set(["root0001", "backups1", "jaar2026"]);
+  assert.equal(await kern.binnenRoot(d, "root0001", "dag00001", bekend, verboden), null);
+  assert.equal(await kern.binnenRoot(d, "root0001", "losbak01", bekend, verboden), null);
+  assert.equal(await kern.binnenRoot(d, "root0001", "backups1", bekend, verboden), null);
+  assert.equal(await kern.binnenRoot(d, "root0001", "jaar2026", bekend, verboden), null);
+  assert.equal(await kern.binnenRoot(d, "root0001", "diepbak1", new Set(), verboden), null);
+  assert.equal((await kern.binnenRoot(d, "root0001", "klanten1", bekend, verboden))?.id, "klanten1");
+});
 test("binnenRoot: oneindige lus wordt afgekapt", async () => {
   const d = nepDrive({ lusAAAA1: { parents: ["lusBBBB2"] }, lusBBBB2: { parents: ["lusAAAA1"] } });
   assert.equal(await kern.binnenRoot(d, "root0001", "lusAAAA1"), null);

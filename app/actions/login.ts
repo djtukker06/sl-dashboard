@@ -6,16 +6,19 @@ import { createClient } from '@/lib/supabase/server';
 import { toegangStatus } from '@/lib/auth/lidcheck';
 import { veiligVervolg } from '@/lib/vervolg';
 import { clientIp } from '@/lib/auth/hash';
-import { controleerLimieten, limietenInloggen, registreerPoging } from '@/lib/auth/inlogpogingen';
+import { alarmInloggen, controleerLimieten, limietenInloggen, registreerPoging } from '@/lib/auth/inlogpogingen';
 import { wachtTekst } from '@/lib/auth/limiet-kern';
 import { verseSessieCookie } from '@/lib/auth/sessie';
 import { SESSIE_COOKIE } from '@/lib/auth/sessie-kern';
 import { logAudit } from '@/lib/audit';
 
 // Inloggen met e-mail + wachtwoord.
-//   1. pogingenlimiet (per e-mailadres 5 en per IP 20 mislukte pogingen per 15 minuten;
-//      lib/auth/inlogpogingen.ts). De melding blijft algemeen: hij verraadt niet of een
-//      adres bestaat;
+//   1. pogingenlimiet (per e-mailadres+IP 5 en per IP 20 mislukte pogingen per 15 minuten;
+//      lib/auth/inlogpogingen.ts). Niet per e-mailadres alleen, zodat een aanvaller de
+//      eigenaar niet kan buitensluiten; veel pogingen op één adres geven wel een alarm
+//      ('inlog_verdacht') in de audit-log. De melding blijft algemeen: hij verraadt niet of
+//      een adres bestaat. Dit is een extra drempel voor het formulier; de echte bescherming
+//      tegen raden zit in de limieten van Supabase Auth (zie docs/BEVEILIGING.md);
 //   2. alleen actieve teamleden (migratie 0021); een geldig account zonder lidmaatschap
 //      wordt meteen weer uitgelogd;
 //   3. heeft het account tweestapsverificatie: door naar /login/2fa voor de code.
@@ -42,8 +45,11 @@ export async function signIn(formData: FormData) {
   const { data, error } = await supabase.auth.signInWithPassword({ email, password });
 
   if (error || !data.user) {
-    await registreerPoging(limieten.map((l) => l.sleutel), false);
+    const alarm = alarmInloggen(email);
+    await registreerPoging([...limieten.map((l) => l.sleutel), alarm.sleutel], false);
     await logAudit('inloggen_mislukt', { details: { reden: error?.code ?? 'onbekend' } }, h);
+    // Veel mislukte pogingen op één adres (vanaf allerlei IP's): niet blokkeren, wel melden.
+    if ((await controleerLimieten([alarm])).geblokkeerd) await logAudit('inlog_verdacht', { details: { reden: 'veel_pogingen_op_adres' } }, h);
     redirect(`/login?error=${encodeURIComponent('Inloggen mislukt. Controleer e-mailadres en wachtwoord.')}${terug}`);
   }
 
@@ -60,7 +66,7 @@ export async function signIn(formData: FormData) {
     redirect(`/login?error=${encodeURIComponent(melding)}${terug}`);
   }
 
-  await registreerPoging([limieten[0].sleutel], true);
+  await registreerPoging([limieten[0].sleutel, alarmInloggen(email).sleutel], true);
   // Nieuwe sessie: het sessiebeleid (12 uur inactief / 14 dagen) begint opnieuw.
   const cookie = await verseSessieCookie();
   const jar = await cookies();

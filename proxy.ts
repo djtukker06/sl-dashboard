@@ -6,8 +6,10 @@ import { veiligVervolg } from '@/lib/vervolg';
 import { bouwCsp, maakNonce } from '@/lib/auth/csp-kern';
 import { sessieGeheim } from '@/lib/auth/sessie';
 import {
+  inlogMoment,
   leesSessieWaarde,
   maakSessieWaarde,
+  nieuwToegestaan,
   sessieBeslissing,
   sessieSleutel,
   SESSIE_COOKIE,
@@ -24,7 +26,8 @@ import {
 //      sleutel valt Supabase zelf terug op een controle bij de Auth-server);
 //   3. geen sessie: API's en bestanden krijgen een 401 (JSON), pagina's gaan naar /login;
 //   4. sessiebeleid (lib/auth/sessie-kern.ts): 12 uur niets gedaan of 14 dagen ingelogd →
-//      uitloggen (Supabase gratis kent geen time-box of inactiviteits-timeout);
+//      uitloggen (Supabase gratis kent geen time-box of inactiviteits-timeout). Ontbreekt de
+//      sessiecookie en is het inlogmoment (amr) niet recent: ook uitloggen;
 //   5. wel een sessie maar geen actief teamlid (migratie 0021): uitloggen, pagina's naar
 //      /geen-toegang, API's een 403 (JSON). Zo komt een account dat zich ondanks alles
 //      heeft kunnen registreren nergens bij;
@@ -140,7 +143,9 @@ export async function proxy(request: NextRequest) {
     return metCookies(NextResponse.redirect(naarLogin()));
   }
 
-  // Sessiebeleid (stap 4). Ontbreekt de cookie of klopt hij niet: een nieuwe zetten.
+  // Sessiebeleid (stap 4). Ontbreekt de cookie of klopt hij niet: alleen een nieuwe zetten
+  // als het echte inlogmoment (amr in het token) van de laatste minuten is; anders uitloggen.
+  // (Inloggen, /auth/callback en de 2FA-stap zetten de cookie al zelf.)
   const geheim = user ? sessieGeheim() : null;
   if (user && geheim && pad !== '/auth/uitloggen') {
     try {
@@ -148,7 +153,8 @@ export async function proxy(request: NextRequest) {
       const nu = Date.now();
       const t = await leesSessieWaarde(sleutel, request.cookies.get(SESSIE_COOKIE)?.value);
       const b = sessieBeslissing(t, nu);
-      if (b.soort === 'verlopen') {
+      const authMs = b.soort === 'nieuw' ? inlogMoment(claims) : 0;
+      if (b.soort === 'verlopen' || (b.soort === 'nieuw' && !nieuwToegestaan(authMs, nu))) {
         // Alleen deze sessie (dit apparaat) beëindigen, niet alle apparaten.
         await supabase.auth.signOut({ scope: 'local' });
         sessieWissen = true;
@@ -159,7 +165,7 @@ export async function proxy(request: NextRequest) {
         }
         return metCookies(NextResponse.redirect(naarLogin({ reden: 'verlopen' })));
       }
-      if (b.soort === 'nieuw') sessieCookie = await maakSessieWaarde(sleutel, { start: nu, laatst: nu });
+      if (b.soort === 'nieuw') sessieCookie = await maakSessieWaarde(sleutel, { start: Math.min(authMs, nu), laatst: nu });
       else if (b.verversen && t) sessieCookie = await maakSessieWaarde(sleutel, { start: t.start, laatst: nu });
     } catch {
       // Het sessiebeleid mag nooit de toegang breken.

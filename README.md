@@ -328,7 +328,9 @@ Auth MFA: Google Authenticator, 1Password, Bitwarden, …).
 - **In de database:** `is_teamlid()` eist aal2 van wie een factor heeft. Een gestolen
   wachtwoord geeft dus ook via de Supabase-API niets.
 - **Niemand buitensluiten:** vóór 0026 of met `MFA_AFDWINGEN=uit` hoeft niemand 2FA in te
-  stellen (wie een apparaat heeft, vult wel zijn code in). Wie nog geen factor heeft, ziet in de
+  stellen. Let op: `MFA_AFDWINGEN=uit` helpt alleen wie nog geen apparaat heeft; wie er wel
+  een heeft, vult nog steeds zijn code in. Werkt 2FA voor niemand meer (storing), reset dan
+  per persoon met `scripts/2fa-herstel.mjs --reset <email>` (zie docs/BEVEILIGING.md, hoofdstuk 6). Wie nog geen factor heeft, ziet in de
   database gewoon alles; de app laat hem eerst instellen. "Streng" (ook zonder factor geen data)
   pas aanzetten als iedereen 2FA heeft.
 - **Herstel:** Supabase kent geen herstelcodes. De eigenaar reset de 2FA van een lid op
@@ -345,12 +347,16 @@ Auth MFA: Google Authenticator, 1Password, Bitwarden, …).
   Elke wijziging vraagt bevestiging en komt in de audit-log (bron `script`).
 
 **Verder:**
-- **Inlogpogingen:** 5 per e-mailadres en 20 per IP per 15 minuten. 2FA-codes 5 per 5
+- **Inlogpogingen:** 5 per e-mailadres+IP en 20 per IP per 15 minuten (niet per adres alleen,
+  zodat niemand de eigenaar kan buitensluiten; 30 per uur op één adres geeft `inlog_verdacht`
+  in de audit-log). Dit geldt alleen voor het formulier; met de anon-key gelden de rate limits
+  van Supabase Auth. 2FA-codes 5 per 5
   minuten, wachtwoord vergeten 3 per uur. Tabel `inlog_pogingen`, alleen hashes.
 - **Wachtwoorden:** minstens 12 tekens en niet bekend uit datalekken (Have I Been Pwned,
   k-anonimiteit).
 - **Sessie:** automatisch uitloggen na 12 uur zonder activiteit of na 14 dagen (cookie `sl_sessie`,
-  httpOnly en ondertekend).
+  httpOnly en ondertekend). Ontbreekt de cookie, dan alleen een nieuwe als het inlogmoment
+  (`amr` in het token) van de laatste 10 minuten is; anders uitloggen.
 - **Headers:** CSP met nonce per verzoek (`proxy.ts`, `lib/auth/csp-kern.ts`), HSTS, COOP, CORP,
   `X-Frame-Options`, `nosniff`, `Permissions-Policy` (`next.config.ts`). API's sturen
   `Cache-Control: no-store`.
@@ -377,8 +383,8 @@ De volgorde waarin niemand wordt buitengesloten:
    één keer handmatig en kijk de dag erna of er een heartbeat "via Vercel Cron" staat.
 6. **Bram uitnodigen.** Zijn welkomstflow begint met 2FA. Heeft iedereen 2FA, dan eventueel
    `scripts/2fa-herstel.mjs --streng aan`.
-7. **Noodgeval:** `MFA_AFDWINGEN=uit` in Vercel en/of `scripts/2fa-herstel.mjs --rls uit`.
-   Daarna weer terugzetten.
+7. **Noodgeval:** `MFA_AFDWINGEN=uit` in Vercel (alleen voor wie nog geen apparaat heeft) en
+   per teamlid met een apparaat `scripts/2fa-herstel.mjs --reset <email>`. Daarna weer terugzetten.
 
 ## De shell: één geheel
 
@@ -810,6 +816,8 @@ Studio Levant/
 - **Database-back-up.** Dezelfde nachtelijke taak maakt een volledige export van alle eigen tabellen, plus de gebruikers (zonder wachtwoorden) en een overzicht van de storage-bestanden. De export wordt met AES-256-GCM versleuteld (`BACKUP_ENCRYPTION_KEY`) en komt in Google Drive onder `Studio Levant/Back-ups/<jaar>/<datum>.slbak`. Was er de afgelopen 20 uur al een geslaagde back-up, dan wordt hij overgeslagen, dus GitHub en Vercel samen geven geen dubbele.
 - **Bewaren.** 14 dagen elke dag, 8 weken elke week en 12 maanden elke maand. De nieuwste 3 blijven altijd staan; opgeruimde back-ups gaan naar de prullenbak van Drive.
 - **Bestanden.** Facturen-PDF's, bonnetjes en social-assets gaan wekelijks via `/api/cron/bestanden` naar Drive (04:30 UTC). Alleen nieuwe en gewijzigde bestanden worden gekopieerd, elk apart versleuteld, naar `Studio Levant/Back-ups/Bestanden/<bucket>/`. Een ronde die niet in één keer af komt, gaat de volgende nacht verder.
+
+- **Alleen voor de eigenaar.** De map `Back-ups` (en alles eronder) is onbereikbaar via de Drive-module van de app (`lib/drive/mappen.ts` › `backupIds`): niet zichtbaar in de root, niet te zoeken, downloaden, hernoemen, verwijderen of te vullen (`buiten_root`). In Drive zelf (account van Daniel) staat hij gewoon.
 
 **Status en knoppen.** Op `/beveiliging` › Back-ups (alleen de eigenaar, met 2FA-sessie) zie je:
 - de laatste back-up, de laatste bestandensync en de laatste heartbeat;

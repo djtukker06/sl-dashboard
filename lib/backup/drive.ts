@@ -1,6 +1,6 @@
 import 'server-only';
 import { DriveFout, MAP_MIME, qKinderen, qTekst, type DriveBestand } from '@/lib/drive/kern';
-import { zorgVoorPad } from '@/lib/drive/mappen';
+import { BACKUP_MAP, zorgVoorPad } from '@/lib/drive/mappen';
 import type { Verbinding } from '@/lib/drive/koppeling';
 import { EXTENSIE_DB } from './formaat-kern';
 import { teVerwijderen } from './retentie-kern';
@@ -11,7 +11,7 @@ import { teVerwijderen } from './retentie-kern';
 //   Back-ups/Bestanden/<bucket>/<pad met __>.slenc     storage-bestanden (wekelijks, incrementeel)
 // Alles is versleuteld (lib/backup/formaat-kern.ts); Drive ziet alleen onleesbare bytes.
 
-export const BACKUP_MAP = 'Back-ups';
+export { BACKUP_MAP };
 export const BESTANDEN_MAP = 'Bestanden';
 const MIME = 'application/octet-stream';
 

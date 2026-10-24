@@ -1,7 +1,7 @@
 import 'server-only';
 import { DriveFout, MAP_MIME, MELDING, qZoeken, ROOT_NAAM, type DriveBestand } from './kern';
 import type { Verbinding } from './koppeling';
-import { beschermdeMappen, binnen, klantMap, projectMap, type KlantInfo, type ProjectInfo } from './mappen';
+import { BACKUP_MAP, backupIds, beschermdeMappen, binnen, klantMap, projectMap, type KlantInfo, type ProjectInfo } from './mappen';
 import type { DriveItem, Kruimel, MapInhoud } from './types';
 
 // Bladeren, zoeken en de koppeling met klanten/projecten voor de Drive-API.
@@ -61,7 +61,9 @@ export async function mapInhoud(v: Verbinding, mapId: string | null): Promise<Ma
   const id = mapId || v.rootId;
   const map = id === v.rootId ? await v.client.bestand(v.rootId) : await binnen(v, id);
   if (map.mimeType !== MAP_MIME) throw new DriveFout('niet_gevonden', MELDING.niet_gevonden);
-  const [lijst, kruim, beschermd] = await Promise.all([v.client.kinderen(map.id), kruimels(v, map), beschermdeMappen(v)]);
+  const [alles, kruim, beschermd, verborgen] = await Promise.all([v.client.kinderen(map.id), kruimels(v, map), beschermdeMappen(v), backupIds(v)]);
+  // De Back-ups-map is alleen voor de eigenaar (pagina Beveiliging), niet voor de Drive-module.
+  const lijst = alles.filter((b) => !verborgen.has(b.id) && !(map.id === v.rootId && b.name === BACKUP_MAP && b.mimeType === MAP_MIME));
   return {
     map: { id: map.id, naam: map.id === v.rootId ? ROOT_NAAM : map.name },
     kruimels: kruim,

@@ -23,15 +23,28 @@ function geheugenTijden(sleutel: string, nu: number): number[] {
 
 export const sleutels = {
   email: (email: string) => `e:${hashKort('email', email.trim().toLowerCase())}`,
+  emailIp: (email: string, ip: string) => `x:${hashKort('email', `${email.trim().toLowerCase()}|${ip}`)}`,
   ip: (ip: string) => `i:${hashKort('ip', ip)}`,
   tfa: (userId: string) => `t:${hashKort('user', userId)}`,
   herstel: (email: string) => `w:${hashKort('email', email.trim().toLowerCase())}`
 };
 
+/**
+ * De blokkerende limieten van het loginformulier: per e-mailadres+IP (5 per 15 minuten) en
+ * per IP (20 per 15 minuten). Bewust niet per e-mailadres alleen: dan kan iedereen de
+ * eigenaar buitensluiten door elke paar minuten één fout wachtwoord voor zijn adres te
+ * sturen. Let op: dit geldt alleen voor het formulier van de app. Wie de anon-key gebruikt,
+ * praat rechtstreeks met Supabase Auth; daar gelden de limieten van Supabase zelf.
+ */
 export function limietenInloggen(email: string, ip: string): Limiet[] {
-  const l: Limiet[] = [{ sleutel: sleutels.email(email), ...LIMIETEN.inloggenEmail }];
+  const l: Limiet[] = [{ sleutel: sleutels.emailIp(email, ip), ...LIMIETEN.inloggenEmail }];
   if (ip) l.push({ sleutel: sleutels.ip(ip), ...LIMIETEN.inloggenIp });
   return l;
+}
+
+/** Niet-blokkerende teller per e-mailadres (alle IP's), alleen voor een alarm in de audit-log. */
+export function alarmInloggen(email: string): Limiet {
+  return { sleutel: sleutels.email(email), ...LIMIETEN.inloggenAlarm };
 }
 
 /** Is één van de limieten bereikt? Geeft de langste wachttijd. */

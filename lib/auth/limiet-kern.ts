@@ -13,8 +13,11 @@ export const MIN = 60_000;
 
 /** De standaardlimieten. */
 export const LIMIETEN = {
+  // Per e-mailadres + IP: een aanvaller op een ander IP kan de eigenaar zo niet buitensluiten.
   inloggenEmail: { max: 5, vensterMs: 15 * MIN },
   inloggenIp: { max: 20, vensterMs: 15 * MIN },
+  // Per e-mailadres (alle IP's): blokkeert niet, maar geeft 'inlog_verdacht' in de audit-log.
+  inloggenAlarm: { max: 30, vensterMs: 60 * MIN },
   tfaCode: { max: 5, vensterMs: 5 * MIN },
   wachtwoordVergeten: { max: 3, vensterMs: 60 * MIN }
 } as const;

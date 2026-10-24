@@ -138,6 +138,20 @@ await test("sessie: 12 uur inactief of 14 dagen = verlopen; ververs na 5 min; ge
   assert.deepEqual(sessie.sessieBeslissing({ start: nu - 14 * 24 * u - 1000, laatst: nu - 1000 }, nu), { soort: "verlopen", reden: "max" });
   assert.deepEqual(sessie.sessieBeslissing({ start: nu + 10 * u, laatst: nu + 10 * u }, nu), { soort: "nieuw" });
 });
+await test("sessie: zonder cookie alleen een nieuwe bij een recent inlogmoment (amr)", () => {
+  const nu = 2_000_000_000_000;
+  const s = (ms) => Math.floor(ms / 1000);
+  assert.equal(sessie.inlogMoment(null), 0);
+  assert.equal(sessie.inlogMoment({}), 0);
+  assert.equal(sessie.inlogMoment({ amr: "x" }), 0);
+  assert.equal(sessie.inlogMoment({ amr: [{ method: "password", timestamp: s(nu - 60_000) }, { method: "totp", timestamp: s(nu - 30_000) }] }), s(nu - 30_000) * 1000);
+  assert.equal(sessie.nieuwToegestaan(nu - 5 * 60_000, nu), true);
+  assert.equal(sessie.nieuwToegestaan(nu - 11 * 60_000, nu), false, "laptop 16 dagen dicht: uitloggen");
+  assert.equal(sessie.nieuwToegestaan(0, nu), false, "onbekend inlogmoment: uitloggen");
+  assert.equal(sessie.nieuwToegestaan(nu + 10 * 60_000, nu), false);
+  const p = lees("proxy.ts");
+  assert.ok(/nieuwToegestaan\(/.test(p) && /inlogMoment\(claims\)/.test(p));
+});
 await test("sessiecookie: httpOnly, secure, SameSite=Lax", () => {
   assert.equal(sessie.SESSIE_COOKIE_OPTIES.httpOnly, true);
   assert.equal(sessie.SESSIE_COOKIE_OPTIES.secure, true);

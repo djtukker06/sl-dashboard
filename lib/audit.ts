@@ -14,6 +14,7 @@ export type AuditActie =
   | 'inloggen'
   | 'inloggen_mislukt'
   | 'inlog_geblokkeerd'
+  | 'inlog_verdacht'
   | 'uitloggen'
   | 'sessie_verlopen'
   | '2fa_ingeschreven'

@@ -504,15 +504,18 @@ export class DriveClient {
 /**
  * Hoort `id` bij de root? Loopt de parents-keten omhoog (max. 25 niveaus). `bekend` zijn
  * id's waarvan al vaststaat dat ze binnen de root liggen (de mappen-cache); die worden
- * aangevuld met elke map die onderweg binnen blijkt te liggen.
+ * aangevuld met elke map die onderweg binnen blijkt te liggen. `verboden` zijn mappen
+ * (met alles eronder) die nooit als "binnen" tellen, zoals de Back-ups-map.
  */
 export async function binnenRoot(
   client: Pick<DriveClient, 'bestand'>,
   rootId: string,
   id: string,
-  bekend: Set<string> = new Set()
+  bekend: Set<string> = new Set(),
+  verboden: Set<string> = new Set()
 ): Promise<DriveBestand | null> {
   if (!isDriveId(id)) return null;
+  if (verboden.has(id)) return null;
   let b: DriveBestand;
   try {
     b = await client.bestand(id);
@@ -527,6 +530,7 @@ export async function binnenRoot(
   for (let diepte = 0; diepte < 25; diepte++) {
     const ouder = ouders[0];
     if (!ouder) return null;
+    if (verboden.has(ouder)) return null;
     if (ouder === rootId || bekend.has(ouder)) {
       for (const p of pad) bekend.add(p);
       return b;

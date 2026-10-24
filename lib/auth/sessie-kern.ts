@@ -5,13 +5,39 @@
 //
 //   - langer dan INACTIEF_MS niets gedaan, of de sessie ouder dan MAX_MS: uitloggen;
 //   - "laatst" wordt hooguit eens per VERVERS_MS bijgewerkt (minder Set-Cookie);
-//   - ontbreekt de cookie of klopt de handtekening niet (bv. nieuwe sleutel): een nieuwe
-//     cookie zetten, NOOIT iemand daarom buitensluiten.
+//   - ontbreekt de cookie of klopt de handtekening niet (bv. nieuwe sleutel): alleen een
+//     nieuwe cookie als het echte inlogmoment (amr in het Supabase-token) recent is
+//     (NIEUW_SPELING_MS). Anders uitloggen (niet buitensluiten: opnieuw inloggen zet meteen
+//     een verse cookie). Zo omzeil je het beleid niet door de cookie te wissen, en geldt het
+//     ook na een lange afwezigheid waarin de browser de cookie al had weggegooid.
 
 export const SESSIE_COOKIE = 'sl_sessie';
 export const INACTIEF_MS = 12 * 60 * 60 * 1000;
 export const MAX_MS = 14 * 24 * 60 * 60 * 1000;
 export const VERVERS_MS = 5 * 60 * 1000;
+/** Speling tussen inloggen (amr-tijdstip) en de eerste keer dat de proxy de cookie mist. */
+export const NIEUW_SPELING_MS = 10 * 60 * 1000;
+
+/**
+ * Het laatste echte inlogmoment (ms) uit de claims van het Supabase-toegangstoken: het
+ * hoogste tijdstip in `amr` (wachtwoord, e-maillink, TOTP-stap, ...). Een ververst token
+ * houdt deze tijdstippen. 0 = onbekend.
+ */
+export function inlogMoment(claims: unknown): number {
+  const amr = (claims as { amr?: unknown } | null)?.amr;
+  if (!Array.isArray(amr)) return 0;
+  let max = 0;
+  for (const a of amr) {
+    const t = Number((a as { timestamp?: unknown } | null)?.timestamp) * 1000;
+    if (Number.isFinite(t) && t > max) max = t;
+  }
+  return max;
+}
+
+/** Mag de proxy bij een ontbrekende/ongeldige cookie een nieuwe zetten? */
+export function nieuwToegestaan(authMs: number, nu: number): boolean {
+  return authMs > 0 && nu - authMs <= NIEUW_SPELING_MS && authMs <= nu + 60_000;
+}
 
 export interface SessieTijden {
   start: number;

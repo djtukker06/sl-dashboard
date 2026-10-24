@@ -33,15 +33,16 @@ README ("Team & toegang", "Tweestapsverificatie (2FA)", "Back-ups en keep-alive"
 | **2FA ook in de database** | `is_teamlid()` eist een sessie ná de code (aal2) van iedereen die een 2FA-apparaat heeft. Iemand met alleen een gestolen wachtwoord ziet dus ook via de Supabase-API niets: geen facturen, geen bonnetjes, geen bestanden. |
 | **Niemand buitensluiten** | Zonder 0026 of met `MFA_AFDWINGEN=uit` hoeft niemand 2FA in te stellen. Wie nog geen apparaat heeft, valt in de database niet buiten. De "strenge" stand (ook zonder apparaat geen data) zet je pas aan als iedereen 2FA heeft; het script weigert hem eerder. |
 | **Herstel bij een kwijtgeraakte telefoon** | De eigenaar reset de 2FA van een lid op `/beveiliging`, met een reden die in de audit-log komt. Voor jezelf: `scripts/2fa-herstel.mjs --reset <email>`. |
-| **Inlogpogingen beperken** | Per e-mailadres 5 en per IP 20 mislukte pogingen per 15 minuten. 2FA-codes: 5 per 5 minuten. Wachtwoord vergeten: 3 per uur. De melding is generiek. |
+| **Inlogpogingen beperken** | Op het loginformulier van de app: per e-mailadres+IP 5 en per IP 20 mislukte pogingen per 15 minuten (bewust niet per e-mailadres alleen, anders kan een vreemde de eigenaar buitensluiten). Veel mislukte pogingen op één adres vanaf allerlei IP's (30 per uur) blokkeren niet, maar geven `inlog_verdacht` in de audit-log. 2FA-codes: 5 per 5 minuten. Wachtwoord vergeten: 3 per uur. De melding is generiek. Let op: dit geldt alleen voor de app. Met de (openbare) anon-key kan iemand rechtstreeks bij Supabase Auth inloggen of 2FA-codes proberen; daar gelden alleen de limieten van Supabase zelf (zie checklist). |
 | **Wachtwoorden** | Minstens 12 tekens, plus een check op bekende datalekken via Have I Been Pwned (k-anonimiteit: alleen 5 tekens van een hash gaan naar buiten). |
-| **Sessies** | Automatisch uitloggen na 12 uur zonder activiteit of na 14 dagen. Dat gebeurt met een eigen ondertekende httpOnly-cookie, want Supabase gratis heeft dit niet. |
+| **Sessies** | Automatisch uitloggen na 12 uur zonder activiteit of na 14 dagen. Dat gebeurt met een eigen ondertekende httpOnly-cookie, want Supabase gratis heeft dit niet. Ontbreekt die cookie (gewist, of na lange afwezigheid door de browser weggegooid), dan krijg je alleen een nieuwe als je de laatste 10 minuten echt hebt ingelogd; anders word je uitgelogd. Bij de uitrol logt daardoor iedereen één keer uit. |
 | **Strenge headers** | CSP met nonce per verzoek (scripts alleen van de eigen site), HSTS (2 jaar), COOP, CORP, `X-Frame-Options`, `nosniff`, een strikte `Permissions-Policy` en geen `X-Powered-By`. API's sturen `Cache-Control: no-store`. Social-slides krijgen een sandbox-CSP. |
-| **Audit-log** | Inloggen (ook mislukt en geblokkeerd), uitloggen, 2FA (inschrijven, verwijderen, reset, fouten), wachtwoord, teamwijzigingen (ook via de scripts), mailbox koppelen, wijzigen en ontkoppelen, exports, verwijderen, Drive, back-ups en cron. Alleen de eigenaar met 2FA-sessie leest hem, op `/beveiliging`. Niemand kan regels wijzigen of verwijderen, ook niet in de SQL Editor (trigger). Na 400 dagen wordt er opgeruimd. IP-adressen staan er alleen gehasht in. |
+| **Audit-log** | Inloggen (ook mislukt en geblokkeerd), uitloggen, 2FA (inschrijven, verwijderen, reset, fouten), wachtwoord, teamwijzigingen (ook via de scripts), mailbox koppelen, wijzigen en ontkoppelen, exports, verwijderen, Drive, back-ups en cron. Alleen de eigenaar met 2FA-sessie leest hem, op `/beveiliging`. Via de app en de API kan niemand regels wijzigen of verwijderen (ook niet met de service-role); wie de database-eigenaar is (SQL Editor / DB-wachtwoord) kan dat wel. Bewaar dat wachtwoord dus net zo zorgvuldig als de service-role-key. De audit-log gaat mee in de dagelijkse versleutelde back-up, zodat wissen achteraf zichtbaar wordt. Na 400 dagen wordt er opgeruimd. IP-adressen staan er alleen gehasht in. |
 | **Logs** | Logs bevatten geen foutobjecten, e-mailadressen, onderwerpen of tokens meer, alleen codes en id's (`lib/log.ts`). |
 | **Mailservers** | Elke IMAP/SMTP-verbinding gaat via een gecontroleerd openbaar IP. DNS-rebinding naar interne adressen werkt dus ook na het koppelen niet meer. Het mailbox-wachtwoord is gebonden aan eigenaar én mailbox. |
 | **Fail closed** | Ontbreekt de tabel `team_members`, dan geldt dat als storing. Vroeger kreeg dan iedereen toegang. |
 | **Dure AI-routes** | Bonnetjes uitlezen en social genereren hebben een limiet per gebruiker per uur. |
+| **Back-ups alleen voor de eigenaar** | De map `Back-ups` in Drive (met alles eronder) is onbereikbaar via de Drive-module van de app: niet te zien, te zoeken, te downloaden, te hernoemen, te verwijderen of te vullen. Downloaden kan alleen via `/beveiliging` (eigenaar met 2FA-sessie). |
 | **Back-ups** | Elke nacht een volledige export van alle eigen tabellen, versleuteld met AES-256-GCM (`BACKUP_ENCRYPTION_KEY`), naar Google Drive (`Studio Levant/Back-ups/<jaar>/<datum>.slbak`). Bewaard: 14 dagelijkse, 8 wekelijkse en 12 maandelijkse. Daarnaast wekelijks de bestanden (facturen-PDF's, bonnetjes, social), elk apart versleuteld. Er zijn scripts om te controleren en terug te zetten (standaard droog). De status staat op `/beveiliging`; de eigenaar ziet een waarschuwing op het dashboard. |
 | **Keep-alive** | Vercel Cron roept elke nacht `/api/cron/dagelijks` aan; die schrijft een heartbeat, zodat Supabase gratis nooit pauzeert. GitHub Actions doet hetzelfde elke 3 dagen als reserve. De route werkt alleen met `CRON_SECRET` (zonder het secret 401; staat het secret niet ingesteld, dan 503). |
 
@@ -62,12 +63,18 @@ README ("Team & toegang", "Tweestapsverificatie (2FA)", "Back-ups en keep-alive"
 5. **Drive-toegang is breed.** De koppeling heeft toegang tot de hele Drive van
    daniel@studio-levant.nl, want zoeken en kopiëren hebben dat nodig. Een gelekt token plus
    sleutel geeft dus toegang tot meer dan alleen de map Studio Levant.
-6. **Limieten per serverinstantie.** De limiet op koppelpogingen voor mailboxen en een paar
-   caches staan in het geheugen. Op Vercel met meerdere instanties zijn ze daardoor "zacht".
-   De inloglimiet staat in de database (die is hard).
-7. **Sessies in Supabase zelf.** Het uitloggen na 12 uur of 14 dagen doet de app. De refresh
-   token van Supabase blijft zelf langer geldig. Met de 2FA-controle in RLS is dat beperkt:
-   zonder aal2-sessie geen data.
+6. **Inloglimieten gelden alleen voor het formulier.** De anon-key staat (zoals bedoeld) in
+   de browser. Wie hem gebruikt, kan rechtstreeks bij Supabase Auth wachtwoorden en 2FA-codes
+   proberen, buiten de limieten van de app om. De echte bescherming tegen raden zit dus in de
+   rate limits van Supabase Auth (zet ze laag, zie checklist), een sterk wachtwoord en 2FA.
+   De limiet op koppelpogingen voor mailboxen en een paar caches staan bovendien in het
+   geheugen; op Vercel met meerdere instanties zijn die "zacht".
+7. **Sessies in Supabase zelf.** Het uitloggen na 12 uur of 14 dagen doet de app, en geldt
+   alleen voor verkeer via de app. Een Supabase-refresh-token blijft geldig tot er wordt
+   uitgelogd. Wie een refresh-token van een aal2-sessie steelt, houdt aal2 en kan via de
+   Supabase-API data lezen, los van het sessiebeleid van de app. Advies: bij Supabase Pro
+   "Time-box user sessions" en "Inactivity timeout" instellen, en bij verdenking uitloggen op
+   alle apparaten (wachtwoord wijzigen).
 8. **CSP met `'unsafe-inline'` voor stijlen.** Scripts zijn wel streng (alleen met nonce).
    Pagina's achter de login zijn niet live op CSP-fouten gecontroleerd, alleen `/login` en
    `/wachtwoord-vergeten` (zie "Wat er niet getest is").
@@ -126,7 +133,7 @@ Controleer de punten hierboven daarom zelf in stap 4 en 5 van de uitrol.
 - [ ] "Allow new users to sign up" UIT, anonieme sign-ins UIT, "Confirm email" AAN.
 - [ ] Redirect URLs alleen productie en `http://localhost:3000/**`.
 - [ ] Multi-Factor Authentication: TOTP **aan** (standaard aan; controleer het).
-- [ ] Rate limits voor sign-in/OTP zo laag als werkbaar.
+- [ ] Authentication › Rate Limits: de limieten voor sign-in/token en "Token verifications" (ook MFA-verify) zo laag als werkbaar. Dit is de echte bescherming tegen raden; de limiet van de app geldt alleen voor het formulier.
 - [ ] "Leaked password protection" aan als je Pro neemt (de app checkt het nu zelf).
 - [ ] **Supabase Pro overwegen** (ongeveer $25 per maand): officiële dagelijkse back-ups, optioneel PITR, nooit pauzeren, sessie-timeouts in Supabase zelf. Onze back-ups blijven dan nuttig als tweede kopie buiten Supabase.
 
@@ -171,7 +178,7 @@ Controleer de punten hierboven daarom zelf in stap 4 en 5 van de uitrol.
 |---|---|
 | Een lid is zijn telefoon kwijt | Eigenaar: `/beveiliging` › Team & 2FA › "Reset 2FA" (met reden). Het lid stelt bij de volgende login opnieuw 2FA in. |
 | Je bent zelf je enige 2FA-apparaat kwijt | `node --env-file=.env.local scripts/2fa-herstel.mjs --reset daniel@studio-levant.nl` (bevestigen door het adres te typen). |
-| 2FA werkt voor niemand meer (storing) | App: in Vercel `MFA_AFDWINGEN=uit` en opnieuw deployen. Database: `scripts/2fa-herstel.mjs --rls uit`. Daarna weer `--rls aan` en de variabele leegmaken. Beide komen in de audit-log. |
+| 2FA werkt voor niemand meer (storing) | 1) In Vercel `MFA_AFDWINGEN=uit` en opnieuw deployen (dan hoeft niemand 2FA opnieuw in te stellen). 2) Per teamlid: `node --env-file=.env.local scripts/2fa-herstel.mjs --reset <email>`. Wie al een apparaat heeft, moet anders nog steeds een code invullen, en dat lukt tijdens de storing niet; `MFA_AFDWINGEN=uit` en `--rls uit` alleen helpen daar niet. 3) Na de storing de variabele weer leegmaken; iedereen stelt bij de volgende login 2FA opnieuw in. Alles komt in de audit-log. |
 | Je vermoedt dat een wachtwoord is gelekt | Wachtwoord wijzigen (Account). Met 2FA is het wachtwoord alleen niet genoeg. Bekijk de audit-log op `inloggen_mislukt`/`inlog_geblokkeerd`. |
 | Je vermoedt dat de service-role-key is gelekt | In Supabase de API-sleutels roteren (JWT secret / API keys), de nieuwe key in Vercel en `.env.local` zetten, opnieuw deployen. Daarna de audit-log en de data controleren. |
 | Data kwijt of beschadigd | `scripts/backup-herstellen.mjs --bestand <laatste.slbak>` eerst droog, dan met `--schrijven` (het script maakt eerst zelf een veiligheidskopie). Zie de README. |
