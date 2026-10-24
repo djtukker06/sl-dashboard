@@ -430,6 +430,9 @@ begin
     if not oud_open then perform public.bk_weiger_periode(old.datum); end if;
   end if;
   if tg_op in ('INSERT', 'UPDATE') then
+    if new.soort = 'jaarafsluiting' and not coalesce(public.is_eigenaar(), false) then
+      raise exception using errcode = 'P0001', message = 'geen_eigenaar: alleen de eigenaar boekt een jaarafsluiting';
+    end if;
     nieuw_open := public.bk_periode_open(new.datum)
       or (new.soort = 'jaarafsluiting' and to_char(new.datum, 'MM-DD') = '12-31'
           and not exists (select 1 from public.bk_boekjaren j where j.jaar = extract(year from new.datum)::int));
@@ -758,6 +761,148 @@ begin
 end;
 $$;
 
+-- ---------------------------------------------------------------------------------
+-- Memoriaal en jaarafsluiting (stap 4)
+-- ---------------------------------------------------------------------------------
+-- Een memoriaalpost (beginbalans of correctie) met al zijn regels in één transactie. De
+-- deferred trigger bk_memoriaal_sluit controleert aan het einde dat de post sluit; de
+-- periodetriggers dat de datum in een open periode valt. Een jaarafsluiting gaat alleen via
+-- bk_jaar_afsluiten. p_regels: [{grootboek_code, debet_centen, credit_centen, vennoot_id?}].
+create or replace function public.bk_memoriaal_toevoegen(
+  p_datum date,
+  p_omschrijving text,
+  p_soort text,
+  p_regels jsonb
+)
+returns uuid
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+declare
+  v_id uuid;
+begin
+  if not public.is_teamlid() then
+    raise exception using errcode = '42501', message = 'geen toegang';
+  end if;
+  if p_soort not in ('beginbalans', 'correctie') then
+    raise exception using errcode = '22023', message = 'ongeldige soort';
+  end if;
+  if jsonb_typeof(p_regels) <> 'array' or jsonb_array_length(p_regels) < 2 or jsonb_array_length(p_regels) > 200 then
+    raise exception using errcode = '22023', message = 'ongeldige regels';
+  end if;
+  insert into public.bk_memoriaal (datum, omschrijving, soort) values (p_datum, p_omschrijving, p_soort) returning id into v_id;
+  insert into public.bk_memoriaal_regels (memoriaal_id, grootboek_code, debet_centen, credit_centen, vennoot_id, omschrijving)
+  select v_id, x->>'grootboek_code', coalesce((x->>'debet_centen')::bigint, 0), coalesce((x->>'credit_centen')::bigint, 0),
+         nullif(x->>'vennoot_id', '')::uuid, nullif(left(x->>'omschrijving', 200), '')
+  from jsonb_array_elements(p_regels) x;
+  return v_id;
+end;
+$$;
+
+-- Boekjaar afsluiten (alleen de eigenaar): de afsluitpost op 31-12 (resultaat en privé naar de
+-- kapitaalrekeningen van de vennoten) en de rij in bk_boekjaren (= het jaar is vergrendeld), in
+-- één transactie. De app berekent de regels en controleert de checklist vooraf.
+create or replace function public.bk_jaar_afsluiten(
+  p_jaar integer,
+  p_omschrijving text,
+  p_regels jsonb,
+  p_samenvatting jsonb
+)
+returns uuid
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+declare
+  v_id uuid;
+begin
+  if not (public.is_teamlid() and public.is_eigenaar()) then
+    raise exception using errcode = 'P0001', message = 'geen_eigenaar: alleen de eigenaar sluit een boekjaar af';
+  end if;
+  if exists (select 1 from public.bk_boekjaren where jaar = p_jaar) then
+    raise exception using errcode = '23505', message = 'boekjaar al afgesloten';
+  end if;
+  if exists (select 1 from public.bk_boekjaren where jaar > p_jaar) then
+    raise exception using errcode = 'P0001', message = 'jaar_volgorde: een later jaar is al afgesloten';
+  end if;
+  if jsonb_typeof(p_regels) <> 'array' or jsonb_array_length(p_regels) > 500 then
+    raise exception using errcode = '22023', message = 'ongeldige regels';
+  end if;
+  if jsonb_array_length(p_regels) > 0 then
+    insert into public.bk_memoriaal (datum, omschrijving, soort)
+    values (make_date(p_jaar, 12, 31), coalesce(nullif(left(p_omschrijving, 200), ''), 'Jaarafsluiting ' || p_jaar), 'jaarafsluiting')
+    returning id into v_id;
+    insert into public.bk_memoriaal_regels (memoriaal_id, grootboek_code, debet_centen, credit_centen, vennoot_id, omschrijving)
+    select v_id, x->>'grootboek_code', coalesce((x->>'debet_centen')::bigint, 0), coalesce((x->>'credit_centen')::bigint, 0),
+           nullif(x->>'vennoot_id', '')::uuid, nullif(left(x->>'omschrijving', 200), '')
+    from jsonb_array_elements(p_regels) x;
+  end if;
+  insert into public.bk_boekjaren (jaar, memoriaal_id, samenvatting)
+  values (p_jaar, v_id, coalesce(p_samenvatting, '{}'::jsonb));
+  return v_id;
+end;
+$$;
+
+-- Boekjaar heropenen (alleen de eigenaar; niet als een later jaar al is afgesloten): de rij in
+-- bk_boekjaren en de afsluitpost verdwijnen, het jaar is weer open.
+create or replace function public.bk_jaar_heropenen(p_jaar integer)
+returns void
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+begin
+  if not (public.is_teamlid() and public.is_eigenaar()) then
+    raise exception using errcode = 'P0001', message = 'geen_eigenaar: alleen de eigenaar heropent een boekjaar';
+  end if;
+  if exists (select 1 from public.bk_boekjaren where jaar > p_jaar) then
+    raise exception using errcode = 'P0001', message = 'jaar_volgorde: heropen eerst het latere jaar';
+  end if;
+  delete from public.bk_boekjaren where jaar = p_jaar;
+  if not found then
+    raise exception using errcode = 'P0001', message = 'jaar_onbekend: dit boekjaar is niet afgesloten';
+  end if;
+  delete from public.bk_memoriaal where soort = 'jaarafsluiting' and jaar = p_jaar;
+end;
+$$;
+
+-- Winstverdeling: alle aandelen in één keer (de actieve vennoten moeten samen 100% hebben).
+-- Alleen de eigenaar (ook de policy op bk_vennoten).
+create or replace function public.bk_vennoten_aandelen(p_aandelen jsonb)
+returns void
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+declare
+  v_som numeric;
+begin
+  if not (public.is_teamlid() and public.is_eigenaar()) then
+    raise exception using errcode = 'P0001', message = 'geen_eigenaar: alleen de eigenaar wijzigt de winstverdeling';
+  end if;
+  if jsonb_typeof(p_aandelen) <> 'array' then
+    raise exception using errcode = '22023', message = 'ongeldige aandelen';
+  end if;
+  update public.bk_vennoten v set winstaandeel = (x->>'aandeel')::numeric
+  from jsonb_array_elements(p_aandelen) x
+  where v.id = (x->>'id')::uuid and v.winstaandeel is distinct from (x->>'aandeel')::numeric;
+  select coalesce(sum(winstaandeel), 0) into v_som from public.bk_vennoten where actief;
+  if v_som <> 100 then
+    raise exception using errcode = 'P0001', message = 'aandelen_niet_100: samen ' || v_som || '%';
+  end if;
+end;
+$$;
+
+revoke all on function public.bk_memoriaal_toevoegen(date, text, text, jsonb) from public, anon;
+revoke all on function public.bk_jaar_afsluiten(integer, text, jsonb, jsonb) from public, anon;
+revoke all on function public.bk_jaar_heropenen(integer) from public, anon;
+revoke all on function public.bk_vennoten_aandelen(jsonb) from public, anon;
+grant execute on function public.bk_memoriaal_toevoegen(date, text, text, jsonb) to authenticated, service_role;
+grant execute on function public.bk_jaar_afsluiten(integer, text, jsonb, jsonb) to authenticated, service_role;
+grant execute on function public.bk_jaar_heropenen(integer) to authenticated, service_role;
+grant execute on function public.bk_vennoten_aandelen(jsonb) to authenticated, service_role;
+
 revoke all on function public.bk_periode_open(date) from public, anon;
 revoke all on function public.bk_weiger_periode(date) from public, anon;
 revoke all on function public.bk_systeemrol() from public, anon;
@@ -809,6 +954,17 @@ begin
     execute format('drop policy if exists "teamleden verwijderen %s" on public.%I', t, t);
     execute format('create policy "teamleden verwijderen %s" on public.%I for delete to authenticated using ((select public.is_teamlid()))', t, t);
   end loop;
+  -- Een boekjaar afsluiten en de winstverdeling wijzigen: alleen de eigenaar (de policies voor
+  -- elk teamlid hierboven worden vervangen).
+  execute 'drop policy if exists "teamleden voegen toe aan bk_boekjaren" on public.bk_boekjaren';
+  execute 'drop policy if exists "teamleden wijzigen bk_boekjaren" on public.bk_boekjaren';
+  execute 'drop policy if exists "eigenaar sluit af bk_boekjaren" on public.bk_boekjaren';
+  execute 'create policy "eigenaar sluit af bk_boekjaren" on public.bk_boekjaren for insert to authenticated with check ((select public.is_teamlid()) and (select public.is_eigenaar()))';
+  execute 'drop policy if exists "eigenaar wijzigt bk_boekjaren" on public.bk_boekjaren';
+  execute 'create policy "eigenaar wijzigt bk_boekjaren" on public.bk_boekjaren for update to authenticated using ((select public.is_teamlid()) and (select public.is_eigenaar())) with check ((select public.is_teamlid()) and (select public.is_eigenaar()))';
+  execute 'drop policy if exists "teamleden wijzigen bk_vennoten" on public.bk_vennoten';
+  execute 'drop policy if exists "eigenaar wijzigt bk_vennoten" on public.bk_vennoten';
+  execute 'create policy "eigenaar wijzigt bk_vennoten" on public.bk_vennoten for update to authenticated using ((select public.is_teamlid()) and (select public.is_eigenaar())) with check ((select public.is_teamlid()) and (select public.is_eigenaar()))';
   -- Een ingediende aangifte of afgesloten boekjaar intrekken (= ontgrendelen): alleen de eigenaar.
   foreach t in array array['bk_aangiften', 'bk_boekjaren'] loop
     execute format('drop policy if exists "eigenaar trekt in %s" on public.%I', t, t);
@@ -895,14 +1051,15 @@ from (values
   ('boekhouding: boekingsregels niet te verwijderen (bewaarplicht)', not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'bk_boekingen' and cmd in ('DELETE', 'ALL'))),
   ('boekhouding: aangifte/boekjaar intrekken alleen eigenaar', (select count(*) from pg_policies where schemaname = 'public' and tablename in ('bk_aangiften', 'bk_boekjaren') and cmd = 'DELETE' and qual ~ 'is_eigenaar\(') = 2),
   ('boekhouding: vergrendeltriggers', (select count(*) from pg_trigger where not tgisinternal and tgname in ('bk_boekingen_periode', 'bk_memoriaal_periode', 'bk_memoriaal_regels_periode', 'bk_memoriaal_sluit', 'bk_activa_periode', 'bk_grootboek_bewaken', 'bk_koppelingen_controle', 'bk_bron_extra_periode')) = 8),
-  ('boekhouding: functies dicht voor anon', not has_function_privilege('anon', 'public.bk_rekening_toevoegen(text,text,text,bigint,date)', 'execute') and not has_function_privilege('anon', 'public.bk_standaard_rekening(uuid)', 'execute') and not has_function_privilege('anon', 'public.bk_periode_open(date)', 'execute') and not has_function_privilege('anon', 'public.bk_importeer(uuid,text,text,jsonb)', 'execute')),
+  ('boekhouding: functies dicht voor anon', not has_function_privilege('anon', 'public.bk_rekening_toevoegen(text,text,text,bigint,date)', 'execute') and not has_function_privilege('anon', 'public.bk_standaard_rekening(uuid)', 'execute') and not has_function_privilege('anon', 'public.bk_periode_open(date)', 'execute') and not has_function_privilege('anon', 'public.bk_importeer(uuid,text,text,jsonb)', 'execute') and not has_function_privilege('anon', 'public.bk_memoriaal_toevoegen(date,text,text,jsonb)', 'execute') and not has_function_privilege('anon', 'public.bk_jaar_afsluiten(integer,text,jsonb,jsonb)', 'execute') and not has_function_privilege('anon', 'public.bk_jaar_heropenen(integer)', 'execute') and not has_function_privilege('anon', 'public.bk_vennoten_aandelen(jsonb)', 'execute')),
+  ('boekhouding: boekjaar afsluiten en winstverdeling alleen eigenaar', (select count(*) from pg_policies where schemaname = 'public' and ((tablename = 'bk_boekjaren' and cmd in ('INSERT', 'UPDATE')) or (tablename = 'bk_vennoten' and cmd = 'UPDATE')) and (coalesce(qual, '') || ' ' || coalesce(with_check, '')) ~ 'is_eigenaar\(') = 3 and not exists (select 1 from pg_policies where schemaname = 'public' and ((tablename = 'bk_boekjaren' and cmd in ('INSERT', 'UPDATE', 'ALL')) or (tablename = 'bk_vennoten' and cmd in ('UPDATE', 'ALL'))) and (coalesce(qual, '') || ' ' || coalesce(with_check, '')) !~ 'is_eigenaar\(')),
   ('boekhouding: instellingen (één rij)', (select count(*) from public.bk_instellingen) = 1),
   ('boekhouding: standaardgrootboek', (select count(*) from public.bk_grootboek where systeem) >= 38),
   ('boekhouding: RegioBank en Revolut', exists (select 1 from public.bk_rekeningen where grootboek_code = '1100') and exists (select 1 from public.bk_rekeningen where grootboek_code = '1110')),
   ('boekhouding: precies één standaardrekening', (select count(*) from public.bk_rekeningen where standaard) = 1),
   ('boekhouding: winstaandelen vennoten samen 100%', (select coalesce(sum(winstaandeel), 0) from public.bk_vennoten where actief) = 100),
   ('boekhouding: in de back-up (backup_tabellen)', (select count(*) from public.backup_tabellen() t where t in ('bk_instellingen', 'bk_grootboek', 'bk_rekeningen', 'bk_vennoten', 'bk_imports', 'bk_boekingen', 'bk_koppelingen', 'bk_activa', 'bk_bron_extra', 'bk_memoriaal', 'bk_memoriaal_regels', 'bk_aangiften', 'bk_boekjaren')) = 13),
-  ('boekhouding: standaardrekening ' || coalesce((select naam from public.bk_rekeningen where standaard), '?') || ', boekingsregels ' || (select count(*) from public.bk_boekingen where verwijderd_op is null) || ', ingediende aangiften ' || (select count(*) from public.bk_aangiften), true)
+  ('boekhouding: standaardrekening ' || coalesce((select naam from public.bk_rekeningen where standaard), '?') || ', boekingsregels ' || (select count(*) from public.bk_boekingen where verwijderd_op is null) || ', ingediende aangiften ' || (select count(*) from public.bk_aangiften) || ', afgesloten boekjaren ' || (select count(*) from public.bk_boekjaren), true)
 ) as c(onderdeel, aanwezig)
 union all
 select 'teamlid: ' || coalesce(p.naam, '?') || ' <' || coalesce(p.email, '?') || '> (' || m.rol || ')',

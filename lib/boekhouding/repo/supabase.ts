@@ -8,7 +8,18 @@ import { isKwartaal } from '../kern/periode';
 import { isImportFormaat, type Boeking, type BoekingWaarde, type Grootboekrekening, type ImportFormaat, type Instellingen, type Rekening, type Stamdata, type Vennoot } from '../model';
 import { bronExtraUitRij, factuurUitRij, isKoppelBron, uitgaveUitRij, type BronExtra, type FactuurBron, type KoppelBron, type Koppeling, type UitgaveBron } from '../kern/bronnen';
 import type { ImportBoeking, Kolommapping } from '../kern/bankimport';
-import { BoekhoudFout, type BoekhoudRepo, type RekeningInvoer, type RekeningWijziging } from './types';
+import {
+  BoekhoudFout,
+  type BoekhoudRepo,
+  type Boekjaar,
+  type GrootboekInvoer,
+  type GrootboekWijziging,
+  type InstellingenWijziging,
+  type MemoriaalInvoer,
+  type RekeningInvoer,
+  type RekeningWijziging
+} from './types';
+import type { Memoriaal, MemoriaalRegel } from '../kern/journaal';
 import { leesSnapshot, type Aangifte, type AangifteBetaling, type AangifteSnapshot } from '../kern/aangifte';
 import { isActivumCategorie, type Activum, type ActivumWaarde } from '../kern/afschrijving';
 import type { Kwartaal } from '../kern/periode';
@@ -31,6 +42,10 @@ export function bkDbFout(error: unknown): BoekhoudFout {
   if (msg.startsWith('grootboek_systeem:')) return new BoekhoudFout(400, 'Dit is een vaste rekening van het systeem.', 'grootboek_systeem');
   if (msg.startsWith('grootboek_in_gebruik:')) return new BoekhoudFout(400, 'Deze rekening is in gebruik.', 'grootboek_in_gebruik');
   if (msg.startsWith('geen_vrije_rekening:')) return new BoekhoudFout(400, 'Er kunnen maximaal 10 bankrekeningen zijn.', 'te_veel');
+  if (msg.startsWith('geen_eigenaar:')) return new BoekhoudFout(403, 'Alleen de eigenaar (ingelogd met 2FA) kan dit.', 'geen_eigenaar');
+  if (msg.startsWith('jaar_volgorde:')) return new BoekhoudFout(409, 'Een later boekjaar is al afgesloten; heropen dat eerst.', 'jaar_volgorde');
+  if (msg.startsWith('jaar_onbekend:')) return new BoekhoudFout(404, 'Dit boekjaar is niet afgesloten.', 'onbekend');
+  if (msg.startsWith('aandelen_niet_100:')) return new BoekhoudFout(400, 'De winstaandelen moeten samen 100% zijn.', 'ongeldig');
   if (msg.startsWith('rekening_onbekend')) return new BoekhoudFout(404, 'Die rekening bestaat niet (meer) of is niet actief.', 'onbekend');
   if (msg.startsWith('koppeling_ongeldig:')) return new BoekhoudFout(400, 'Deze koppeling past niet bij de boeking (soort of verwijderd).', 'koppeling_ongeldig');
   if (e.code === '23505') return new BoekhoudFout(409, 'Dat bestaat al (zelfde naam of nummer).', 'bestaat_al');
@@ -199,6 +214,40 @@ function activumRij(w: ActivumWaarde): Rij {
     notities: w.notities
   };
 }
+
+function naarMemoriaal(r: Rij): Memoriaal {
+  const soort = r.soort === 'beginbalans' || r.soort === 'jaarafsluiting' ? r.soort : 'correctie';
+  const regels = Array.isArray(r.bk_memoriaal_regels) ? (r.bk_memoriaal_regels as Rij[]) : [];
+  return {
+    id: String(r.id),
+    datum: String(r.datum),
+    omschrijving: String(r.omschrijving),
+    soort,
+    aangemaakt: String(r.created_at),
+    regels: regels.map((x) => ({
+      grootboek: String(x.grootboek_code),
+      debet: centen(x.debet_centen),
+      credit: centen(x.credit_centen),
+      vennootId: (x.vennoot_id as string | null) ?? null,
+      omschrijving: (x.omschrijving as string | null) ?? null
+    }))
+  };
+}
+
+const MEMORIAAL_KOLOMMEN = 'id, datum, omschrijving, soort, created_at, bk_memoriaal_regels(grootboek_code, debet_centen, credit_centen, vennoot_id, omschrijving)';
+
+function naarBoekjaar(r: Rij): Boekjaar {
+  return {
+    jaar: Number(r.jaar),
+    afgeslotenOp: String(r.afgesloten_op),
+    afgeslotenDoor: (r.afgesloten_door as string | null) ?? null,
+    memoriaalId: (r.memoriaal_id as string | null) ?? null,
+    samenvatting: r.samenvatting && typeof r.samenvatting === 'object' ? (r.samenvatting as Record<string, unknown>) : {}
+  };
+}
+
+const regelsJson = (regels: readonly MemoriaalRegel[]) =>
+  regels.map((r) => ({ grootboek_code: r.grootboek, debet_centen: r.debet, credit_centen: r.credit, vennoot_id: r.vennootId ?? '', omschrijving: r.omschrijving ?? '' }));
 
 export class SupabaseRepo implements BoekhoudRepo {
   readonly modus = 'live' as const;
@@ -504,5 +553,87 @@ export class SupabaseRepo implements BoekhoudRepo {
     const { data, error } = await this.sb.from('bk_activa').delete().eq('id', id).select('id');
     if (error) throw bkDbFout(error);
     if (!data?.length) throw new BoekhoudFout(404, 'Dit activum bestaat niet (meer).', 'onbekend');
+  }
+
+  // ------------------------------------------------------------------ memoriaal en boekjaren
+  async memoriaal(): Promise<Memoriaal[]> {
+    const { data, error } = await this.sb.from('bk_memoriaal').select(MEMORIAAL_KOLOMMEN).order('datum').limit(5000);
+    if (error) throw bkDbFout(error);
+    return ((data ?? []) as Rij[]).map(naarMemoriaal);
+  }
+
+  async memoriaalToevoegen(m: MemoriaalInvoer): Promise<Memoriaal> {
+    // Kop en regels in één transactie (RPC); de database controleert periode en sluiten.
+    const { data, error } = await this.sb.rpc('bk_memoriaal_toevoegen', { p_datum: m.datum, p_omschrijving: m.omschrijving, p_soort: m.soort, p_regels: regelsJson(m.regels) });
+    if (error) throw bkDbFout(error);
+    const rij = await this.sb.from('bk_memoriaal').select(MEMORIAAL_KOLOMMEN).eq('id', String(data)).single();
+    if (rij.error) throw bkDbFout(rij.error);
+    return naarMemoriaal(rij.data as Rij);
+  }
+
+  async memoriaalVerwijderen(id: string): Promise<void> {
+    const { data, error } = await this.sb.from('bk_memoriaal').delete().eq('id', id).neq('soort', 'jaarafsluiting').select('id');
+    if (error) throw bkDbFout(error);
+    if (!data?.length) throw new BoekhoudFout(404, 'Deze memoriaalpost bestaat niet (meer).', 'onbekend');
+  }
+
+  async boekjaren(): Promise<Boekjaar[]> {
+    const { data, error } = await this.sb.from('bk_boekjaren').select('jaar, afgesloten_op, afgesloten_door, memoriaal_id, samenvatting').order('jaar');
+    if (error) throw bkDbFout(error);
+    return ((data ?? []) as Rij[]).map(naarBoekjaar);
+  }
+
+  async jaarAfsluiten(a: { jaar: number; omschrijving: string; regels: MemoriaalRegel[]; samenvatting: Record<string, unknown> }): Promise<Boekjaar> {
+    const { error } = await this.sb.rpc('bk_jaar_afsluiten', { p_jaar: a.jaar, p_omschrijving: a.omschrijving, p_regels: regelsJson(a.regels), p_samenvatting: a.samenvatting });
+    if (error) {
+      if ((error as { code?: string }).code === '23505') throw new BoekhoudFout(409, 'Dit boekjaar is al afgesloten.', 'bestaat_al');
+      throw bkDbFout(error);
+    }
+    const rij = await this.sb.from('bk_boekjaren').select('jaar, afgesloten_op, afgesloten_door, memoriaal_id, samenvatting').eq('jaar', a.jaar).single();
+    if (rij.error) throw bkDbFout(rij.error);
+    return naarBoekjaar(rij.data as Rij);
+  }
+
+  async jaarHeropenen(jaar: number): Promise<void> {
+    const { error } = await this.sb.rpc('bk_jaar_heropenen', { p_jaar: jaar });
+    if (error) throw bkDbFout(error);
+  }
+
+  // ------------------------------------------------------------------ instellingen
+  async instellingenWijzigen(w: InstellingenWijziging): Promise<Instellingen> {
+    const rij: Rij = {};
+    if (w.bedrijfsnaam !== undefined) rij.bedrijfsnaam = w.bedrijfsnaam;
+    if (w.kvk !== undefined) rij.kvk = w.kvk;
+    if (w.btwNummer !== undefined) rij.btw_nummer = w.btwNummer;
+    if (w.startdatum !== undefined) rij.startdatum = w.startdatum;
+    const { error } = await this.sb.from('bk_instellingen').update(rij).eq('id', 1);
+    if (error) throw bkDbFout(error);
+    return (await this.stamdata()).instellingen;
+  }
+
+  async aandelenWijzigen(a: { id: string; aandeel: number }[]): Promise<void> {
+    const { error } = await this.sb.rpc('bk_vennoten_aandelen', { p_aandelen: a });
+    if (error) throw bkDbFout(error);
+  }
+
+  async grootboekToevoegen(g: GrootboekInvoer): Promise<Grootboekrekening> {
+    const { data, error } = await this.sb
+      .from('bk_grootboek')
+      .insert({ code: g.code, naam: g.naam, soort: g.soort, rubriek: g.soort === 'kosten' ? 'kosten' : 'omzet', rgs_code: g.soort === 'kosten' ? 'WBed' : 'WOmz', btw_standaard: g.btw, systeem: false, volgorde: Number(g.code) })
+      .select('*')
+      .single();
+    if (error) throw bkDbFout(error);
+    return naarGrootboek(data as Rij);
+  }
+
+  async grootboekWijzigen(code: string, w: GrootboekWijziging): Promise<Grootboekrekening> {
+    const rij: Rij = {};
+    if (w.naam !== undefined) rij.naam = w.naam;
+    if (w.actief !== undefined) rij.actief = w.actief;
+    if (w.btw !== undefined) rij.btw_standaard = w.btw;
+    const { data, error } = await this.sb.from('bk_grootboek').update(rij).eq('code', code).select('*').maybeSingle();
+    if (error) throw bkDbFout(error);
+    if (!data) throw new BoekhoudFout(404, 'Deze rekening bestaat niet (meer).', 'onbekend');
+    return naarGrootboek(data as Rij);
   }
 }

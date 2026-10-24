@@ -39,6 +39,19 @@
 //   - kern/btw-controles  te verwerken, bon ontbreekt, ICP, verlegd 1e, eerdere kwartalen;
 //   - demo              ingediende aangiften = herberekening, betalingen gekoppeld, 1530 = 0;
 //                       indienen/intrekken/betaling/activa in de demo-opslag.
+//   Stap 4:
+//   - kern/rapporten    W&V (per kwartaal = jaar, vorig jaar, t/m vandaag), balans sluit op
+//                       elke maandeinde, proefbalans (debet = credit), grootboekkaart = saldo,
+//                       winstverdeling exact, kapitaal per vennoot, jaarafsluiting (sluit,
+//                       resultaat- en privérekeningen naar 0, kapitaal = vergelijking, W&V
+//                       ongewijzigd, volgend jaar begint met het eindkapitaal), checklist;
+//   - kern/memoriaal    invoercontrole (sluit, één kant, geen bank/btw/debiteuren, open
+//                       periode), beginvermogen verdelen, instellingen, aandelen, categorieën;
+//   - kern/csv, xaf     BOM/puntkomma/CSV-injectie, bedragen; XAF well-formed, totalen =
+//                       proefbalans, openingsbalans sluit;
+//   - pdf-template      jaarrapport en aangifte bevatten de juiste cijfers;
+//   - demo              memoriaal (beginvermogen), afsluiten/heropenen, vergrendeling van het
+//                       jaar, volgorde van jaren, aandelen, categorieën.
 //
 // Gebruik:  node scripts/test-boekhouding.mjs
 import fs from "node:fs";
@@ -93,6 +106,16 @@ try {
   });
   process.exit(r.status ?? 1);
 }
+
+const [rap, csvm, xafm, mem, types, jw, pdf] = await Promise.all([
+  laad("kern/rapporten.ts"),
+  laad("kern/csv.ts"),
+  laad("kern/xaf.ts"),
+  laad("kern/memoriaal.ts"),
+  laad("repo/types.ts"),
+  laad("jaarwerk.ts"),
+  laad("pdf-template.ts"),
+]);
 
 let geslaagd = 0;
 const fouten = [];
@@ -1227,6 +1250,368 @@ await test("demo-opslag: aangifte indienen, betaling koppelen, intrekken; activa
   await assert.rejects(r.activumWijzigen(lap.id, { ...wl, desinvesteringDatum: dicht, desinvesteringOpbrengst: 0 }), (e) => e.status === 409);
   demo.demoHerstellen("test-ag");
   assert.equal((await r.activa()).length, 4);
+});
+
+// ---------------------------------------------------------------------------------- stap 4: rapporten
+const data4 = () => {
+  const d = seed.demoSeed(VANDAAG);
+  return { stam: d.stamdata, boekingen: d.boekingen, koppelingen: d.koppelingen, facturen: d.facturen, uitgaven: d.uitgaven, bronExtra: d.bronExtra, activa: d.activa, aangiften: d.aangiften, aangifteBetalingen: d.aangifteBetalingen, memoriaal: d.memoriaal, boekjaren: d.boekjaren };
+};
+const D4 = data4();
+const P4 = types.journaalVan(D4);
+const GBK = D4.stam.grootboek;
+
+await test("W&V: kwartalen tellen op tot het jaar, resultaat = opbrengsten − kosten, t/m vandaag", () => {
+  for (const jaar of [2025, 2026]) {
+    const wv = rap.winstEnVerlies(P4, GBK, jaar);
+    for (const g of wv.groepen) {
+      assert.equal(g.kwartalen.reduce((a, b) => a + b, 0), g.jaar, g.id);
+      assert.equal(g.regels.reduce((a, r) => a + r.jaar, 0), g.jaar, g.id);
+      for (const r of g.regels) assert.ok(Number.isSafeInteger(r.jaar));
+    }
+    assert.equal(wv.resultaat.jaar, wv.opbrengsten.jaar - wv.kosten.jaar);
+    assert.equal(wv.resultaat.jaar, rap.resultaatVan(P4, GBK, jaar));
+    assert.ok(wv.groepen.some((g) => g.id === "afschrijvingen"));
+  }
+  // Vorig jaar = het jaar ervoor.
+  assert.equal(rap.winstEnVerlies(P4, GBK, 2026).resultaat.vorigJaar, rap.winstEnVerlies(P4, GBK, 2025).resultaat.jaar);
+  // Lopend jaar t/m vandaag: afschrijvingen van november/december tellen nog niet.
+  const vol = rap.winstEnVerlies(P4, GBK, 2026);
+  const nu = rap.winstEnVerlies(P4, GBK, 2026, VANDAAG);
+  const afs = (w) => w.groepen.find((g) => g.id === "afschrijvingen").jaar;
+  assert.ok(afs(nu) < afs(vol));
+  assert.equal(nu.resultaat.jaar, rap.resultaatVan(P4, GBK, 2026, VANDAAG));
+  // Omzet uit facturen (8000) en kosten met btw verlegd (Adobe) zitten erin, excl. btw.
+  const omzet = nu.groepen.find((g) => g.id === "omzet");
+  assert.ok(omzet.regels.some((r) => r.code === "8000") && omzet.regels.some((r) => r.code === "8010"));
+});
+
+await test("balans: sluit op elk maandeinde en vandaag; btw per saldo, resultaat in eigen vermogen", () => {
+  let d = "2025-09-30";
+  for (let i = 0; i < 14; i++) {
+    const b = rap.balans(P4, GBK, d);
+    assert.equal(b.verschil, 0, d);
+    assert.equal(b.totaalActiva, b.totaalPassiva, d);
+    d = periode.plusMaanden(periode.plusDagen(d, 1), 1);
+    d = periode.plusDagen(d, -1);
+  }
+  const b = rap.balans(P4, GBK, VANDAAG);
+  assert.equal(b.verschil, 0);
+  const regels = [...b.activa, ...b.passiva].flatMap((g) => g.regels);
+  assert.ok(!regels.some((r) => ["1500", "1505", "1510", "1520", "1530"].includes(r.code)), "btw-rekeningen per saldo");
+  assert.ok(regels.some((r) => /^Btw te (betalen|vorderen)/.test(r.naam)));
+  assert.ok(b.passiva.find((g) => g.id === "eigen_vermogen").regels.some((r) => r.naam === "Resultaat boekjaar"));
+  // Bank = saldo per rekening (model).
+  const saldi = model.saldoPerRekening(D4.boekingen, D4.stam.rekeningen);
+  const liq = b.activa.find((g) => g.id === "liquide_middelen").regels;
+  assert.equal(liq.find((r) => r.code === "1100").bedrag, saldi.get(RB));
+  assert.equal(liq.find((r) => r.code === "1110").bedrag, saldi.get(RV));
+});
+
+await test("proefbalans en grootboekkaart: debet = credit, saldi kloppen", () => {
+  const p = rap.proefbalansRapport(P4, GBK, "2026-01-01", VANDAAG);
+  assert.equal(p.totaal.debet, p.totaal.credit);
+  assert.equal(p.totaal.begin, 0);
+  assert.equal(p.totaal.eind, 0);
+  const pb = journaal.proefbalans(P4, VANDAAG);
+  for (const r of p.regels) assert.equal(r.eind, pb.get(r.code) ?? 0, r.code);
+  for (const code of ["1100", "1300", "1530", "4800", "0600"]) {
+    const k = rap.grootboekkaart(P4, GBK, code, "2026-01-01", VANDAAG);
+    assert.equal(k.eind, pb.get(code) ?? 0, code);
+    if (k.regels.length) assert.equal(k.regels.at(-1).saldo, k.eind, code);
+    assert.equal(k.begin + k.debet - k.credit, k.eind);
+  }
+});
+
+await test("winstverdeling: exact op de cent, ook 3 vennoten, verlies en 60/40", () => {
+  const v = (a) => a.map((x, i) => ({ id: `v${i}`, naam: `V${i}`, userId: null, aandeel: x, grootboekKapitaal: "0500", grootboekPrive: "0600", actief: true }));
+  const w = rap.winstverdeling(v([33.33, 33.33, 33.34]), 100001);
+  assert.equal(w.reduce((t, x) => t + x.bedrag, 0), 100001);
+  assert.deepEqual(rap.winstverdeling(v([50, 50]), 2523447).map((x) => x.bedrag), [1261724, 1261723]);
+  assert.deepEqual(rap.winstverdeling(v([50, 50]), -1001).map((x) => x.bedrag), [-501, -500]);
+  assert.deepEqual(rap.winstverdeling(v([60, 40]), 100000).map((x) => x.bedrag), [60000, 40000]);
+  assert.deepEqual(rap.winstverdeling(v([100, 0]), 555).map((x) => x.bedrag), [555]);
+});
+
+await test("jaarafsluiting: post sluit; resultaat en privé naar kapitaal; W&V en balans blijven kloppen", () => {
+  const v = rap.jaarafsluitingVoorstel(P4, D4.stam, 2025);
+  const sd = v.regels.reduce((t, r) => t + r.debet, 0);
+  assert.equal(sd, v.regels.reduce((t, r) => t + r.credit, 0));
+  assert.ok(v.regels.every((r) => (r.debet > 0) !== (r.credit > 0)));
+  assert.equal(v.resultaat, rap.resultaatVan(P4, GBK, 2025));
+  assert.equal(v.verdeling.reduce((t, x) => t + x.bedrag, 0), v.resultaat);
+  const kv = rap.kapitaalVergelijking(P4, D4.stam, 2025);
+  // Afsluitpost in het journaal (zoals na afsluiten).
+  const na = { ...D4, memoriaal: [...D4.memoriaal, { id: "afs-2025", datum: "2025-12-31", omschrijving: "Jaarafsluiting 2025", soort: "jaarafsluiting", regels: v.regels }] };
+  const P = types.journaalVan(na);
+  const pb = journaal.proefbalans(P, "2025-12-31");
+  const info = rap.rekeningInfo(GBK);
+  for (const [code, s] of pb) if (rap.isResultaatSoort(info(code).soort)) assert.equal(s, 0, `resultaatrekening ${code} = 0`);
+  for (const x of D4.stam.vennoten) assert.equal(pb.get(x.grootboekPrive) ?? 0, 0, `privé ${x.naam} = 0`);
+  assert.equal(pb.get("0900") ?? 0, 0, "beginvermogen volledig verdeeld");
+  const kvNa = rap.kapitaalVergelijking(P, D4.stam, 2025);
+  for (const r of kvNa.regels) {
+    assert.equal(r.grootboek, r.eind, `kapitaal ${r.naam} = vergelijking`);
+    assert.equal(r.eind, kv.regels.find((x) => x.vennootId === r.vennootId).eind);
+  }
+  // W&V 2025 ongewijzigd (afsluitpost telt niet mee), resultaat-regel verdwijnt uit de balans.
+  assert.equal(rap.winstEnVerlies(P, GBK, 2025).resultaat.jaar, v.resultaat);
+  const b = rap.balans(P, GBK, "2025-12-31");
+  assert.equal(b.verschil, 0);
+  assert.ok(!b.passiva.flatMap((g) => g.regels).some((r) => /^Resultaat/.test(r.naam)));
+  assert.equal(b.totaalActiva, rap.balans(P4, GBK, "2025-12-31").totaalActiva);
+  // 2026 begint met het eindkapitaal van 2025.
+  const kv26 = rap.kapitaalVergelijking(P, D4.stam, 2026, VANDAAG);
+  for (const r of kv26.regels) assert.equal(r.begin, kvNa.regels.find((x) => x.vennootId === r.vennootId).eind);
+  // Balans 2026 sluit ook, zonder "resultaat eerdere jaren".
+  const b26 = rap.balans(P, GBK, VANDAAG);
+  assert.equal(b26.verschil, 0);
+  assert.ok(!b26.passiva.flatMap((g) => g.regels).some((r) => /eerdere jaren/.test(r.naam)));
+});
+
+await test("jaarafsluiting: checklist (blokkades, banksaldi, volgorde, aandelen)", () => {
+  const ctl = (jaar, o = {}) =>
+    rap.afsluitControles({ jaar, vandaag: VANDAAG, stam: o.stam ?? D4.stam, posten: o.posten ?? P4, boekingen: o.boekingen ?? D4.boekingen, aangiften: D4.aangiften, start: "2025-09-01", banksaldi: o.banksaldi ?? {} });
+  const pb = journaal.proefbalans(P4, "2025-12-31");
+  const goed = { [RB]: pb.get("1100"), [RV]: pb.get("1110") };
+  const c0 = ctl(2025);
+  assert.deepEqual(c0.controles.filter((c) => c.blokkeert && !c.ok).map((c) => c.id), ["bank"]);
+  assert.equal(rap.afsluitenMag(c0.controles), false);
+  const c1 = ctl(2025, { banksaldi: goed });
+  assert.equal(rap.afsluitenMag(c1.controles), true);
+  assert.ok(c1.controles.find((c) => c.id === "beginvermogen").ok, "beginvermogen verdeeld (demo)");
+  const c2 = ctl(2025, { banksaldi: { ...goed, [RV]: goed[RV] + 1 } });
+  assert.equal(rap.afsluitenMag(c2.controles), false);
+  assert.equal(c2.banksaldi.find((x) => x.rekeningId === RV).ok, false);
+  // 2026: loopt nog, Q3/Q4 niet ingediend, te verwerken regels, 2025 nog open.
+  const c26 = ctl(2026);
+  const open = c26.controles.filter((c) => c.blokkeert && !c.ok).map((c) => c.id);
+  for (const id of ["voorbij", "eerder", "btw", "te_verwerken"]) assert.ok(open.includes(id), id);
+  assert.match(c26.controles.find((c) => c.id === "btw").uitleg, /Q3, Q4/);
+  // Aandelen die niet op 100% uitkomen.
+  const scheef = { ...D4.stam, vennoten: D4.stam.vennoten.map((v, i) => ({ ...v, aandeel: i ? 30 : 60 })) };
+  assert.equal(ctl(2025, { stam: scheef, banksaldi: goed }).controles.find((c) => c.id === "aandelen").ok, false);
+  // Te verwerken regel in 2025.
+  const tv = D4.boekingen.map((b, i) => (i === 3 ? { ...b, status: "te_verwerken" } : b));
+  assert.equal(ctl(2025, { boekingen: tv, banksaldi: goed }).controles.find((c) => c.id === "te_verwerken").ok, false);
+});
+
+await test("jaarwerk: afsluitstatus, gewijzigd na indiening, boekjaren, samenvatting", () => {
+  const st = jw.afsluitStatus(D4, P4, 2025, VANDAAG, {});
+  assert.equal(st.afgesloten, false);
+  assert.equal(st.mag, false);
+  assert.ok(st.voorstel && !st.fout);
+  assert.deepEqual(jw.gewijzigdNaIndiening(D4, P4, 2025), []);
+  assert.deepEqual(jw.boekjarenLijst(D4, VANDAAG), [2026, 2025]);
+  assert.equal(jw.administratieStart(D4, VANDAAG), "2025-09-01");
+  assert.equal(jw.rapportTot(2026, VANDAAG), VANDAAG);
+  assert.equal(jw.rapportTot(2025, VANDAAG), "2025-12-31");
+  const s = jw.jaarSamenvatting(D4, P4, 2025, st.voorstel, st.banksaldi);
+  assert.equal(s.resultaat, st.voorstel.resultaat);
+  assert.equal(s.verdeling.length, 2);
+  const r = jw.jaarrapport(D4, P4, 2026, VANDAAG);
+  assert.equal(r.lopend, true);
+  assert.equal(r.balansEind.datum, VANDAAG);
+  assert.equal(r.balansBegin.datum, "2025-12-31");
+  // Een factuur in een ingediend kwartaal wijzigt: "gewijzigd na indiening".
+  const f = D4.facturen.find((x) => x.datum.startsWith("2026-02"));
+  const D5 = { ...D4, facturen: D4.facturen.map((x) => (x.id === f.id ? { ...x, omzet: x.omzet + 100000, subtotaal: x.subtotaal + 100000, btw: x.btw + 21000, totaal: x.totaal + 121000 } : x)) };
+  assert.deepEqual(jw.gewijzigdNaIndiening(D5, types.journaalVan(D5), 2026), ["Q1 2026"]);
+});
+
+// ---------------------------------------------------------------------------------- stap 4: memoriaal en instellingen
+await test("memoriaal: invoercontrole (sluit, één kant, verboden rekeningen, open periode)", () => {
+  const st = { ...D4.stam, vergrendeling: { aangiften: [{ jaar: 2026, kwartaal: 1 }], boekjaren: [2024] } };
+  const pm = (b) => mem.parseMemoriaalInvoer(b, st, { vandaag: VANDAAG });
+  const goed = pm({ datum: "2026-05-01", omschrijving: "Herindeling", soort: "correctie", regels: [{ grootboek: "4990", debet: "100,00" }, { grootboek: "4100", credit: "100,00" }, { grootboek: "", debet: "", credit: "" }] });
+  assert.equal(goed.ok, true, goed.fout);
+  assert.equal(goed.waarde.regels.length, 2);
+  assert.equal(goed.waarde.regels[0].debet, 10000);
+  const kap = pm({ datum: "2026-05-01", omschrijving: "Inbreng", soort: "beginbalans", regels: [{ grootboek: "0900", debet: 500 }, { grootboek: "0500", credit: 500 }] });
+  assert.equal(kap.waarde.regels[1].vennootId, seed.DEMO_ID.daniel, "kapitaal krijgt de vennoot");
+  assert.match(pm({ datum: "2026-05-01", omschrijving: "x", regels: [{ grootboek: "4990", debet: 100 }, { grootboek: "4100", credit: 99 }] }).fout, /sluit niet/);
+  assert.match(pm({ datum: "2026-05-01", omschrijving: "x", regels: [{ grootboek: "4990", debet: 100, credit: 100 }, { grootboek: "4100", credit: 100 }] }).fout, /óf debet óf credit/);
+  for (const code of ["1100", "1110", "1520", "1530", "1300", "1600"]) {
+    assert.equal(pm({ datum: "2026-05-01", omschrijving: "x", regels: [{ grootboek: code, debet: 100 }, { grootboek: "4100", credit: 100 }] }).ok, false, code);
+  }
+  assert.match(pm({ datum: "2026-02-01", omschrijving: "x", regels: [{ grootboek: "4990", debet: 100 }, { grootboek: "4100", credit: 100 }] }).fout, /vergrendeld/);
+  assert.match(pm({ datum: "2024-06-01", omschrijving: "x", regels: [{ grootboek: "4990", debet: 100 }, { grootboek: "4100", credit: 100 }] }).fout, /afgesloten/);
+  assert.equal(pm({ datum: "2026-05-01", omschrijving: "", regels: [] }).ok, false);
+  assert.equal(pm({ datum: "2026-05-01", omschrijving: "x", regels: [{ grootboek: "4990", debet: 100 }] }).ok, false);
+  const toegestaan = mem.memoriaalRekeningen(st).map((g) => g.code);
+  assert.ok(toegestaan.includes("0900") && toegestaan.includes("0500") && toegestaan.includes("4800") && !toegestaan.includes("1100") && !toegestaan.includes("1520"));
+});
+
+await test("memoriaal: beginvermogen verdelen sluit en volgt de aandelen", () => {
+  const r = mem.beginvermogenVoorstel(100001, D4.stam);
+  assert.equal(r[0].grootboek, "0900");
+  assert.equal(r[0].debet, 100001);
+  assert.deepEqual(r.slice(1).map((x) => [x.grootboek, x.credit]), [["0500", 50001], ["0510", 50000]]);
+  const neg = mem.beginvermogenVoorstel(-500, D4.stam);
+  assert.equal(neg[0].credit, 500);
+  assert.equal(neg.slice(1).reduce((t, x) => t + x.debet, 0), 500);
+  assert.deepEqual(mem.beginvermogenVoorstel(0, D4.stam), []);
+  // De demo-seed: memoriaal sluit en het beginvermogen van 2025 is verdeeld.
+  const m = D4.memoriaal[0];
+  assert.equal(m.regels.reduce((t, x) => t + x.debet, 0), m.regels.reduce((t, x) => t + x.credit, 0));
+  assert.equal(rap.onverdeeldVermogen(P4, GBK, 2025), 0);
+});
+
+await test("instellingen: bedrijfsgegevens, aandelen en categorieën", () => {
+  assert.deepEqual(mem.parseInstellingen({ kvk: "1234 5678", btwNummer: "nl 123456789 b01", bedrijfsnaam: " Studio  Levant " }).waarde, { kvk: "12345678", btwNummer: "NL123456789B01", bedrijfsnaam: "Studio Levant" });
+  assert.equal(mem.parseInstellingen({ kvk: "123" }).ok, false);
+  assert.equal(mem.parseInstellingen({ btwNummer: "NL12" }).ok, false);
+  assert.equal(mem.parseInstellingen({ kvk: "" }).waarde.kvk, null);
+  const [d, b] = D4.stam.vennoten;
+  assert.equal(mem.parseAandelen({ aandelen: [{ id: d.id, aandeel: "60" }, { id: b.id, aandeel: 40 }] }, D4.stam).ok, true);
+  assert.equal(mem.parseAandelen({ aandelen: [{ id: d.id, aandeel: "33,33" }, { id: b.id, aandeel: "66,67" }] }, D4.stam).ok, true);
+  assert.match(mem.parseAandelen({ aandelen: [{ id: d.id, aandeel: 60 }, { id: b.id, aandeel: 50 }] }, D4.stam).fout, /110%/);
+  assert.equal(mem.parseAandelen({ aandelen: [{ id: d.id, aandeel: 50.001 }, { id: b.id, aandeel: 49.999 }] }, D4.stam).ok, false);
+  assert.equal(mem.parseAandelen({ aandelen: [{ id: "x", aandeel: 100 }] }, D4.stam).ok, false);
+  const g = mem.parseGrootboekInvoer({ naam: "Vakliteratuur", soort: "kosten", btw: "9" }, D4.stam);
+  assert.equal(g.ok, true);
+  assert.equal(g.waarde.code, "4020");
+  assert.equal(mem.parseGrootboekInvoer({ naam: "Software & abonnementen", soort: "kosten", btw: "21" }, D4.stam).ok, false, "naam bestaat al");
+  assert.equal(mem.parseGrootboekInvoer({ naam: "X", soort: "kosten", btw: "21", code: "8100" }, D4.stam).ok, false, "code buiten bereik");
+  assert.equal(mem.parseGrootboekInvoer({ naam: "Subsidie", soort: "opbrengst", btw: "geen" }, D4.stam).waarde.code, "8020");
+});
+
+// ---------------------------------------------------------------------------------- stap 4: exports
+await test("CSV: BOM, puntkomma, aanhalingstekens, CSV-injectie, bedragen", () => {
+  const t = csvm.naarCsv(["a", "b"], [["x;y", 'zei "hoi"'], ["=SUM(A1)", csvm.bedrag(-123456)], ["+31", csvm.bedrag(5)], [null, 3]]);
+  assert.ok(t.startsWith("﻿a;b\r\n"));
+  const r = t.slice(1).split("\r\n");
+  assert.equal(r[1], '"x;y";"zei ""hoi"""');
+  assert.equal(r[2], "'=SUM(A1);-1234,56");
+  assert.equal(r[3], "'+31;0,05");
+  assert.equal(r[4], ";3");
+});
+await test("CSV-exports: bankregels per jaar, journaal sluit, W&V/balans/proefbalans/vennoten", () => {
+  const lijnen = (t) => t.replace(/^﻿/, "").trim().split("\r\n");
+  const b = csvm.boekingenCsv({ boekingen: D4.boekingen, stam: D4.stam, koppelingen: D4.koppelingen, documentLabel: (k) => k.bronId, jaar: 2026 });
+  assert.equal(lijnen(b).length, D4.boekingen.filter((x) => x.datum.startsWith("2026")).length + 1);
+  assert.match(lijnen(b)[0], /^Datum;Jaar;Kwartaal;Bank;Omschrijving/);
+  const j = csvm.journaalCsv(P4, D4.stam, "2026-01-01", "2026-12-31");
+  let deb = 0;
+  let cred = 0;
+  for (const l of lijnen(j).slice(1)) {
+    const k = l.split(";");
+    const n = (x) => Math.round(Number(x.replace(",", ".")) * 100);
+    deb += n(k[k.length - 3]);
+    cred += n(k[k.length - 2]);
+  }
+  assert.equal(deb, cred);
+  const p = rap.proefbalansRapport(P4, GBK, "2026-01-01", "2026-12-31");
+  assert.equal(deb, p.totaal.debet);
+  const wv = csvm.wvCsv(rap.winstEnVerlies(P4, GBK, 2026));
+  assert.match(lijnen(wv).at(-1), /^Resultaat;/);
+  const r = jw.jaarrapport(D4, P4, 2025, VANDAAG);
+  assert.match(csvm.balansCsv(r.balansBegin, r.balansEind), /Totaal activa/);
+  assert.match(csvm.proefbalansCsv(p), /Totaal/);
+  assert.equal(lijnen(csvm.kapitaalCsv(r.kapitaal)).length, 3);
+});
+
+function xmlGoedGevormd(xml) {
+  const stapel = [];
+  const re = /<(\/?)([A-Za-z][\w:.-]*)([^>]*?)(\/?)>|<\?[^>]*\?>/g;
+  let m;
+  while ((m = re.exec(xml))) {
+    if (!m[2]) continue;
+    if (m[4] === "/") continue;
+    if (m[1] === "/") {
+      if (stapel.pop() !== m[2]) return false;
+    } else stapel.push(m[2]);
+  }
+  return stapel.length === 0 && !/&(?!amp;|lt;|gt;|quot;|apos;)/.test(xml);
+}
+
+await test("XAF 3.2: goed gevormd, totalen = proefbalans, openingsbalans sluit", () => {
+  for (const jaar of [2025, 2026]) {
+    const x = xafm.xafAuditfile({ stam: D4.stam, posten: P4, jaar, vandaag: VANDAAG });
+    assert.ok(x.xml.startsWith('<?xml version="1.0" encoding="UTF-8"?>\n<auditfile xmlns="http://www.auditfiles.nl/XAF/3.2">'));
+    assert.ok(xmlGoedGevormd(x.xml), "well-formed");
+    const p = rap.proefbalansRapport(P4, GBK, `${jaar}-01-01`, `${jaar}-12-31`);
+    assert.equal(x.mutaties.debet, p.totaal.debet);
+    assert.equal(x.mutaties.credit, p.totaal.credit);
+    assert.equal(x.opening.debet, x.opening.credit);
+    assert.equal((x.xml.match(/<trLine>/g) || []).length, x.mutaties.regels);
+    assert.equal((x.xml.match(/<transaction>/g) || []).length, P4.filter((q) => q.datum.startsWith(String(jaar))).length);
+    assert.match(x.xml, new RegExp(`<fiscalYear>${jaar}</fiscalYear>`));
+    assert.match(x.xml, /<jrnID>BNK<\/jrnID>/);
+    assert.equal((x.xml.match(/<period>/g) || []).length, 12);
+  }
+  // Escapen van bijzondere tekens.
+  assert.equal(xafm.xmlTekst('A & B <"x">'), "A &amp; B &lt;&quot;x&quot;&gt;");
+  const st = { ...D4.stam, instellingen: { ...D4.stam.instellingen, bedrijfsnaam: "Levant & Co", kvk: "12345678", btwNummer: "NL123456789B01" } };
+  const x = xafm.xafAuditfile({ stam: st, posten: P4, jaar: 2026, vandaag: VANDAAG });
+  assert.ok(xmlGoedGevormd(x.xml));
+  assert.match(x.xml, /<companyIdent>12345678<\/companyIdent><companyName>Levant &amp; Co<\/companyName>|<companyIdent>12345678<\/companyIdent>\n<companyName>Levant &amp; Co<\/companyName>/);
+});
+
+await test("PDF-templates: jaarrapport en btw-aangifte met de juiste cijfers", () => {
+  const r = jw.jaarrapport(D4, P4, 2025, VANDAAG);
+  const h = pdf.jaarrapportHtml({ inst: D4.stam.instellingen, r, vandaag: VANDAAG, demo: true });
+  assert.match(h, /^<!doctype html>/);
+  assert.match(h, /Jaarrapport 2025/);
+  assert.ok(h.includes(geld.formatBedrag(r.wv.resultaat.jaar)), "resultaat");
+  assert.ok(h.includes(geld.formatBedrag(r.balansEind.totaalActiva)), "balanstotaal");
+  assert.match(h, /DEMO/);
+  const ber = ag.aangifteRubrieken(P4, 2026, 2);
+  const a = pdf.aangifteHtml({ inst: D4.stam.instellingen, ber, aangifte: D4.aangiften.find((x) => x.jaar === 2026 && x.kwartaal === 2), vandaag: VANDAAG, demo: false });
+  assert.match(a, /Btw-aangifte Q2 2026/);
+  assert.match(a, /Ingediend op/);
+  assert.ok(a.includes(geld.formatHeleEuro(Math.abs(ber.saldo.euro))));
+  assert.ok(!/<script/i.test(h + a));
+});
+
+// ---------------------------------------------------------------------------------- stap 4: demo-opslag
+await test("demo-opslag: memoriaal, jaar afsluiten/heropenen, vergrendeling, instellingen", async () => {
+  const r = new demo.DemoRepo("test-jaar", "u-jaar");
+  demo.demoHerstellen("test-jaar");
+  assert.equal((await r.memoriaal()).length, 1);
+  const m = await r.memoriaalToevoegen({ datum: "2026-10-01", omschrijving: "Correctie", soort: "correctie", regels: [{ grootboek: "4990", debet: 100, credit: 0 }, { grootboek: "4100", debet: 0, credit: 100 }] });
+  await assert.rejects(r.memoriaalToevoegen({ datum: "2026-10-01", omschrijving: "Scheef", soort: "correctie", regels: [{ grootboek: "4990", debet: 100, credit: 0 }, { grootboek: "4100", debet: 0, credit: 99 }] }), (e) => e.code === "sluit_niet");
+  await assert.rejects(r.memoriaalToevoegen({ datum: "2026-02-01", omschrijving: "Dicht", soort: "correctie", regels: [{ grootboek: "4990", debet: 1, credit: 0 }, { grootboek: "4100", debet: 0, credit: 1 }] }), (e) => e.status === 409);
+  await r.memoriaalVerwijderen(m.id);
+  // Jaar afsluiten met het voorstel uit het journaal.
+  const d = await types.laadAlles(r);
+  const P = types.journaalVan(d);
+  const v = rap.jaarafsluitingVoorstel(P, d.stam, 2025);
+  await r.jaarAfsluiten({ jaar: 2025, omschrijving: "Jaarafsluiting 2025", regels: v.regels, samenvatting: { resultaat: v.resultaat } });
+  assert.deepEqual((await r.stamdata()).vergrendeling.boekjaren, [2025]);
+  await assert.rejects(r.jaarAfsluiten({ jaar: 2025, omschrijving: "x", regels: [], samenvatting: {} }), (e) => e.status === 409);
+  await assert.rejects(r.memoriaalVerwijderen((await r.memoriaal()).find((x) => x.soort === "jaarafsluiting").id), (e) => e.status === 400);
+  await assert.rejects(r.boekingToevoegen({ ...model.parseBoekingInvoer({ datum: "2025-11-03", omschrijving: "Te laat", soort: "uitgave", bedrag: "10", btwCode: "21" }, d.stam, { vandaag: VANDAAG }).waarde }), (e) => e.status === 409);
+  // Na afsluiten: privé en resultaat 2025 op nul, kapitaal = vergelijking.
+  const d2 = await types.laadAlles(r);
+  const P2 = types.journaalVan(d2);
+  const pb = journaal.proefbalans(P2, "2025-12-31");
+  assert.equal(pb.get("0600") ?? 0, 0);
+  assert.equal(pb.get("8000") ?? 0, 0);
+  const st = jw.afsluitStatus(d2, P2, 2025, VANDAAG, {});
+  assert.equal(st.afgesloten, true);
+  // 2026 afsluiten kan niet (loopt nog); de volgorde: eerst 2026 heropenen als dat dicht zou zijn.
+  await r.jaarAfsluiten({ jaar: 2026, omschrijving: "test", regels: [], samenvatting: {} });
+  await assert.rejects(r.jaarHeropenen(2025), (e) => e.code === "jaar_volgorde");
+  await assert.rejects(r.jaarAfsluiten({ jaar: 2024, omschrijving: "x", regels: [], samenvatting: {} }), (e) => e.code === "jaar_volgorde");
+  await r.jaarHeropenen(2026);
+  await r.jaarHeropenen(2025);
+  assert.deepEqual((await r.stamdata()).vergrendeling.boekjaren, []);
+  assert.equal((await r.memoriaal()).filter((x) => x.soort === "jaarafsluiting").length, 0);
+  await assert.rejects(r.jaarHeropenen(2025), (e) => e.status === 404);
+  // Instellingen, aandelen en categorieën.
+  await r.instellingenWijzigen({ kvk: "12345678" });
+  assert.equal((await r.stamdata()).instellingen.kvk, "12345678");
+  const [vd, vb] = (await r.stamdata()).vennoten;
+  await assert.rejects(r.aandelenWijzigen([{ id: vd.id, aandeel: 70 }]), (e) => e.status === 400);
+  await r.aandelenWijzigen([{ id: vd.id, aandeel: 60 }, { id: vb.id, aandeel: 40 }]);
+  assert.deepEqual((await r.stamdata()).vennoten.map((x) => x.aandeel), [60, 40]);
+  await r.grootboekToevoegen({ code: "4020", naam: "Vakliteratuur", soort: "kosten", btw: "9" });
+  await assert.rejects(r.grootboekToevoegen({ code: "4020", naam: "Iets", soort: "kosten", btw: "9" }), (e) => e.status === 409);
+  await r.grootboekWijzigen("4020", { actief: false });
+  assert.equal((await r.stamdata()).grootboek.find((g) => g.code === "4020").actief, false);
+  await assert.rejects(r.grootboekWijzigen("4000", { actief: false }), (e) => e.code === "grootboek_systeem");
+  demo.demoHerstellen("test-jaar");
 });
 
 // ---------------------------------------------------------------------------------- constanten

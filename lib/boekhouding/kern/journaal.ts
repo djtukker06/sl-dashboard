@@ -55,6 +55,8 @@ export interface JournaalPost {
   omschrijving: string;
   regels: JournaalRegel[];
   btw?: JournaalBtw;
+  /** Alleen bij memoriaal: beginbalans, correctie of jaarafsluiting. */
+  memoriaalSoort?: Memoriaal['soort'];
 }
 
 export class JournaalFout extends Error {}
@@ -224,7 +226,16 @@ export interface Memoriaal {
   datum: Datum;
   omschrijving: string;
   soort: 'beginbalans' | 'correctie' | 'jaarafsluiting';
-  regels: { grootboek: string; debet: Centen; credit: Centen; vennootId?: string | null }[];
+  regels: MemoriaalRegel[];
+  aangemaakt?: string;
+}
+
+export interface MemoriaalRegel {
+  grootboek: string;
+  debet: Centen;
+  credit: Centen;
+  vennootId?: string | null;
+  omschrijving?: string | null;
 }
 
 export function memoriaalNaarPost(m: Memoriaal): JournaalPost {
@@ -234,7 +245,8 @@ export function memoriaalNaarPost(m: Memoriaal): JournaalPost {
     bronId: m.id,
     datum: m.datum,
     omschrijving: m.omschrijving,
-    regels: zonderNul(m.regels.map((r) => ({ grootboek: r.grootboek, debet: r.debet, credit: r.credit, vennootId: r.vennootId ?? null })))
+    regels: zonderNul(m.regels.map((r) => ({ grootboek: r.grootboek, debet: r.debet, credit: r.credit, vennootId: r.vennootId ?? null }))),
+    memoriaalSoort: m.soort
   });
 }
 

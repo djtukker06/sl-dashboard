@@ -98,8 +98,9 @@
 //     echt verwijderen alleen bij koppelingen, aangiften (intrekken) en activa; de rekenkern
 //     (afschrijving, aangifte, activeren, controles) is puur; tabs Btw-aangifte en Activa.
 // Live: /boekhouding/bank (ook met filters), /boekhouding/bank/importeren,
-//       /boekhouding/openstaand, /boekhouding/instellingen, /boekhouding/btw(/jaar/kw) en
-//       /boekhouding/activa(/id) zonder sessie -> 307 /login;
+//       /boekhouding/openstaand, /boekhouding/instellingen, /boekhouding/btw(/jaar/kw),
+//       /boekhouding/activa(/id), /boekhouding/rapporten(/jaarafsluiting/jaar) zonder sessie
+//       -> 307 /login (stap 4: ook memoriaal, jaarafsluiting, instellingen en exports -> 401);
 //       GET/POST/PATCH/DELETE /api/boekhouding/** -> 401 (ook cross-site).
 //
 // Gebruik:  node scripts/rooktest-shell.mjs [http://localhost:3107]
@@ -603,9 +604,18 @@ console.log("Boekhouding: bank & boekingen (0027)");
   check(!/createServiceRoleClient/.test(lees("lib/boekhouding/repo/supabase.ts")), "boekhouding gebruikt nooit de service-role (RLS van het teamlid)");
   const sbRepo = lees("lib/boekhouding/repo/supabase.ts");
   const deletes = [...sbRepo.matchAll(/from\('(\w+)'\)\s*\.delete\(\)/g)].map((m) => m[1]);
-  check(deletes.every((t) => ["bk_koppelingen", "bk_aangiften", "bk_activa"].includes(t)) && (sbRepo.match(/\.delete\(\)/g) || []).length === deletes.length, "boekingsregels worden nooit echt verwijderd (bewaarplicht); alleen koppelingen, aangiften (intrekken) en activa", deletes.join(","));
+  check(deletes.every((t) => ["bk_koppelingen", "bk_aangiften", "bk_activa", "bk_memoriaal"].includes(t)) && (sbRepo.match(/\.delete\(\)/g) || []).length === deletes.length, "boekingsregels worden nooit echt verwijderd (bewaarplicht); alleen koppelingen, aangiften (intrekken), activa en memoriaal (open periode)", deletes.join(","));
+  check(/from\('bk_memoriaal'\)\.delete\(\)[^;]*neq\('soort', 'jaarafsluiting'\)/.test(sbRepo), "een jaarafsluiting wordt niet los verwijderd (alleen via heropenen)");
+  check(/rpc\('bk_jaar_afsluiten'/.test(sbRepo) && /rpc\('bk_jaar_heropenen'/.test(sbRepo) && /rpc\('bk_memoriaal_toevoegen'/.test(sbRepo) && /rpc\('bk_vennoten_aandelen'/.test(sbRepo), "memoriaal, jaarafsluiting en winstverdeling via RPC (één transactie)");
+  const jaRoute = lees("app/api/boekhouding/jaarafsluiting/[jaar]/route.ts");
+  check(/export const POST = bkRoute\([\s\S]*?\{ alleenEigenaar: true \}\s*\);/.test(jaRoute) && /export const DELETE = bkRoute\([\s\S]*?\{ alleenEigenaar: true \}\s*\);/.test(jaRoute), "boekjaar afsluiten en heropenen alleen door de eigenaar (route)");
+  check(/\{ alleenEigenaar: true \}/.test(lees("app/api/boekhouding/instellingen/vennoten/route.ts")), "winstverdeling wijzigen alleen door de eigenaar (route)");
+  check(/afsluitStatus\(data, posten, jaar, vandaagNL\(\), banksaldi\)/.test(lees("lib/boekhouding/acties-jaar.ts")), "bij afsluiten controleert de server de checklist zelf");
+  check(/\/boekhouding\/rapporten/.test(lees("components/boekhouding/BoekhoudingTabs.tsx")), "tab Rapporten & jaarrekening");
+  check(/'X-Content-Type-Options': 'nosniff'/.test(lees("lib/boekhouding/acties-jaar.ts")) && /'Cache-Control': 'private, no-store'/.test(lees("lib/boekhouding/acties-jaar.ts")), "exports: niet cachen, nosniff");
+  check(/import\('\.\.\/invoice\/pdf'\)/.test(lees("lib/boekhouding/acties-jaar.ts")), "PDF via renderPdf uit lib/invoice/pdf.ts (alleen importeren)");
   check(!/from\('(invoices|expenses|quotes|clients)'\)\s*\.(insert|update|upsert|delete)\(/.test(sbRepo) && /rpc\('bk_importeer'/.test(sbRepo), "boekhouding leest facturen/bonnetjes alleen; import via bk_importeer");
-  for (const f of ["kern/bronnen.ts", "kern/afletteren.ts", "kern/bankimport.ts", "repo/demo-voorbeeld.ts", "kern/afschrijving.ts", "kern/aangifte.ts", "kern/activeren.ts", "kern/btw-controles.ts"]) {
+  for (const f of ["kern/bronnen.ts", "kern/afletteren.ts", "kern/bankimport.ts", "repo/demo-voorbeeld.ts", "kern/afschrijving.ts", "kern/aangifte.ts", "kern/activeren.ts", "kern/btw-controles.ts", "kern/rapporten.ts", "kern/csv.ts", "kern/xaf.ts", "kern/memoriaal.ts", "jaarwerk.ts"]) {
     check(!/from '@\/|supabase|fetch\(/.test(lees(`lib/boekhouding/${f}`).replace(/\/\/[^\n]*/g, "")), `lib/boekhouding/${f} is een pure module`);
   }
   const m27 = lees("supabase/migrations/0027_boekhouding.sql").replace(/--[^\n]*/g, "");
@@ -756,7 +766,7 @@ for (const url of ["/social-files/brand/logo-licht.png", "/social-files/projects
 
 console.log("Boekhouding zonder sessie");
 {
-  for (const url of ["/boekhouding/bank", "/boekhouding/bank?rekening=00000000-0000-4000-8000-000000000000&jaar=2026&kw=3&soort=uitgave&status=te_verwerken&q=adobe", "/boekhouding/bank?open=00000000-0000-4000-8000-000000000000", "/boekhouding/bank/importeren", "/boekhouding/openstaand", "/boekhouding/instellingen", "/boekhouding/btw", "/boekhouding/btw/2026/3", "/boekhouding/btw/9999/9", "/boekhouding/activa", "/boekhouding/activa?jaar=2026&activeer=boeking:00000000-0000-4000-8000-000000000000", "/boekhouding/activa/00000000-0000-4000-8000-000000000000"]) {
+  for (const url of ["/boekhouding/bank", "/boekhouding/bank?rekening=00000000-0000-4000-8000-000000000000&jaar=2026&kw=3&soort=uitgave&status=te_verwerken&q=adobe", "/boekhouding/bank?open=00000000-0000-4000-8000-000000000000", "/boekhouding/bank/importeren", "/boekhouding/openstaand", "/boekhouding/instellingen", "/boekhouding/btw", "/boekhouding/btw/2026/3", "/boekhouding/btw/9999/9", "/boekhouding/activa", "/boekhouding/activa?jaar=2026&activeer=boeking:00000000-0000-4000-8000-000000000000", "/boekhouding/activa/00000000-0000-4000-8000-000000000000", "/boekhouding/rapporten", "/boekhouding/rapporten?r=balans&jaar=2025", "/boekhouding/rapporten?r=grootboek&jaar=2026&code=1100", "/boekhouding/rapporten/jaarafsluiting/2025", "/boekhouding/rapporten/jaarafsluiting/abc"]) {
     const res = await vraag(url);
     check(res.status === 307 && naarLogin(res), `${url} -> 307 /login`, `status ${res.status} ${res.headers.get("location") || ""}`);
   }
@@ -783,6 +793,17 @@ console.log("Boekhouding zonder sessie");
     ["POST", "/api/boekhouding/activa"],
     ["PATCH", "/api/boekhouding/activa/00000000-0000-4000-8000-000000000000"],
     ["DELETE", "/api/boekhouding/activa/00000000-0000-4000-8000-000000000000"],
+    ["POST", "/api/boekhouding/memoriaal"],
+    ["DELETE", "/api/boekhouding/memoriaal?id=00000000-0000-4000-8000-000000000000"],
+    ["POST", "/api/boekhouding/jaarafsluiting/2025"],
+    ["DELETE", "/api/boekhouding/jaarafsluiting/2025"],
+    ["PATCH", "/api/boekhouding/instellingen"],
+    ["PATCH", "/api/boekhouding/instellingen/vennoten"],
+    ["POST", "/api/boekhouding/instellingen/grootboek"],
+    ["PATCH", "/api/boekhouding/instellingen/grootboek"],
+    ["GET", "/api/boekhouding/export?soort=xaf&jaar=2025"],
+    ["GET", "/api/boekhouding/export?soort=pdf&jaar=2025"],
+    ["GET", "/api/boekhouding/export?soort=boekingen&jaar=2026"],
   ]) {
     for (const origin of [BASIS, "https://evil.example"]) {
       const res = await vraag(url, { method: m, headers: { origin, "content-type": "application/json" }, body: m === "GET" || m === "DELETE" ? undefined : JSON.stringify({ omschrijving: "x", bedrag: "1" }) });

@@ -23,6 +23,10 @@
 //     alleen aan een bestaande aangifte), intrekken alleen de eigenaar; activa: checks
 //     (restwaarde, looptijd), alleen teamleden, afgesloten boekjaar legt aanschaf/termijn vast
 //     (notities mogen), desinvestering alleen in een open periode.
+//   - stap 4: memoriaal via bk_memoriaal_toevoegen (sluit, geen jaarafsluiting), jaar afsluiten
+//     en heropenen alleen de eigenaar (RPC én policies), volgorde van jaren, afgesloten jaar
+//     weigert boekingen, winstverdeling alleen de eigenaar en samen 100%; aal1 met 2FA-factor
+//     ziet in geen enkele bk-tabel iets.
 //
 // Gebruik:  node scripts/test-boekhouding-db.mjs
 import fs from "node:fs";
@@ -443,11 +447,96 @@ let B1;
   check(nb >= 1 && (await db.query("select count(*)::int as n from public.bk_boekingen where id = $1", [B1])).rows[0].n === 1, "opnieuw uitvoeren: boekingen blijven", String(nb));
 }
 
+// ---- stap 4: memoriaal, jaarafsluiting, winstverdeling ----
+{
+  const regels = (d, c) => JSON.stringify([{ grootboek_code: "4990", debet_centen: d }, { grootboek_code: "4100", credit_centen: c }]);
+  const m1 = await als(db, "bram", [[`select public.bk_memoriaal_toevoegen('2031-03-01', 'Herindeling', 'correctie', $1::jsonb) as id`, [regels(500, 500)]]], { commit: true });
+  check(m1.ok && m1.rows[0].id, "memoriaal via bk_memoriaal_toevoegen (teamlid)", uitleg(m1));
+  const nRegels = (await db.query("select count(*)::int as n from public.bk_memoriaal_regels where memoriaal_id = $1", [m1.rows?.[0]?.id])).rows[0].n;
+  check(nRegels === 2, "memoriaal: kop en regels in één keer", String(nRegels));
+  const scheef = await als(db, "bram", [[`select public.bk_memoriaal_toevoegen('2031-03-01', 'Scheef', 'correctie', $1::jsonb)`, [regels(500, 499)]]], { immediate: true });
+  check(!scheef.ok && /memoriaal_sluit_niet/.test(scheef.msg || ""), "memoriaal via RPC dat niet sluit geweigerd", uitleg(scheef));
+  const viaRpcAfs = await als(db, "bram", [[`select public.bk_memoriaal_toevoegen('2031-12-31', 'x', 'jaarafsluiting', $1::jsonb)`, [regels(1, 1)]]]);
+  check(!viaRpcAfs.ok, "jaarafsluiting niet via bk_memoriaal_toevoegen", uitleg(viaRpcAfs));
+  for (const wie of ["anon", "indringer"]) {
+    const r = await als(db, wie, [[`select public.bk_memoriaal_toevoegen('2031-03-01', 'x', 'correctie', $1::jsonb)`, [regels(1, 1)]]]);
+    check(!r.ok, `${wie}: geen memoriaal`, uitleg(r));
+  }
+  // Een jaarafsluiting rechtstreeks in bk_memoriaal: alleen de eigenaar.
+  const direct = await als(db, "bram", "insert into public.bk_memoriaal (datum, omschrijving, soort) values ('2031-12-31', 'x', 'jaarafsluiting')");
+  check(!direct.ok && /geen_eigenaar/.test(direct.msg || ""), "lid boekt geen jaarafsluiting in bk_memoriaal", uitleg(direct));
+  const bjDirect = await als(db, "bram", "insert into public.bk_boekjaren (jaar) values (2031)");
+  check(geweigerd(bjDirect), "lid zet geen rij in bk_boekjaren (policy eigenaar)", uitleg(bjDirect));
+
+  const afs = JSON.stringify([
+    { grootboek_code: "8000", debet_centen: 100000 },
+    { grootboek_code: "0500", credit_centen: 50000, vennoot_id: VEN },
+    { grootboek_code: "0510", credit_centen: 50000 }
+  ]);
+  const doorLid = await als(db, "bram", [[`select public.bk_jaar_afsluiten(2031, 'Jaarafsluiting 2031', $1::jsonb, '{}'::jsonb)`, [afs]]]);
+  check(!doorLid.ok && /geen_eigenaar/.test(doorLid.msg || ""), "lid sluit geen boekjaar af", uitleg(doorLid));
+  const anonAfs = await als(db, "anon", [[`select public.bk_jaar_afsluiten(2031, 'x', $1::jsonb, '{}'::jsonb)`, [afs]]]);
+  check(geweigerd(anonAfs), "anon sluit geen boekjaar af", uitleg(anonAfs));
+  const scheefAfs = await als(db, "daniel", [[`select public.bk_jaar_afsluiten(2031, 'x', $1::jsonb, '{}'::jsonb)`, [JSON.stringify([{ grootboek_code: "8000", debet_centen: 1 }, { grootboek_code: "0500", credit_centen: 2 }])]]], { immediate: true });
+  check(!scheefAfs.ok && /memoriaal_sluit_niet/.test(scheefAfs.msg || ""), "afsluitpost die niet sluit geweigerd", uitleg(scheefAfs));
+  const ok = await als(db, "daniel", [[`select public.bk_jaar_afsluiten(2031, 'Jaarafsluiting 2031', $1::jsonb, '{"resultaat": 100000}'::jsonb) as id`, [afs]]], { commit: true });
+  check(ok.ok && ok.rows[0].id, "eigenaar sluit boekjaar af (afsluitpost + vergrendeling)", uitleg(ok));
+  const bj = (await db.query("select jaar, memoriaal_id, samenvatting->>'resultaat' as r from public.bk_boekjaren where jaar = 2031")).rows[0];
+  const mem = (await db.query("select datum::text as d, soort from public.bk_memoriaal where id = $1", [bj?.memoriaal_id])).rows[0];
+  check(bj?.r === "100000" && mem?.d === "2031-12-31" && mem?.soort === "jaarafsluiting", "afsluitpost op 31-12 gekoppeld aan het boekjaar", JSON.stringify({ bj, mem }));
+  const boekNa = await als(db, "bram", nieuw("2031-05-01"));
+  check(vergrendeld(boekNa), "afgesloten jaar weigert nieuwe boekingen", uitleg(boekNa));
+  const memNa = await als(db, "bram", [[`select public.bk_memoriaal_toevoegen('2031-06-01', 'x', 'correctie', $1::jsonb)`, [regels(1, 1)]]]);
+  check(vergrendeld(memNa), "afgesloten jaar weigert memoriaal", uitleg(memNa));
+  const delMem = await als(db, "bram", [[`delete from public.bk_memoriaal where id = $1`, [m1.rows?.[0]?.id]]]);
+  check(vergrendeld(delMem), "memoriaal in afgesloten jaar niet te verwijderen", uitleg(delMem));
+  const delAfs = await als(db, "bram", [[`delete from public.bk_memoriaal where id = $1`, [bj?.memoriaal_id]]]);
+  check(vergrendeld(delAfs), "afsluitpost niet los te verwijderen", uitleg(delAfs));
+  const dubbel = await als(db, "daniel", [[`select public.bk_jaar_afsluiten(2031, 'x', '[]'::jsonb, '{}'::jsonb)`, []]]);
+  check(!dubbel.ok && dubbel.code === "23505", "zelfde jaar niet twee keer afsluiten", uitleg(dubbel));
+  const eerder = await als(db, "daniel", [[`select public.bk_jaar_afsluiten(2030, 'x', '[]'::jsonb, '{}'::jsonb)`, []]]);
+  check(!eerder.ok && /jaar_volgorde/.test(eerder.msg || ""), "een eerder jaar na een later jaar afsluiten geweigerd", uitleg(eerder));
+  const updLid = await als(db, "bram", "update public.bk_boekjaren set samenvatting = '{}'::jsonb where jaar = 2031");
+  check(geweigerd(updLid) || (updLid.ok && updLid.n === 0), "lid wijzigt een afgesloten boekjaar niet", uitleg(updLid));
+  // Heropenen
+  const heropLid = await als(db, "bram", "select public.bk_jaar_heropenen(2031)");
+  check(!heropLid.ok && /geen_eigenaar/.test(heropLid.msg || ""), "lid heropent geen boekjaar", uitleg(heropLid));
+  const herop = await als(db, "daniel", "select public.bk_jaar_heropenen(2031)", { commit: true });
+  check(herop.ok, "eigenaar heropent het boekjaar", uitleg(herop));
+  const na = (await db.query("select (select count(*) from public.bk_boekjaren where jaar = 2031)::int as j, (select count(*) from public.bk_memoriaal where soort = 'jaarafsluiting' and jaar = 2031)::int as m")).rows[0];
+  check(na.j === 0 && na.m === 0, "heropenen: vergrendeling en afsluitpost weg", JSON.stringify(na));
+  const weerOpen = await als(db, "bram", nieuw("2031-05-01"));
+  check(weerOpen.ok, "na heropenen kan er weer geboekt worden", uitleg(weerOpen));
+  const nogmaals = await als(db, "daniel", "select public.bk_jaar_heropenen(2031)");
+  check(!nogmaals.ok && /jaar_onbekend/.test(nogmaals.msg || ""), "heropenen van een open jaar geweigerd", uitleg(nogmaals));
+  // Winstverdeling
+  const DAN = (await db.query("select id from public.bk_vennoten where naam = 'Daniel'")).rows[0].id;
+  const aand = (a, b) => JSON.stringify([{ id: DAN, aandeel: a }, { id: VEN, aandeel: b }]);
+  const avLid = await als(db, "bram", [[`select public.bk_vennoten_aandelen($1::jsonb)`, [aand(50, 50)]]]);
+  check(!avLid.ok && /geen_eigenaar/.test(avLid.msg || ""), "lid wijzigt de winstverdeling niet (RPC)", uitleg(avLid));
+  const updVen = await als(db, "bram", "update public.bk_vennoten set winstaandeel = 50");
+  check(geweigerd(updVen) || (updVen.ok && updVen.n === 0), "lid wijzigt de winstverdeling niet (policy)", uitleg(updVen));
+  const av100 = await als(db, "daniel", [[`select public.bk_vennoten_aandelen($1::jsonb)`, [aand(60, 50)]]]);
+  check(!av100.ok && /aandelen_niet_100/.test(av100.msg || ""), "winstaandelen moeten samen 100% zijn", uitleg(av100));
+  const avOk = await als(db, "daniel", [[`select public.bk_vennoten_aandelen($1::jsonb)`, [aand(55.5, 44.5)]]]);
+  check(avOk.ok, "eigenaar wijzigt de winstverdeling (55,5/44,5)", uitleg(avOk));
+  for (const f of ["bk_memoriaal_toevoegen('2031-01-01', 'x', 'correctie', '[]'::jsonb)", "bk_jaar_heropenen(2031)", "bk_vennoten_aandelen('[]'::jsonb)"]) {
+    const r = await als(db, "anon", `select public.${f}`);
+    check(geweigerd(r), `anon: ${f.split("(")[0]} geweigerd`, uitleg(r));
+  }
+}
+
 // ---- 2FA ----
 {
   await db.query("insert into auth.mfa_factors (user_id, friendly_name, status) values ($1, 'Telefoon', 'verified')", [U.daniel]);
   const a1 = await als(db, "daniel", "select count(*)::int as n from public.bk_boekingen", { aal: "aal1" });
   check(a1.ok && a1.rows[0].n === 0, "met 2FA-factor op aal1: niets", uitleg(a1));
+  for (const t of BK) {
+    const s1 = await als(db, "daniel", `select count(*)::int as n from public.${t}`, { aal: "aal1" });
+    check(s1.ok && s1.rows[0].n === 0, `aal1 met 2FA-factor: niets in ${t}`, uitleg(s1));
+  }
+  const afsAal1 = await als(db, "daniel", "select public.bk_jaar_afsluiten(2032, 'x', '[]'::jsonb, '{}'::jsonb)", { aal: "aal1" });
+  check(!afsAal1.ok, "aal1 met 2FA-factor: geen jaarafsluiting", uitleg(afsAal1));
   const a2 = await als(db, "daniel", "select count(*)::int as n from public.bk_boekingen", { aal: "aal2" });
   check(a2.ok && a2.rows[0].n > 0, "met 2FA-factor op aal2: alles", uitleg(a2));
 }

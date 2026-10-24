@@ -5,7 +5,11 @@ import { DemoBanner } from './DemoBanner';
 import { RekeningenBeheer } from './RekeningenBeheer';
 import { BankSubnav } from './BankSubnav';
 import { formatCenten } from '@/lib/boekhouding/kern/geld';
-import { isKwartaal, jaarVan, vandaagNL } from '@/lib/boekhouding/kern/periode';
+import { isKwartaal, isVergrendeld, jaarVan, vandaagNL } from '@/lib/boekhouding/kern/periode';
+import { onverdeeldVermogen, rekeningInfo } from '@/lib/boekhouding/kern/rapporten';
+import { beginvermogenVoorstel, memoriaalRekeningen } from '@/lib/boekhouding/kern/memoriaal';
+import { administratieStart } from '@/lib/boekhouding/jaarwerk';
+import { BedrijfsgegevensForm, GrootboekBeheer, MemoriaalBeheer, VennotenForm, type MemoriaalRij } from './InstellingenBeheer';
 import { btwPerKwartaal, journaal } from '@/lib/boekhouding/kern/journaal';
 import {
   betalingSuggesties,
@@ -25,7 +29,7 @@ import { OpenstaandApp, type Controle, type OpenRij } from './Openstaand';
 import { ImportWizard } from './ImportWizard';
 import { DemoRepo } from '@/lib/boekhouding/repo/demo';
 import { isSoort } from '@/lib/boekhouding/model';
-import { laadAlles, type BoekhoudRepo } from '@/lib/boekhouding/repo/types';
+import { journaalVan, laadAlles, type BoekhoudRepo } from '@/lib/boekhouding/repo/types';
 
 // De inhoud van de boekhoudschermen, los van de toegangscontrole: de pagina's in
 // app/(app)/boekhouding controleren eerst het teamlid en kiezen de opslag (live of demo) en
@@ -77,14 +81,45 @@ export async function BankScherm({ repo, sp, demoReden }: { repo: BoekhoudRepo; 
   );
 }
 
-export async function InstellingenScherm({ repo, demoReden }: { repo: BoekhoudRepo; demoReden: 'env' | 'migratie' }) {
-  const stam = await repo.stamdata();
-  const kiesbaar = stam.grootboek.filter((g) => g.soort === 'kosten' || g.soort === 'opbrengst');
+export async function InstellingenScherm({ repo, demoReden, eigenaar }: { repo: BoekhoudRepo; demoReden: 'env' | 'migratie'; eigenaar: boolean }) {
+  const data = await laadAlles(repo);
+  const { stam } = data;
+  const vandaag = vandaagNL();
+  const posten = journaalVan(data);
+  const info = rekeningInfo(stam.grootboek);
+  const memoriaal: MemoriaalRij[] = [...data.memoriaal]
+    .sort((a, b) => (a.datum < b.datum ? 1 : a.datum > b.datum ? -1 : 0))
+    .map((m) => ({
+      id: m.id,
+      datum: m.datum,
+      omschrijving: m.omschrijving,
+      soort: m.soort,
+      totaal: m.regels.reduce((t, r) => t + r.debet, 0),
+      regels: m.regels.map((r) => ({ grootboek: r.grootboek, naam: info(r.grootboek).naam, debet: r.debet, credit: r.credit })),
+      vergrendeld: isVergrendeld(m.datum, stam.vergrendeling)
+    }));
+  // Voorstel om het beginvermogen te verdelen: wat de checklist van het eerste open boekjaar
+  // als "onverdeeld" ziet (0900 plus resultaat van vóór dat jaar).
+  let open = jaarVan(administratieStart(data, vandaag));
+  while (stam.vergrendeling.boekjaren.includes(open)) open++;
+  const voorstel = beginvermogenVoorstel(onverdeeldVermogen(posten, stam.grootboek, open), stam);
   return (
     <div className="bh">
       <BoekhoudingKop titel="Instellingen" />
       <Demo repo={repo} reden={demoReden} />
       <div className="bh-inhoud bh-instellingen">
+        <section className="bh-sectie" aria-labelledby="bh-bedrijf-titel">
+          <header className="bh-sectie-kop">
+            <h2 id="bh-bedrijf-titel" className="bh-kaart-titel">
+              Bedrijf
+            </h2>
+            <p className="bh-kaart-sub">
+              {stam.instellingen.rechtsvorm === 'vof' ? 'VOF' : stam.instellingen.rechtsvorm} · factuurstelsel · btw per kwartaal{stam.instellingen.kor ? ' · KOR' : ' · geen KOR'}.
+            </p>
+          </header>
+          <BedrijfsgegevensForm inst={stam.instellingen} />
+        </section>
+
         <section className="bh-sectie" aria-labelledby="bh-rek-titel">
           <header className="bh-sectie-kop">
             <h2 id="bh-rek-titel" className="bh-kaart-titel">
@@ -95,27 +130,14 @@ export async function InstellingenScherm({ repo, demoReden }: { repo: BoekhoudRe
           <RekeningenBeheer rekeningen={stam.rekeningen} />
         </section>
 
-        <section className="bh-sectie" aria-labelledby="bh-ven-titel">
+        <section className="bh-sectie" id="vennoten" aria-labelledby="bh-ven-titel">
           <header className="bh-sectie-kop">
             <h2 id="bh-ven-titel" className="bh-kaart-titel">
-              Vennoten
+              Vennoten &amp; winstverdeling
             </h2>
-            <p className="bh-kaart-sub">
-              {stam.instellingen.bedrijfsnaam} · {stam.instellingen.rechtsvorm === 'vof' ? 'VOF' : stam.instellingen.rechtsvorm} · factuurstelsel
-              {stam.instellingen.kor ? ' · KOR' : ''}. Privé-opnamen en -stortingen boek je per vennoot; de winstverdeling volgt in de jaarrekening.
-            </p>
+            <p className="bh-kaart-sub">Privé-opnamen en -stortingen boek je per vennoot. Bij de jaarafsluiting gaat het resultaat naar de kapitaalrekeningen volgens deze aandelen.</p>
           </header>
-          <ul className="bh-vennoten">
-            {stam.vennoten.map((v) => (
-              <li key={v.id} className="bh-vennoot">
-                <span className="bh-vennoot-naam">{v.naam}</span>
-                <span className="bh-vennoot-aandeel">{v.aandeel}% winstaandeel</span>
-                <span className="bh-rek-meta">
-                  kapitaal {v.grootboekKapitaal} · privé {v.grootboekPrive}
-                </span>
-              </li>
-            ))}
-          </ul>
+          <VennotenForm vennoten={stam.vennoten} eigenaar={eigenaar} />
         </section>
 
         <section className="bh-sectie" aria-labelledby="bh-gb-titel">
@@ -123,22 +145,27 @@ export async function InstellingenScherm({ repo, demoReden }: { repo: BoekhoudRe
             <h2 id="bh-gb-titel" className="bh-kaart-titel">
               Categorieën
             </h2>
-            <p className="bh-kaart-sub">Bij een boeking kies je een categorie; daarachter zit het grootboek (met RGS-code voor de boekhouder).</p>
+            <p className="bh-kaart-sub">Bij een boeking kies je een categorie; daarachter zit het grootboek (met RGS-code voor de boekhouder). Eigen categorieën kun je toevoegen en uitzetten.</p>
           </header>
-          <div className="bh-gb">
-            {kiesbaar.map((g) => (
-              <div key={g.code} className="bh-gb-rij">
-                <span className="bh-gb-code">{g.code}</span>
-                <span className="bh-gb-naam">
-                  {g.naam}
-                  {g.hint && <span className="bh-rek-meta"> · {g.hint}</span>}
-                </span>
-                <span className="bh-gb-soort">{g.soort === 'kosten' ? 'kosten' : 'opbrengst'}</span>
-                <span className="bh-gb-btw">{g.btw ? (g.btw === 'geen' ? 'geen btw' : g.btw === 'eu_dienst' ? 'EU' : `${g.btw}%`) : '—'}</span>
-              </div>
-            ))}
-          </div>
+          <GrootboekBeheer grootboek={stam.grootboek} />
           <p className="bh-kaart-sub">Bedragen worden in hele centen bewaard ({formatCenten(1)} nauwkeurig); de btw wordt per regel afgerond.</p>
+        </section>
+
+        <section className="bh-sectie" id="memoriaal" aria-labelledby="bh-mem-titel">
+          <header className="bh-sectie-kop">
+            <h2 id="bh-mem-titel" className="bh-kaart-titel">
+              Memoriaal &amp; beginbalans
+            </h2>
+            <p className="bh-kaart-sub">
+              Voor wat niet via de bank, een factuur of een bonnetje loopt: de beginbalans (inbreng van de vennoten), correcties van de boekhouder en de jaarafsluitingen.
+            </p>
+          </header>
+          <MemoriaalBeheer
+            posten={memoriaal}
+            rekeningen={memoriaalRekeningen(stam).map((g) => ({ code: g.code, naam: g.naam }))}
+            vandaag={vandaag}
+            voorstel={voorstel.map((r) => ({ grootboek: r.grootboek, debet: r.debet, credit: r.credit }))}
+          />
         </section>
       </div>
     </div>

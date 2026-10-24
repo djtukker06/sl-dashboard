@@ -19,11 +19,17 @@
 //   - per afgelopen kwartaal een ingediende aangifte (berekend zoals het formulier, hele
 //     euro's) met de btw-betaling gekoppeld; die kwartalen zijn vergrendeld. Het kwartaal
 //     waarvan de deadline nog niet voorbij is, staat open (klaar om in te dienen);
-//   - een paar regels die nog verwerkt moeten worden.
+//   - een paar regels die nog verwerkt moeten worden;
+//   - een memoriaalpost bij de start: het beginvermogen (banksaldi en ingebrachte activa)
+//     verdeeld over de kapitaalrekeningen van Daniel en Bram. Het vorige boekjaar is klaar om
+//     af te sluiten (alle kwartalen ingediend), maar nog niet afgesloten.
 
 import { STANDAARD_GROOTBOEK } from '../kern/constanten';
 import type { BtwCode } from '../kern/btw';
-import { journaal } from '../kern/journaal';
+import { journaal, type Memoriaal } from '../kern/journaal';
+import { onverdeeldVermogen } from '../kern/rapporten';
+import { beginvermogenVoorstel } from '../kern/memoriaal';
+import type { Boekjaar } from './types';
 import { aangifteRubrieken, naarSnapshot, teBetalenCenten, type Aangifte, type AangifteBetaling } from '../kern/aangifte';
 import type { Activum } from '../kern/afschrijving';
 import type { BronExtra, FactuurBron, Koppeling, UitgaveBron } from '../kern/bronnen';
@@ -56,6 +62,8 @@ export interface DemoData {
   /** Btw-betalingen gekoppeld aan een aangifte. */
   aangifteBetalingen: AangifteBetaling[];
   activa: Activum[];
+  memoriaal: Memoriaal[];
+  boekjaren: Boekjaar[];
 }
 
 export const DEMO_ID = {
@@ -405,10 +413,24 @@ export function demoSeed(vandaag: Datum): DemoData {
       q = 1;
     } else q = (q + 1) as Kwartaal;
   }
+  // Beginvermogen bij de start (banksaldi + ingebrachte activa, minus de afschrijving van vóór
+  // het startjaar) verdeeld over de vennoten: D 0900 / C kapitaal Daniel en Bram. Dat is precies
+  // wat de checklist van de jaarafsluiting als "onverdeeld" ziet.
+  const vermogen = onverdeeldVermogen(posten, stamdata.grootboek, jaarVan(start));
+  const memoriaal: Memoriaal[] = [
+    {
+      id: 'de000000-0000-4000-d000-000000000001',
+      datum: start,
+      omschrijving: 'Inbreng vennoten bij de start (beginvermogen)',
+      soort: 'beginbalans',
+      regels: beginvermogenVoorstel(vermogen, stamdata),
+      aangemaakt: `${start}T12:00:00.000Z`
+    }
+  ];
   stamdata.vergrendeling = { aangiften: aangiften.map((a) => ({ jaar: a.jaar, kwartaal: a.kwartaal })), boekjaren: [] };
   boekingen.sort((a, b) => (a.datum < b.datum ? -1 : a.datum > b.datum ? 1 : a.aangemaakt < b.aangemaakt ? -1 : 1));
   facturen.sort((a, b) => (a.datum < b.datum ? -1 : a.datum > b.datum ? 1 : a.nummer < b.nummer ? -1 : 1));
-  return { stamdata, boekingen, facturen, uitgaven, koppelingen, bronExtra, importSleutels: {}, aangiften, aangifteBetalingen, activa };
+  return { stamdata, boekingen, facturen, uitgaven, koppelingen, bronExtra, importSleutels: {}, aangiften, aangifteBetalingen, activa, memoriaal, boekjaren: [] };
 }
 
 export function demoStamdata(start: Datum): Stamdata {

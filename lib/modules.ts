@@ -88,12 +88,13 @@ export const MODULES: Module[] = [
     actief: true
   },
   {
-    // Eén tab voor de administratie: facturen (/facturen/**, ongewijzigd) en bonnetjes &
-    // inkoopfacturen (/boekhouding/bonnetjes; /uitgaven stuurt daarheen door).
+    // Eén tab voor de administratie: facturen (/facturen/**, ongewijzigd), bonnetjes &
+    // inkoopfacturen (/boekhouding/bonnetjes; /uitgaven stuurt daarheen door) en de boekhouding
+    // zelf (bank, btw-aangifte, activa, rapporten en jaarrekening onder /boekhouding/**).
     id: 'boekhouding',
     naam: 'Boekhouding',
     kort: 'Boekhouding',
-    beschrijving: 'Facturen, prijsopgaven en klanten · bonnetjes en inkoopfacturen',
+    beschrijving: 'Facturen en bonnetjes · bank, btw-aangifte, afschrijvingen en jaarrekening',
     href: '/boekhouding',
     paden: ['/boekhouding', '/facturen', '/uitgaven'],
     icoon: 'factuur',

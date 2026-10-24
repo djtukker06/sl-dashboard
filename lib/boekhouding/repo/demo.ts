@@ -15,7 +15,19 @@ import type { ImportBoeking, Kolommapping } from '../kern/bankimport';
 import { vergrendelFout, type Boeking, type BoekingWaarde, type ImportFormaat, type Rekening } from '../model';
 import { demoSeed, type DemoData } from './demo-seed';
 import { voorbeeldAfschriften } from './demo-voorbeeld';
-import { BoekhoudFout, type BoekhoudRepo, type RekeningInvoer, type RekeningWijziging } from './types';
+import {
+  BoekhoudFout,
+  type BoekhoudRepo,
+  type Boekjaar,
+  type GrootboekInvoer,
+  type GrootboekWijziging,
+  type InstellingenWijziging,
+  type MemoriaalInvoer,
+  type RekeningInvoer,
+  type RekeningWijziging
+} from './types';
+import type { Memoriaal, MemoriaalRegel } from '../kern/journaal';
+import type { Grootboekrekening, Instellingen } from '../model';
 import type { Aangifte, AangifteBetaling, AangifteSnapshot } from '../kern/aangifte';
 import { activumVergrendelFout, type Activum, type ActivumWaarde } from '../kern/afschrijving';
 import { isVergrendeld, type Kwartaal } from '../kern/periode';
@@ -407,6 +419,104 @@ export class DemoRepo implements BoekhoudRepo {
     data.activa = data.activa.filter((x) => x.id !== id);
   }
 
+  // ------------------------------------------------------------------ memoriaal en boekjaren
+  async memoriaal(): Promise<Memoriaal[]> {
+    return kopie(this.s.data.memoriaal ?? []);
+  }
+
+  async memoriaalToevoegen(m: MemoriaalInvoer): Promise<Memoriaal> {
+    const d = this.s.data;
+    const slot = vergrendeldReden(m.datum, d.stamdata.vergrendeling);
+    if (slot) throw new BoekhoudFout(409, slot, 'periode_vergrendeld');
+    sluitOfFout(m.regels);
+    const data = this.muteer();
+    const nieuw: Memoriaal = { id: crypto.randomUUID(), datum: m.datum, omschrijving: m.omschrijving, soort: m.soort, regels: kopie(m.regels), aangemaakt: new Date().toISOString() };
+    (data.memoriaal ??= []).push(nieuw);
+    return kopie(nieuw);
+  }
+
+  async memoriaalVerwijderen(id: string): Promise<void> {
+    const d = this.s.data;
+    const m = (d.memoriaal ?? []).find((x) => x.id === id);
+    if (!m) throw new BoekhoudFout(404, 'Deze memoriaalpost bestaat niet (meer).', 'onbekend');
+    if (m.soort === 'jaarafsluiting') throw new BoekhoudFout(400, 'Een jaarafsluiting maak je ongedaan door het boekjaar te heropenen.', 'ongeldig');
+    const slot = vergrendeldReden(m.datum, d.stamdata.vergrendeling);
+    if (slot) throw new BoekhoudFout(409, slot, 'periode_vergrendeld');
+    const data = this.muteer();
+    data.memoriaal = data.memoriaal.filter((x) => x.id !== id);
+  }
+
+  async boekjaren(): Promise<Boekjaar[]> {
+    return kopie(this.s.data.boekjaren ?? []);
+  }
+
+  async jaarAfsluiten(a: { jaar: number; omschrijving: string; regels: MemoriaalRegel[]; samenvatting: Record<string, unknown> }): Promise<Boekjaar> {
+    const d = this.s.data;
+    const jaren = d.boekjaren ?? [];
+    if (jaren.some((j) => j.jaar === a.jaar)) throw new BoekhoudFout(409, 'Dit boekjaar is al afgesloten.', 'bestaat_al');
+    if (jaren.some((j) => j.jaar > a.jaar)) throw new BoekhoudFout(409, 'Een later boekjaar is al afgesloten.', 'jaar_volgorde');
+    if (a.regels.length) sluitOfFout(a.regels);
+    const data = this.muteer();
+    let memoriaalId: string | null = null;
+    if (a.regels.length) {
+      memoriaalId = crypto.randomUUID();
+      (data.memoriaal ??= []).push({ id: memoriaalId, datum: `${a.jaar}-12-31`, omschrijving: a.omschrijving, soort: 'jaarafsluiting', regels: kopie(a.regels), aangemaakt: new Date().toISOString() });
+    }
+    const bj: Boekjaar = { jaar: a.jaar, afgeslotenOp: new Date().toISOString(), afgeslotenDoor: this.userId, memoriaalId, samenvatting: kopie(a.samenvatting) };
+    (data.boekjaren ??= []).push(bj);
+    data.stamdata.vergrendeling.boekjaren = [...data.stamdata.vergrendeling.boekjaren.filter((j) => j !== a.jaar), a.jaar].sort();
+    return kopie(bj);
+  }
+
+  async jaarHeropenen(jaar: number): Promise<void> {
+    const d = this.s.data;
+    const jaren = d.boekjaren ?? [];
+    if (!jaren.some((j) => j.jaar === jaar)) throw new BoekhoudFout(404, 'Dit boekjaar is niet afgesloten.', 'onbekend');
+    if (jaren.some((j) => j.jaar > jaar)) throw new BoekhoudFout(409, 'Heropen eerst het latere boekjaar.', 'jaar_volgorde');
+    const data = this.muteer();
+    data.boekjaren = jaren.filter((j) => j.jaar !== jaar);
+    data.memoriaal = (data.memoriaal ?? []).filter((m) => !(m.soort === 'jaarafsluiting' && m.datum.startsWith(`${jaar}-`)));
+    data.stamdata.vergrendeling.boekjaren = data.stamdata.vergrendeling.boekjaren.filter((j) => j !== jaar);
+  }
+
+  // ------------------------------------------------------------------ instellingen
+  async instellingenWijzigen(w: InstellingenWijziging): Promise<Instellingen> {
+    const data = this.muteer();
+    Object.assign(data.stamdata.instellingen, Object.fromEntries(Object.entries(w).filter(([, v]) => v !== undefined)));
+    return kopie(data.stamdata.instellingen);
+  }
+
+  async aandelenWijzigen(a: { id: string; aandeel: number }[]): Promise<void> {
+    const d = this.s.data;
+    const na = d.stamdata.vennoten.map((v) => ({ ...v, aandeel: a.find((x) => x.id === v.id)?.aandeel ?? v.aandeel }));
+    const somA = na.filter((v) => v.actief).reduce((t, v) => t + Math.round(v.aandeel * 100), 0);
+    if (somA !== 10000) throw new BoekhoudFout(400, `De aandelen tellen op tot ${somA / 100}%; dat moet 100% zijn.`, 'ongeldig');
+    this.muteer().stamdata.vennoten = na;
+  }
+
+  async grootboekToevoegen(g: GrootboekInvoer): Promise<Grootboekrekening> {
+    const d = this.s.data;
+    if (d.stamdata.grootboek.some((x) => x.code === g.code || x.naam.toLowerCase() === g.naam.toLowerCase())) throw new BoekhoudFout(409, 'Dat bestaat al (zelfde naam of nummer).', 'bestaat_al');
+    const data = this.muteer();
+    const nieuw: Grootboekrekening = { code: g.code, naam: g.naam, soort: g.soort, rubriek: g.soort === 'kosten' ? 'kosten' : 'omzet', rgs: g.soort === 'kosten' ? 'WBed' : 'WOmz', btw: g.btw, systeem: false, actief: true, hint: null, volgorde: Number(g.code) };
+    data.stamdata.grootboek.push(nieuw);
+    data.stamdata.grootboek.sort((x, y) => (x.code < y.code ? -1 : 1));
+    return kopie(nieuw);
+  }
+
+  async grootboekWijzigen(code: string, w: GrootboekWijziging): Promise<Grootboekrekening> {
+    const d = this.s.data;
+    const g = d.stamdata.grootboek.find((x) => x.code === code);
+    if (!g) throw new BoekhoudFout(404, 'Deze rekening bestaat niet (meer).', 'onbekend');
+    if (g.systeem && (w.actief === false || w.naam !== undefined)) throw new BoekhoudFout(400, 'Dit is een vaste rekening van het systeem.', 'grootboek_systeem');
+    if (w.naam && d.stamdata.grootboek.some((x) => x.code !== code && x.naam.toLowerCase() === w.naam!.toLowerCase())) throw new BoekhoudFout(409, 'Dat bestaat al (zelfde naam of nummer).', 'bestaat_al');
+    this.muteer();
+    if (w.naam !== undefined) g.naam = w.naam;
+    if (w.actief !== undefined) g.actief = w.actief;
+    if (w.btw !== undefined) g.btw = w.btw;
+    return kopie(g);
+  }
+
   /** Voorbeeld-CSV's (RegioBank en Revolut) om de import in de demo te proberen. */
   voorbeeldAfschriften(): { regiobank: string; revolut: string } {
     return voorbeeldAfschriften(this.s.data, vandaagNL());
@@ -419,4 +529,17 @@ export class DemoRepo implements BoekhoudRepo {
     if (w.rekeningId && !d.stamdata.rekeningen.some((r) => r.id === w.rekeningId)) throw new BoekhoudFout(400, 'Een gekozen rekening bestaat niet (meer).', 'ongeldig');
     if (w.soort === 'prive' && !w.vennootId) throw new BoekhoudFout(400, 'De invoer voldoet niet aan de regels. Controleer de velden.', 'ongeldig');
   }
+}
+
+function sluitOfFout(regels: readonly MemoriaalRegel[]) {
+  let d = 0;
+  let c = 0;
+  for (const r of regels) {
+    if (!Number.isSafeInteger(r.debet) || !Number.isSafeInteger(r.credit) || r.debet < 0 || r.credit < 0 || (r.debet > 0) === (r.credit > 0)) {
+      throw new BoekhoudFout(400, 'De invoer voldoet niet aan de regels. Controleer de velden.', 'ongeldig');
+    }
+    d += r.debet;
+    c += r.credit;
+  }
+  if (d !== c) throw new BoekhoudFout(400, 'De memoriaalpost sluit niet (debet ≠ credit).', 'sluit_niet');
 }

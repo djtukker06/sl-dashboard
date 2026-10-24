@@ -5,9 +5,10 @@
 // Schermen, API-routes en rapporten praten alleen met deze interface en de pure kern.
 
 import type { Centen } from '../kern/geld';
-import { journaal, type JournaalPost } from '../kern/journaal';
+import { journaal, type JournaalPost, type Memoriaal, type MemoriaalRegel } from '../kern/journaal';
 import type { Datum } from '../kern/periode';
-import type { Boeking, BoekingWaarde, ImportFormaat, Rekening, Stamdata } from '../model';
+import type { Boeking, BoekingWaarde, Grootboekrekening, ImportFormaat, Instellingen, Rekening, Stamdata } from '../model';
+import type { BtwCode } from '../kern/btw';
 import type { BronExtra, FactuurBron, KoppelBron, Koppeling, UitgaveBron } from '../kern/bronnen';
 import type { ImportBoeking, Kolommapping } from '../kern/bankimport';
 import type { Aangifte, AangifteBetaling, AangifteSnapshot } from '../kern/aangifte';
@@ -31,6 +32,42 @@ export interface RekeningWijziging {
   beginsaldo?: Centen;
   begindatum?: Datum | null;
   actief?: boolean;
+}
+
+/** Een afgesloten boekjaar (een rij = het jaar is vergrendeld). */
+export interface Boekjaar {
+  jaar: number;
+  afgeslotenOp: string;
+  afgeslotenDoor: string | null;
+  memoriaalId: string | null;
+  samenvatting: Record<string, unknown>;
+}
+
+export interface MemoriaalInvoer {
+  datum: Datum;
+  omschrijving: string;
+  soort: 'beginbalans' | 'correctie';
+  regels: MemoriaalRegel[];
+}
+
+export interface InstellingenWijziging {
+  bedrijfsnaam?: string;
+  kvk?: string | null;
+  btwNummer?: string | null;
+  startdatum?: Datum | null;
+}
+
+export interface GrootboekInvoer {
+  code: string;
+  naam: string;
+  soort: 'kosten' | 'opbrengst';
+  btw: BtwCode | null;
+}
+
+export interface GrootboekWijziging {
+  naam?: string;
+  actief?: boolean;
+  btw?: BtwCode | null;
 }
 
 export interface BoekhoudRepo {
@@ -78,6 +115,25 @@ export interface BoekhoudRepo {
   activumToevoegen(w: ActivumWaarde): Promise<Activum>;
   activumWijzigen(id: string, w: ActivumWaarde): Promise<Activum>;
   activumVerwijderen(id: string): Promise<void>;
+
+  /** Memoriaalposten (beginbalans, correcties en jaarafsluitingen). */
+  memoriaal(): Promise<Memoriaal[]>;
+  /** Een sluitende memoriaalpost in een open periode (beginbalans of correctie). */
+  memoriaalToevoegen(m: MemoriaalInvoer): Promise<Memoriaal>;
+  /** Verwijderen kan alleen in een open periode; een jaarafsluiting gaat via jaarHeropenen. */
+  memoriaalVerwijderen(id: string): Promise<void>;
+  boekjaren(): Promise<Boekjaar[]>;
+  /** Afsluitpost + vergrendeling van het jaar in één keer (alleen de eigenaar). */
+  jaarAfsluiten(a: { jaar: number; omschrijving: string; regels: MemoriaalRegel[]; samenvatting: Record<string, unknown> }): Promise<Boekjaar>;
+  /** Afsluitpost weg en het jaar weer open (alleen de eigenaar; niet als een later jaar dicht is). */
+  jaarHeropenen(jaar: number): Promise<void>;
+
+  instellingenWijzigen(w: InstellingenWijziging): Promise<Instellingen>;
+  /** Winstaandelen van de vennoten (samen 100%; alleen de eigenaar). */
+  aandelenWijzigen(a: { id: string; aandeel: number }[]): Promise<void>;
+  /** Een eigen categorie (kosten of opbrengst) toevoegen of wijzigen (naam, standaard-btw, actief). */
+  grootboekToevoegen(g: GrootboekInvoer): Promise<Grootboekrekening>;
+  grootboekWijzigen(code: string, w: GrootboekWijziging): Promise<Grootboekrekening>;
 }
 
 export interface BoekhoudData {
@@ -90,11 +146,13 @@ export interface BoekhoudData {
   activa: Activum[];
   aangiften: Aangifte[];
   aangifteBetalingen: AangifteBetaling[];
+  memoriaal: Memoriaal[];
+  boekjaren: Boekjaar[];
 }
 
 /** Alles wat de schermen en het journaal nodig hebben, in één keer. */
 export async function laadAlles(repo: BoekhoudRepo): Promise<BoekhoudData> {
-  const [stam, boekingen, koppelingen, bronnen, bronExtra, activa, aangiften, betalingen] = await Promise.all([
+  const [stam, boekingen, koppelingen, bronnen, bronExtra, activa, aangiften, betalingen, memoriaal, boekjaren] = await Promise.all([
     repo.stamdata(),
     repo.boekingen(),
     repo.koppelingen(),
@@ -102,7 +160,9 @@ export async function laadAlles(repo: BoekhoudRepo): Promise<BoekhoudData> {
     repo.bronExtra(),
     repo.activa(),
     repo.aangiften(),
-    repo.aangifteBetalingen()
+    repo.aangifteBetalingen(),
+    repo.memoriaal(),
+    repo.boekjaren()
   ]);
   // Alleen koppelingen van bestaande (niet-verwijderde) boekingen en bestaande aangiften.
   const ids = new Set(boekingen.map((b) => b.id));
@@ -116,7 +176,9 @@ export async function laadAlles(repo: BoekhoudRepo): Promise<BoekhoudData> {
     bronExtra,
     activa,
     aangiften,
-    aangifteBetalingen: betalingen.filter((b) => ids.has(b.boekingId) && aIds.has(b.aangifteId))
+    aangifteBetalingen: betalingen.filter((b) => ids.has(b.boekingId) && aIds.has(b.aangifteId)),
+    memoriaal,
+    boekjaren
   };
 }
 
@@ -124,6 +186,7 @@ export async function laadAlles(repo: BoekhoudRepo): Promise<BoekhoudData> {
 export function journaalVan(d: BoekhoudData): JournaalPost[] {
   return journaal(d.stam, {
     boekingen: d.boekingen,
+    memoriaal: d.memoriaal,
     facturen: d.facturen,
     uitgaven: d.uitgaven,
     koppelingen: d.koppelingen,

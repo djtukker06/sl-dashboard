@@ -162,9 +162,14 @@ export function AangifteApp({ view: v }: { view: AangifteView }) {
             <h2 id="bh-formulier-titel" className="bh-kaart-titel">
               {ingediend ? 'Zoals ingediend' : 'Aangifte omzetbelasting'}
             </h2>
-            <button type="button" className="ag-link-knop bh-print" onClick={() => window.print()}>
-              Afdrukken
-            </button>
+            <span className="bh-print">
+              <a className="ag-link-knop" href={`/api/boekhouding/export?soort=aangifte&jaar=${v.jaar}&kw=${v.kwartaal}`} download>
+                PDF
+              </a>
+              <button type="button" className="ag-link-knop" onClick={() => window.print()}>
+                Afdrukken
+              </button>
+            </span>
             <p className="bh-kaart-sub">Bedragen in hele euro&apos;s, zoals je ze invult. Klik op een rubriek voor de boekingen erachter.</p>
           </header>
           <div className="bh-rubriek-kolommen" aria-hidden="true">

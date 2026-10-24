@@ -46,6 +46,26 @@ README ("Team & toegang", "Tweestapsverificatie (2FA)", "Back-ups en keep-alive"
 | **Back-ups** | Eens per 3 dagen een volledige export van alle eigen tabellen, versleuteld met AES-256-GCM (`BACKUP_ENCRYPTION_KEY`), naar Google Drive (`Studio Levant/Back-ups/<jaar>/<datum>.slbak`). Alleen de nieuwste 3 blijven staan (de oudste gaat weg bij een nieuwe). Daarnaast eens per 3 dagen de nieuwe bestanden (facturen-PDF's, bonnetjes, social), elk apart versleuteld. Er zijn scripts om te controleren en terug te zetten (standaard droog). De status staat op `/beveiliging`; de eigenaar ziet een waarschuwing op het dashboard. |
 | **Keep-alive** | Vercel Cron roept elke nacht `/api/cron/dagelijks` aan; die schrijft een heartbeat, zodat Supabase gratis nooit pauzeert. GitHub Actions doet hetzelfde elke 3 dagen als reserve. De route werkt alleen met `CRON_SECRET` (zonder het secret 401; staat het secret niet ingesteld, dan 503). |
 
+### Boekhouding (migratie 0027)
+
+- **RLS**: alle 13 `bk_*`-tabellen alleen voor actieve teamleden via `is_teamlid()` (dus ook
+  met de 2FA-eis: aal1 met een geverifieerde factor ziet niets); anon heeft geen rechten.
+  Getest in `scripts/test-boekhouding-db.mjs` en scenario D van `scripts/test-rls.mjs`.
+- **Rechten van de eigenaar** (database én route, sessie op aal2): een ingediende btw-aangifte
+  intrekken, een boekjaar afsluiten of heropenen (`bk_jaar_afsluiten`/`bk_jaar_heropenen`,
+  policies op `bk_boekjaren`, een jaarafsluiting in `bk_memoriaal`) en de winstverdeling
+  wijzigen (`bk_vennoten_aandelen`, update-policy op `bk_vennoten`). Overige boekingen doet elk
+  teamlid (gedeelde administratie).
+- **Vergrendeling en bewaarplicht**: triggers weigeren wijzigingen in een kwartaal met een
+  ingediende aangifte of een afgesloten jaar; bankregels zijn niet te verwijderen (alleen
+  markeren met reden); memoriaalposten moeten sluiten (deferred trigger).
+- **Alleen lezen** van facturen en bonnetjes: de boekhouding schrijft nooit naar `invoices`,
+  `expenses`, `quotes` of `clients` (rooktest). Nooit de service-role; altijd de RLS-cliënt
+  van het teamlid. Exports: `Cache-Control: private, no-store`, `nosniff`, CSV zonder
+  formule-injectie.
+- **Demo-modus** schrijft niets naar de database en kiest alleen de demo bij een ontbrekende
+  tabel of `BOEKHOUDING_DEMO=1`; elke andere fout is een foutmelding (fail closed).
+
 ## 3. Resterende risico's (eerlijk)
 
 1. **Supabase gratis heeft geen eigen back-ups en geen point-in-time-herstel (PITR).** Onze
