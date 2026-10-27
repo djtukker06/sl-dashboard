@@ -170,7 +170,7 @@ const BUITEN_EU_REDEN = /\b(outside|buiten|non|niet)[\s-]*(the\s+|de\s+)?(eu\b|e
 
 /**
  * Btw-code van een factuur:
- *   verlegd → buiten_eu (1e) als de reden naar een afnemer buiten de EU wijst,
+ *   verlegd → buiten_eu (niet in de aangifte) als de reden naar een afnemer buiten de EU wijst,
  *             eu_dienst (3b) als de reden naar een EU-afnemer wijst, anders verlegd_nl (1e);
  *   anders volgens het percentage: 21 → 1a, 9 → 1b, 0 → 1e.
  * Een verfijning (bk_bron_extra.btw_code) gaat voor.

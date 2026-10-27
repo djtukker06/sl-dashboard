@@ -10,12 +10,14 @@
 //   geen         geen rubriek (vrijgesteld)      — (bv. bankkosten, verzekeringen)
 //   verlegd_nl   1e (btw verlegd binnenland)     2a + 5b: 21% verschuldigd én aftrekbaar
 //   eu_dienst    3b (dienst aan EU-ondernemer)   4b + 5b: idem (bv. Adobe/Google Ierland)
-//   buiten_eu    1e (dienst buiten de EU)        4a + 5b: idem (bv. SaaS uit de VS)
+//   buiten_eu    geen rubriek (dienst aan een    4a + 5b: idem (bv. SaaS uit de VS)
+//                ondernemer buiten de EU)
 //
 // Bij verlegging (2a/4a/4b) staat er op de bank het bedrag ZONDER btw: er is geen btw betaald.
 // We rekenen 21% over het bankbedrag uit en boeken die als verschuldigd én als voorbelasting
-// (per saldo € 0, maar wel zichtbaar in de aangifte). Een dienst aan een klant buiten de EU
-// valt onder 1e ("niet bij u belast"); rubriek 3a is voor goederen (uitvoer) en komt bij een
+// (per saldo € 0, maar wel zichtbaar in de aangifte). Een dienst aan een ondernemer buiten de EU
+// is buiten Nederland belast en komt volgens de Belastingdienst NIET in de btw-aangifte (ook niet
+// in 1e); hij telt wel als omzet. Rubriek 3a is voor goederen (uitvoer) en komt bij een
 // dienstverlener niet voor.
 
 import { MAX_CENTEN, moetCenten, rondAf, type Centen } from './geld';
@@ -111,8 +113,10 @@ function rubriekVan(kant: BtwKant, code: BtwCode): Rubriek | null {
         return '1b';
       case '0':
       case 'verlegd_nl':
-      case 'buiten_eu':
         return '1e';
+      // Dienst aan een ondernemer buiten de EU: niet in de aangifte (wel omzet).
+      case 'buiten_eu':
+        return null;
       case 'eu_dienst':
         return '3b';
       default:

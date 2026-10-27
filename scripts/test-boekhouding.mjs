@@ -236,7 +236,7 @@ await test("berekenBtw: verlegging bij inkoop = verschuldigd én aftrekbaar (2a/
 await test("berekenBtw: verkoop-rubrieken en geen btw", () => {
   const rub = (code) => btw.berekenBtw({ kant: "inkomst", bedrag: 10000, isExcl: false, code });
   assert.equal(rub("eu_dienst").rubriek, "3b");
-  assert.equal(rub("buiten_eu").rubriek, "1e");
+  assert.equal(rub("buiten_eu").rubriek, null); // dienst aan ondernemer buiten de EU: niet in de aangifte
   assert.equal(rub("verlegd_nl").rubriek, "1e");
   assert.equal(rub("0").rubriek, "1e");
   assert.equal(rub("geen").rubriek, null);

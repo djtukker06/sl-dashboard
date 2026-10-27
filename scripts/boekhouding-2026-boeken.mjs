@@ -439,7 +439,7 @@ async function controle(sb, eigenaar, voor) {
     const onafh = fBtw + bVerschuldigd - bVoor;
     rij(`Btw Q${kw} 2026`, "Saldo (centen): kern ↔ eigen optelling facturen + bankregels", onafh, ber.saldo.centen, uitgaven ? "AFWIJKING" : undefined, uitgaven ? `${uitgaven} verwerkte bonnetjes in dit kwartaal: optelling onvolledig` : "");
     rij(`Btw Q${kw} 2026`, "1a omzet / btw (centen)", null, ber.rubrieken["1a"].btw.centen, "info", `grondslag ${euro(ber.rubrieken["1a"].grondslag.centen)}`);
-    rij(`Btw Q${kw} 2026`, "1e (verlegd/buiten EU) / 3b (EU) grondslag", null, ber.rubrieken["3b"].grondslag.centen, ber.rubrieken["3b"].grondslag.centen === 0 ? "gelijk" : "AFWIJKING", `1e ${euro(ber.rubrieken["1e"].grondslag.centen)}; 3b hoort 0 te zijn (geen EU-klanten; SeamX = buiten de EU)`);
+    rij(`Btw Q${kw} 2026`, "3b (EU) grondslag; buiten-EU niet in de aangifte", null, ber.rubrieken["3b"].grondslag.centen, ber.rubrieken["3b"].grondslag.centen === 0 ? "gelijk" : "AFWIJKING", `1e ${euro(ber.rubrieken["1e"].grondslag.centen)}; 3b hoort 0 te zijn (geen EU-klanten). SeamX (buiten de EU) staat niet in de aangifte.`);
     rij(`Btw Q${kw} 2026`, "5b voorbelasting (centen)", null, ber.voorbelasting.centen, "info");
     rij(`Btw Q${kw} 2026`, "Te betalen volgens het systeem (formulier)", null, K.aangifte.teBetalenCenten(ber), "info");
   }

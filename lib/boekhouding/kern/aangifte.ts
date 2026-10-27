@@ -25,7 +25,7 @@ export const RUBRIEK_INFO: Record<FormulierRubriek | '5a' | '5b' | '5c', { titel
   '1b': { titel: 'Leveringen/diensten belast met laag tarief', uitleg: '9%' },
   '1c': { titel: 'Leveringen/diensten belast met overige tarieven, behalve 0%' },
   '1d': { titel: 'Privégebruik' },
-  '1e': { titel: 'Leveringen/diensten belast met 0% of niet bij u belast', uitleg: '0%, btw verlegd binnenland, klanten buiten de EU' },
+  '1e': { titel: 'Leveringen/diensten belast met 0% of niet bij u belast', uitleg: '0% en btw verlegd binnenland (diensten aan ondernemers buiten de EU horen niet in de aangifte)' },
   '2a': { titel: 'Leveringen/diensten waarbij de omzetbelasting naar u is verlegd', uitleg: 'bv. onderaanneming binnenland' },
   '3a': { titel: 'Leveringen naar landen buiten de EU (uitvoer)' },
   '3b': { titel: 'Leveringen naar of diensten in landen binnen de EU', uitleg: 'EU-klanten met btw verlegd (ook in de ICP-opgaaf)' },
