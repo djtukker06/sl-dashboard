@@ -921,7 +921,7 @@ await test("afschrijving: € 2.499 in 5 jaar vanaf half maart — exact, eerste
   assert.ok(s.every((r) => r.afschrijving === 4165));
   assert.equal(s.reduce((t, r) => t + r.afschrijving, 0), 249900);
   assert.deepEqual([s[0].datum, s[59].datum, s[59].boekwaarde], ["2026-03-31", "2031-02-28", 0]);
-  assert.deepEqual(afs.maandbedrag(A()), { gewoon: 4165, laatste: 4165 });
+  assert.deepEqual(afs.maandbedrag(A()), { gewoon: 4165, laatste: 4165, perJaar: 49980 });
   // Per jaar: 2026 = 10 maanden (maart t/m december).
   assert.deepEqual(afs.perJaar(A()).map((r) => [r.jaar, r.afschrijving]), [[2026, 41650], [2027, 49980], [2028, 49980], [2029, 49980], [2030, 49980], [2031, 8330]]);
   assert.equal(afs.eindeAfschrijving(A()), "2031-02");
@@ -929,7 +929,13 @@ await test("afschrijving: € 2.499 in 5 jaar vanaf half maart — exact, eerste
 await test("afschrijving: 3 jaar en vrije termijn, laatste maand corrigeert, restwaarde", () => {
   const drie = A({ aanschaf: 200000, looptijdMaanden: 36 });
   const s = afs.schema(drie);
-  assert.deepEqual(afs.maandbedrag(drie), { gewoon: 5555, laatste: 5575 });
+  assert.deepEqual(afs.maandbedrag(drie), { gewoon: 5556, laatste: 5556, perJaar: 66667 });
+  // Cumulatief afgerond: elke maand wijkt hooguit een cent af, elk volledig jaar is exact.
+  assert.ok(s.every((r) => r.afschrijving === 5555 || r.afschrijving === 5556));
+  assert.deepEqual(afs.perJaar(A({ aanschaf: 200000, looptijdMaanden: 36, ingebruikname: "2026-01-01", aanschafdatum: "2026-01-01" })).map((r) => r.afschrijving), [66667, 66666, 66667]);
+  // Inbreng per 1-11 in 60 maanden: 2 maanden in het eerste jaar, daarna precies 20% per jaar.
+  const mb = A({ aanschaf: 178400, looptijdMaanden: 60, categorie: "0200", aanschafdatum: "2024-11-01", ingebruikname: "2024-11-01" });
+  assert.deepEqual(afs.perJaar(mb).slice(0, 2).map((r) => [r.jaar, r.afschrijving, r.eind]), [[2024, 5947, 172453], [2025, 35680, 136773]]);
   assert.equal(s.reduce((t, r) => t + r.afschrijving, 0), 200000);
   assert.equal(s.at(-1).boekwaarde, 0);
   const vrij = A({ aanschaf: 100001, looptijdMaanden: 48 });

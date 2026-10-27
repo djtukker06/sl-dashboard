@@ -43,8 +43,10 @@ verschuldigd als aftrekbaar in de aangifte (rubriek 4b of 4a en 5b), per saldo �
 ### Afschrijvingen
 
 Een laptop van € 2.499 (excl. btw) in 5 jaar: € 41,65 per maand vanaf de maand van
-ingebruikname. Elke termijn van 1 tot 20 jaar kan (snelkeuze 3 of 5 jaar); de laatste maand
-neemt het afrondingsverschil, zodat de boekwaarde precies op de restwaarde uitkomt. Let op:
+ingebruikname. Elke termijn van 1 tot 20 jaar kan (snelkeuze 3 of 5 jaar). Het systeem rondt
+cumulatief af op hele centen: een enkele maand is soms een cent hoger of lager, maar elk
+volledig jaar is exact (€ 1.784 in 5 jaar = € 356,80 per jaar) en de boekwaarde komt aan het
+eind precies op de restwaarde uit. Let op:
 fiscaal mag je per jaar meestal niet meer dan 20% afschrijven (dus minimaal 5 jaar); bij een
 kortere termijn toont de app een waarschuwing. **Laat de boekhouder dat bevestigen.**
 
@@ -150,7 +152,8 @@ Wijzigt er later iets (bv. een factuur), dan toont de app het verschil met het a
 ### Activa
 
 Lineair per maand vanaf ingebruikname, vrije termijn (12–240 maanden), restwaarde,
-afrondingsverschil in de laatste maand. Afschrijving D 4800 / C 0209 of 0219 op de laatste
+cumulatief afgerond: na k maanden is rondAf(basis · k / looptijd) afgeschreven (half weg van
+nul), dus geen maand wijkt meer dan een halve cent af en een volledig jaar is exact. Afschrijving D 4800 / C 0209 of 0219 op de laatste
 dag van elke maand. Een geactiveerde aankoop (bonnetje of bankregel) gaat naar 0200/0210 en
 niet naar de kosten. Desinvestering: aanschaf en cumulatieve afschrijving eraf, de resterende
 boekwaarde ten laste van 8900; de verkoopopbrengst wordt als inkomst op 8900 (21%) geboekt.

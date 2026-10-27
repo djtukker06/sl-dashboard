@@ -3,8 +3,11 @@
 //
 // Regels:
 //   - afschrijven per maand, lineair, vanaf de maand van ingebruikname (die maand telt mee);
-//   - per maand floor((aanschaf − restwaarde) / looptijd); de laatste maand neemt het
-//     afrondingsverschil op, zodat de boekwaarde precies op de restwaarde uitkomt;
+//   - cumulatief afgerond: na k maanden is er rondAf((aanschaf − restwaarde) · k / looptijd)
+//     afgeschreven (half weg van nul); het bedrag van een maand is het verschil met de maand
+//     ervoor. Zo wijkt geen enkele maand meer dan een halve cent af van het exacte bedrag, telt
+//     een jaar op tot het exacte jaarbedrag (€ 1.784 in 5 jaar: € 356,80 per jaar) en komt de
+//     boekwaarde aan het eind precies op de restwaarde uit;
 //   - de termijn is vrij te kiezen (12 t/m 240 maanden; snelkeuze 3 of 5 jaar);
 //   - desinvestering (verkoop of buiten gebruik): de afschrijving loopt t/m de maand vóór de
 //     desinvestering; de resterende boekwaarde gaat dan af (zie journaal.ts);
@@ -12,7 +15,7 @@
 // Een journaalpost per maand (D 4800 afschrijvingen / C cum. afschrijving) leidt journaal.ts
 // hieruit af; er wordt niets opgeslagen.
 
-import { MAX_CENTEN, naarCenten, type Centen } from './geld';
+import { MAX_CENTEN, naarCenten, rondAf, type Centen } from './geld';
 import { DREMPEL_ACTIVEREN } from './constanten';
 import { dagenInMaand, isDatum, jaarVan, maakDatum, maandVan, plusMaanden, type Datum } from './periode';
 
@@ -64,14 +67,26 @@ export interface SchemaRegel {
 const maandSleutel = (d: Datum) => d.slice(0, 7);
 const eindeMaand = (d: Datum): Datum => maakDatum(jaarVan(d), maandVan(d), dagenInMaand(jaarVan(d), maandVan(d)));
 
-/** Afschrijving per maand (de laatste maand neemt het verschil op). */
-export function maandbedrag(a: Pick<Activum, 'aanschaf' | 'restwaarde' | 'looptijdMaanden'>): { gewoon: Centen; laatste: Centen } {
+/** Cumulatieve afschrijving na `k` maanden (exact afgerond op hele centen). */
+function cumulatiefNa(basis: Centen, n: number, k: number): Centen {
+  return k <= 0 ? 0 : k >= n ? basis : rondAf(basis * k, n);
+}
+
+/**
+ * Afschrijving per maand en per jaar (ter informatie). Per maand is het bedrag afgerond op
+ * hele centen; door het cumulatief afronden is een enkele maand soms een cent hoger of lager.
+ * `laatste` = de laatste maand van de looptijd, `perJaar` = een volledig jaar (12 maanden).
+ */
+export function maandbedrag(a: Pick<Activum, 'aanschaf' | 'restwaarde' | 'looptijdMaanden'>): { gewoon: Centen; laatste: Centen; perJaar: Centen } {
   const basis = a.aanschaf - a.restwaarde;
   if (!Number.isSafeInteger(basis) || basis < 0) throw new Error('restwaarde hoger dan aanschaf');
   const n = a.looptijdMaanden;
   if (!Number.isInteger(n) || n < 1) throw new Error('ongeldige looptijd');
-  const gewoon = Math.floor(basis / n);
-  return { gewoon, laatste: basis - gewoon * (n - 1) };
+  return {
+    gewoon: rondAf(basis, n),
+    laatste: basis - cumulatiefNa(basis, n, n - 1),
+    perJaar: n >= 12 ? rondAf(basis * 12, n) : basis
+  };
 }
 
 /**
@@ -80,14 +95,15 @@ export function maandbedrag(a: Pick<Activum, 'aanschaf' | 'restwaarde' | 'loopti
  *   € 2.499 in 60 maanden vanaf 15-03 → 60 × € 41,65, eerste post 31-03, laatste 28-02 vijf jaar later.
  */
 export function schema(a: Activum): SchemaRegel[] {
-  const { gewoon, laatste } = maandbedrag(a);
+  maandbedrag(a); // invoercontrole (restwaarde, looptijd)
+  const basis = a.aanschaf - a.restwaarde;
   const eind = a.desinvesteringDatum ? maandSleutel(a.desinvesteringDatum) : null;
   const uit: SchemaRegel[] = [];
   let cum = 0;
   for (let i = 0; i < a.looptijdMaanden; i++) {
     const d = eindeMaand(plusMaanden(maakDatum(jaarVan(a.ingebruikname), maandVan(a.ingebruikname), 1), i));
     if (eind && maandSleutel(d) >= eind) break;
-    const bedrag = i === a.looptijdMaanden - 1 ? laatste : gewoon;
+    const bedrag = cumulatiefNa(basis, a.looptijdMaanden, i + 1) - cumulatiefNa(basis, a.looptijdMaanden, i);
     cum += bedrag;
     uit.push({ maand: maandSleutel(d), datum: d, afschrijving: bedrag, cumulatief: cum, boekwaarde: a.aanschaf - cum });
   }

@@ -263,7 +263,7 @@ export function ActivumFormulier({
                     </div>
                     <div>
                       <dt>Per jaar</dt>
-                      <dd>{formatCenten(voorbeeld.m.gewoon * 12)}</dd>
+                      <dd>{formatCenten(voorbeeld.m.perJaar)}</dd>
                     </div>
                     <div>
                       <dt>Termijn</dt>
@@ -281,8 +281,8 @@ export function ActivumFormulier({
                   </div>
                 )}
               </dl>
-              {voorbeeld && voorbeeld.m.laatste !== voorbeeld.m.gewoon && (
-                <p className="bh-uitkomst-noot">De laatste maand is {formatCenten(voorbeeld.m.laatste)}, zodat de boekwaarde precies op de restwaarde uitkomt.</p>
+              {voorbeeld && voorbeeld.m.perJaar !== voorbeeld.m.gewoon * 12 && (
+                <p className="bh-uitkomst-noot">Per maand afgerond op hele centen: een enkele maand is een cent hoger of lager, zodat elk jaar en de boekwaarde aan het eind precies kloppen.</p>
               )}
               {voorbeeld?.hints.map((h) => (
                 <p key={h.tekst} className={`bh-uitkomst-noot${h.soort === 'let_op' ? ' is-let-op' : ''}`}>

@@ -14,6 +14,7 @@ export interface ActivumView {
   vandaag: Datum;
   boekwaardeNu: Centen;
   perMaand: Centen;
+  jaarbedrag: Centen;
   schema: SchemaRegel[];
   perJaar: { jaar: number; afschrijving: Centen; eind: Centen }[];
   herkomst: { label: string; href: string | null };
@@ -108,7 +109,7 @@ export function ActivumDetail({ view: v }: { view: ActivumView }) {
         <div className="bh-saldo">
           <span className="bh-saldo-naam">Per maand</span>
           <span className="bh-saldo-bedrag">{formatCenten(v.perMaand)}</span>
-          <span className="bh-saldo-sub">{formatCenten(v.perMaand * 12)} per jaar</span>
+          <span className="bh-saldo-sub">{formatCenten(v.jaarbedrag)} per jaar</span>
         </div>
         <div className="bh-saldo">
           <span className="bh-saldo-naam">Afgeschreven</span>

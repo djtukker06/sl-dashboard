@@ -101,6 +101,7 @@ export async function ActivumScherm({ repo, id, demoReden }: { repo: BoekhoudRep
           vandaag,
           boekwaardeNu: boekwaardeOp(a, vandaag),
           perMaand: maandbedrag(a).gewoon,
+          jaarbedrag: maandbedrag(a).perJaar,
           schema: schema(a),
           perJaar: perJaar(a),
           herkomst: herkomstVan(a, data),
