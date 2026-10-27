@@ -9,6 +9,11 @@
 //   supabase/UITVOEREN_0025.sql           alleen 0025 (opvolgen van leads/klanten) — vereist 0022
 //   supabase/UITVOEREN_0026.sql           alleen 0026 (meerdere inboxen, 2FA in de database,
 //                                         audit-log, inlogpogingen, back-ups, heartbeat) — vereist 0021
+//   supabase/UITVOEREN_0027.sql           alleen 0027 (boekhouding: bankrekeningen, boekingsregels,
+//                                         grootboek, vennoten, activa, aangiften) — vereist 0026
+//
+// 0027 zit bewust NIET in de grote bestanden: die blijven eindigen met 0026 (de 2FA-versie van
+// is_teamlid()). De boekhouding draait tot 0027 is uitgevoerd in de demo-modus.
 //
 // 0026 sluit ook de drie grote bestanden af (IN_SQL_EDITOR, 0020_UITGAVEN, 0021_TEAM): 0021
 // definieert is_teamlid() zonder 2FA-controle; doordat 0026 erachter staat (in dezelfde
@@ -42,6 +47,7 @@ const DOEL_0023 = path.join(ROOT, "supabase", "UITVOEREN_0023.sql");
 const DOEL_0024 = path.join(ROOT, "supabase", "UITVOEREN_0024.sql");
 const DOEL_0025 = path.join(ROOT, "supabase", "UITVOEREN_0025.sql");
 const DOEL_0026 = path.join(ROOT, "supabase", "UITVOEREN_0026.sql");
+const DOEL_0027 = path.join(ROOT, "supabase", "UITVOEREN_0027.sql");
 
 const MIGRATIES = [
   "0014_social.sql",
@@ -190,6 +196,31 @@ const CONTROLE_0026 = [
   "  ('heartbeat: tabel en RLS', coalesce((select relrowsecurity from pg_class where oid = to_regclass('public.heartbeat')), false))",
   "  ('heartbeat: alleen de eigenaar leest', (select count(*) from pg_policies where schemaname = 'public' and tablename = 'heartbeat' and cmd = 'SELECT' and qual ~ 'is_eigenaar\\(') = 1 and not has_table_privilege('anon', 'public.heartbeat', 'select') and not has_table_privilege('authenticated', 'public.heartbeat', 'insert'))",
   "  ('heartbeat: laatste: ' || coalesce((select to_char(max(op) at time zone 'Europe/Amsterdam', 'YYYY-MM-DD HH24:MI') || ' (' || (select bron from public.heartbeat order by op desc limit 1) || ')' from public.heartbeat), 'nog geen (komt na de eerste nachtelijke taak)'), true)",
+];
+
+// Boekhouding (0027).
+const BK_TABELLEN = [
+  "bk_instellingen", "bk_grootboek", "bk_rekeningen", "bk_vennoten", "bk_imports", "bk_boekingen", "bk_koppelingen",
+  "bk_activa", "bk_bron_extra", "bk_memoriaal", "bk_memoriaal_regels", "bk_aangiften", "bk_boekjaren",
+];
+const BK_LIJST = BK_TABELLEN.map((t) => `'${t}'`).join(", ");
+const CONTROLE_0027 = [
+  `  ('boekhouding: ${BK_TABELLEN.length} tabellen', (select count(*) from pg_class where relnamespace = 'public'::regnamespace and relkind = 'r' and relname in (${BK_LIJST})) = ${BK_TABELLEN.length})`,
+  `  ('boekhouding: RLS aan op alle bk-tabellen', (select count(*) from pg_class where relnamespace = 'public'::regnamespace and relname in (${BK_LIJST}) and relrowsecurity) = ${BK_TABELLEN.length})`,
+  "  ('boekhouding: elke policy vereist teamlid', exists (select 1 from pg_policies where schemaname = 'public' and tablename like 'bk\\_%') and not exists (select 1 from pg_policies where schemaname = 'public' and tablename like 'bk\\_%' and (coalesce(qual, '') || ' ' || coalesce(with_check, '')) !~ 'is_teamlid\\('))",
+  `  ('boekhouding: anon heeft geen rechten', not exists (select 1 from unnest(array[${BK_LIJST}]) t where has_table_privilege('anon', 'public.' || t, 'select') or has_table_privilege('anon', 'public.' || t, 'insert') or has_table_privilege('anon', 'public.' || t, 'update') or has_table_privilege('anon', 'public.' || t, 'delete')))`,
+  "  ('boekhouding: boekingsregels niet te verwijderen (bewaarplicht)', not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'bk_boekingen' and cmd in ('DELETE', 'ALL')))",
+  "  ('boekhouding: aangifte/boekjaar intrekken alleen eigenaar', (select count(*) from pg_policies where schemaname = 'public' and tablename in ('bk_aangiften', 'bk_boekjaren') and cmd = 'DELETE' and qual ~ 'is_eigenaar\\(') = 2)",
+  "  ('boekhouding: vergrendeltriggers', (select count(*) from pg_trigger where not tgisinternal and tgname in ('bk_boekingen_periode', 'bk_memoriaal_periode', 'bk_memoriaal_regels_periode', 'bk_memoriaal_sluit', 'bk_activa_periode', 'bk_grootboek_bewaken', 'bk_koppelingen_controle', 'bk_bron_extra_periode')) = 8)",
+  "  ('boekhouding: functies dicht voor anon', not has_function_privilege('anon', 'public.bk_rekening_toevoegen(text,text,text,bigint,date)', 'execute') and not has_function_privilege('anon', 'public.bk_standaard_rekening(uuid)', 'execute') and not has_function_privilege('anon', 'public.bk_periode_open(date)', 'execute') and not has_function_privilege('anon', 'public.bk_importeer(uuid,text,text,jsonb)', 'execute') and not has_function_privilege('anon', 'public.bk_memoriaal_toevoegen(date,text,text,jsonb)', 'execute') and not has_function_privilege('anon', 'public.bk_jaar_afsluiten(integer,text,jsonb,jsonb)', 'execute') and not has_function_privilege('anon', 'public.bk_jaar_heropenen(integer)', 'execute') and not has_function_privilege('anon', 'public.bk_vennoten_aandelen(jsonb)', 'execute'))",
+  "  ('boekhouding: boekjaar afsluiten en winstverdeling alleen eigenaar', (select count(*) from pg_policies where schemaname = 'public' and ((tablename = 'bk_boekjaren' and cmd in ('INSERT', 'UPDATE')) or (tablename = 'bk_vennoten' and cmd = 'UPDATE')) and (coalesce(qual, '') || ' ' || coalesce(with_check, '')) ~ 'is_eigenaar\\(') = 3 and not exists (select 1 from pg_policies where schemaname = 'public' and ((tablename = 'bk_boekjaren' and cmd in ('INSERT', 'UPDATE', 'ALL')) or (tablename = 'bk_vennoten' and cmd in ('UPDATE', 'ALL'))) and (coalesce(qual, '') || ' ' || coalesce(with_check, '')) !~ 'is_eigenaar\\('))",
+  "  ('boekhouding: instellingen (één rij)', (select count(*) from public.bk_instellingen) = 1)",
+  "  ('boekhouding: standaardgrootboek', (select count(*) from public.bk_grootboek where systeem) >= 38)",
+  "  ('boekhouding: RegioBank en Revolut', exists (select 1 from public.bk_rekeningen where grootboek_code = '1100') and exists (select 1 from public.bk_rekeningen where grootboek_code = '1110'))",
+  "  ('boekhouding: precies één standaardrekening', (select count(*) from public.bk_rekeningen where standaard) = 1)",
+  "  ('boekhouding: winstaandelen vennoten samen 100%', (select coalesce(sum(winstaandeel), 0) from public.bk_vennoten where actief) = 100)",
+  `  ('boekhouding: in de back-up (backup_tabellen)', (select count(*) from public.backup_tabellen() t where t in (${BK_LIJST})) = ${BK_TABELLEN.length})`,
+  "  ('boekhouding: standaardrekening ' || coalesce((select naam from public.bk_rekeningen where standaard), '?') || ', boekingsregels ' || (select count(*) from public.bk_boekingen where verwijderd_op is null) || ', ingediende aangiften ' || (select count(*) from public.bk_aangiften) || ', afgesloten boekjaren ' || (select count(*) from public.bk_boekjaren), true)",
 ];
 
 // Onder de controle: wie er nu toegang heeft (zo zie je meteen of er iemand tussen staat
@@ -651,6 +682,57 @@ notify pgrst, 'reload schema';
 ${controle(CONTROLE_0026, TEAMLEDEN)}`;
 }
 
+function bouw0027() {
+  return `-- ============================================================================
+-- Studio Levant-backoffice — boekhouding (migratie 0027)
+-- ============================================================================
+--
+-- Wat dit doet (alleen toevoegen; facturen en bonnetjes blijven ongewijzigd):
+--   - bk_rekeningen       bankrekeningen: RegioBank (standaard) en Revolut, later meer
+--   - bk_boekingen        alles wat er op de rekening gebeurt, in regels: datum, omschrijving,
+--                         uitgave/inkomst/privé/overboeking/btw, bedrag (centen), btw-code en
+--                         btw; kwartaal automatisch. Niet te verwijderen (bewaarplicht), wel
+--                         te markeren als verwijderd.
+--   - bk_grootboek        standaard rekeningschema (categorieën) met indicatieve RGS-codes
+--   - bk_vennoten         Daniel en Bram (VOF), standaard 50/50
+--   - bk_activa           investeringen met lineaire afschrijving (vrije termijn)
+--   - bk_memoriaal(+regels) beginbalans, correcties en jaarafsluiting (moet sluiten)
+--   - bk_koppelingen, bk_bron_extra  betalingen afletteren en facturen/bonnetjes verfijnen
+--                         zonder invoices/expenses te wijzigen
+--   - bk_aangiften, bk_boekjaren     ingediende aangifte = kwartaal vergrendeld; afgesloten
+--                         boekjaar = jaar vergrendeld (intrekken alleen door de eigenaar)
+--   - bk_imports          bankafschriften (CSV) die zijn ingelezen
+-- Alles alleen voor actieve teamleden (is_teamlid() met 2FA uit 0026), gedeeld met het team.
+-- De nieuwe tabellen komen automatisch in de dagelijkse back-up (backup_tabellen()).
+--
+-- Vereist 0026. Tot dit bestand is uitgevoerd, draait de boekhouding in de app in de
+-- demo-modus (voorbeeldgegevens, er wordt niets opgeslagen).
+--
+-- Zo voer je het uit:
+--   1. Supabase-dashboard -> je project -> SQL Editor -> "New query".
+--   2. Plak dit hele bestand en klik op "Run".
+--   3. Onderaan: elke regel moet "ok" tonen (de laatste "boekhouding:"-regel is informatief),
+--      en daaronder staat wie er toegang heeft.
+--
+-- Veilig om nogmaals uit te voeren; alles draait in één transactie (gaat er iets mis, dan
+-- wordt niets half doorgevoerd). Aangepaste instellingen, rekeningen, vennoten en alle
+-- boekingen blijven staan.
+--
+-- Gegenereerd met scripts/genereer-sql-editor.mjs uit supabase/migrations/0027_boekhouding.sql.
+-- Niet met de hand aanpassen; pas de migratie aan en genereer opnieuw.
+-- ============================================================================
+
+begin;
+
+${deel("0027_boekhouding.sql")}
+commit;
+
+-- PostgREST (de API van Supabase) direct laten weten dat er nieuwe tabellen en functies zijn.
+notify pgrst, 'reload schema';
+
+${controle(CONTROLE_0027, TEAMLEDEN)}`;
+}
+
 const bestanden = [
   [DOEL, bouw()],
   [DOEL_UITGAVEN, bouwUitgaven()],
@@ -660,6 +742,7 @@ const bestanden = [
   [DOEL_0024, bouw0024()],
   [DOEL_0025, bouw0025()],
   [DOEL_0026, bouw0026()],
+  [DOEL_0027, bouw0027()],
 ];
 if (process.argv.includes("--controleer")) {
   let verouderd = false;

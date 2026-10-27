@@ -12,12 +12,19 @@ import { Persoon } from '@/components/team/Persoon';
 import { BonnetjeKnop } from '@/components/uitgaven/BonnetjeKnop';
 import { RecenteBonnetjes } from '@/components/uitgaven/RecenteBonnetjes';
 import { UgIcoon } from '@/components/uitgaven/Iconen';
+import { logFout } from '@/lib/log';
+import type { Teamlid } from '@/lib/auth/team';
+import { repoVoorPagina } from '@/lib/boekhouding/modus';
+import { NietIngerichtMelding } from '@/components/boekhouding/NietIngericht';
+import { DemoBanner } from '@/components/boekhouding/DemoBanner';
+import { OverzichtCijfers, overzichtData, type OverzichtData } from '@/components/boekhouding/JaarSchermen';
 
 export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'Boekhouding · Studio Levant' };
 
-// Boekhouding: kies tussen Facturen (het bestaande facturen-deel, ongewijzigd) en Bonnetjes &
-// inkoopfacturen (uploaden en terugvinden). Alles wat hier staat is gedeeld met het hele team.
+// Boekhouding: bovenaan de kerncijfers (bank, resultaat, btw, openstaand) en daaronder de keuze
+// tussen Facturen (het bestaande facturen-deel, ongewijzigd) en Bonnetjes & inkoopfacturen.
+// Alles wat hier staat is gedeeld met het hele team.
 export default async function BoekhoudingPage() {
   const lid = await vereisTeamlidPagina('/boekhouding');
 
@@ -32,6 +39,7 @@ export default async function BoekhoudingPage() {
   return (
     <div className="bh">
       <BoekhoudingKop titel="Boekhouding" />
+      <BoekhoudCijfers lid={lid} />
       <div className="bh-tegels">
         {/* ---------- Facturen ---------- */}
         <section className="bh-tegel" aria-labelledby="bh-facturen">
@@ -156,5 +164,36 @@ export default async function BoekhoudingPage() {
         </section>
       </div>
     </div>
+  );
+}
+
+/** De kerncijfers van de boekhouding; bij een storing een korte melding (de tegels blijven werken). */
+async function BoekhoudCijfers({ lid }: { lid: Teamlid }) {
+  let cijfers: OverzichtData | null = null;
+  let demo = false;
+  let ingericht = true;
+  try {
+    const repo = await repoVoorPagina(lid);
+    if (!repo) ingericht = false;
+    else {
+      demo = repo.modus === 'demo';
+      cijfers = await overzichtData(repo);
+    }
+  } catch (e) {
+    logFout('[boekhouding] overzicht', e);
+  }
+  if (!ingericht) return <NietIngerichtMelding />;
+  if (!cijfers) {
+    return (
+      <p className="bh-leeg bh-overzicht" role="alert">
+        De cijfers van de boekhouding konden nu niet worden opgehaald. Ververs de pagina om het opnieuw te proberen.
+      </p>
+    );
+  }
+  return (
+    <>
+      {demo && <DemoBanner />}
+      <OverzichtCijfers d={cijfers} />
+    </>
   );
 }

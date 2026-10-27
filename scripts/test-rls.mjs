@@ -56,6 +56,10 @@
 //             back-ups en audit-log niet leesbaar voor leden/anon; de grote bestanden opnieuw
 //             zetten de 2FA-controle niet terug (de losse 0021 wel, 0026 herstelt); de controle
 //             slaat alarm bij geknoei en toont de noodstop.
+// Scenario D  0001–0026 → UITVOEREN_0027.sql (boekhouding): in alle 13 bk-tabellen zien anon,
+//             buitenstaanders, gedeactiveerde/onbevestigde/anonieme accounts niets en kunnen ze
+//             niets verwijderen of boeken; een teamlid leest alles; met een 2FA-factor op aal1
+//             niets, op aal2 alles; UITVOEREN_0026.sql daarna laat de boekhouding staan.
 //
 // Gebruik:  node scripts/test-rls.mjs        (vereist de devDependency @electric-sql/pglite)
 import fs from "node:fs";
@@ -1630,9 +1634,77 @@ async function scenarioC() {
   if (fouten === fouten0) console.log("  scenario C (UITVOEREN_0026.sql op de huidige stand): ok");
 }
 
+// ---------------------------------------------------------------------------------
+// Scenario D: de boekhouding (UITVOEREN_0027.sql) op de huidige stand (0001–0026)
+// ---------------------------------------------------------------------------------
+async function scenarioD() {
+  const fouten0 = fouten;
+  const db = await nieuweDb();
+  for (const f of MIGRATIES.filter((f) => f < "0021")) await voerUit(db, lees(`supabase/migrations/${f}`), f);
+  await zaaiGebruikersVoor0021(db);
+  await zaaiData(db, true);
+  for (const f of MIGRATIES.filter((f) => f >= "0021" && f < "0027")) await voerUit(db, lees(`supabase/migrations/${f}`), f);
+  await zaaiNa0021(db);
+  await db.query("insert into public.profiles (id, naam, initialen, email) values ($1, 'Mark', 'M', 'mark@studio-levant.nl') on conflict (id) do nothing", [U.mark]);
+  await db.query("insert into public.team_members (user_id, actief, rol) values ($1, true, 'lid') on conflict (user_id) do nothing", [U.mark]);
+  checkControle(await voerUit(db, lees("supabase/UITVOEREN_0027.sql"), "UITVOEREN_0027.sql"), "D: UITVOEREN_0027");
+
+  // In elke bk-tabel minstens één rij (als postgres), zodat "niets zien" iets betekent.
+  await db.exec(`
+    insert into public.bk_imports (id, rekening_id, formaat) select 'f0000000-0000-4000-8000-000000000001', id, 'regiobank' from public.bk_rekeningen where grootboek_code = '1100';
+    insert into public.bk_boekingen (id, rekening_id, datum, omschrijving, soort, richting, bedrag_centen, btw_code, btw_centen, grootboek_code)
+      select 'f0000000-0000-4000-8000-000000000002', id, '2026-05-01', 'Adobe', 'uitgave', 'af', 7139, 'eu_dienst', 1499, '4000' from public.bk_rekeningen where grootboek_code = '1100';
+    insert into public.bk_koppelingen (boeking_id, bron, bron_id, bedrag_centen) values ('f0000000-0000-4000-8000-000000000002', 'uitgave', 'cccccccc-0000-4000-8000-000000000001', 7139);
+    insert into public.bk_bron_extra (bron, bron_id, notitie) values ('uitgave', 'cccccccc-0000-4000-8000-000000000001', 'x');
+    insert into public.bk_activa (omschrijving, categorie_grootboek, aanschafdatum, ingebruikname, aanschaf_centen, looptijd_maanden)
+      values ('Laptop', '0210', '2026-03-01', '2026-03-01', 249900, 60);
+    insert into public.bk_memoriaal (id, datum, omschrijving, soort) values ('f0000000-0000-4000-8000-000000000003', '2026-01-01', 'Beginbalans', 'beginbalans');
+    insert into public.bk_memoriaal_regels (memoriaal_id, grootboek_code, debet_centen) values ('f0000000-0000-4000-8000-000000000003', '0900', 100);
+    insert into public.bk_memoriaal_regels (memoriaal_id, grootboek_code, credit_centen) values ('f0000000-0000-4000-8000-000000000003', '0500', 100);
+    insert into public.bk_aangiften (jaar, kwartaal) values (2026, 1);
+    insert into public.bk_boekjaren (jaar) values (2024);
+  `);
+  const BK = (await db.query("select relname from pg_class where relnamespace = 'public'::regnamespace and relkind = 'r' and relname like 'bk\\_%' order by 1")).rows.map((r) => r.relname);
+  check(BK.length === 13, "D: 13 bk-tabellen", BK.join(","));
+  for (const t of BK) {
+    const n = (await db.query(`select count(*)::int as n from public.${t}`)).rows[0].n;
+    check(n > 0, `D: ${t} heeft testdata`, String(n));
+    for (const wie of ["anon", "indringer", "oudlid", "onbevestigd", "anoniem"]) {
+      const r = await als(db, wie, `select * from public.${t}`);
+      check(leeg(r), `D: ${wie} ziet niets in ${t}`, uitleg(r));
+      const d = await als(db, wie, `delete from public.${t}`);
+      check(nietsGeraakt(d), `D: ${wie} verwijdert niets uit ${t}`, uitleg(d));
+    }
+    const lid = await alsMetAal(db, "mark", "aal1", `select count(*)::int as n from public.${t}`);
+    check(lid.ok && lid.rows[0].n > 0, `D: teamlid (zonder 2FA-factor) leest ${t}`, uitleg(lid));
+  }
+  for (const wie of ["anon", "indringer", "oudlid"]) {
+    const r = await als(db, wie, "insert into public.bk_boekingen (datum, omschrijving, soort, richting, bedrag_centen) values ('2026-05-02', 'x', 'uitgave', 'af', 100)");
+    check(!r.ok, `D: ${wie} voegt geen boeking toe`, uitleg(r));
+    const f = await als(db, wie, "select public.bk_memoriaal_toevoegen('2026-05-02', 'x', 'correctie', '[]'::jsonb)");
+    check(!f.ok, `D: ${wie} kan geen memoriaal boeken`, uitleg(f));
+  }
+  // 2FA: met een geverifieerde factor ziet de eigenaar op aal1 niets, op aal2 alles.
+  await db.query("insert into auth.mfa_factors (user_id, friendly_name, status) values ($1, 'Telefoon', 'verified')", [U.daniel]);
+  for (const t of BK) {
+    const a1 = await alsMetAal(db, "daniel", "aal1", `select count(*)::int as n from public.${t}`);
+    check(a1.ok && a1.rows[0].n === 0, `D: aal1 met 2FA-factor ziet niets in ${t}`, uitleg(a1));
+    const a2 = await alsMetAal(db, "daniel", "aal2", `select count(*)::int as n from public.${t}`);
+    check(a2.ok && a2.rows[0].n > 0, `D: aal2 ziet ${t}`, uitleg(a2));
+  }
+  const afs = await alsMetAal(db, "daniel", "aal1", "select public.bk_jaar_afsluiten(2025, 'x', '[]'::jsonb, '{}'::jsonb)");
+  check(!afs.ok, "D: aal1 met 2FA-factor sluit geen boekjaar af", uitleg(afs));
+  // De grote SQL-bestanden blijven "ok" en raken de boekhouding niet.
+  checkControle(await voerUit(db, lees("supabase/UITVOEREN_0026.sql"), "UITVOEREN_0026.sql na 0027"), "D: UITVOEREN_0026 na 0027");
+  check((await db.query("select count(*)::int as n from public.bk_boekingen")).rows[0].n === 1, "D: 0026 opnieuw laat de boekhouding staan");
+  await db.close();
+  if (fouten === fouten0) console.log("  scenario D (boekhouding, UITVOEREN_0027.sql): ok");
+}
+
 await scenarioA();
 await scenarioB();
 await scenarioC();
+await scenarioD();
 
 console.log(`\n${goed} geslaagd, ${fouten} mislukt`);
 if (fouten) process.exit(1);

@@ -85,6 +85,24 @@
 //       andere /api/cron/*-paden -> 401 (proxy); /api/beveiliging/backup(/<id>/download)
 //       zonder sessie -> 401 (automatisch).
 //
+// 16. Boekhouding (0027, stap 1: bank & boekingen): elke /api/boekhouding-route via bkRoute
+//     (teamcheck + herkomst), pagina's met vereisTeamlidPagina vóór de opslag; demo-modus zonder
+//     Supabase-import en met de vaste banner; geen echte delete van boekingsregels; facturen-
+//     code (lib/invoice, app/actions, app/api/invoices|quotes, facturenschermen) ongewijzigd
+//     t.o.v. de start van de boekhouding; UITVOEREN_0027.sql in één transactie en niet in de
+//     grote bestanden; back-up kent de bk-tabellen.
+//     Stap 2 (bankimport, afletteren): de boekhouding schrijft nooit naar invoices/expenses
+//     (koppelingen en verfijningen staan in bk_koppelingen/bk_bron_extra); alleen
+//     koppelingen mogen echt verwijderd worden; import via de RPC bk_importeer.
+//     Stap 3 (btw-aangifte, activa): intrekken van een aangifte alleen via de eigenaar-route;
+//     echt verwijderen alleen bij koppelingen, aangiften (intrekken) en activa; de rekenkern
+//     (afschrijving, aangifte, activeren, controles) is puur; tabs Btw-aangifte en Activa.
+// Live: /boekhouding/bank (ook met filters), /boekhouding/bank/importeren,
+//       /boekhouding/openstaand, /boekhouding/instellingen, /boekhouding/btw(/jaar/kw),
+//       /boekhouding/activa(/id), /boekhouding/rapporten(/jaarafsluiting/jaar) zonder sessie
+//       -> 307 /login (stap 4: ook memoriaal, jaarafsluiting, instellingen en exports -> 401);
+//       GET/POST/PATCH/DELETE /api/boekhouding/** -> 401 (ook cross-site).
+//
 // Gebruik:  node scripts/rooktest-shell.mjs [http://localhost:3107]
 //           node scripts/rooktest-shell.mjs --alleen-statisch
 import fs from "node:fs";
@@ -148,7 +166,7 @@ function bestandenIn(map, filter) {
 {
   // eigenaarRoute = teamlidRoute + eigenaar + aal2; tfaRoute = sessie van een teamlid (ook
   // vóór de 2FA-code), alleen voor de 2FA-routes zelf (geen service-role).
-  const WRAPPERS = /\b(teamlidRoute|controleerRoute|metSessie|mailRoute|uitgavenRoute|driveRoute|eigenaarRoute|tfaRoute|route)(?:<\w+>)?\(/;
+  const WRAPPERS = /\b(teamlidRoute|controleerRoute|metSessie|mailRoute|uitgavenRoute|driveRoute|bkRoute|eigenaarRoute|tfaRoute|route)(?:<\w+>)?\(/;
   for (const f of bestandenIn("app/api", (n) => n === "route.ts")) {
     // De cron-routes hebben geen sessie: daar is CRON_SECRET de controle (cronRoute).
     if (f.startsWith(path.join("app", "api", "cron") + path.sep)) {
@@ -563,6 +581,67 @@ console.log("Bestanden (Google Drive, 0024)");
   check(/alleenEigenaar: true/.test(lees("app/api/drive/diagnose/route.ts")), "Test Drive-koppeling alleen voor de eigenaar");
 }
 
+// ---------------------------------------------------------------------------------
+// 16. Boekhouding (statisch)
+// ---------------------------------------------------------------------------------
+console.log("Boekhouding: bank & boekingen (0027)");
+{
+  const api = lees("lib/boekhouding/api.ts");
+  check(/const c = await controleerRoute\(request\);[\s\S]*?if \('antwoord' in c\) return c\.antwoord;[\s\S]*?kiesRepo\(lid\)/.test(api), "bkRoute: eerst de teamcheck (en herkomst), dan pas de opslag");
+  for (const f of bestandenIn("app/api/boekhouding", (n) => n === "route.ts")) {
+    check(/export const (GET|POST|PATCH|DELETE) = bkRoute\(/.test(lees(f)), `${f}: bkRoute`);
+  }
+  for (const f of bestandenIn("app/(app)/boekhouding", (n) => n === "page.tsx").filter((f) => !/bonnetjes/.test(f) && f !== path.join("app", "(app)", "boekhouding", "page.tsx"))) {
+    const src = lees(f);
+    const opslag = src.search(/(kiesRepo|repoVoorPagina)\(/);
+    check(src.indexOf("vereisTeamlidPagina(") > 0 && opslag > 0 && src.indexOf("vereisTeamlidPagina(") < opslag, `${f}: teamcheck vóór de opslag`);
+  }
+  const demo = lees("lib/boekhouding/repo/demo.ts").replace(/\/\/[^\n]*/g, "");
+  check(!/supabase|@\/lib\/supabase|fetch\(/.test(demo), "demo-opslag importeert geen Supabase en doet geen netwerk");
+  check(/Demo — voorbeeldgegevens, er wordt niets opgeslagen/.test(lees("components/boekhouding/DemoBanner.tsx")), "demo-banner met de vaste tekst");
+  const modus = lees("lib/boekhouding/modus.ts");
+  check(/BOEKHOUDING_DEMO === '1'/.test(modus) && /tabelOntbreekt\(error\)\) throw nietIngericht\(\)/.test(modus) && /throw new BoekhoudFout\(503/.test(modus) && (modus.replace(/\/\/[^\n]*/g, "").match(/return 'demo'/g) || []).length === 1 && /if \(demoAfgedwongen\(\)\) return 'demo'/.test(modus), "modus: demo alleen met BOEKHOUDING_DEMO=1; ontbrekende tabel → 'nog niet ingericht' (nooit vanzelf demo), anders fail closed");
+  check(!/DemoBanner reden|demoReden/.test(bestandenIn("app/(app)/boekhouding", (n) => n.endsWith(".tsx")).concat(bestandenIn("components/boekhouding", (n) => n.endsWith(".tsx"))).map(lees).join("\n")) && /NietIngericht/.test(lees("app/(app)/boekhouding/bank/page.tsx")), "boekhoudschermen: zonder 0027 de melding 'nog niet ingericht', geen voorbeeldgegevens");
+  check(/^import 'server-only';/m.test(modus) && /^import 'server-only';/m.test(lees("lib/boekhouding/repo/supabase.ts")), "modus en Supabase-opslag zijn server-only");
+  check(!/createServiceRoleClient/.test(lees("lib/boekhouding/repo/supabase.ts")), "boekhouding gebruikt nooit de service-role (RLS van het teamlid)");
+  const sbRepo = lees("lib/boekhouding/repo/supabase.ts");
+  const deletes = [...sbRepo.matchAll(/from\('(\w+)'\)\s*\.delete\(\)/g)].map((m) => m[1]);
+  check(deletes.every((t) => ["bk_koppelingen", "bk_aangiften", "bk_activa", "bk_memoriaal"].includes(t)) && (sbRepo.match(/\.delete\(\)/g) || []).length === deletes.length, "boekingsregels worden nooit echt verwijderd (bewaarplicht); alleen koppelingen, aangiften (intrekken), activa en memoriaal (open periode)", deletes.join(","));
+  check(/from\('bk_memoriaal'\)\.delete\(\)[^;]*neq\('soort', 'jaarafsluiting'\)/.test(sbRepo), "een jaarafsluiting wordt niet los verwijderd (alleen via heropenen)");
+  check(/rpc\('bk_jaar_afsluiten'/.test(sbRepo) && /rpc\('bk_jaar_heropenen'/.test(sbRepo) && /rpc\('bk_memoriaal_toevoegen'/.test(sbRepo) && /rpc\('bk_vennoten_aandelen'/.test(sbRepo), "memoriaal, jaarafsluiting en winstverdeling via RPC (één transactie)");
+  const jaRoute = lees("app/api/boekhouding/jaarafsluiting/[jaar]/route.ts");
+  check(/export const POST = bkRoute\([\s\S]*?\{ alleenEigenaar: true \}\s*\);/.test(jaRoute) && /export const DELETE = bkRoute\([\s\S]*?\{ alleenEigenaar: true \}\s*\);/.test(jaRoute), "boekjaar afsluiten en heropenen alleen door de eigenaar (route)");
+  check(/\{ alleenEigenaar: true \}/.test(lees("app/api/boekhouding/instellingen/vennoten/route.ts")), "winstverdeling wijzigen alleen door de eigenaar (route)");
+  check(/afsluitStatus\(data, posten, jaar, vandaagNL\(\), banksaldi\)/.test(lees("lib/boekhouding/acties-jaar.ts")), "bij afsluiten controleert de server de checklist zelf");
+  check(/\/boekhouding\/rapporten/.test(lees("components/boekhouding/BoekhoudingTabs.tsx")), "tab Rapporten & jaarrekening");
+  check(/'X-Content-Type-Options': 'nosniff'/.test(lees("lib/boekhouding/acties-jaar.ts")) && /'Cache-Control': 'private, no-store'/.test(lees("lib/boekhouding/acties-jaar.ts")), "exports: niet cachen, nosniff");
+  check(/import\('\.\.\/invoice\/pdf'\)/.test(lees("lib/boekhouding/acties-jaar.ts")), "PDF via renderPdf uit lib/invoice/pdf.ts (alleen importeren)");
+  check(!/from\('(invoices|expenses|quotes|clients)'\)\s*\.(insert|update|upsert|delete)\(/.test(sbRepo) && /rpc\('bk_importeer'/.test(sbRepo), "boekhouding leest facturen/bonnetjes alleen; import via bk_importeer");
+  for (const f of ["kern/bronnen.ts", "kern/afletteren.ts", "kern/bankimport.ts", "repo/demo-voorbeeld.ts", "kern/afschrijving.ts", "kern/aangifte.ts", "kern/activeren.ts", "kern/btw-controles.ts", "kern/rapporten.ts", "kern/csv.ts", "kern/xaf.ts", "kern/memoriaal.ts", "jaarwerk.ts"]) {
+    check(!/from '@\/|supabase|fetch\(/.test(lees(`lib/boekhouding/${f}`).replace(/\/\/[^\n]*/g, "")), `lib/boekhouding/${f} is een pure module`);
+  }
+  const m27 = lees("supabase/migrations/0027_boekhouding.sql").replace(/--[^\n]*/g, "");
+  check(!/\b(alter|drop) table (if exists )?public\.(invoices|quotes|clients|expenses|expense_files)\b/i.test(m27) && !/\bon public\.(invoices|quotes|clients|expenses)\b/i.test(m27), "0027 raakt facturen, klanten en bonnetjes niet");
+  check(!/drop table|truncate|delete from public\.(?!bk_)/i.test(m27), "0027 verwijdert niets");
+  const sql = lees("supabase/UITVOEREN_0027.sql");
+  const tx = sql.slice(0, sql.indexOf("-- Controle:"));
+  check((tx.match(/^begin;$/gm) || []).length === 1 && (tx.match(/^commit;$/gm) || []).length === 1, "UITVOEREN_0027.sql: alles in één transactie");
+  check(/'ok'/.test(sql) && /backup_tabellen/.test(sql), "UITVOEREN_0027.sql: controletabel (ook back-up)");
+  for (const f of ["UITVOEREN_IN_SQL_EDITOR.sql", "UITVOEREN_0020_UITGAVEN.sql", "UITVOEREN_0021_TEAM.sql"]) {
+    check(!/0027_boekhouding/.test(lees(`supabase/${f}`)), `${f} bevat 0027 niet (eindigt met 0026)`);
+  }
+  check(/naam: 'bk_boekingen', pk: \['id'\], zonder: \['jaar', 'kwartaal'\]/.test(lees("lib/backup/formaat-kern.ts")), "back-up kent de bk-tabellen (zonder gegenereerde kolommen)");
+  check(fs.existsSync(path.join(ROOT, "scripts/test-boekhouding.mjs")) && fs.existsSync(path.join(ROOT, "scripts/test-boekhouding-db.mjs")), "tests voor de boekhouding bestaan");
+  check(/\/boekhouding\/bank/.test(lees("components/boekhouding/BoekhoudingTabs.tsx")) && /\/boekhouding\/instellingen/.test(lees("components/boekhouding/BoekhoudingTabs.tsx")), "tabs Bank & boekingen en Instellingen");
+  check(/\/boekhouding\/btw/.test(lees("components/boekhouding/BoekhoudingTabs.tsx")) && /\/boekhouding\/activa/.test(lees("components/boekhouding/BoekhoudingTabs.tsx")), "tabs Btw-aangifte en Activa");
+  const agRoute = lees("app/api/boekhouding/aangiften/[jaar]/[kw]/route.ts");
+  check(/export const DELETE = bkRoute\([\s\S]*?\{ alleenEigenaar: true \}\s*\);/.test(agRoute), "aangifte intrekken alleen door de eigenaar (route)");
+  check(/aangifteRubrieken\(journaalVan\(data\)/.test(lees("lib/boekhouding/acties.ts")), "bij indienen rekent de server de aangifte zelf uit");
+  // Facturen ongewijzigd sinds de start van de boekhouding (commit 7df4ae9).
+  const fdiff = spawnSync("git", ["diff", "--name-only", "7df4ae9", "--", "lib/invoice", "app/actions", "app/api/invoices", "app/api/quotes", "app/(app)/facturen", "components/InvoiceForm.tsx", "components/InvoicesTable.tsx", "components/QuotesTable.tsx", "components/RestfactuurKnop.tsx"], { cwd: ROOT, encoding: "utf8" });
+  if (fdiff.status === 0) check(fdiff.stdout.trim() === "", "facturen-code ongewijzigd sinds de start van de boekhouding", fdiff.stdout.trim().replace(/\n/g, ", "));
+}
+
 if (ALLEEN_STATISCH) eindig();
 
 // ---------------------------------------------------------------------------------
@@ -687,6 +766,54 @@ for (const url of ["/social-files/brand/logo-licht.png", "/social-files/projects
   }
 }
 
+console.log("Boekhouding zonder sessie");
+{
+  for (const url of ["/boekhouding/bank", "/boekhouding/bank?rekening=00000000-0000-4000-8000-000000000000&jaar=2026&kw=3&soort=uitgave&status=te_verwerken&q=adobe", "/boekhouding/bank?open=00000000-0000-4000-8000-000000000000", "/boekhouding/bank/importeren", "/boekhouding/openstaand", "/boekhouding/instellingen", "/boekhouding/btw", "/boekhouding/btw/2026/3", "/boekhouding/btw/9999/9", "/boekhouding/activa", "/boekhouding/activa?jaar=2026&activeer=boeking:00000000-0000-4000-8000-000000000000", "/boekhouding/activa/00000000-0000-4000-8000-000000000000", "/boekhouding/rapporten", "/boekhouding/rapporten?r=balans&jaar=2025", "/boekhouding/rapporten?r=grootboek&jaar=2026&code=1100", "/boekhouding/rapporten/jaarafsluiting/2025", "/boekhouding/rapporten/jaarafsluiting/abc"]) {
+    const res = await vraag(url);
+    check(res.status === 307 && naarLogin(res), `${url} -> 307 /login`, `status ${res.status} ${res.headers.get("location") || ""}`);
+  }
+  for (const [m, url] of [
+    ["GET", "/api/boekhouding/boekingen"],
+    ["POST", "/api/boekhouding/boekingen"],
+    ["PATCH", "/api/boekhouding/boekingen/00000000-0000-4000-8000-000000000000"],
+    ["DELETE", "/api/boekhouding/boekingen/00000000-0000-4000-8000-000000000000"],
+    ["GET", "/api/boekhouding/instellingen/rekeningen"],
+    ["POST", "/api/boekhouding/instellingen/rekeningen"],
+    ["PATCH", "/api/boekhouding/instellingen/rekeningen"],
+    ["POST", "/api/boekhouding/demo/herstel"],
+    ["POST", "/api/boekhouding/koppelingen"],
+    ["DELETE", "/api/boekhouding/koppelingen?id=00000000-0000-4000-8000-000000000000"],
+    ["POST", "/api/boekhouding/bron-extra"],
+    ["POST", "/api/boekhouding/import"],
+    ["GET", "/api/boekhouding/import"],
+    ["GET", "/api/boekhouding"],
+    ["POST", "/api/boekhouding/aangiften/2026/3"],
+    ["DELETE", "/api/boekhouding/aangiften/2026/3"],
+    ["POST", "/api/boekhouding/aangiften/2026/3/betaling"],
+    ["DELETE", "/api/boekhouding/aangiften/2026/3/betaling?id=00000000-0000-4000-8000-000000000000"],
+    ["GET", "/api/boekhouding/activa"],
+    ["POST", "/api/boekhouding/activa"],
+    ["PATCH", "/api/boekhouding/activa/00000000-0000-4000-8000-000000000000"],
+    ["DELETE", "/api/boekhouding/activa/00000000-0000-4000-8000-000000000000"],
+    ["POST", "/api/boekhouding/memoriaal"],
+    ["DELETE", "/api/boekhouding/memoriaal?id=00000000-0000-4000-8000-000000000000"],
+    ["POST", "/api/boekhouding/jaarafsluiting/2025"],
+    ["DELETE", "/api/boekhouding/jaarafsluiting/2025"],
+    ["PATCH", "/api/boekhouding/instellingen"],
+    ["PATCH", "/api/boekhouding/instellingen/vennoten"],
+    ["POST", "/api/boekhouding/instellingen/grootboek"],
+    ["PATCH", "/api/boekhouding/instellingen/grootboek"],
+    ["GET", "/api/boekhouding/export?soort=xaf&jaar=2025"],
+    ["GET", "/api/boekhouding/export?soort=pdf&jaar=2025"],
+    ["GET", "/api/boekhouding/export?soort=boekingen&jaar=2026"],
+  ]) {
+    for (const origin of [BASIS, "https://evil.example"]) {
+      const res = await vraag(url, { method: m, headers: { origin, "content-type": "application/json" }, body: m === "GET" || m === "DELETE" ? undefined : JSON.stringify({ omschrijving: "x", bedrag: "1" }) });
+      check(res.status === 401 && (res.headers.get("content-type") || "").includes("application/json"), `${m} ${url} zonder sessie (${origin === BASIS ? "eigen" : "ander"} domein) -> 401`, `status ${res.status}`);
+    }
+  }
+}
+
 console.log("Openbare pagina's en bestanden");
 for (const url of ["/login", "/wachtwoord-vergeten", "/geen-toegang"]) {
   const res = await vraag(url);
@@ -719,7 +846,7 @@ for (const url of ["/login", "/geen-toegang", "/api/taken"]) {
 }
 
 console.log("Kernpagina's: precies 307 naar /login");
-for (const url of ["/", "/boekhouding", "/boekhouding/bonnetjes", "/account", "/facturen", "/agenda/projecten", "/welkom", "/klanten", "/klanten?nieuw=1", "/projecten", "/projecten?weergave=bord", "/projecten?weergave=lijst", "/klanten/00000000-0000-4000-8000-000000000000", "/projecten/00000000-0000-4000-8000-000000000000", "/bestanden", "/bestanden?map=1AbCdEfGh", "/bestanden?drive=gekoppeld"]) {
+for (const url of ["/", "/boekhouding", "/boekhouding/bonnetjes", "/boekhouding/bank", "/boekhouding/instellingen", "/account", "/facturen", "/agenda/projecten", "/welkom", "/klanten", "/klanten?nieuw=1", "/projecten", "/projecten?weergave=bord", "/projecten?weergave=lijst", "/klanten/00000000-0000-4000-8000-000000000000", "/projecten/00000000-0000-4000-8000-000000000000", "/bestanden", "/bestanden?map=1AbCdEfGh", "/bestanden?drive=gekoppeld"]) {
   const res = await vraag(url);
   check(res.status === 307 && naarLogin(res), url, `status ${res.status} ${res.headers.get("location") || ""}`);
 }

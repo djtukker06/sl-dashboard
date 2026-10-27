@@ -14,7 +14,7 @@ je vanuit elke module terug naar het dashboard.
 | Agenda | `/agenda` | Taken op naam (popup: voor wie, deadline, urgentie, klant, project, subtaken) en afspraken in één agenda (week/maand), alleen wat op jouw naam staat; tab Uitgezet voor wat je bij een ander hebt uitgezet |
 | Klanten & projecten | `/klanten`, `/projecten` | Simpel CRM/PM: klanten (lead/actief/afgerond) met contact, notities, projecten, open taken, facturen en prijsopgaven; projecten als bord of lijst (voorbereiding/bezig/wachten op goedkeuring/afgerond) met klant, deadline, eigenaar(s), taken met voortgang en een notitieveld |
 | Bestanden | `/bestanden` | De gedeelde Google Drive van Studio Levant: bladeren, slepen-uploaden (ook grote bestanden), mappen, hernoemen, prullenbak, zoeken, voorbeeld; een blok "Bestanden" op elke klant- en projectpagina; facturen, prijsopgaven en bonnetjes gaan er automatisch heen (zie "Google Drive") |
-| Boekhouding | `/boekhouding` | Keuze tussen **Facturen** (`/facturen`: facturen, prijsopgaven, klanten en PDF's, ongewijzigd) en **Bonnetjes & inkoopfacturen** (`/boekhouding/bonnetjes`: foto/PDF uploaden en snel terugvinden) |
+| Boekhouding | `/boekhouding` | Kerncijfers en de keuze tussen **Facturen** (`/facturen`: facturen, prijsopgaven, klanten en PDF's, ongewijzigd) en **Bonnetjes & inkoopfacturen** (`/boekhouding/bonnetjes`), plus de boekhouding zelf: bank & boekingen, btw-aangifte per kwartaal, activa & afschrijvingen, rapporten & jaarrekening (zie `docs/BOEKHOUDING.md`) |
 | Account & mail | `/account` | Je profiel (naam, initialen, kleur), inboxen koppelen en beheren (alleen ik / hele team), 2FA-apparaten, wachtwoord wijzigen |
 | Beveiliging | `/beveiliging` | Alleen de eigenaar (met 2FA-sessie): wie heeft 2FA (en reset), audit-log, back-ups en keep-alive (zie "Tweestapsverificatie" en "Back-ups en keep-alive") |
 | Social | `/social` | De social-media-tool (voorheen lokaal), met dezelfde schermen en werking |
@@ -601,9 +601,13 @@ tientallen velden.
 
 ## Boekhouding
 
-De tab **Boekhouding** in de rail (`/boekhouding`) is het keuzescherm met twee tegels, en
-daaronder staat op elk scherm de subnavigatie **Overzicht · Facturen · Bonnetjes &
-inkoopfacturen**. De tab is ook actief op `/facturen/…` en (via een redirect) `/uitgaven`.
+De tab **Boekhouding** in de rail (`/boekhouding`) toont bovenaan de kerncijfers (saldo per
+bank, resultaat dit jaar, de volgende btw-aangifte met deadline, openstaande posten en wat er
+nog te doen is) en daaronder de twee tegels Facturen en Bonnetjes. Op elk scherm staat de
+subnavigatie **Overzicht · Facturen · Bonnetjes & inkoopfacturen · Bank & boekingen ·
+Btw-aangifte · Activa · Rapporten & jaarrekening · Instellingen**. De tab is ook actief op
+`/facturen/…` en (via een redirect) `/uitgaven`. Uitleg voor de eigenaar én de boekhouder:
+**`docs/BOEKHOUDING.md`**; zie ook "Boekhouding: bank, btw, activa en jaarrekening" hieronder.
 
 - **Facturen** (`/facturen/…`): de facturentool, inhoudelijk ongewijzigd (zie "Facturen").
   Alleen de kop is nu die van Boekhouding. Op het keuzescherm: omzet en aantal facturen van
@@ -615,6 +619,59 @@ inkoopfacturen**. De tab is ook actief op `/facturen/…` en (via een redirect) 
 
 Alles in Boekhouding is gedeeld met het hele team: wat de één maakt of uploadt, ziet de ander
 meteen (na verversen; de pagina ververst ook vanzelf als je terugkomt).
+
+### Boekhouding: bank, btw, activa en jaarrekening (migratie 0027)
+
+De boekhouding boekt alles wat er op de rekening gebeurt in regels en leest de facturen en
+bonnetjes **alleen** (de facturentool, PDF, nummering en berekeningen zijn ongewijzigd; de
+rooktest controleert met een git-diff dat die code niet is aangeraakt). Onder de motorkap
+dubbel boekhouden: elke bron wordt een sluitende journaalpost (`lib/boekhouding/kern/`).
+
+- **Bank & boekingen** (`/boekhouding/bank`): snelle invoer (bank standaard RegioBank, om te
+  zetten naar Revolut; datum, omschrijving, uitgave/inkomst, bedrag incl. btw, btw-tarief);
+  voorbelasting of af te dragen btw en het kwartaal worden live berekend. Lijst met lopend
+  saldo, filters en totalen; CSV-import (RegioBank, Revolut, of eigen kolomkeuze; dubbele
+  regels worden herkend) en **Openstaand & afletteren** (betalingen koppelen aan facturen en
+  bonnetjes zonder iets dubbel te tellen).
+- **Btw-aangifte** (`/boekhouding/btw`): per kwartaal de rubrieken 1a–5c zoals op het formulier
+  (hele euro's, in je voordeel), doorklik naar de posten, controles, *Markeer als ingediend*
+  (vergrendelt het kwartaal; intrekken alleen de eigenaar) en PDF.
+- **Activa** (`/boekhouding/activa`): lineair per maand, vrije termijn (snelkeuze 3/5 jaar),
+  restwaarde, desinvestering; hint bij € 450 en waarschuwing onder 5 jaar (fiscaal 20%).
+- **Rapporten & jaarrekening** (`/boekhouding/rapporten?jaar=&r=wv|balans|vennoten|proef|grootboek`):
+  winst & verlies per kwartaal en t.o.v. vorig jaar, balans (begin/eind, sluit altijd),
+  kapitaal per vennoot met winstverdeling, proefbalans en grootboekkaart; exports voor de
+  boekhouder: jaarrapport (PDF), auditfile (XAF 3.2) en CSV's.
+- **Jaarafsluiting** (`/boekhouding/rapporten/jaarafsluiting/<jaar>`): checklist (aangiften
+  ingediend, niets te verwerken, banksaldo volgens afschrift per 31-12 = berekend, aandelen
+  100%), daarna boekt de eigenaar (2FA) de afsluitpost (resultaat en privé naar kapitaal) en is
+  het jaar vergrendeld. Heropenen alleen door de eigenaar.
+- **Instellingen**: bedrijfsgegevens (KvK, btw-nummer, startdatum), bankrekeningen (standaard,
+  beginsaldo, meer rekeningen), winstverdeling (alleen de eigenaar), eigen categorieën en het
+  memoriaal (beginbalans, correcties; "Beginvermogen verdelen").
+
+**Demo-modus.** Alleen als `BOEKHOUDING_DEMO=1` (nooit vanzelf), draait de boekhouding op voorbeeldgegevens in het geheugen van de server
+(per teamlid, max. 4 uur, "Demo herstellen"), met de banner "Demo — voorbeeldgegevens, er wordt
+niets opgeslagen". `lib/boekhouding/repo/demo.ts` importeert geen Supabase. Een andere fout bij
+het bepalen van de modus geeft een foutmelding (fail closed), nooit stil de demo. Op Vercel kan
+een demowijziging tussendoor verdwijnen (elke serverinstantie heeft een eigen geheugen).
+Zolang `bk_instellingen` niet bestaat (0027 niet uitgevoerd) tonen de boekhoudschermen de melding
+"De boekhouding is nog niet ingericht" (API: 503, code `niet_ingericht`), nooit voorbeeldgegevens.
+
+**Uitrol 0027.** 1) Back-up maken (Beveiliging → Back-ups). 2) In de Supabase SQL Editor
+`supabase/UITVOEREN_0027.sql` uitvoeren (één transactie, idempotent; eindigt met een
+controletabel: elke regel "ok"). 3) De app werkt bij het volgende verzoek met de echte
+tabellen (in plaats van de melding "nog niet ingericht"). 4) Instellingen invullen: startdatum, beginsaldi per bank, KvK/btw-nummer,
+winstverdeling; daarna "Beginvermogen verdelen". `BOEKHOUDING_DEMO` niet zetten in productie.
+0027 zit bewust niet in de grote SQL-bestanden (die eindigen met 0026).
+
+**Afronding.** Bedragen in hele centen (integers); btw per regel, half weg van nul; het
+btw-formulier in hele euro's (omzet en verschuldigd omlaag, voorbelasting omhoog); verdelen
+(winst, afschrijving) exact met de grootste-restmethode.
+
+**Tests.** `node scripts/test-boekhouding.mjs` (rekenregels, rapporten, exports, demo),
+`node scripts/test-boekhouding-db.mjs` (0027 op PGlite: RLS, triggers, RPC's, vergrendeling)
+en scenario D in `node scripts/test-rls.mjs` (anon, buitenstaanders, aal1 zien niets).
 
 ### Bonnetjes & inkoopfacturen
 
@@ -1014,7 +1071,13 @@ sinds Klanten & projecten de nieuwe klantpagina (met een link naar de facturen v
 | `/api/projecten…`, `/api/team` | Projecten (gedeeld; `?status=lopend\|afgerond\|alle`, met deadline en eigenaren) en de actieve teamleden (alleen naam, initialen, kleur) |
 | `/mail` | Mail (`?map=`, `?uid=`, `?nieuw=1`) |
 | `/api/mail/…` | Mail-API (503 `niet_gekoppeld` zonder mail-variabelen) |
-| `/boekhouding` | Boekhouding: keuze tussen Facturen en Bonnetjes & inkoopfacturen |
+| `/boekhouding` | Boekhouding: kerncijfers en de keuze tussen Facturen en Bonnetjes & inkoopfacturen |
+| `/boekhouding/bank`, `/bank/importeren`, `/openstaand` | Bank & boekingen (`?rekening=&jaar=&kw=&soort=&status=&q=&open=`), afschrift importeren, openstaand & afletteren |
+| `/boekhouding/btw`, `/btw/<jaar>/<kw>` | Btw-aangifte per kwartaal |
+| `/boekhouding/activa`, `/activa/<id>` | Activa & afschrijvingen (`?jaar=`, `?activeer=boeking:<id>\|uitgave:<id>`) |
+| `/boekhouding/rapporten`, `/rapporten/jaarafsluiting/<jaar>` | Rapporten & jaarrekening (`?jaar=&r=wv\|balans\|vennoten\|proef\|grootboek&code=`), jaarafsluiting |
+| `/boekhouding/instellingen` | Bedrijf, bankrekeningen, vennoten, categorieën, memoriaal |
+| `/api/boekhouding/…` | Boekhoud-API (teamlid; 401 zonder sessie): `boekingen`, `koppelingen`, `bron-extra`, `import`, `aangiften/<jaar>/<kw>(/betaling)`, `activa`, `memoriaal`, `instellingen(/rekeningen\|vennoten\|grootboek)`, `jaarafsluiting/<jaar>` (eigenaar), `export?soort=boekingen\|journaal\|wv\|balans\|proefbalans\|vennoten\|xaf\|pdf\|aangifte&jaar=&kw=`, `demo/herstel` (409 `periode_vergrendeld` in een vergrendelde periode) |
 | `/boekhouding/bonnetjes` | Bonnetjes & inkoopfacturen (`?uitgave=<id>` opent het paneel, `?toevoegen=1`, `?tab=btw`) |
 | `/uitgaven` | Oud adres: tijdelijke redirect naar `/boekhouding/bonnetjes` (query gaat mee) |
 | `/api/uitgaven/…` | Bonnetjes-API, o.a. `GET ?q=&jaar=&maand=&soort=&door=` (503 `tabel_ontbreekt`/`opslag_ontbreekt` vóór de SQL) |
