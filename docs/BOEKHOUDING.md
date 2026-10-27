@@ -124,6 +124,12 @@ KIA-berekening (hoort bij de IB-aangifte per vennoot; de activastaat toont de in
   wijzigen of verwijderen in de facturentool vanzelf klopt.
 - **Factuurstelsel**: omzet en btw in de periode van de factuurdatum (Nederlandse tijd), kosten
   op de bondatum; een losse bankregel zonder document op de transactiedatum.
+- **Factuur die geen omzet is**: een factuur(regel) zonder omzet-vinkje telt in de boekhouding
+  als doorberekende kosten (8090, omzet). Is het geen omzet (bv. een doorbelaste waarborgsom),
+  geef de factuur dan een verfijning met een vordering/schuld (bv. 1310 Waarborgsommen) en btw
+  "geen": het hele subtotaal gaat naar die rekening en de factuur valt buiten de aangifte.
+  Verlegde facturen met een reden als "outside the EU"/"buiten de EU" gaan naar 1e
+  (buiten_eu), niet naar 3b/ICP.
 - **Geen dubbeltelling**: een bankregel die aan een factuur of bonnetje is gekoppeld is alleen
   een betaling (bank tegen 1300 Debiteuren of 1600 Crediteuren, zonder btw). Omzet, kosten en
   btw komen uit het document.
@@ -214,6 +220,19 @@ de Excel, tot op de cent; een verschil moet exact verklaard zijn. Met `--uitvoer
 hij na het typen van de host met de service-role en controleert daarna productie opnieuw.
 Idempotent: opnieuw draaien schrijft niets dubbel. `--doel=pglite` doet alles lokaal (ook een
 tweede run als idempotentietest). Zie de kop van het script voor alle opties.
+
+### Bankmutaties boeken vanuit een uitgelezen afschrift
+
+`scripts/boekhouding-2026-boeken.mjs` boekt bankmutaties uit een voorstellenbestand
+(`boekingen-2026.json`, **niet** in de repo): per mutatie soort, btw-code, categorie, vennoot,
+koppeling aan een factuur en zekerheid. Interne overboekingen krijgen de tegenboeking op de
+andere eigen rekening; twijfelgevallen gaan op "te verwerken" met de vraag in de notitie.
+Zelfde werkwijze als de import: droog standaard (kopie van productie in PGlite), `--uitvoeren`
+met host-bevestiging, idempotent via `import_sleutel`, `--doel=pglite --export=<dump>` lokaal.
+Daarna controleert het: banksaldo per maandeinde = afschrift, elke mutatie precies één keer,
+btw per kwartaal (kern tegen een eigen optelling), omzet tegen de facturen en niets gewijzigd
+in vergrendelde perioden (alleen een expliciet gemarkeerde btw-loze correctie mag daar).
+Gedeelde hulpcode van beide scripts: `scripts/boekhouding-gemeen.mjs`.
 
 ### Bewaarplicht en audit
 
