@@ -202,6 +202,22 @@ export function kiesbareCategorieen(grootboek: Grootboekrekening[], soort: Boeki
   return [];
 }
 
+/** Balansrekeningen die nooit als tegenrekening van een factuur gekozen mogen worden. */
+const FACTUUR_BALANS_UITGESLOTEN = new Set<string>([GB.debiteuren, GB.crediteuren]);
+
+/**
+ * Een vordering of schuld (geen bank, btw of eigen vermogen) waar een factuur naartoe mag als
+ * het geen omzet is, bv. 1310 Waarborgsommen voor een doorbelaste borg of 1900 Vraagposten.
+ */
+export function isFactuurBalansrekening(g: Grootboekrekening): boolean {
+  return (g.soort === 'activa' || g.soort === 'passiva') && (g.rubriek === 'vorderingen' || g.rubriek === 'schulden') && !FACTUUR_BALANS_UITGESLOTEN.has(g.code);
+}
+
+/** Rekeningen voor de verfijning van een factuur: opbrengsten, of een vordering/schuld (geen omzet). */
+export function kiesbareFactuurRekeningen(grootboek: Grootboekrekening[]): Grootboekrekening[] {
+  return grootboek.filter((g) => g.actief && (g.soort === 'opbrengst' || isFactuurBalansrekening(g)));
+}
+
 export function standaardCategorie(soort: BoekingSoort): string | null {
   if (soort === 'uitgave') return GB.overigeKosten;
   if (soort === 'inkomst') return GB.omzet;

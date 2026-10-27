@@ -18,7 +18,7 @@ import {
   type ImportBoeking,
   type Kolommapping
 } from './kern/bankimport';
-import { kiesbareCategorieen } from './model';
+import { isFactuurBalansrekening, kiesbareCategorieen, kiesbareFactuurRekeningen } from './model';
 import { BoekhoudFout, journaalVan, laadAlles, type BoekhoudRepo } from './repo/types';
 import { aangifteRubrieken, betalingFout, naarSnapshot, teBetalenCenten } from './kern/aangifte';
 import { activumAlsInvoer, activumVergrendelFout, parseActivumInvoer, type ActivumWaarde } from './kern/afschrijving';
@@ -174,19 +174,23 @@ export async function bronExtraActie(request: Request, repo: BoekhoudRepo): Prom
   const oud = extra.find((e) => e.bron === body.bron && e.bronId === body.bronId);
   const leeg = (v: unknown) => v === null || v === '' || v === undefined;
 
-  let btwCode = oud?.btwCode ?? null;
-  if (body.btwCode !== undefined) {
-    if (leeg(body.btwCode)) btwCode = null;
-    else if (!isBtwCode(body.btwCode) || (body.bron === 'factuur' && body.btwCode === 'geen')) return json({ error: 'Kies een geldig btw-tarief.', veld: 'btwCode' }, 400);
-    else btwCode = body.btwCode;
-  }
   let grootboek = oud?.grootboek ?? null;
   if (body.grootboek !== undefined) {
     if (leeg(body.grootboek)) grootboek = null;
-    else if (!kiesbareCategorieen(stam.grootboek, body.bron === 'factuur' ? 'inkomst' : 'uitgave').some((g) => g.code === body.grootboek)) {
+    else if (!(body.bron === 'factuur' ? kiesbareFactuurRekeningen(stam.grootboek) : kiesbareCategorieen(stam.grootboek, 'uitgave')).some((g) => g.code === body.grootboek)) {
       return json({ error: 'Kies een geldige categorie.', veld: 'grootboek' }, 400);
     } else grootboek = String(body.grootboek);
   }
+  // Een factuur zonder btw ('geen', buiten de aangifte) kan alleen als die naar een
+  // vordering/schuld gaat (bv. een doorbelaste waarborgsom op 1310): omzet valt altijd in een rubriek.
+  const naarBalans = body.bron === 'factuur' && grootboek !== null && stam.grootboek.some((g) => g.code === grootboek && isFactuurBalansrekening(g));
+  let btwCode = oud?.btwCode ?? null;
+  if (body.btwCode !== undefined) {
+    if (leeg(body.btwCode)) btwCode = null;
+    else if (!isBtwCode(body.btwCode) || (body.bron === 'factuur' && body.btwCode === 'geen' && !naarBalans)) return json({ error: 'Kies een geldig btw-tarief.', veld: 'btwCode' }, 400);
+    else btwCode = body.btwCode;
+  }
+  if (body.bron === 'factuur' && btwCode === 'geen' && !naarBalans) return json({ error: 'Zonder btw kan een factuur alleen naar een vordering of schuld (geen omzet).', veld: 'btwCode' }, 400);
   let vennootId = oud?.vennootId ?? null;
   if (body.vennootId !== undefined) {
     if (leeg(body.vennootId)) vennootId = null;

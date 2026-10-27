@@ -261,13 +261,16 @@ export function memoriaalNaarPost(m: Memoriaal): JournaalPost {
  *     (subtotaal − revenue_subtotal), C 1500/1505 btw zoals gefactureerd (vat_amount).
  * Een creditfactuur (negatieve bedragen) keert vanzelf om. Aanbetaling en restfactuur zijn
  * elk een eigen factuur met eigen bedragen, dus niets telt dubbel.
+ * Een verfijning met een eigen rekening (bk_bron_extra.grootboek) krijgt het HELE subtotaal,
+ * ook de regels zonder omzet-vinkje: zo kan bv. een doorbelaste waarborgsom naar een
+ * balansrekening (1310) in plaats van naar 8090, en telt die niet als omzet.
  */
 export function factuurNaarPost(f: FactuurBron, extra?: BronExtra | null): JournaalPost {
   const code = factuurBtwCode(f, extra);
   const zonderNlBtw = code !== '21' && code !== '9';
   const omzetRekening = extra?.grootboek ?? (zonderNlBtw ? '8010' : GB.omzet);
   const btw = zonderNlBtw ? 0 : f.btw;
-  const doorberekend = f.subtotaal - f.omzet;
+  const doorberekend = extra?.grootboek ? 0 : f.subtotaal - f.omzet;
   // Sluitpost: het totaal is altijd subtotaal + btw; een eventueel verschil (afronding in een
   // oude factuur) valt in de omzet, zodat de post sluit en debiteuren klopt met de factuur.
   const omzet = f.totaal - btw - doorberekend;

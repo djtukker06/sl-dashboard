@@ -163,14 +163,24 @@ export function bronExtraUitRij(r: Rij): BronExtra | null {
 const EU_REDEN = /\b(eu|e\.u\.|intra-?communautair|icp|art(ikel)?\.?\s*(44|138|196)|reverse charge|lidstaat|vat\s?id|ust-?id)/i;
 
 /**
+ * Woorden die juist op een afnemer BUITEN de EU wijzen ("outside the EU", "buiten de EU",
+ * "non-EU", "derde land"). Die bevatten ook het woord "EU", dus deze test gaat vóór EU_REDEN.
+ */
+const BUITEN_EU_REDEN = /\b(outside|buiten|non|niet)[\s-]*(the\s+|de\s+)?(eu\b|e\.u\.|europese unie|european union)|third[\s-]countr|derde[\s-]?land/i;
+
+/**
  * Btw-code van een factuur:
- *   verlegd → eu_dienst (3b) als de reden naar een EU-afnemer wijst, anders verlegd_nl (1e);
+ *   verlegd → buiten_eu (1e) als de reden naar een afnemer buiten de EU wijst,
+ *             eu_dienst (3b) als de reden naar een EU-afnemer wijst, anders verlegd_nl (1e);
  *   anders volgens het percentage: 21 → 1a, 9 → 1b, 0 → 1e.
  * Een verfijning (bk_bron_extra.btw_code) gaat voor.
  */
 export function factuurBtwCode(f: FactuurBron, extra?: BronExtra | null): BtwCode {
   if (extra?.btwCode) return extra.btwCode;
-  if (f.verlegd) return f.verlegdReden && EU_REDEN.test(f.verlegdReden) ? 'eu_dienst' : 'verlegd_nl';
+  if (f.verlegd) {
+    if (f.verlegdReden && BUITEN_EU_REDEN.test(f.verlegdReden)) return 'buiten_eu';
+    return f.verlegdReden && EU_REDEN.test(f.verlegdReden) ? 'eu_dienst' : 'verlegd_nl';
+  }
   if (f.btwPct === 9) return '9';
   if (f.btwPct === 0 || f.btw === 0) return '0';
   return '21';

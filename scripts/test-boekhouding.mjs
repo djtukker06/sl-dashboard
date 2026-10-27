@@ -580,6 +580,15 @@ await test("bronnen: btw-code van facturen en bonnetjes, categorie → grootboek
   assert.equal(bronnen.factuurBtwCode(F({ verlegd: true, verlegdReden: "art. 196 Btw-richtlijn" })), "eu_dienst");
   assert.equal(bronnen.factuurBtwCode(F({ verlegd: true, verlegdReden: "Onderaanneming, btw verlegd" })), "verlegd_nl");
   assert.equal(bronnen.factuurBtwCode(F({ verlegd: true }), { btwCode: "buiten_eu" }), "buiten_eu");
+  // "outside the EU" / "buiten de EU" bevat het woord EU, maar is juist geen EU-afnemer (1e, geen ICP).
+  for (const reden of [
+    "No Dutch VAT charged. B2B services supplied to a business customer established outside the EU. Place of supply is outside the Netherlands.",
+    "B2B diensten met bedrijf gevestigd buiten de EU.",
+    "Non-EU customer",
+    "Dienst aan afnemer in een derde land",
+  ]) assert.equal(bronnen.factuurBtwCode(F({ verlegd: true, verlegdReden: reden })), "buiten_eu", reden);
+  assert.equal(bronnen.factuurBtwCode(F({ verlegd: true, verlegdReden: "Reverse charge, customer in an EU member state" })), "eu_dienst");
+  assert.equal(bronnen.factuurBtwCode(F({ verlegd: true, verlegdReden: "Btw niet van toepassing. Doorbelasting 50% borg kantoorruimte" })), "verlegd_nl");
   assert.equal(bronnen.uitgaveBtwCode(U({ tarief: "verlegd" })), "eu_dienst");
   assert.equal(bronnen.uitgaveBtwCode(U({ tarief: "verlegd" }), { btwCode: "verlegd_nl" }), "verlegd_nl");
   assert.equal(bronnen.uitgaveGrootboek(U()), "4010");
@@ -607,6 +616,27 @@ await test("journaal: factuur 21%, doorberekende kosten, verlegd EU (3b), 9%, cr
   assert.equal(regels(journaal.factuurNaarPost(F({ totaal: 363001 }))), "1300:D363001 1500:C63000 8000:C300001");
   // Verfijning: andere omzetrekening.
   assert.equal(regels(journaal.factuurNaarPost(F(), { bron: "factuur", bronId: "x", btwCode: null, grootboek: "8900", vennootId: null, notitie: null })), "1300:D363000 1500:C63000 8900:C300000");
+});
+await test("journaal: factuur met verfijning naar een balansrekening (doorbelaste borg) is geen omzet en valt buiten de aangifte", () => {
+  // 26-017-achtig: één regel zonder omzet-vinkje (omzet 0), btw verlegd aangevinkt.
+  const borg = F({ verlegd: true, verlegdReden: "Btw niet van toepassing. Doorbelasting 50% borg kantoorruimte", btwPct: 0, btw: 0, subtotaal: 113476, omzet: 0, totaal: 113476 });
+  // Zonder verfijning: alles op 8090 (omzet) en grondslag in 1e.
+  assert.equal(regels(journaal.factuurNaarPost(borg)), "1300:D113476 8090:C113476");
+  // Met verfijning 1310 + geen btw: het hele subtotaal naar 1310, geen rubriek.
+  const p = journaal.factuurNaarPost(borg, { bron: "factuur", bronId: "x", btwCode: "geen", grootboek: "1310", vennootId: null, notitie: null });
+  assert.equal(regels(p), "1300:D113476 1310:C113476");
+  assert.equal(p.btw.rubriek, null);
+  const gb = [...stam.grootboek, { code: "1310", naam: "Waarborgsommen", soort: "activa", rubriek: "vorderingen", rgs: "BVor", btw: null, systeem: false, actief: true, hint: null, volgorde: 1310 }];
+  const wv = rap.winstEnVerlies([p], gb, 2026);
+  assert.equal(wv.groepen.find((g) => g.id === "omzet")?.jaar ?? 0, 0);
+  // Een verfijning met een opbrengstrekening krijgt ook het doorberekende deel (geen 8090 meer).
+  assert.equal(regels(journaal.factuurNaarPost(F({ omzet: 250000 }), { bron: "factuur", bronId: "x", btwCode: null, grootboek: "8000", vennootId: null, notitie: null })), "1300:D363000 1500:C63000 8000:C300000");
+  // Kiesbaar voor een factuur: opbrengsten + vorderingen/schulden, nooit debiteuren/crediteuren/bank/btw.
+  const k = model.kiesbareFactuurRekeningen(gb).map((g) => g.code);
+  for (const c of ["8000", "8010", "8090", "8900", "1310", "1900"]) assert.ok(k.includes(c), c);
+  for (const c of ["1100", "1300", "1600", "1500", "1520", "0600", "4000", "2000"]) assert.ok(!k.includes(c), c);
+  assert.ok(model.isFactuurBalansrekening(gb.find((g) => g.code === "1310")));
+  assert.ok(!model.isFactuurBalansrekening(gb.find((g) => g.code === "8000")));
 });
 await test("journaal: aanbetaling + restfactuur tellen samen precies één keer", () => {
   const a = journaal.factuurNaarPost(F({ id: "a", aanbetaling: true, subtotaal: 150000, omzet: 150000, btw: 31500, totaal: 181500 }));
