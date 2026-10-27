@@ -196,6 +196,21 @@ aangifte). Kapitaal- en privéregels krijgen automatisch de vennoot.
 CSV: UTF-8 met BOM, puntkomma, decimale komma (Excel NL); tekst die met = + - @ begint krijgt
 een apostrof (geen formules).
 
+### Import van eerdere jaren (Excel)
+
+`scripts/boekhouding-importeren.mjs` zet de boekhouding van eerdere jaren (uit de
+Excel-jaarrekeningen) in de bk-tabellen: instellingen, bankrekeningen met beginsaldo, eigen
+grootboekrekeningen, activa, memoriaal (inbreng, privé voorgeschoten kosten, kapitaalrente),
+alle bankregels (met vaste `import_sleutel`), ingediende btw-aangiften met de betalingen
+gekoppeld en de jaarafsluiting. Invoer is een map met de uitgelezen Excel en een mapping
+(JSON); die staat **niet** in de repo. Standaard is de tool droog: hij leest productie alleen,
+zet een kopie in een lokale PGlite-database, importeert daar en vergelijkt elk getal (W&V,
+balans, btw per kwartaal, afschrijving per activum, kapitaal per vennoot, elke bankregel) met
+de Excel, tot op de cent; een verschil moet exact verklaard zijn. Met `--uitvoeren` schrijft
+hij na het typen van de host met de service-role en controleert daarna productie opnieuw.
+Idempotent: opnieuw draaien schrijft niets dubbel. `--doel=pglite` doet alles lokaal (ook een
+tweede run als idempotentietest). Zie de kop van het script voor alle opties.
+
 ### Bewaarplicht en audit
 
 Bankregels worden nooit echt verwijderd (markeren met reden; art. 52 AWR, 7 jaar). Vergrendelde
