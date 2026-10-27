@@ -38,8 +38,9 @@
  *   - Elke regel gaat door de invoercontrole van de app (parseBoekingInvoer); factuurkoppelingen
  *     door koppelFout (bedrag, open saldo, vergrendeling).
  *   - Vergrendelde perioden (ingediende aangifte, afgesloten jaar) worden niet gewijzigd. Enige
- *     uitzondering: de 2025-correctie, als die als btw-loos is gemarkeerd (overboeking/privé,
- *     vergrendeld_toegestaan). De controle eist dat elke ingediende aangifte exact gelijk
+ *     uitzondering: de 2025-correctie (vergrendeld_toegestaan), en alleen btw-loze regels: een
+ *     overboeking/privé, of regels zonder btw die per kwartaal, soort en grootboekrekening per saldo
+ *     0 zijn (bv. een per abuis ontvangen en in hetzelfde kwartaal terugbetaald bedrag). De controle eist dat elke ingediende aangifte exact gelijk
  *     herberekent als vóór de run en dat er in vergrendelde perioden niets anders verandert.
  *   - Facturen (invoices) en bonnetjes (expenses) worden alleen gelezen, nooit gewijzigd.
  */
@@ -235,6 +236,9 @@ async function boek(sb, { eigenaar, tx }) {
         const k = `${x.rekening_id}|${x.datum}|${mutatie(x)}`;
         teller.set(k, (teller.get(k) ?? 0) + 1);
       }
+      const groepVan = (x) => `${K.periode.jaarVan(x.datum)}-Q${K.periode.kwartaalVan(x.datum)}|${x.soort}|${x.grootboek ?? ""}|${x.vennoot ?? ""}`;
+      const nulGroep = new Map();
+      for (const x of lijst) if (x.vergrendeld_toegestaan && x.btw_code === "geen") nulGroep.set(groepVan(x), (nulGroep.get(groepVan(x)) ?? 0) + mutatie(x));
       const nieuw = [];
       let aanwezig = 0;
       for (const v of lijst) {
@@ -262,7 +266,11 @@ async function boek(sb, { eigenaar, tx }) {
           }
           const slot = K.periode.vergrendeldReden(w.datum, stam.vergrendeling);
           if (slot) {
-            const btwLoos = ["overboeking", "prive"].includes(w.soort) && w.btw === 0;
+            // Btw-loos: een overboeking/privé, of een regel zonder btw waarvan de groep (kwartaal, soort,
+            // grootboek, vennoot) in deze lijst per saldo 0 is (bv. een per abuis ontvangen en in hetzelfde
+            // kwartaal terugbetaald bedrag). Resultaat en aangifte van het kwartaal veranderen dan niet; de
+            // controle 'aangifte … herberekent gelijk' blijft de borg.
+            const btwLoos = w.btw === 0 && w.btwCode === "geen" && (["overboeking", "prive"].includes(w.soort) || (nulGroep.get(groepVan(r0)) ?? 1) === 0);
             if (!(magVergrendeld && r0.vergrendeld_toegestaan && btwLoos)) throw new Conflict(`${r0.import_sleutel}: ${slot}`);
             if (stam.vergrendeling.boekjaren.includes(Number(w.datum.slice(0, 4)))) throw new Conflict(`${r0.import_sleutel}: boekjaar ${w.datum.slice(0, 4)} is afgesloten`);
           }
@@ -345,7 +353,8 @@ function slotafdruk(data, posten) {
   const aangiften = Object.fromEntries(data.aangiften.map((a) => [`${a.jaar}-Q${a.kwartaal}`, JSON.stringify(K.aangifte.aangifteRubrieken(posten, a.jaar, a.kwartaal))]));
   const vergrendeld = new Map();
   for (const p of posten) if (K.periode.vergrendeldReden(p.datum, v)) vergrendeld.set(p.id, JSON.stringify(p.regels));
-  return { aangiften, vergrendeld };
+  const wv2025 = JSON.stringify(K.rapporten.winstEnVerlies(posten, data.stam.grootboek, 2025).resultaat);
+  return { aangiften, vergrendeld, wv2025 };
 }
 
 async function controle(sb, eigenaar, voor) {
@@ -400,7 +409,7 @@ async function controle(sb, eigenaar, voor) {
   const extra = sysSet.filter((x, i, a) => a.indexOf(x) === i && a.filter((y) => y === x).length > bankSet.filter((y) => y === x).length);
   const mist = bankSet.filter((x, i, a) => a.indexOf(x) === i && a.filter((y) => y === x).length > sysSet.filter((y) => y === x).length);
   rij("Bankmutaties", "RegioBank-regels 1-1 t/m 30-9-2026 (datum + bedrag) = afschrift", bankSet.length, sysSet.length, !extra.length && !mist.length && bankSet.length === sysSet.length ? "gelijk" : "AFWIJKING", [extra.length ? `te veel: ${extra.join(", ")}` : "", mist.length ? `ontbreekt: ${mist.join(", ")}` : ""].filter(Boolean).join("; "));
-  for (const c of CORRECTIES) rij("Bankmutaties", `Correctie 2025 ${c.datum} ${euro(-c.bedrag_centen)} precies één keer`, 1, perSleutel(regio.id, c.import_sleutel));
+  for (const c of CORRECTIES) rij("Bankmutaties", `Correctie 2025 ${c.datum} ${euro(mutatie(c))} ${c.tegenpartij ?? ""} precies één keer`, 1, perSleutel(regio.id, c.import_sleutel));
   const tegen = TE_BOEKEN.filter((v) => v.tegenboeking);
   const kruis2026 = [...R.mutaties(posten, "2026-01-01", "2026-09-30").entries()].find(([c]) => c === "2000")?.[1] ?? 0;
   rij("Bankmutaties", `Overboekingen RegioBank → Revolut (${tegen.length}): kruisposten 2026 per saldo nul`, 0, kruis2026);
@@ -438,13 +447,19 @@ async function controle(sb, eigenaar, voor) {
   const q1 = K.aangifte.teBetalenCenten(K.aangifte.aangifteRubrieken(posten, 2026, 1));
   const btwBetaald = P.boekingen.filter((v) => v.soort === "btw" && v.koppeling?.aangifte === "2026-1").reduce((t, v) => t + v.bedrag_centen, 0);
   if (btwBetaald) {
+    // De eigenaar gaf Q1 kennelijk op kasbasis aan (zoals de hele Excel-administratie 2025): in Q1 ontvangen
+    // van Paus 25-023 (17-01), 26-001 (18-02) en 26-002 (04-03) = 3 × btw € 10,50 = € 31,50, min voorbelasting
+    // klantonderzoek ≈ € 3,15 → € 28. Het systeem werkt met het factuurstelsel en telt daarnaast 26-003
+    // (24-03) en 26-004 (factuurdatum Q1) mee, die pas in april binnenkwamen, en de voorbelasting van Reconi.
     const f003 = data.facturen.find((f) => f.nummer === "26-003");
+    const f004 = data.facturen.find((f) => f.nummer === "26-004");
     const b25 = data.boekingen.find((b) => b.kenmerk === "25-023");
     const reconi = data.boekingen.find((b) => b.datum.startsWith("2026-01") && /reconi/i.test(b.omschrijving));
-    const verklaard = (f003?.btw ?? 0) + (b25?.btw ?? 0) - (reconi?.btw ?? 0);
+    const inQ1 = (f) => !!f && f.datum >= "2026-01-01" && f.datum <= "2026-03-31";
+    const verklaard = (inQ1(f003) ? f003.btw : 0) + (inQ1(f004) ? f004.btw : 0) - (reconi?.btw ?? 0);
     const exact = K.aangifte.aangifteRubrieken(posten, 2026, 1).saldo.centen;
     const rest = exact - verklaard - btwBetaald;
-    rij("Btw Q1 2026", "Betaald (28-04-2026) ↔ systeem", btwBetaald, q1, rest >= 0 && rest < 100 ? "verklaard" : "AFWIJKING", `Systeem (factuurstelsel) ${euro(exact)} exact. Betaald ${euro(btwBetaald)}: dat past bij alleen de 3 Paus-facturen (€ 31,50) − voorbelasting klantonderzoek (€ 3,15) = € 28,35. Verschil ${euro(exact - btwBetaald)} = 26-003 (24-03, btw ${euro(f003?.btw)}, betaald in april) + 25-023 (btw ${euro(b25?.btw)}) − voorbelasting Reconi ${euro(reconi?.btw)} = ${euro(verklaard)}, plus ${euro(rest)} afronding op hele euro's. Rechtzetten in de volgende aangifte (onder € 1.000) of met een suppletie Q1.`);
+    rij("Btw Q1 2026", "Betaald (28-04-2026) ↔ systeem", btwBetaald, q1, inQ1(f003) && inQ1(f004) && rest >= 0 && rest < 100 ? "verklaard" : "AFWIJKING", `Systeem (factuurstelsel) ${euro(exact)} exact. Betaald ${euro(btwBetaald)}: past bij een aangifte op kasbasis met de 3 Paus-betalingen die in Q1 binnenkwamen (25-023, 26-001, 26-002: btw € 31,50) − voorbelasting klantonderzoek (€ 3,15) = € 28,35. Verschil ${euro(exact - btwBetaald)} = 26-003 (btw ${euro(f003?.btw)}) + 26-004 (btw ${euro(f004?.btw)}; beide factuurdatum Q1, pas in april ontvangen) − voorbelasting Reconi ${euro(reconi?.btw)} = ${euro(verklaard)}, plus ${euro(rest)} afronding op hele euro's. 25-023 (btw ${euro(b25?.btw)}) zit waarschijnlijk al in de ${euro(btwBetaald)}. Laten bevestigen met de ingediende rubrieken 1a/5b; 26-003/26-004 bij Q2 NIET nog eens op kasbasis meenemen (het systeem telt ze al in Q1).`);
   }
 
   // 4. Omzet 2026 ↔ facturen
@@ -463,6 +478,7 @@ async function controle(sb, eigenaar, voor) {
   const anders = [];
   for (const [id, r] of voor.vergrendeld) if (na.vergrendeld.get(id) !== r) anders.push(`gewijzigd/weg: ${id}`);
   for (const [id] of na.vergrendeld) if (!voor.vergrendeld.has(id) && !correctieIds.has(id)) anders.push(`nieuw: ${id}`);
+  rij("Vergrendeld", "Resultaat (W&V) 2025 gelijk aan vóór de run (2025-correctie per saldo zonder resultaateffect)", 1, na.wv2025 === voor.wv2025 ? 1 : 0);
   rij("Vergrendeld", `Journaalposten in vergrendelde perioden ongewijzigd (alleen ${correctieIds.size} correctie(s) erbij)`, 0, anders.length, undefined, anders.slice(0, 5).join("; "));
 
   // 6. Samenhang
@@ -490,7 +506,7 @@ function toon(rapport, titel) {
   let deel = "";
   for (const r of rapport.rijen) {
     if (r.onderdeel !== deel) log(`  ${(deel = r.onderdeel)}`);
-    const f = (v) => (typeof v === "number" && !/precies|Mutaties|regels|Aangifte|perioden|Balans sluit|te verwerken|tegenboekingen\)$/i.test(r.post) ? euro(v) : v ?? "—");
+    const f = (v) => (typeof v === "number" && !/precies|Mutaties|regels|Aangifte|Resultaat|perioden|Balans sluit|te verwerken|tegenboekingen\)$/i.test(r.post) ? euro(v) : v ?? "—");
     log(`    ${r.status.padEnd(10)} ${r.post.padEnd(84)} verwacht ${String(f(r.verwacht)).padStart(12)}  systeem ${String(f(r.systeem)).padStart(12)}${r.verklaring ? `\n${" ".repeat(16)}→ ${r.verklaring}` : ""}`);
   }
   return afw;
