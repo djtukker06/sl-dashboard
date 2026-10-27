@@ -381,7 +381,7 @@ async function controle(sb, eigenaar, voor) {
   // 2. Elke mutatie precies één keer
   const sleutelRijen = [];
   for (const r of data.stam.rekeningen) {
-    const d = ok(await sb.from("bk_boekingen").select("id, rekening_id, import_sleutel, datum, bedrag_centen, richting, status, verwijderd_op").eq("rekening_id", r.id).limit(50000), "boekingen");
+    const d = ok(await sb.from("bk_boekingen").select("id, rekening_id, import_sleutel, datum, bedrag_centen, richting, soort, status, verwijderd_op").eq("rekening_id", r.id).limit(50000), "boekingen");
     sleutelRijen.push(...d);
   }
   const actief = sleutelRijen.filter((x) => !x.verwijderd_op);
@@ -414,7 +414,9 @@ async function controle(sb, eigenaar, voor) {
   const kruis2026 = [...R.mutaties(posten, "2026-01-01", "2026-09-30").entries()].find(([c]) => c === "2000")?.[1] ?? 0;
   rij("Bankmutaties", `Overboekingen RegioBank → Revolut (${tegen.length}): kruisposten 2026 per saldo nul`, 0, kruis2026);
   const revSom = tegen.reduce((t, v) => t + v.bedrag_centen, 0);
-  rij("Bankmutaties", "Revolut: ontvangen van RegioBank 2026 (som tegenboekingen)", revSom, R.mutaties(posten, "2026-01-01", "2026-09-30").get(revolut.grootboek) ?? 0, undefined, "Revolut-uitgaven ontbreken nog (komen met de Revolut-import)");
+  // Alleen de overboekingen van RegioBank tellen (op Revolut staan inmiddels ook eigen uitgaven).
+  const revBij = actief.filter((x) => x.rekening_id === revolut.id && x.soort === "overboeking" && x.richting === "bij" && x.datum >= "2026-01-01" && x.datum <= "2026-09-30").reduce((t, x) => t + Number(x.bedrag_centen), 0);
+  rij("Bankmutaties", "Revolut: ontvangen van RegioBank 2026 (som tegenboekingen)", revSom, revBij);
 
   // 3. Btw per kwartaal 2026: kern ↔ onafhankelijke optelling uit facturen + voorstellen
   for (const kw of [1, 2, 3]) {
