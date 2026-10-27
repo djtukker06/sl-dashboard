@@ -808,6 +808,20 @@ await test("bankimport: generiek formaat met kopregel en Af/Bij (gok + kolomkeuz
   const y = imp.leesAfschrift("-12,50;03-10-2026;Lunch;ID1\n", { mapping: m });
   assert.deepEqual(y.regels.map((r) => [r.datum, r.bedrag, r.omschrijving, r.sleutel]), [["2026-10-03", -1250, "Lunch", "g:ID1"]]);
 });
+await test("bankimport: regel die al los geboekt is (Excel/handmatig) wordt niet nog eens geïmporteerd", () => {
+  // Excel rij 130: btw Q4 2025 betaald op 29-01-2026, € 642, RegioBank, zonder import_id.
+  const excel = maak({ soort: "btw", richting: "af", bedrag: 64200, btwCode: "geen", btw: 0, grootboek: null, datum: "2026-01-29", omschrijving: "Belastingdienst btw Q4 2025" });
+  const viaCsv = maak({ datum: "2026-01-29", bedrag: 64200, importId: "imp-1" });
+  const andereRek = maak({ rekeningId: RV, soort: "btw", richting: "af", bedrag: 64200, btwCode: "geen", btw: 0, grootboek: null, datum: "2026-01-29" });
+  const excl = maak({ datum: "2026-02-03", bedrag: 10000, isExcl: true, btw: 2100 });
+  const t = imp.losGeboekteRegels([excel, viaCsv, andereRek, excl], RB);
+  assert.equal(imp.neemLosGeboekt(t, { datum: "2026-01-29", bedrag: -64200 }), true, "zelfde datum, af, bedrag: dubbel");
+  assert.equal(imp.neemLosGeboekt(t, { datum: "2026-01-29", bedrag: -64200 }), false, "maar één exemplaar los geboekt");
+  assert.equal(imp.neemLosGeboekt(t, { datum: "2026-01-29", bedrag: 64200 }), false, "andere richting");
+  assert.equal(imp.neemLosGeboekt(t, { datum: "2026-01-30", bedrag: -64200 }), false, "andere datum");
+  assert.equal(imp.neemLosGeboekt(t, { datum: "2026-02-03", bedrag: -10000 }), false, "excl.: vergelijkt de bankmutatie");
+  assert.equal(imp.neemLosGeboekt(t, { datum: "2026-02-03", bedrag: -12100 }), true, "excl. € 100 + 21% = € 121 van de bank");
+});
 await test("bankimport: voorstel (eigen rekening, fee, geschiedenis, Belastingdienst, standaard)", () => {
   const rek = stam.rekeningen.map((r) => (r.id === RV ? { ...r, iban: "LT123250012345678901" } : r));
   const a = imp.leesAfschrift(fixture("regiobank.csv"));
