@@ -1,7 +1,8 @@
 // De opslag van de boekhouding achter één interface, met twee implementaties:
 //   - repo/supabase.ts  de echte tabellen (bk_*, migratie 0027), via de RLS-cliënt van het teamlid;
-//   - repo/demo.ts      voorbeeldgegevens in het geheugen van de server (per teamlid), zolang
-//                       0027 niet is uitgevoerd of BOEKHOUDING_DEMO=1. Schrijft NIETS naar Supabase.
+//   - repo/demo.ts      voorbeeldgegevens in het geheugen van de server (per teamlid), alleen met
+//                       BOEKHOUDING_DEMO=1 (ontbrekende tabellen geven "nog niet ingericht", nooit
+//                       de demo). Schrijft NIETS naar Supabase.
 // Schermen, API-routes en rapporten praten alleen met deze interface en de pure kern.
 
 import type { Centen } from '../kern/geld';

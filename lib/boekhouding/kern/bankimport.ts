@@ -490,6 +490,34 @@ export function stelVoor(r: ImportRegel, geschiedenis: readonly Boeking[], reken
     : { soort: 'uitgave', btwCode: '21', grootboek: GB.overigeKosten, vennootId: null, bron: 'standaard' };
 }
 
+/**
+ * Bankregels die al los in de boekhouding staan (handmatig ingevoerd of uit de Excel-jaarrekening
+ * overgenomen: geen import_id) op deze rekening, geteld per datum|bankmutatie. Zo'n regel heeft
+ * een andere importsleutel dan dezelfde regel in een CSV-afschrift; zonder deze controle komt de
+ * betaling er bij het importeren van het afschrift een tweede keer in.
+ */
+export function losGeboekteRegels(boekingen: readonly Boeking[], rekeningId: string): Map<string, number> {
+  const teller = new Map<string, number>();
+  for (const b of boekingen) {
+    if (b.rekeningId !== rekeningId || b.importId !== null) continue;
+    const k = `${b.datum}|${berekenBoeking(b).bankMutatie}`;
+    teller.set(k, (teller.get(k) ?? 0) + 1);
+  }
+  return teller;
+}
+
+/**
+ * Staat deze afschriftregel al los geboekt? Verbruikt één exemplaar uit de teller, zodat twee
+ * gelijke CSV-regels tegenover één losse boeking er één als dubbel geven en één als nieuw.
+ */
+export function neemLosGeboekt(teller: Map<string, number>, r: Pick<ImportRegel, 'datum' | 'bedrag'>): boolean {
+  const k = `${r.datum}|${r.bedrag}`;
+  const n = teller.get(k) ?? 0;
+  if (n <= 0) return false;
+  teller.set(k, n - 1);
+  return true;
+}
+
 /** Een geïmporteerde regel als boeking (status "te verwerken"), met het voorstel. */
 export interface ImportBoeking extends BoekingWaarde {
   tegenrekening: string | null;

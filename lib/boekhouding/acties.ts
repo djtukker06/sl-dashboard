@@ -10,7 +10,9 @@ import {
   MAX_IMPORT_REGELS,
   isKolommapping,
   leesAfschrift,
+  losGeboekteRegels,
   naarImportBoeking,
+  neemLosGeboekt,
   stelVoor,
   type AfschriftFormaat,
   type ImportBoeking,
@@ -55,13 +57,17 @@ export async function importActie(request: Request, repo: BoekhoudRepo): Promise
   if (afschrift.regels.length > MAX_IMPORT_REGELS) return fout(400, `Maximaal ${MAX_IMPORT_REGELS} regels per keer. Exporteer een kortere periode.`);
 
   const sleutels = await repo.importSleutels(rek.id);
+  const losGeboekt = losGeboekteRegels(boekingen, rek.id);
   const vandaag = vandaagNL();
   const gezien = new Set<string>();
   const regels = afschrift.regels.map((r) => {
     let status: ImportRegelStatus = 'nieuw';
     let reden: string | null = null;
     if (sleutels.has(r.sleutel) || gezien.has(r.sleutel)) status = 'dubbel';
-    else if (r.datum < '2000-01-01' || r.datum > plusDagen(vandaag, 1)) {
+    else if (neemLosGeboekt(losGeboekt, r)) {
+      status = 'dubbel';
+      reden = 'staat al in de boekhouding (handmatig ingevoerd of uit Excel overgenomen)';
+    } else if (r.datum < '2000-01-01' || r.datum > plusDagen(vandaag, 1)) {
       status = 'buiten_bereik';
       reden = 'datum in de toekomst of te ver terug';
     } else if (rek.begindatum && r.datum < rek.begindatum) {

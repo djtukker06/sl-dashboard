@@ -63,8 +63,9 @@ README ("Team & toegang", "Tweestapsverificatie (2FA)", "Back-ups en keep-alive"
   `expenses`, `quotes` of `clients` (rooktest). Nooit de service-role; altijd de RLS-cliënt
   van het teamlid. Exports: `Cache-Control: private, no-store`, `nosniff`, CSV zonder
   formule-injectie.
-- **Demo-modus** schrijft niets naar de database en kiest alleen de demo bij een ontbrekende
-  tabel of `BOEKHOUDING_DEMO=1`; elke andere fout is een foutmelding (fail closed).
+- **Demo-modus** schrijft niets naar de database en staat alleen aan met `BOEKHOUDING_DEMO=1`;
+  een ontbrekende tabel (0027 niet uitgevoerd) geeft de melding "nog niet ingericht" (503
+  `niet_ingericht`), nooit voorbeeldgegevens; elke andere fout is een foutmelding (fail closed).
 
 ## 3. Resterende risico's (eerlijk)
 
