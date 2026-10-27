@@ -1,7 +1,8 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { vereisTeamlidPagina } from '@/lib/auth/team';
-import { demoAfgedwongen, kiesRepo } from '@/lib/boekhouding/modus';
+import { repoVoorPagina } from '@/lib/boekhouding/modus';
+import { NietIngericht } from '@/components/boekhouding/NietIngericht';
 import { isUuid } from '@/lib/boekhouding/api';
 import { ActivumScherm } from '@/components/boekhouding/ActivaSchermen';
 
@@ -13,8 +14,9 @@ export default async function ActivumPage({ params }: { params: Promise<{ id: st
   const { id } = await params;
   const lid = await vereisTeamlidPagina(`/boekhouding/activa/${encodeURIComponent(id)}`);
   if (!isUuid(id)) notFound();
-  const repo = await kiesRepo(lid);
-  const scherm = await ActivumScherm({ repo, id, demoReden: demoAfgedwongen() ? 'env' : 'migratie' });
+  const repo = await repoVoorPagina(lid);
+  if (!repo) return <NietIngericht titel="Activum" />;
+  const scherm = await ActivumScherm({ repo, id });
   if (!scherm) notFound();
   return scherm;
 }

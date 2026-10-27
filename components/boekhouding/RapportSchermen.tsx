@@ -45,7 +45,7 @@ function bronHref(bron: JournaalPost['bron'], id: string): string | null {
   return null;
 }
 
-export async function RapportenScherm({ repo, sp, demoReden }: { repo: BoekhoudRepo; sp: Zoekparams; demoReden: 'env' | 'migratie' }) {
+export async function RapportenScherm({ repo, sp }: { repo: BoekhoudRepo; sp: Zoekparams }) {
   const data = await laadAlles(repo);
   const vandaag = vandaagNL();
   const jaren = boekjarenLijst(data, vandaag);
@@ -67,7 +67,7 @@ export async function RapportenScherm({ repo, sp, demoReden }: { repo: BoekhoudR
   return (
     <div className="bh">
       <BoekhoudingKop titel="Rapporten & jaarrekening" />
-      <Demo repo={repo} reden={demoReden} />
+      <Demo repo={repo} />
       <div className="bh-inhoud bh-rap">
         <nav className="bh-rek-tabs bh-rap-jaren" aria-label="Boekjaar">
           {jaren.map((j) => (

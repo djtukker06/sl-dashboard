@@ -44,7 +44,7 @@ function herkomstVan(a: Activum, d: BoekhoudData): { label: string; href: string
   return { label: 'Ingebracht / al in bezit', href: null };
 }
 
-export async function ActivaScherm({ repo, sp, demoReden }: { repo: BoekhoudRepo; sp: Zoekparams; demoReden: 'env' | 'migratie' }) {
+export async function ActivaScherm({ repo, sp }: { repo: BoekhoudRepo; sp: Zoekparams }) {
   const data = await laadAlles(repo);
   const vandaag = vandaagNL();
   const nu = jaarVan(vandaag);
@@ -77,13 +77,13 @@ export async function ActivaScherm({ repo, sp, demoReden }: { repo: BoekhoudRepo
   return (
     <div className="bh">
       <BoekhoudingKop titel="Activa & afschrijvingen" />
-      <Demo repo={repo} reden={demoReden} />
+      <Demo repo={repo} />
       <ActivaApp jaar={jaar} jaren={jaren} rijen={rijen} totaal={staat.totaal} voorstellen={voorstellen} vandaag={vandaag} activeer={activeer} />
     </div>
   );
 }
 
-export async function ActivumScherm({ repo, id, demoReden }: { repo: BoekhoudRepo; id: string; demoReden: 'env' | 'migratie' }) {
+export async function ActivumScherm({ repo, id }: { repo: BoekhoudRepo; id: string }) {
   const data = await laadAlles(repo);
   const a = data.activa.find((x) => x.id === id);
   if (!a) return null;
@@ -94,7 +94,7 @@ export async function ActivumScherm({ repo, id, demoReden }: { repo: BoekhoudRep
   return (
     <div className="bh">
       <BoekhoudingKop titel="Activa & afschrijvingen" />
-      <Demo repo={repo} reden={demoReden} />
+      <Demo repo={repo} />
       <ActivumDetail
         view={{
           activum: a,

@@ -593,13 +593,15 @@ console.log("Boekhouding: bank & boekingen (0027)");
   }
   for (const f of bestandenIn("app/(app)/boekhouding", (n) => n === "page.tsx").filter((f) => !/bonnetjes/.test(f) && f !== path.join("app", "(app)", "boekhouding", "page.tsx"))) {
     const src = lees(f);
-    check(src.indexOf("vereisTeamlidPagina(") > 0 && src.indexOf("vereisTeamlidPagina(") < src.indexOf("kiesRepo("), `${f}: teamcheck vóór de opslag`);
+    const opslag = src.search(/(kiesRepo|repoVoorPagina)\(/);
+    check(src.indexOf("vereisTeamlidPagina(") > 0 && opslag > 0 && src.indexOf("vereisTeamlidPagina(") < opslag, `${f}: teamcheck vóór de opslag`);
   }
   const demo = lees("lib/boekhouding/repo/demo.ts").replace(/\/\/[^\n]*/g, "");
   check(!/supabase|@\/lib\/supabase|fetch\(/.test(demo), "demo-opslag importeert geen Supabase en doet geen netwerk");
   check(/Demo — voorbeeldgegevens, er wordt niets opgeslagen/.test(lees("components/boekhouding/DemoBanner.tsx")), "demo-banner met de vaste tekst");
   const modus = lees("lib/boekhouding/modus.ts");
-  check(/BOEKHOUDING_DEMO === '1'/.test(modus) && /tabelOntbreekt\(error\)\) return 'demo'/.test(modus) && /throw new BoekhoudFout\(503/.test(modus), "modus: demo bij env of ontbrekende tabel, anders fail closed");
+  check(/BOEKHOUDING_DEMO === '1'/.test(modus) && /tabelOntbreekt\(error\)\) throw nietIngericht\(\)/.test(modus) && /throw new BoekhoudFout\(503/.test(modus) && (modus.replace(/\/\/[^\n]*/g, "").match(/return 'demo'/g) || []).length === 1 && /if \(demoAfgedwongen\(\)\) return 'demo'/.test(modus), "modus: demo alleen met BOEKHOUDING_DEMO=1; ontbrekende tabel → 'nog niet ingericht' (nooit vanzelf demo), anders fail closed");
+  check(!/DemoBanner reden|demoReden/.test(bestandenIn("app/(app)/boekhouding", (n) => n.endsWith(".tsx")).concat(bestandenIn("components/boekhouding", (n) => n.endsWith(".tsx"))).map(lees).join("\n")) && /NietIngericht/.test(lees("app/(app)/boekhouding/bank/page.tsx")), "boekhoudschermen: zonder 0027 de melding 'nog niet ingericht', geen voorbeeldgegevens");
   check(/^import 'server-only';/m.test(modus) && /^import 'server-only';/m.test(lees("lib/boekhouding/repo/supabase.ts")), "modus en Supabase-opslag zijn server-only");
   check(!/createServiceRoleClient/.test(lees("lib/boekhouding/repo/supabase.ts")), "boekhouding gebruikt nooit de service-role (RLS van het teamlid)");
   const sbRepo = lees("lib/boekhouding/repo/supabase.ts");

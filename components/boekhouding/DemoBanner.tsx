@@ -4,9 +4,9 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { bkApi } from '@/lib/boekhouding/client';
 
-// Altijd zichtbaar in de demo-modus (migratie 0027 nog niet uitgevoerd of BOEKHOUDING_DEMO=1):
+// Altijd zichtbaar in de demo-modus (alleen met BOEKHOUDING_DEMO=1; nooit vanzelf in productie):
 // de boekhouding toont voorbeeldgegevens en slaat niets op in de database.
-export function DemoBanner({ reden }: { reden: 'env' | 'migratie' }) {
+export function DemoBanner() {
   const router = useRouter();
   const [bezig, setBezig] = useState(false);
   const [fout, setFout] = useState<string | null>(null);
@@ -33,7 +33,7 @@ export function DemoBanner({ reden }: { reden: 'env' | 'migratie' }) {
           className="bh-demo-uitleg"
           title="Wijzigingen blijven maximaal 4 uur in het geheugen van de server staan en kunnen op Vercel tussendoor verdwijnen (een andere serverinstantie heeft een eigen geheugen)."
         >
-          {reden === 'migratie' ? 'De echte boekhouding start zodra supabase/UITVOEREN_0027.sql is uitgevoerd.' : 'De demo staat aan (BOEKHOUDING_DEMO=1).'}
+          De demo staat aan (BOEKHOUDING_DEMO=1).
         </span>
         {fout && <span className="bh-demo-fout"> {fout}</span>}
       </p>

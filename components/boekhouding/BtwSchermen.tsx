@@ -35,7 +35,7 @@ function kwartalen(d: BoekhoudData, posten: JournaalPost[], vandaag: string): Kw
 
 const bedragLabel = (c: number) => (c > 0 ? 'te betalen' : c < 0 ? 'terug te ontvangen' : 'niets te betalen');
 
-export async function BtwScherm({ repo, demoReden }: { repo: BoekhoudRepo; demoReden: 'env' | 'migratie' }) {
+export async function BtwScherm({ repo }: { repo: BoekhoudRepo }) {
   const data = await laadAlles(repo);
   const vandaag = vandaagNL();
   const rijen = kwartalen(data, journaalVan(data), vandaag);
@@ -45,7 +45,7 @@ export async function BtwScherm({ repo, demoReden }: { repo: BoekhoudRepo; demoR
   return (
     <div className="bh">
       <BoekhoudingKop titel="Btw-aangifte" />
-      <Demo repo={repo} reden={demoReden} />
+      <Demo repo={repo} />
       <div className="bh-inhoud bh-btw">
         {volgende && (
           <section className={`bh-kaart bh-btw-volgende${volgende.status === 'te_laat' ? ' is-te-laat' : ''}`} aria-labelledby="bh-btw-volgende">
@@ -123,7 +123,7 @@ function postHref(p: JournaalPost): string | null {
   return null;
 }
 
-export async function AangifteScherm({ repo, demoReden, jaar, kwartaal, eigenaar }: { repo: BoekhoudRepo; demoReden: 'env' | 'migratie'; jaar: number; kwartaal: Kwartaal; eigenaar: boolean }) {
+export async function AangifteScherm({ repo, jaar, kwartaal, eigenaar }: { repo: BoekhoudRepo; jaar: number; kwartaal: Kwartaal; eigenaar: boolean }) {
   const data = await laadAlles(repo);
   const vandaag = vandaagNL();
   const posten = journaalVan(data);
@@ -202,7 +202,7 @@ export async function AangifteScherm({ repo, demoReden, jaar, kwartaal, eigenaar
   return (
     <div className="bh">
       <BoekhoudingKop titel={`Btw-aangifte ${kwartaalLabel(jaar, kwartaal)}`} />
-      <Demo repo={repo} reden={demoReden} />
+      <Demo repo={repo} />
       <AangifteApp view={view} />
     </div>
   );

@@ -1,7 +1,8 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { vereisTeamlidPagina } from '@/lib/auth/team';
-import { demoAfgedwongen, kiesRepo } from '@/lib/boekhouding/modus';
+import { repoVoorPagina } from '@/lib/boekhouding/modus';
+import { NietIngericht } from '@/components/boekhouding/NietIngericht';
 import { JaarafsluitingScherm } from '@/components/boekhouding/JaarSchermen';
 
 export const dynamic = 'force-dynamic';
@@ -14,6 +15,7 @@ export default async function JaarafsluitingPage({ params }: { params: Promise<{
   const lid = await vereisTeamlidPagina(`/boekhouding/rapporten/jaarafsluiting/${encodeURIComponent(tekst)}`);
   const jaar = /^\d{4}$/.test(tekst) ? Number(tekst) : NaN;
   if (!(jaar >= 2000 && jaar <= 2999)) notFound();
-  const repo = await kiesRepo(lid);
-  return <JaarafsluitingScherm repo={repo} jaar={jaar} eigenaar={lid.rol === 'eigenaar' && lid.tfa.aal === 'aal2'} demoReden={demoAfgedwongen() ? 'env' : 'migratie'} />;
+  const repo = await repoVoorPagina(lid);
+  if (!repo) return <NietIngericht titel="Jaarafsluiting" />;
+  return <JaarafsluitingScherm repo={repo} jaar={jaar} eigenaar={lid.rol === 'eigenaar' && lid.tfa.aal === 'aal2'} />;
 }

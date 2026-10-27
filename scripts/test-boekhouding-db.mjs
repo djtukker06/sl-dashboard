@@ -4,7 +4,7 @@
 // uitgevoerd en niets naar het netwerk gestuurd.
 //
 //   0001–0026 los (zoals Supabase nu) → vóór 0027: bk_instellingen ontbreekt (42P01, de app
-//   kiest dan de demo-modus) → UITVOEREN_0027.sql (3x): elke controleregel "ok", seed één keer,
+//   toont dan "nog niet ingericht") → UITVOEREN_0027.sql (3x): elke controleregel "ok", seed één keer,
 //   aanpassingen blijven staan →
 //   - RLS: teamleden lezen/schrijven, buitenstaanders en anon niets; 2FA (aal1 met factor) niets;
 //   - boekingsregels: niet te verwijderen (bewaarplicht), wel te markeren; jaar/kwartaal
@@ -130,7 +130,7 @@ check(rol === "eigenaar", "Daniel is eigenaar (0021)", String(rol));
 // ---- vóór 0027 ----
 {
   const r = await als(db, "bram", "select id from public.bk_instellingen limit 1");
-  check(!r.ok && r.code === "42P01", "vóór 0027: bk_instellingen ontbreekt (42P01 → demo-modus)", uitleg(r));
+  check(!r.ok && r.code === "42P01", "vóór 0027: bk_instellingen ontbreekt (42P01 → nog niet ingericht)", uitleg(r));
 }
 
 // ---- UITVOEREN_0027.sql ----

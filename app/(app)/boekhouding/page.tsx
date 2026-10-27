@@ -14,7 +14,8 @@ import { RecenteBonnetjes } from '@/components/uitgaven/RecenteBonnetjes';
 import { UgIcoon } from '@/components/uitgaven/Iconen';
 import { logFout } from '@/lib/log';
 import type { Teamlid } from '@/lib/auth/team';
-import { demoAfgedwongen, kiesRepo } from '@/lib/boekhouding/modus';
+import { repoVoorPagina } from '@/lib/boekhouding/modus';
+import { NietIngerichtMelding } from '@/components/boekhouding/NietIngericht';
 import { DemoBanner } from '@/components/boekhouding/DemoBanner';
 import { OverzichtCijfers, overzichtData, type OverzichtData } from '@/components/boekhouding/JaarSchermen';
 
@@ -170,13 +171,18 @@ export default async function BoekhoudingPage() {
 async function BoekhoudCijfers({ lid }: { lid: Teamlid }) {
   let cijfers: OverzichtData | null = null;
   let demo = false;
+  let ingericht = true;
   try {
-    const repo = await kiesRepo(lid);
-    demo = repo.modus === 'demo';
-    cijfers = await overzichtData(repo);
+    const repo = await repoVoorPagina(lid);
+    if (!repo) ingericht = false;
+    else {
+      demo = repo.modus === 'demo';
+      cijfers = await overzichtData(repo);
+    }
   } catch (e) {
     logFout('[boekhouding] overzicht', e);
   }
+  if (!ingericht) return <NietIngerichtMelding />;
   if (!cijfers) {
     return (
       <p className="bh-leeg bh-overzicht" role="alert">
@@ -186,7 +192,7 @@ async function BoekhoudCijfers({ lid }: { lid: Teamlid }) {
   }
   return (
     <>
-      {demo && <DemoBanner reden={demoAfgedwongen() ? 'env' : 'migratie'} />}
+      {demo && <DemoBanner />}
       <OverzichtCijfers d={cijfers} />
     </>
   );

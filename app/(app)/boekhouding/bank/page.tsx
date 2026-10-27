@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { vereisTeamlidPagina } from '@/lib/auth/team';
-import { demoAfgedwongen, kiesRepo } from '@/lib/boekhouding/modus';
+import { repoVoorPagina } from '@/lib/boekhouding/modus';
+import { NietIngericht } from '@/components/boekhouding/NietIngericht';
 import { BankScherm, type Zoekparams } from '@/components/boekhouding/Schermen';
 
 export const dynamic = 'force-dynamic';
@@ -10,6 +11,7 @@ export const metadata: Metadata = { title: 'Bank & boekingen · Studio Levant' }
 // privé, overboekingen, btw). Filters in de URL: ?rekening=&jaar=&kw=&soort=&status=&q=
 export default async function BankPage({ searchParams }: { searchParams: Promise<Zoekparams> }) {
   const lid = await vereisTeamlidPagina('/boekhouding/bank');
-  const [repo, sp] = await Promise.all([kiesRepo(lid), searchParams]);
-  return <BankScherm repo={repo} sp={sp} demoReden={demoAfgedwongen() ? 'env' : 'migratie'} />;
+  const [repo, sp] = await Promise.all([repoVoorPagina(lid), searchParams]);
+  if (!repo) return <NietIngericht titel="Bank &amp; boekingen" />;
+  return <BankScherm repo={repo} sp={sp} />;
 }

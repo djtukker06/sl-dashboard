@@ -1,7 +1,8 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { vereisTeamlidPagina } from '@/lib/auth/team';
-import { demoAfgedwongen, kiesRepo } from '@/lib/boekhouding/modus';
+import { repoVoorPagina } from '@/lib/boekhouding/modus';
+import { NietIngericht } from '@/components/boekhouding/NietIngericht';
 import { leesKwartaal } from '@/lib/boekhouding/acties';
 import { AangifteScherm } from '@/components/boekhouding/BtwSchermen';
 
@@ -22,6 +23,7 @@ export default async function AangiftePage({ params }: Props) {
   const lid = await vereisTeamlidPagina(`/boekhouding/btw/${encodeURIComponent(p.jaar)}/${encodeURIComponent(p.kw)}`);
   const kw = leesKwartaal(p.jaar, p.kw);
   if (!kw) notFound();
-  const repo = await kiesRepo(lid);
-  return <AangifteScherm repo={repo} demoReden={demoAfgedwongen() ? 'env' : 'migratie'} jaar={kw.jaar} kwartaal={kw.kwartaal} eigenaar={lid.rol === 'eigenaar'} />;
+  const repo = await repoVoorPagina(lid);
+  if (!repo) return <NietIngericht titel="Btw-aangifte" />;
+  return <AangifteScherm repo={repo} jaar={kw.jaar} kwartaal={kw.kwartaal} eigenaar={lid.rol === 'eigenaar'} />;
 }

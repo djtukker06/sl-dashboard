@@ -38,11 +38,11 @@ import { journaalVan, laadAlles, type BoekhoudRepo } from '@/lib/boekhouding/rep
 export type Zoekparams = Record<string, string | string[] | undefined>;
 const een = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) ?? '';
 
-export function Demo({ repo, reden }: { repo: BoekhoudRepo; reden: 'env' | 'migratie' }) {
-  return repo.modus === 'demo' ? <DemoBanner reden={reden} /> : null;
+export function Demo({ repo }: { repo: BoekhoudRepo }) {
+  return repo.modus === 'demo' ? <DemoBanner /> : null;
 }
 
-export async function BankScherm({ repo, sp, demoReden }: { repo: BoekhoudRepo; sp: Zoekparams; demoReden: 'env' | 'migratie' }) {
+export async function BankScherm({ repo, sp }: { repo: BoekhoudRepo; sp: Zoekparams }) {
   const { stam, boekingen, koppelingen, facturen, uitgaven, bronExtra, activa } = await laadAlles(repo);
   const vandaag = vandaagNL();
   // Btw uit facturen en bonnetjes per kwartaal (de losse bankregels telt de pagina zelf mee).
@@ -63,7 +63,7 @@ export async function BankScherm({ repo, sp, demoReden }: { repo: BoekhoudRepo; 
   return (
     <div className="bh">
       <BoekhoudingKop titel="Bank & boekingen" />
-      <Demo repo={repo} reden={demoReden} />
+      <Demo repo={repo} />
       <BankSubnav actief="boekingen" />
       <BankApp
         stam={stam}
@@ -81,7 +81,7 @@ export async function BankScherm({ repo, sp, demoReden }: { repo: BoekhoudRepo; 
   );
 }
 
-export async function InstellingenScherm({ repo, demoReden, eigenaar }: { repo: BoekhoudRepo; demoReden: 'env' | 'migratie'; eigenaar: boolean }) {
+export async function InstellingenScherm({ repo, eigenaar }: { repo: BoekhoudRepo; eigenaar: boolean }) {
   const data = await laadAlles(repo);
   const { stam } = data;
   const vandaag = vandaagNL();
@@ -106,7 +106,7 @@ export async function InstellingenScherm({ repo, demoReden, eigenaar }: { repo: 
   return (
     <div className="bh">
       <BoekhoudingKop titel="Instellingen" />
-      <Demo repo={repo} reden={demoReden} />
+      <Demo repo={repo} />
       <div className="bh-inhoud bh-instellingen">
         <section className="bh-sectie" aria-labelledby="bh-bedrijf-titel">
           <header className="bh-sectie-kop">
@@ -172,7 +172,7 @@ export async function InstellingenScherm({ repo, demoReden, eigenaar }: { repo: 
   );
 }
 
-export async function OpenstaandScherm({ repo, demoReden }: { repo: BoekhoudRepo; demoReden: 'env' | 'migratie' }) {
+export async function OpenstaandScherm({ repo }: { repo: BoekhoudRepo }) {
   const { stam, boekingen, koppelingen, facturen, uitgaven } = await laadAlles(repo);
   const vandaag = vandaagNL();
   const bankNaam = new Map(stam.rekeningen.map((r) => [r.id, r.naam]));
@@ -285,7 +285,7 @@ export async function OpenstaandScherm({ repo, demoReden }: { repo: BoekhoudRepo
   return (
     <div className="bh">
       <BoekhoudingKop titel="Openstaand & afletteren" />
-      <Demo repo={repo} reden={demoReden} />
+      <Demo repo={repo} />
       <BankSubnav actief="openstaand" teller={{ openstaand: debiteuren.length + crediteuren.length }} />
       <OpenstaandApp
         debiteuren={debiteuren}
@@ -299,14 +299,14 @@ export async function OpenstaandScherm({ repo, demoReden }: { repo: BoekhoudRepo
   );
 }
 
-export async function ImportScherm({ repo, demoReden }: { repo: BoekhoudRepo; demoReden: 'env' | 'migratie' }) {
+export async function ImportScherm({ repo }: { repo: BoekhoudRepo }) {
   const stam = await repo.stamdata();
   // Alleen in de demo: voorbeeldbestanden (in de echte boekhouding nooit nepregels aanbieden).
   const voorbeelden = repo instanceof DemoRepo ? repo.voorbeeldAfschriften() : null;
   return (
     <div className="bh">
       <BoekhoudingKop titel="Afschrift importeren" />
-      <Demo repo={repo} reden={demoReden} />
+      <Demo repo={repo} />
       <BankSubnav actief="importeren" />
       <ImportWizard stam={stam} voorbeelden={voorbeelden} />
     </div>

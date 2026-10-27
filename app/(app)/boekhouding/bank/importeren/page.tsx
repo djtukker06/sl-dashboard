@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { vereisTeamlidPagina } from '@/lib/auth/team';
-import { demoAfgedwongen, kiesRepo } from '@/lib/boekhouding/modus';
+import { repoVoorPagina } from '@/lib/boekhouding/modus';
+import { NietIngericht } from '@/components/boekhouding/NietIngericht';
 import { ImportScherm } from '@/components/boekhouding/Schermen';
 
 export const dynamic = 'force-dynamic';
@@ -10,6 +11,7 @@ export const metadata: Metadata = { title: 'Afschrift importeren · Studio Levan
 // een kolomkeuze. Dubbele regels worden overgeslagen; nieuwe regels zijn "te verwerken".
 export default async function ImporterenPage() {
   const lid = await vereisTeamlidPagina('/boekhouding/bank/importeren');
-  const repo = await kiesRepo(lid);
-  return <ImportScherm repo={repo} demoReden={demoAfgedwongen() ? 'env' : 'migratie'} />;
+  const repo = await repoVoorPagina(lid);
+  if (!repo) return <NietIngericht titel="Afschrift importeren" />;
+  return <ImportScherm repo={repo} />;
 }

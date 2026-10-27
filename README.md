@@ -650,17 +650,18 @@ dubbel boekhouden: elke bron wordt een sluitende journaalpost (`lib/boekhouding/
   beginsaldo, meer rekeningen), winstverdeling (alleen de eigenaar), eigen categorieën en het
   memoriaal (beginbalans, correcties; "Beginvermogen verdelen").
 
-**Demo-modus.** Zolang `bk_instellingen` niet bestaat (0027 niet uitgevoerd) of als
-`BOEKHOUDING_DEMO=1`, draait de boekhouding op voorbeeldgegevens in het geheugen van de server
+**Demo-modus.** Alleen als `BOEKHOUDING_DEMO=1` (nooit vanzelf), draait de boekhouding op voorbeeldgegevens in het geheugen van de server
 (per teamlid, max. 4 uur, "Demo herstellen"), met de banner "Demo — voorbeeldgegevens, er wordt
 niets opgeslagen". `lib/boekhouding/repo/demo.ts` importeert geen Supabase. Een andere fout bij
 het bepalen van de modus geeft een foutmelding (fail closed), nooit stil de demo. Op Vercel kan
 een demowijziging tussendoor verdwijnen (elke serverinstantie heeft een eigen geheugen).
+Zolang `bk_instellingen` niet bestaat (0027 niet uitgevoerd) tonen de boekhoudschermen de melding
+"De boekhouding is nog niet ingericht" (API: 503, code `niet_ingericht`), nooit voorbeeldgegevens.
 
 **Uitrol 0027.** 1) Back-up maken (Beveiliging → Back-ups). 2) In de Supabase SQL Editor
 `supabase/UITVOEREN_0027.sql` uitvoeren (één transactie, idempotent; eindigt met een
-controletabel: elke regel "ok"). 3) De app schakelt bij het volgende verzoek van
-demo naar live. 4) Instellingen invullen: startdatum, beginsaldi per bank, KvK/btw-nummer,
+controletabel: elke regel "ok"). 3) De app werkt bij het volgende verzoek met de echte
+tabellen (in plaats van de melding "nog niet ingericht"). 4) Instellingen invullen: startdatum, beginsaldi per bank, KvK/btw-nummer,
 winstverdeling; daarna "Beginvermogen verdelen". `BOEKHOUDING_DEMO` niet zetten in productie.
 0027 zit bewust niet in de grote SQL-bestanden (die eindigen met 0026).
 

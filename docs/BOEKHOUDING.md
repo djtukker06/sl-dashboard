@@ -77,12 +77,16 @@ bonnetjes staan als kopie in Google Drive.
 
 ### Demo-modus
 
-Zolang `supabase/UITVOEREN_0027.sql` niet is uitgevoerd (of als `BOEKHOUDING_DEMO=1` staat),
-toont de boekhouding voorbeeldgegevens met de banner **"Demo — voorbeeldgegevens, er wordt
+Alleen als de env-variabele `BOEKHOUDING_DEMO=1` staat (lokaal of in een preview; nooit in
+productie), toont de boekhouding voorbeeldgegevens met de banner **"Demo — voorbeeldgegevens, er wordt
 niets opgeslagen"**. Alles is te proberen (ook afsluiten), maar niets komt in de database.
 Wijzigingen blijven maximaal 4 uur in het geheugen van de server en kunnen op Vercel tussendoor
 verdwijnen. **Demo herstellen** zet de voorbeeldgegevens terug. De rest van de app (facturen,
 bonnetjes, mail, agenda) werkt gewoon met de echte gegevens.
+
+Zolang `supabase/UITVOEREN_0027.sql` niet is uitgevoerd (en de demo niet aanstaat), toont de
+boekhouding geen voorbeeldgegevens maar de melding **"De boekhouding is nog niet ingericht"**;
+de API antwoordt dan met 503 en code `niet_ingericht`. De demo gaat dus nooit vanzelf aan.
 
 ### Bewust niet ingebouwd
 

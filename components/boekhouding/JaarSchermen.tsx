@@ -16,7 +16,7 @@ import { administratieBegin, vanafStart } from '@/lib/boekhouding/kern/journaal'
 
 // De jaarafsluiting van één boekjaar en de kerncijfers op het Overzicht.
 
-export async function JaarafsluitingScherm({ repo, jaar, eigenaar, demoReden }: { repo: BoekhoudRepo; jaar: number; eigenaar: boolean; demoReden: 'env' | 'migratie' }) {
+export async function JaarafsluitingScherm({ repo, jaar, eigenaar }: { repo: BoekhoudRepo; jaar: number; eigenaar: boolean }) {
   const data = await laadAlles(repo);
   const vandaag = vandaagNL();
   const posten = journaalVan(data);
@@ -31,7 +31,7 @@ export async function JaarafsluitingScherm({ repo, jaar, eigenaar, demoReden }: 
   return (
     <div className="bh">
       <BoekhoudingKop titel={`Jaarafsluiting ${jaar}`} />
-      <Demo repo={repo} reden={demoReden} />
+      <Demo repo={repo} />
       <JaarafsluitingApp
         v={{
           jaar,
