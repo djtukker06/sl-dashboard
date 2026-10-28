@@ -223,7 +223,9 @@ await test("systeemBewijs alleen in lib/supabase/systeem.ts; systeemClient allee
     path.join("lib", "supabase", "systeem.ts"),
     path.join("lib", "audit.ts"),
     path.join("lib", "auth", "inlogpogingen.ts"),
-    path.join("lib", "auth", "cron.ts")
+    path.join("lib", "auth", "cron.ts"),
+    path.join("lib", "auth", "wachtwoordwissel.ts"),
+    path.join("lib", "agenda", "feed.ts")
   ]);
   const gebruikers = code.filter((f) => /from ['"]@\/lib\/supabase\/systeem['"]/.test(lees(f)) || /\bsysteemClient\(/.test(lees(f)));
   const fout = gebruikers.filter((f) => !toegestaan.has(f));

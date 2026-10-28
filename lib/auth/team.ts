@@ -68,8 +68,8 @@ export function isGeldigBewijs(b: unknown): b is TeamlidBewijs {
  * pogingenlimiet, de cron na controle van CRON_SECRET). ALLEEN voor lib/supabase/systeem.ts;
  * scripts/test-beveiliging.mjs controleert dat niemand anders dit importeert.
  */
-export type SysteemDoel = 'audit' | 'inlogpogingen' | 'cron';
-const SYSTEEM_DOELEN = new Set<SysteemDoel>(['audit', 'inlogpogingen', 'cron']);
+export type SysteemDoel = 'audit' | 'inlogpogingen' | 'cron' | 'wachtwoord' | 'agendafeed';
+const SYSTEEM_DOELEN = new Set<SysteemDoel>(['audit', 'inlogpogingen', 'cron', 'wachtwoord', 'agendafeed']);
 export function systeemBewijs(doel: SysteemDoel): TeamlidBewijs {
   if (!SYSTEEM_DOELEN.has(doel)) throw new Error('Onbekend systeemdoel.');
   return maakBewijs();
@@ -135,6 +135,9 @@ export interface Teamlid {
   naam: string;
   profiel: Profiel;
   rol: Rol;
+  /** Volledige boekhouding (boekingen, bank, btw, rapporten). false = alleen facturen,
+   *  klanten en bonnetjes (team_members.boekhouding, migratie 0028; zonder kolom: true). */
+  boekhouding: boolean;
   /** false = de welkomstflow (/welkom) nog doorlopen. true als hij klaar is, en ook zonder
    *  kolom profiles.welkom_klaar_op (migratie 0022 nog niet uitgevoerd) of zonder profiel. */
   welkomKlaar: boolean;
@@ -172,6 +175,8 @@ export type TeamStatus =
   | { soort: 'geen_toegang' }
   | { soort: 'storing' }
   | { soort: 'tfa'; stap: 'uitdaging' | 'instellen'; sessie: TfaSessie }
+  /** Inloggen met een tijdelijk wachtwoord van de admin: eerst zelf een nieuw kiezen. */
+  | { soort: 'wachtwoord'; sessie: TfaSessie }
   | { soort: 'lid'; lid: Teamlid };
 
 export function mfaAfdwingen(): boolean {
@@ -228,9 +233,10 @@ async function bepaalStatus(): Promise<TeamStatus> {
   // Eén parallelle ronde: de sessie (Auth-server, met de 2FA-factoren) + lidmaatschappen en
   // profielen van het team + toegang_status() (0026: is de migratie er, staat de noodstop
   // aan?). Alles met hetzelfde token; RLS: een niet-lid ziet alleen zijn eigen lidmaatschap.
+  // team_members met select('*'): zonder kolom boekhouding (0028 nog niet uitgevoerd) geen fout.
   const [userRes, lidRes, profielRes, toegangRes] = await Promise.all([
     sb.auth.getUser(),
-    sb.from('team_members').select('user_id, actief, rol').limit(200),
+    sb.from('team_members').select('*').limit(200),
     // select('*') i.p.v. losse kolommen: zo geeft een ontbrekende kolom welkom_klaar_op
     // (0022 nog niet uitgevoerd) geen fout en blijft het profiel gewoon leesbaar.
     sb.from('profiles').select('*').limit(200),
@@ -277,6 +283,7 @@ async function bepaalStatus(): Promise<TeamStatus> {
           naam: profiel.naam,
           profiel,
           rol: 'lid',
+          boekhouding: true,
           welkomKlaar: true,
           overgang: true,
           sb,
@@ -289,7 +296,7 @@ async function bepaalStatus(): Promise<TeamStatus> {
     return { soort: 'storing' };
   }
 
-  const leden = (lidRes.data ?? []) as { user_id: string; actief: boolean; rol: string }[];
+  const leden = (lidRes.data ?? []) as { user_id: string; actief: boolean; rol: string; boekhouding?: boolean | null }[];
   const rij = leden.find((l) => l.user_id === userId) ?? null;
   if (!rij || rij.actief !== true) return { soort: 'geen_toegang' };
 
@@ -298,8 +305,20 @@ async function bepaalStatus(): Promise<TeamStatus> {
   const profiel = maakProfiel(profielRij, email);
   const rol: Rol = rij.rol === 'eigenaar' ? 'eigenaar' : 'lid';
   const welkomKlaar = welkomKlaarVan(profielRij);
+  const boekhouding = rol === 'eigenaar' || rij.boekhouding !== false;
+  // Gezet door de admin (aanmaken of wachtwoord resetten); alleen de service-role kan
+  // app_metadata wijzigen, en getUser() leest hem vers bij de Auth-server.
+  const wachtwoordWijzigen = user.app_metadata?.wachtwoord_wijzigen === true;
 
   const stap = tfaStap({ heeftFactor: factoren.length > 0, aal, afdwingen: tfa.afdwingen, migratie: tfa.migratie });
+  // Volgorde: eerst de 2FA-code (heeft hij al een factor), dan het nieuwe wachtwoord, dan
+  // pas 2FA instellen (welkomstflow).
+  if (wachtwoordWijzigen && stap !== 'uitdaging') {
+    return {
+      soort: 'wachtwoord',
+      sessie: { userId, email, naam: profiel.naam, profiel, rol, welkomKlaar, sb, tfa, stap }
+    };
+  }
   if (stap !== 'ok') {
     return {
       soort: 'tfa',
@@ -316,6 +335,7 @@ async function bepaalStatus(): Promise<TeamStatus> {
       naam: profiel.naam,
       profiel,
       rol,
+      boekhouding,
       welkomKlaar,
       overgang: false,
       sb,
@@ -348,6 +368,7 @@ export async function vereisTeamlidPagina(next?: string): Promise<Teamlid> {
   }
   if (s.soort === 'geen_toegang') redirect('/geen-toegang');
   if (s.soort === 'tfa') redirect(tfaDoel(s, next));
+  if (s.soort === 'wachtwoord') redirect('/nieuw-wachtwoord');
   throw new Error('De toegangscontrole is tijdelijk niet beschikbaar. Probeer het zo opnieuw.');
 }
 
@@ -411,6 +432,9 @@ export function weigering(s: Exclude<TeamStatus, { soort: 'lid' }>): NextRespons
       },
       { status: 401, headers: GEEN_CACHE }
     );
+  }
+  if (s.soort === 'wachtwoord') {
+    return NextResponse.json({ error: 'Kies eerst een nieuw wachtwoord.', code: 'wachtwoord_nodig' }, { status: 401, headers: GEEN_CACHE });
   }
   return NextResponse.json(
     { error: 'De toegangscontrole is tijdelijk niet beschikbaar. Probeer het zo opnieuw.', code: 'storing' },

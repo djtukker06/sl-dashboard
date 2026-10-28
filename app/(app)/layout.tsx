@@ -3,6 +3,8 @@ import { headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { vereisTeamlidPagina } from '@/lib/auth/team';
 import { teamProfielen } from '@/lib/team/profielen';
+import { feedStatus, moetKoppelen } from '@/lib/agenda/feed';
+import { logFout } from '@/lib/log';
 import { Rail } from '@/components/shell/Rail';
 import { TeamProvider } from '@/components/team/TeamProvider';
 import '../../public/shell/shell.css';
@@ -27,6 +29,14 @@ export default async function AppLayout({ children }: Readonly<{ children: React
   // Nieuw teamlid (bv. Bram bij zijn eerste login): eerst de welkomstflow. Alleen als
   // profiles.welkom_klaar_op bestaat en leeg is (migratie 0022); zie lib/auth/team.ts.
   if (!lid.welkomKlaar) redirect('/welkom');
+  // Daarna verplicht: de agenda koppelen aan Apple/Google Agenda (migratie 0029).
+  let koppelen = false;
+  try {
+    koppelen = !lid.overgang && moetKoppelen(await feedStatus(lid));
+  } catch (e) {
+    logFout('[shell] agenda-koppeling', e);
+  }
+  if (koppelen) redirect('/agenda-koppelen');
   const leden = await teamProfielen(lid);
   // Nonce van de Content-Security-Policy (proxy.ts) voor het losse shell-script.
   const nonce = (await headers()).get('x-nonce') ?? undefined;

@@ -113,6 +113,9 @@ export async function proxy(request: NextRequest) {
   // De cron-routes (Vercel Cron, GitHub Actions) hebben geen sessie; ze controleren zelf
   // CRON_SECRET (lib/auth/cron.ts, fail closed). Exact deze paden, geen voorvoegsel.
   const isCronPad = pad === '/api/cron/dagelijks' || pad === '/api/cron/bestanden';
+  // Het agenda-abonnement (Apple/Google Agenda haalt het zonder sessie op); de route
+  // controleert zelf het geheime token (lib/agenda/feed.ts, fail closed).
+  const isAgendaFeed = /^\/api\/agenda-feed\/[A-Za-z0-9_-]{40,64}(\.ics)?$/.test(pad);
   const isPubliekPad =
     isLoginPath ||
     isTfaPad ||
@@ -120,7 +123,8 @@ export async function proxy(request: NextRequest) {
     pad === '/auth/callback' ||
     pad === '/auth/uitloggen' ||
     pad === '/geen-toegang' ||
-    isCronPad;
+    isCronPad ||
+    isAgendaFeed;
 
   const naarLogin = (extra?: Record<string, string>) => {
     const url = request.nextUrl.clone();

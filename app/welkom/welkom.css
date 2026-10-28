@@ -54,3 +54,33 @@
   .wk-kaart { padding: 24px 18px; }
   .wk .ag-velden-2 { grid-template-columns: 1fr; }
 }
+
+/* ---------- agenda koppelen (/agenda-koppelen, ak-) ---------- */
+.ak-keuze { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.ak-optie {
+  display: grid;
+  gap: 6px;
+  padding: 16px;
+  border: 1px solid var(--sl-line);
+  border-radius: 6px;
+  background: var(--sl-bg);
+  color: var(--sl-text);
+  text-decoration: none;
+  transition: border-color .15s var(--sl-ease), background-color .15s var(--sl-ease);
+}
+.ak-optie:hover { border-color: var(--sl-sand); background: var(--sl-raise); }
+.ak-optie.is-gekozen { border-color: var(--sl-sand); }
+.ak-optie strong { font-size: 15px; }
+.ak-optie span { font-size: 12.5px; line-height: 1.45; color: var(--sl-muted); }
+.ak-url { flex: 1 1 260px; font-size: 12px; }
+.ak-wacht { display: flex; align-items: center; gap: 10px; margin: 0; font-size: 13px; color: var(--sl-muted); }
+.ak-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--sl-line);
+  border-top-color: var(--sl-sand);
+  border-radius: 50%;
+  animation: ak-draai .8s linear infinite;
+}
+@keyframes ak-draai { to { transform: rotate(360deg); } }
+@media (max-width: 560px) { .ak-keuze { grid-template-columns: 1fr; } }

@@ -22,6 +22,7 @@ export default async function TfaInstellenPagina({ searchParams }: { searchParam
   if (s.soort === 'anoniem') redirect('/login?next=/beveiliging/instellen');
   if (s.soort === 'geen_toegang') redirect('/geen-toegang');
   if (s.soort === 'storing') throw new Error('De toegangscontrole is tijdelijk niet beschikbaar. Probeer het zo opnieuw.');
+  if (s.soort === 'wachtwoord') redirect('/nieuw-wachtwoord');
   if (s.soort === 'tfa' && s.stap === 'uitdaging') redirect(`/login/2fa?next=${encodeURIComponent('/beveiliging/instellen')}`);
   // Al ingesteld (of niet verplicht): extra apparaten beheer je op /account.
   if (s.soort === 'lid') redirect(s.lid.tfa.factoren.length ? vervolg : '/account#beveiliging');

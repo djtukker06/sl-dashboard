@@ -35,10 +35,18 @@ export function Rail({ account }: { account: RailAccount }) {
               Account &amp; mail
             </a>
             {account.eigenaar && (
+              <a className="sl-account-link" href="/gebruikers">
+                Gebruikers
+              </a>
+            )}
+            {account.eigenaar && (
               <a className="sl-account-link" href="/beveiliging">
                 Beveiliging &amp; audit
               </a>
             )}
+            <a className="sl-account-link" href="/agenda-koppelen">
+              Agenda koppelen
+            </a>
             <a className="sl-account-link" href="/nieuw-wachtwoord">
               Wachtwoord wijzigen
             </a>

@@ -9,6 +9,8 @@ import { controleerLimieten, registreerPoging, sleutels } from '@/lib/auth/inlog
 import { LIMIETEN } from '@/lib/auth/limiet-kern';
 import { logAudit } from '@/lib/audit';
 import { wachtwoordGelekt } from '@/lib/auth/gelekt';
+import { wachtwoordVlagWeg } from '@/lib/auth/wachtwoordwissel';
+import { logFout } from '@/lib/log';
 
 // Minstens 12 tekens (lengte telt het meest; een zin van een paar woorden is prima).
 const MIN_LENGTE = 12;
@@ -49,8 +51,8 @@ export async function vraagHerstelAan(formData: FormData) {
   redirect('/wachtwoord-vergeten?verstuurd=1');
 }
 
-// Zet een nieuw wachtwoord voor de ingelogde gebruiker (na de herstellink, of
-// gewoon vanuit het dashboard).
+// Zet een nieuw wachtwoord voor de ingelogde gebruiker (na de herstellink, vanuit het
+// dashboard, of verplicht bij de eerste login met een tijdelijk wachtwoord van de admin).
 export async function zetNieuwWachtwoord(formData: FormData) {
   const wachtwoord = String(formData.get('password') || '');
   const herhaling = String(formData.get('password2') || '');
@@ -94,6 +96,20 @@ export async function zetNieuwWachtwoord(formData: FormData) {
         ? 'Dit is je huidige wachtwoord. Kies een ander wachtwoord.'
         : 'Wachtwoord opslaan is mislukt. Probeer het opnieuw.'
     );
+  }
+
+  // Tijdelijk wachtwoord van de admin: de vlag weghalen en de sessie verversen, zodat ook
+  // het token (dat de database leest, is_teamlid()) hem niet meer heeft.
+  if (user.app_metadata?.wachtwoord_wijzigen === true) {
+    try {
+      await wachtwoordVlagWeg(user.id);
+      const { error: verversFout } = await supabase.auth.refreshSession();
+      if (verversFout) throw verversFout;
+    } catch (e) {
+      logFout('[wachtwoord] vlag weghalen', e);
+      await supabase.auth.signOut();
+      redirect(`/login?error=${encodeURIComponent('Je wachtwoord is opgeslagen. Log opnieuw in met je nieuwe wachtwoord.')}`);
+    }
   }
 
   await logAudit('wachtwoord_gewijzigd', { userId: user.id }, await headers());

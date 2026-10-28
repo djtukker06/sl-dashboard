@@ -55,6 +55,11 @@ const ACTIES: Record<string, string> = {
   backup_mislukt: 'Back-up mislukt',
   backup_gedownload: 'Back-up gedownload',
   backup_bestanden: 'Bestanden naar back-up gekopieerd',
+  team_gebruiker_aangemaakt: 'Gebruiker aangemaakt',
+  team_gebruiker_gewijzigd: 'Gebruiker gewijzigd',
+  team_gebruiker_gedeactiveerd: 'Gebruiker gedeactiveerd',
+  team_gebruiker_geactiveerd: 'Gebruiker weer actief',
+  team_gebruiker_verwijderd: 'Gebruiker verwijderd',
   cron_dagelijks: 'Nachtelijke taak (keep-alive + back-up)',
   cron_bestanden: 'Nachtelijke taak (bestanden)'
 };
@@ -226,7 +231,7 @@ function TeamTfa() {
                     <div className="bv-klein">{l.email}</div>
                   </td>
                   <td className="bv-nowrap">
-                    {l.rol === 'eigenaar' ? 'Eigenaar' : 'Lid'}
+                    {l.rol === 'eigenaar' ? 'Admin' : 'Gebruiker'}
                     {!l.actief && <div className="bv-klein">gedeactiveerd</div>}
                   </td>
                   <td className="bv-nowrap">

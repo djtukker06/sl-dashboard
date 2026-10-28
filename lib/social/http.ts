@@ -51,6 +51,7 @@ export async function requireUser(): Promise<{ id: string; email: string | null 
   if (s.soort === "geen_toegang") throw new HttpError(403, "Geen toegang.");
   if (s.soort === "storing") throw new HttpError(503, "De toegangscontrole is tijdelijk niet beschikbaar.");
   if (s.soort === "tfa") throw new HttpError(401, "Vul eerst je 2FA-code in.");
+  if (s.soort === "wachtwoord") throw new HttpError(401, "Kies eerst een nieuw wachtwoord.");
   return { id: s.lid.userId, email: s.lid.email || null };
 }
 

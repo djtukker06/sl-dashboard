@@ -1701,10 +1701,61 @@ async function scenarioD() {
   if (fouten === fouten0) console.log("  scenario D (boekhouding, UITVOEREN_0027.sql): ok");
 }
 
+// Scenario E  0001–0027 → UITVOEREN_0028.sql (2x): kolom boekhouding (bestaande leden true),
+//             en een sessie met app_metadata.wachtwoord_wijzigen = true is geen teamlid.
+async function scenarioE() {
+  const fouten0 = fouten;
+  const db = await nieuweDb();
+  for (const f of MIGRATIES.filter((f) => f < "0021")) await voerUit(db, lees(`supabase/migrations/${f}`), f);
+  await zaaiGebruikersVoor0021(db);
+  await zaaiData(db, true);
+  for (const f of MIGRATIES.filter((f) => f >= "0021" && f < "0028")) await voerUit(db, lees(`supabase/migrations/${f}`), f);
+  await zaaiNa0021(db);
+  checkControle(await voerUit(db, lees("supabase/UITVOEREN_0028.sql"), "UITVOEREN_0028.sql"), "E: UITVOEREN_0028 (1e keer)");
+  checkControle(await voerUit(db, lees("supabase/UITVOEREN_0028.sql"), "UITVOEREN_0028.sql (2x)"), "E: UITVOEREN_0028 (2e keer)");
+  const bh = await db.query("select bool_and(boekhouding) as b from public.team_members");
+  check(bh.rows[0].b === true, "E: bestaande leden houden boekhouding");
+  const claims = (meta) => JSON.stringify({ sub: U.daniel, role: "authenticated", aal: "aal1", app_metadata: meta });
+  async function lidMet(meta) {
+    await db.exec("begin");
+    try {
+      await db.query("select set_config('request.jwt.claims', $1, true)", [claims(meta)]);
+      await db.exec("set local role authenticated");
+      return (await db.query("select public.is_teamlid() as l, (select count(*)::int from public.bk_grootboek) as n")).rows[0];
+    } finally {
+      await db.exec("rollback");
+    }
+  }
+  const gewoon = await lidMet({ provider: "email" });
+  check(gewoon.l === true && gewoon.n > 0, "E: zonder vlag gewoon teamlid", JSON.stringify(gewoon));
+  const tijdelijk = await lidMet({ provider: "email", wachtwoord_wijzigen: true });
+  check(tijdelijk.l === false && tijdelijk.n === 0, "E: met tijdelijk wachtwoord geen toegang tot data", JSON.stringify(tijdelijk));
+  const nul = await lidMet({ provider: "email", wachtwoord_wijzigen: null });
+  check(nul.l === true, "E: vlag weggehaald (null) = weer teamlid", JSON.stringify(nul));
+
+  // 0029: agenda-links. Alleen je eigen rij lezen; schrijven alleen de server.
+  checkControle(await voerUit(db, lees("supabase/UITVOEREN_0029.sql"), "UITVOEREN_0029.sql"), "E: UITVOEREN_0029 (1e keer)");
+  checkControle(await voerUit(db, lees("supabase/UITVOEREN_0029.sql"), "UITVOEREN_0029.sql (2x)"), "E: UITVOEREN_0029 (2e keer)");
+  await db.query("insert into public.agenda_feeds (user_id, token_hash) values ($1, repeat('a', 64)), ($2, repeat('b', 64))", [U.daniel, U.mark]);
+  const eigen = await alsMetAal(db, "daniel", "aal1", "select user_id from public.agenda_feeds");
+  check(eigen.ok && eigen.rows.length === 1 && eigen.rows[0].user_id === U.daniel, "E: agenda_feeds alleen eigen rij", uitleg(eigen));
+  for (const wie of ["anon", "indringer", "oudlid"]) {
+    const r = await als(db, wie, "select * from public.agenda_feeds");
+    check(leeg(r), `E: ${wie} ziet geen agenda-links`, uitleg(r));
+  }
+  const schrijf = await alsMetAal(db, "daniel", "aal1", "update public.agenda_feeds set token_hash = repeat('c', 64)");
+  check(nietsGeraakt(schrijf), "E: teamlid kan zijn token niet zelf wijzigen", uitleg(schrijf));
+  const nieuw = await alsMetAal(db, "daniel", "aal1", "insert into public.agenda_feeds (user_id, token_hash) values (gen_random_uuid(), repeat('d', 64))");
+  check(!nieuw.ok, "E: teamlid voegt geen agenda-link toe", uitleg(nieuw));
+  await db.close();
+  if (fouten === fouten0) console.log("  scenario E (gebruikersbeheer + agenda-links, UITVOEREN_0028/0029.sql): ok");
+}
+
 await scenarioA();
 await scenarioB();
 await scenarioC();
 await scenarioD();
+await scenarioE();
 
 console.log(`\n${goed} geslaagd, ${fouten} mislukt`);
 if (fouten) process.exit(1);

@@ -17,6 +17,7 @@ export default async function TweestapsPagina({ searchParams }: { searchParams: 
   if (s.soort === 'anoniem') redirect('/login');
   if (s.soort === 'geen_toegang') redirect('/geen-toegang');
   if (s.soort === 'lid') redirect(vervolg);
+  if (s.soort === 'wachtwoord') redirect('/nieuw-wachtwoord');
   if (s.soort === 'tfa' && s.stap === 'instellen') redirect(s.sessie.welkomKlaar ? `/beveiliging/instellen${next ? `?next=${encodeURIComponent(vervolg)}` : ''}` : '/welkom');
   if (s.soort === 'storing') throw new Error('De toegangscontrole is tijdelijk niet beschikbaar. Probeer het zo opnieuw.');
 

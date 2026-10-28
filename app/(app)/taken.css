@@ -82,7 +82,8 @@
 .tk-uitleg.is-waarschuwing { color: var(--sl-danger); }
 .tk-toets { font-size: 9.5px; color: var(--sl-faint); letter-spacing: 0.06em; }
 .tk-urgentie { justify-self: start; }
-.tk-urgentie .tk-urgentie-hoog.is-aan { color: var(--sl-danger); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--sl-danger) 55%, transparent); }
+.tk-urgentie .tk-urgentie-hoog.is-aan { background: var(--sl-danger); color: #fff; box-shadow: none; font-weight: 600; }
+.tk-urgentie .tk-urgentie-laag.is-aan { color: var(--sl-muted); }
 .tk-leeg { font-family: var(--sl-font); font-size: 13px; text-transform: none; letter-spacing: 0; color: var(--sl-faint); }
 
 .tk-melding {

@@ -16,7 +16,8 @@ export async function api<T>(url: string, method = 'GET', body?: unknown): Promi
   const data = (await res.json().catch(() => null)) as (T & { error?: string; code?: string; stap?: string }) | null;
   if (res.status === 401 && data?.code !== 'code_fout') {
     const hier = window.location.pathname + window.location.search;
-    if (data?.code === 'tfa_nodig' && data.stap === 'uitdaging') window.location.href = `/login/2fa?next=${encodeURIComponent(hier)}`;
+    if (data?.code === 'wachtwoord_nodig') window.location.href = '/nieuw-wachtwoord';
+    else if (data?.code === 'tfa_nodig' && data.stap === 'uitdaging') window.location.href = `/login/2fa?next=${encodeURIComponent(hier)}`;
     else if (data?.code !== 'tfa_nodig') window.location.href = `/login?next=${encodeURIComponent(hier)}`;
     throw new Error(data?.error || 'Je bent uitgelogd.');
   }

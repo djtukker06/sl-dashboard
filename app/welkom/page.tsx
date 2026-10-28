@@ -23,6 +23,7 @@ export default async function WelkomPage() {
   if (s.soort === 'anoniem') redirect('/login?next=/welkom');
   if (s.soort === 'geen_toegang') redirect('/geen-toegang');
   if (s.soort === 'storing') throw new Error('De toegangscontrole is tijdelijk niet beschikbaar. Probeer het zo opnieuw.');
+  if (s.soort === 'wachtwoord') redirect('/nieuw-wachtwoord');
   if (s.soort === 'tfa') {
     if (s.stap === 'uitdaging') redirect('/login/2fa?next=/welkom');
     if (s.sessie.welkomKlaar) redirect('/beveiliging/instellen');

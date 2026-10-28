@@ -323,9 +323,33 @@ input.ag-snel-veld {
 .ag-vink-klein svg { width: 8px; height: 8px; }
 @keyframes ag-vink { 50% { transform: scale(1.18); } }
 
-.ag-prio { flex: 0 0 auto; width: 7px; height: 7px; margin-top: 8px; border-radius: 50%; }
-.ag-prio-hoog { background: var(--sl-danger); }
-.ag-prio-laag { border: 1px solid var(--sl-faint); }
+/* Urgentie: hoog = rode balk links, lichte rode waas en een label "Urgent"; laag = gedempt. */
+.ag-prio {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-top: 1px;
+  padding: 2px 7px 2px 6px;
+  border-radius: 999px;
+  font-family: var(--sl-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+.ag-prio-hoog { background: var(--sl-danger); color: #fff; }
+.ag-prio-laag { border: 1px solid var(--sl-line); color: var(--sl-faint); font-weight: 400; }
+.ag-taak.is-prio-hoog {
+  background: color-mix(in srgb, var(--sl-danger) 9%, transparent);
+  box-shadow: inset 3px 0 0 var(--sl-danger);
+}
+.ag-taak.is-prio-hoog:hover { background: color-mix(in srgb, var(--sl-danger) 15%, transparent); }
+.ag-taak.is-prio-hoog .ag-taak-titel { font-weight: 650; }
+.ag-taak.is-prio-hoog .ag-vink { border-color: var(--sl-danger); border-width: 2px; }
+.ag-taak.is-prio-laag .ag-taak-titel { color: var(--sl-muted); }
 
 .ag-groep { display: grid; gap: 4px; }
 .ag-groep + .ag-groep { margin-top: 14px; }

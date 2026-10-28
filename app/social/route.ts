@@ -32,6 +32,7 @@ export async function GET(request: Request) {
   }
   if (s.soort === 'geen_toegang') return NextResponse.redirect(new URL('/geen-toegang', request.url));
   if (s.soort === 'tfa') return NextResponse.redirect(new URL(tfaDoel(s, '/social'), request.url));
+  if (s.soort === 'wachtwoord') return NextResponse.redirect(new URL('/nieuw-wachtwoord', request.url));
   if (s.soort === 'storing') {
     return new Response('De toegangscontrole is tijdelijk niet beschikbaar. Probeer het zo opnieuw.', {
       status: 503,

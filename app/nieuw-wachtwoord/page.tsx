@@ -5,7 +5,8 @@ import { huidigTeamlid } from '@/lib/auth/team';
 // Alleen bereikbaar met een sessie (proxy.ts): na de herstellink uit de mail, of
 // ingelogd vanuit het dashboard. Een nieuw teamlid (welkomstflow nog niet doorlopen, komt
 // hier via de uitnodigingsmail) krijgt een welkomsttekst, geen "Annuleren" (zonder
-// wachtwoord kan hij later niet inloggen) en gaat daarna door naar /welkom.
+// wachtwoord kan hij later niet inloggen) en gaat daarna door naar /welkom. Wie inlogt met een
+// tijdelijk wachtwoord van de admin, moet hier eerst een eigen wachtwoord kiezen (verplicht).
 export default async function NieuwWachtwoordPage({
   searchParams
 }: {
@@ -13,8 +14,10 @@ export default async function NieuwWachtwoordPage({
 }) {
   const { error, gelukt } = await searchParams;
   const status = await huidigTeamlid();
+  const verplicht = status.soort === 'wachtwoord';
   const nieuw =
-    (status.soort === 'lid' && !status.lid.welkomKlaar) || (status.soort === 'tfa' && !status.sessie.welkomKlaar);
+    (status.soort === 'lid' && !status.lid.welkomKlaar) ||
+    ((status.soort === 'tfa' || status.soort === 'wachtwoord') && !status.sessie.welkomKlaar);
 
   return (
     <div className="login-wrap">
@@ -22,9 +25,11 @@ export default async function NieuwWachtwoordPage({
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img className="login-banner" src="/brand/banner-licht.png" alt="Studio Levant" width={800} height={297} />
         <h1>{nieuw ? 'Welkom bij Studio Levant' : 'Nieuw wachtwoord'}</h1>
-        {nieuw && !gelukt && (
+        {(nieuw || verplicht) && !gelukt && (
           <p className="section-hint" style={{ marginBottom: 20 }}>
-            Kies een wachtwoord om voortaan mee in te loggen.
+            {verplicht
+              ? 'Je bent ingelogd met een tijdelijk wachtwoord. Kies nu je eigen wachtwoord; daarna kun je verder.'
+              : 'Kies een wachtwoord om voortaan mee in te loggen.'}
           </p>
         )}
         {error && <div className="foutmelding">{error}</div>}
@@ -53,7 +58,7 @@ export default async function NieuwWachtwoordPage({
             </button>
           </form>
         )}
-        {!gelukt && !nieuw && (
+        {!gelukt && !nieuw && !verplicht && (
           <Link href="/" className="login-link">
             Annuleren
           </Link>

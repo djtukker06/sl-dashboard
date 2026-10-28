@@ -109,7 +109,8 @@ export function TaakRij({
   versleepbaar?: boolean;
 }) {
   const teLaat = !taak.afgerond && !!taak.datum && taak.datum < vandaag;
-  const klasse = `ag-taak${taak.afgerond ? ' is-af' : ''}${teLaat ? ' is-telaat' : ''}`;
+  const prio = taak.prioriteit === 1 ? ' is-prio-hoog' : taak.prioriteit === 3 ? ' is-prio-laag' : '';
+  const klasse = `ag-taak${taak.afgerond ? ' is-af' : ''}${teLaat ? ' is-telaat' : ''}${taak.afgerond ? '' : prio}`;
   const inhoud = (
     <>
       <span className="ag-taak-titel">{taak.titel}</span>
@@ -140,12 +141,16 @@ export function TaakRij({
         </button>
       )}
       <Toegewezenen ids={taak.toegewezen} />
-      {taak.prioriteit !== 2 && (
-        <span
-          className={`ag-prio ag-prio-${taak.prioriteit === 1 ? 'hoog' : 'laag'}`}
-          title={taak.prioriteit === 1 ? 'Urgentie hoog' : 'Urgentie laag'}
-          aria-label={taak.prioriteit === 1 ? 'Urgentie hoog' : 'Urgentie laag'}
-        />
+      {taak.prioriteit !== 2 && !taak.afgerond && (
+        <span className={`ag-prio ag-prio-${taak.prioriteit === 1 ? 'hoog' : 'laag'}`} title={taak.prioriteit === 1 ? 'Urgentie hoog' : 'Urgentie laag'}>
+          {taak.prioriteit === 1 && (
+            <svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true">
+              <path d="M8 2.5v7" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
+              <circle cx="8" cy="13" r="1.3" fill="currentColor" />
+            </svg>
+          )}
+          {taak.prioriteit === 1 ? 'Urgent' : 'Laag'}
+        </span>
       )}
     </li>
   );
