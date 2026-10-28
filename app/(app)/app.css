@@ -370,6 +370,10 @@
 /* Klant-, project- en klantenpagina, boekhouding-overzicht: iets smaller (leesbaarheid). */
 .sl-main:has(.kp:not(.kp-breed)),
 .sl-main:has(.bh-tegels) { --sl-inhoud: 1280px; }
+/* Boekhoudschermen (bank, btw, activa, rapporten, jaarafsluiting): breed (tabellen) maar
+   gecentreerd; instellingen smaller. */
+.sl-main:has(.bh-inhoud) { --sl-inhoud: 1320px; }
+.sl-main:has(.bh-instellingen) { --sl-inhoud: 1060px; }
 /* Account: formulieren, smal en gecentreerd (inhoud 860px zoals voorheen). */
 .sl-main:has(.ac-inhoud) { --sl-inhoud: 940px; }
 /* Facturen: eigen .wrap (globals.css, 980px, padding 24px) staat al gecentreerd; de kop en
@@ -384,6 +388,7 @@
 .sl-main .kp,
 .sl-main .bh-tegels,
 .sl-main .bh-overzicht,
+.sl-main .bh-inhoud,
 .sl-main .ac-inhoud {
   width: 100%;
   max-width: var(--sl-inhoud);
@@ -391,10 +396,12 @@
   padding-inline: var(--sl-gutter);
   box-sizing: border-box;
 }
-/* Demo-banner boven het boekhoud-overzicht: zelfde kolom als de tegels eronder. */
-.sl-main .bh-demo {
+/* Demo-banner en de subnavigatie van Bank (boekingen · openstaand): zelfde kolom als de
+   inhoud eronder. */
+.sl-main .bh-demo,
+.sl-main .bh-subnav {
   max-width: none;
-  margin-inline: max(var(--sl-gutter), calc((100% - var(--sl-inhoud)) / 2 + var(--sl-gutter)));
+  margin-inline: var(--sl-uitlijn);
 }
 .sl-main .sl-kop,
 .sl-main .bh-tabs,
