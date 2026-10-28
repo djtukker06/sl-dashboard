@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { vereisTeamlidPagina } from '@/lib/auth/team';
+import { vereisBoekhouderPagina } from '@/lib/auth/team';
 import { repoVoorPagina } from '@/lib/boekhouding/modus';
 import { NietIngericht } from '@/components/boekhouding/NietIngericht';
 import { RapportenScherm } from '@/components/boekhouding/RapportSchermen';
@@ -11,7 +11,7 @@ export const metadata: Metadata = { title: 'Rapporten & jaarrekening · Studio L
 // Rapporten & jaarrekening: ?jaar=JJJJ&r=wv|balans|vennoten|proef|grootboek(&code=1100),
 // met de exports voor de boekhouder en de status van de jaarafsluiting.
 export default async function RapportenPage({ searchParams }: { searchParams: Promise<Zoekparams> }) {
-  const lid = await vereisTeamlidPagina('/boekhouding/rapporten');
+  const lid = await vereisBoekhouderPagina('/boekhouding/rapporten');
   const [repo, sp] = await Promise.all([repoVoorPagina(lid), searchParams]);
   if (!repo) return <NietIngericht titel="Rapporten &amp; jaarrekening" />;
   return <RapportenScherm repo={repo} sp={sp} />;

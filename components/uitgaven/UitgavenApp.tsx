@@ -74,9 +74,10 @@ function Bonnetjes({
 }) {
   const toast = useToast();
   const router = useRouter();
-  const { mijnId } = useTeam();
+  // Zonder vinkje Boekhouding: wel bonnetjes uploaden en terugvinden, geen btw-overzicht of export.
+  const { mijnId, boekhouding } = useTeam();
   const leden = useActieveLeden();
-  const [tab, setTab] = useState<Tab>(startTab);
+  const [tab, setTab] = useState<Tab>(boekhouding ? startTab : 'overzicht');
 
   // ---------- zoeken en filters ----------
   const [zoekInvoer, setZoekInvoer] = useState('');
@@ -286,46 +287,48 @@ function Bonnetjes({
   return (
     <div className="ug">
       <BoekhoudingKop titel="Bonnetjes & inkoopfacturen">
-        <div className="ug-meer" ref={meerRef}>
-          <button
-            type="button"
-            className="db-knop"
-            aria-haspopup="menu"
-            aria-expanded={meerOpen}
-            onClick={() => setMeerOpen((o) => !o)}
-          >
-            Meer <span aria-hidden="true">▾</span>
-          </button>
-          {meerOpen && (
-            <div className="ug-meer-menu" role="menu">
-              <button
-                type="button"
-                role="menuitem"
-                className="ug-meer-item"
-                onClick={() => {
-                  setMeerOpen(false);
-                  setTab('btw');
-                }}
-              >
-                Btw-overzicht per kwartaal
-              </button>
-              <button
-                type="button"
-                role="menuitem"
-                className="ug-meer-item"
-                onClick={() => {
-                  setMeerOpen(false);
-                  setExportOpen(true);
-                }}
-              >
-                Exporteren voor de boekhouder
-              </button>
-            </div>
-          )}
-        </div>
+        {boekhouding && (
+          <div className="ug-meer" ref={meerRef}>
+            <button
+              type="button"
+              className="db-knop"
+              aria-haspopup="menu"
+              aria-expanded={meerOpen}
+              onClick={() => setMeerOpen((o) => !o)}
+            >
+              Meer <span aria-hidden="true">▾</span>
+            </button>
+            {meerOpen && (
+              <div className="ug-meer-menu" role="menu">
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="ug-meer-item"
+                  onClick={() => {
+                    setMeerOpen(false);
+                    setTab('btw');
+                  }}
+                >
+                  Btw-overzicht per kwartaal
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="ug-meer-item"
+                  onClick={() => {
+                    setMeerOpen(false);
+                    setExportOpen(true);
+                  }}
+                >
+                  Exporteren voor de boekhouder
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </BoekhoudingKop>
 
-      {tab === 'btw' ? (
+      {tab === 'btw' && boekhouding ? (
         <div className="ug-inhoud">
           <div>
             <button type="button" className="ag-link-knop" onClick={() => setTab('overzicht')}>

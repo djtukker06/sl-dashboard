@@ -1747,8 +1747,32 @@ async function scenarioE() {
   check(nietsGeraakt(schrijf), "E: teamlid kan zijn token niet zelf wijzigen", uitleg(schrijf));
   const nieuw = await alsMetAal(db, "daniel", "aal1", "insert into public.agenda_feeds (user_id, token_hash) values (gen_random_uuid(), repeat('d', 64))");
   check(!nieuw.ok, "E: teamlid voegt geen agenda-link toe", uitleg(nieuw));
+
+  // 0030: boekhouding alleen met het vinkje (of als admin).
+  checkControle(await voerUit(db, lees("supabase/UITVOEREN_0030.sql"), "UITVOEREN_0030.sql"), "E: UITVOEREN_0030 (1e keer)");
+  checkControle(await voerUit(db, lees("supabase/UITVOEREN_0030.sql"), "UITVOEREN_0030.sql (2x)"), "E: UITVOEREN_0030 (2e keer)");
+  await db.query("insert into public.profiles (id, naam, initialen, email) values ($1, 'Mark', 'M', 'mark@studio-levant.nl') on conflict (id) do nothing", [U.mark]);
+  await db.query("insert into public.team_members (user_id, actief, rol, boekhouding) values ($1, true, 'lid', false) on conflict (user_id) do update set actief = true, rol = 'lid', boekhouding = false", [U.mark]);
+  const BK = ["bk_grootboek", "bk_rekeningen", "bk_instellingen", "bk_boekingen", "bk_aangiften"];
+  for (const t of BK) {
+    const zonder = await alsMetAal(db, "mark", "aal1", `select count(*)::int as n from public.${t}`);
+    check(zonder.ok && zonder.rows[0].n === 0, `E: zonder vinkje niets in ${t}`, uitleg(zonder));
+    const admin = await alsMetAal(db, "daniel", "aal1", `select count(*)::int as n from public.${t}`);
+    check(admin.ok && (t === "bk_boekingen" || t === "bk_aangiften" || admin.rows[0].n > 0), `E: admin leest ${t}`, uitleg(admin));
+  }
+  const boeking = await alsMetAal(db, "mark", "aal1", "insert into public.bk_boekingen (datum, omschrijving, soort, richting, bedrag_centen) values ('2026-05-02', 'x', 'uitgave', 'af', 100)");
+  check(!boeking.ok, "E: zonder vinkje geen boeking toevoegen", uitleg(boeking));
+  const mem = await alsMetAal(db, "mark", "aal1", "select public.bk_memoriaal_toevoegen('2026-05-02', 'x', 'correctie', '[{\"grootboek_code\":\"0900\",\"debet_centen\":1},{\"grootboek_code\":\"0500\",\"credit_centen\":1}]'::jsonb)");
+  check(!mem.ok, "E: zonder vinkje geen memoriaal", uitleg(mem));
+  const facturen = await alsMetAal(db, "mark", "aal1", "select count(*)::int as n from public.invoices");
+  check(facturen.ok && facturen.rows[0].n > 0, "E: zonder vinkje wel facturen", uitleg(facturen));
+  const bonnen = await alsMetAal(db, "mark", "aal1", "select count(*)::int as n from public.expenses");
+  check(bonnen.ok, "E: zonder vinkje wel bonnetjes lezen", uitleg(bonnen));
+  await db.query("update public.team_members set boekhouding = true where user_id = $1", [U.mark]);
+  const met = await alsMetAal(db, "mark", "aal1", "select count(*)::int as n from public.bk_grootboek");
+  check(met.ok && met.rows[0].n > 0, "E: met vinkje weer boekhouding", uitleg(met));
   await db.close();
-  if (fouten === fouten0) console.log("  scenario E (gebruikersbeheer + agenda-links, UITVOEREN_0028/0029.sql): ok");
+  if (fouten === fouten0) console.log("  scenario E (gebruikersbeheer, agenda-links, boekhoudrechten: UITVOEREN_0028–0030.sql): ok");
 }
 
 await scenarioA();

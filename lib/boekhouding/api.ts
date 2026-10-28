@@ -34,6 +34,8 @@ export function bkRoute<C>(fn: Handler<C>, opties: { alleenEigenaar?: boolean } 
     const c = await controleerRoute(request);
     if ('antwoord' in c) return c.antwoord;
     const lid = c.lid;
+    // Zonder vinkje Boekhouding: geen boekhoud-API (facturen en bonnetjes hebben eigen routes).
+    if (!lid.boekhouding) return fout(403, 'Je hebt geen toegang tot de boekhouding.', 'geen_boekhouding');
     if (opties.alleenEigenaar && (lid.rol !== 'eigenaar' || lid.tfa.aal !== 'aal2')) {
       return fout(403, 'Alleen de eigenaar (ingelogd met 2FA) kan dit.', 'geen_eigenaar');
     }

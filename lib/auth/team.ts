@@ -372,6 +372,17 @@ export async function vereisTeamlidPagina(next?: string): Promise<Teamlid> {
   throw new Error('De toegangscontrole is tijdelijk niet beschikbaar. Probeer het zo opnieuw.');
 }
 
+/**
+ * Voor de boekhoudschermen (bank, btw, activa, rapporten, instellingen, openstaand): alleen
+ * met het vinkje Boekhouding (of als admin). Anders terug naar /boekhouding, waar je facturen,
+ * klanten en bonnetjes wel ziet.
+ */
+export async function vereisBoekhouderPagina(next?: string): Promise<Teamlid> {
+  const lid = await vereisTeamlidPagina(next);
+  if (!lid.boekhouding) redirect('/boekhouding');
+  return lid;
+}
+
 /** Waar een sessie heen moet die eerst iets met 2FA moet. */
 export function tfaDoel(s: { stap: 'uitdaging' | 'instellen'; sessie: TfaSessie }, next?: string): string {
   const vervolg = next ? veiligVervolg(next) : '/';

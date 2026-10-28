@@ -24,7 +24,8 @@ export const metadata: Metadata = { title: 'Boekhouding · Studio Levant' };
 
 // Boekhouding: bovenaan de kerncijfers (bank, resultaat, btw, openstaand) en daaronder de keuze
 // tussen Facturen (het bestaande facturen-deel, ongewijzigd) en Bonnetjes & inkoopfacturen.
-// Alles wat hier staat is gedeeld met het hele team.
+// Alles wat hier staat is gedeeld met het hele team. Zonder vinkje Boekhouding geen kerncijfers
+// (die komen uit de boekhouding zelf), wel de tegels Facturen en Bonnetjes.
 export default async function BoekhoudingPage() {
   const lid = await vereisTeamlidPagina('/boekhouding');
 
@@ -39,7 +40,7 @@ export default async function BoekhoudingPage() {
   return (
     <div className="bh">
       <BoekhoudingKop titel="Boekhouding" />
-      <BoekhoudCijfers lid={lid} />
+      {lid.boekhouding && <BoekhoudCijfers lid={lid} />}
       <div className="bh-tegels">
         {/* ---------- Facturen ---------- */}
         <section className="bh-tegel" aria-labelledby="bh-facturen">

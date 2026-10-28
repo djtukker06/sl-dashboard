@@ -55,7 +55,7 @@ export default async function AppLayout({ children }: Readonly<{ children: React
             </span>
           </p>
         )}
-        <TeamProvider mijnId={lid.userId} overgang={lid.overgang} leden={leden}>
+        <TeamProvider mijnId={lid.userId} overgang={lid.overgang} boekhouding={lid.boekhouding} leden={leden}>
           {children}
         </TeamProvider>
       </main>

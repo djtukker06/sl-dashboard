@@ -9,26 +9,31 @@ interface TeamContext {
   mijnId: string;
   /** true zolang migratie 0021 niet is uitgevoerd (geen toewijzing, subtaken of projecten). */
   overgang: boolean;
+  /** Mag de volledige boekhouding zien (vinkje Boekhouding of admin); anders alleen facturen,
+   *  klanten en bonnetjes. De server en de database dwingen dit zelf af. */
+  boekhouding: boolean;
   leden: TeamProfiel[];
   perId: Map<string, TeamProfiel>;
 }
 
-const Ctx = createContext<TeamContext>({ mijnId: '', overgang: false, leden: [], perId: new Map() });
+const Ctx = createContext<TeamContext>({ mijnId: '', overgang: false, boekhouding: false, leden: [], perId: new Map() });
 
 export function TeamProvider({
   mijnId,
   overgang = false,
+  boekhouding = false,
   leden,
   children
 }: {
   mijnId: string;
   overgang?: boolean;
+  boekhouding?: boolean;
   leden: TeamProfiel[];
   children: React.ReactNode;
 }) {
   const waarde = useMemo(
-    () => ({ mijnId, overgang, leden, perId: new Map(leden.map((l) => [l.id, l])) }),
-    [mijnId, overgang, leden]
+    () => ({ mijnId, overgang, boekhouding, leden, perId: new Map(leden.map((l) => [l.id, l])) }),
+    [mijnId, overgang, boekhouding, leden]
   );
   return <Ctx.Provider value={waarde}>{children}</Ctx.Provider>;
 }

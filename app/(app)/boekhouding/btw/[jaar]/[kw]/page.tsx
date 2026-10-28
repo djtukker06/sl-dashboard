@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
-import { vereisTeamlidPagina } from '@/lib/auth/team';
+import { vereisBoekhouderPagina } from '@/lib/auth/team';
 import { repoVoorPagina } from '@/lib/boekhouding/modus';
 import { NietIngericht } from '@/components/boekhouding/NietIngericht';
 import { leesKwartaal } from '@/lib/boekhouding/acties';
@@ -20,7 +20,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 // naar de boekingen, controles, markeren als ingediend (vergrendelt) en de betaling koppelen.
 export default async function AangiftePage({ params }: Props) {
   const p = await params;
-  const lid = await vereisTeamlidPagina(`/boekhouding/btw/${encodeURIComponent(p.jaar)}/${encodeURIComponent(p.kw)}`);
+  const lid = await vereisBoekhouderPagina(`/boekhouding/btw/${encodeURIComponent(p.jaar)}/${encodeURIComponent(p.kw)}`);
   const kw = leesKwartaal(p.jaar, p.kw);
   if (!kw) notFound();
   const repo = await repoVoorPagina(lid);

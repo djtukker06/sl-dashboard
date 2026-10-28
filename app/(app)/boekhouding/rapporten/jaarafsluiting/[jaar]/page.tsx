@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
-import { vereisTeamlidPagina } from '@/lib/auth/team';
+import { vereisBoekhouderPagina } from '@/lib/auth/team';
 import { repoVoorPagina } from '@/lib/boekhouding/modus';
 import { NietIngericht } from '@/components/boekhouding/NietIngericht';
 import { JaarafsluitingScherm } from '@/components/boekhouding/JaarSchermen';
@@ -12,7 +12,7 @@ export const metadata: Metadata = { title: 'Jaarafsluiting · Studio Levant' };
 // afsluiten/heropenen (alleen de eigenaar met 2FA; de API controleert dat ook).
 export default async function JaarafsluitingPage({ params }: { params: Promise<{ jaar: string }> }) {
   const { jaar: tekst } = await params;
-  const lid = await vereisTeamlidPagina(`/boekhouding/rapporten/jaarafsluiting/${encodeURIComponent(tekst)}`);
+  const lid = await vereisBoekhouderPagina(`/boekhouding/rapporten/jaarafsluiting/${encodeURIComponent(tekst)}`);
   const jaar = /^\d{4}$/.test(tekst) ? Number(tekst) : NaN;
   if (!(jaar >= 2000 && jaar <= 2999)) notFound();
   const repo = await repoVoorPagina(lid);
