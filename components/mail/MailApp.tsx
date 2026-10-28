@@ -8,6 +8,7 @@ import type { Adres, Bericht, Envelop, InboxDto, InboxTeller, MailMap, MapRol } 
 import { ALLE_INBOXEN } from '@/lib/mail/zichtbaarheid';
 import { ModuleKop } from '@/components/shell/ModuleKop';
 import { ToastProvider, useToast } from '@/components/agenda/Toast';
+import { useTeam } from '@/components/team/TeamProvider';
 import { Icoon } from './Iconen';
 import { Inboxen } from './Inboxen';
 import { Lezer, type LezerActie } from './Lezer';
@@ -24,6 +25,22 @@ type Opstel = { modus: OpstelModus; basis: Bericht | null; basisMb: string | nul
 type Selectie = { mb: string; uid: number };
 
 const PER = 40;
+
+/**
+ * Werkgeheugen van Mail over tabbladwissels heen: ga je naar een ander tabblad en terug, dan
+ * staan tellers, mappen, lijsten en geopende berichten er meteen weer, en ververst Mail op de
+ * achtergrond (zoals al binnen de pagina). Alleen in het geheugen van dit browsertabblad
+ * (nooit op schijf) en per gebruiker; herladen of uitloggen wist het.
+ */
+interface MailGeheugen {
+  gebruiker: string;
+  tellers: Record<string, InboxTeller>;
+  mappenPer: Record<string, MailMap[]>;
+  lijsten: Record<string, LijstStaat>;
+  berichten: Record<string, Bericht>;
+}
+let geheugen: MailGeheugen | null = null;
+const uitGeheugen = (gebruiker: string) => (typeof window !== 'undefined' && geheugen?.gebruiker === gebruiker ? geheugen : null);
 const SNELTOETSEN: [string, string][] = [
   ['j / k', 'volgende / vorige'],
   ['r', 'beantwoorden'],
@@ -83,6 +100,7 @@ function Mail({
   nieuwAan: string;
 }) {
   const toast = useToast();
+  const { mijnId } = useTeam();
   const smal = useSmal('(max-width: 720px)');
   const middel = useSmal('(max-width: 1100px)');
 
@@ -94,20 +112,23 @@ function Mail({
 
   const [mb, setMb] = useState(beginMb);
   const [map, setMap] = useState(beginMb === ALLE_INBOXEN ? 'INBOX' : startMap || 'INBOX');
-  const [tellers, setTellers] = useState<Record<string, InboxTeller>>({});
-  const [mappenPer, setMappenPer] = useState<Record<string, MailMap[]>>({});
+  const [tellers, setTellers] = useState<Record<string, InboxTeller>>(() => uitGeheugen(mijnId)?.tellers ?? {});
+  const [mappenPer, setMappenPer] = useState<Record<string, MailMap[]>>(() => uitGeheugen(mijnId)?.mappenPer ?? {});
   const [mappenFout, setMappenFout] = useState<Record<string, MailApiFout>>({});
   const [open, setOpen] = useState<Record<string, boolean>>(() => (beginMb === ALLE_INBOXEN ? {} : { [beginMb]: true }));
   const [zoekInvoer, setZoekInvoer] = useState('');
   const [zoek, setZoek] = useState('');
-  const [lijsten, setLijsten] = useState<Record<string, LijstStaat>>({});
+  const [lijsten, setLijsten] = useState<Record<string, LijstStaat>>(() => uitGeheugen(mijnId)?.lijsten ?? {});
   const [lijstLaden, setLijstLaden] = useState(false);
   const [lijstFout, setLijstFout] = useState<{ sleutel: string; fout: MailApiFout } | null>(null);
   const [meerLaden, setMeerLaden] = useState(false);
   const [sel, setSel] = useState<Selectie | null>(() =>
     startUid ? { mb: beginMb === ALLE_INBOXEN ? (startBerichtMb ?? eerste) : beginMb, uid: startUid } : null
   );
-  const [berichten, setBerichten] = useState<Record<string, Bericht>>({});
+  const [berichten, setBerichten] = useState<Record<string, Bericht>>(() => uitGeheugen(mijnId)?.berichten ?? {});
+  useEffect(() => {
+    if (mijnId) geheugen = { gebruiker: mijnId, tellers, mappenPer, lijsten, berichten };
+  }, [mijnId, tellers, mappenPer, lijsten, berichten]);
   const [berichtLaden, setBerichtLaden] = useState(false);
   const [berichtFout, setBerichtFout] = useState<{ sleutel: string; fout: MailApiFout } | null>(null);
   const [opstel, setOpstel] = useState<Opstel | null>(

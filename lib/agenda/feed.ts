@@ -6,6 +6,7 @@ import { systeemClient } from '@/lib/supabase/systeem';
 import { tabelOntbreekt } from '@/lib/db/ontbreekt';
 import { normTijd, plusDagen, vandaag, type Dag } from './datum';
 import { clientVan, maakIcs, type FeedAfspraak, type FeedTaak } from './ics';
+import { FEED_KOLOMMEN, NIET_INGERICHT, naarFeedStatus, type FeedRij, type FeedStatus } from './feed-status';
 
 // Agenda-abonnement per teamlid (migratie 0029): een geheime link die Apple Agenda of Google
 // Agenda zelf periodiek ophaalt. Alleen de SHA-256 van het token staat in de database.
@@ -16,57 +17,22 @@ import { clientVan, maakIcs, type FeedAfspraak, type FeedTaak } from './ics';
 //   feedVoorToken  de ICS-inhoud voor de publieke route app/api/agenda-feed/[token], zonder
 //                sessie: alleen met een geldig token van een actief teamlid.
 
-export type AgendaClient = 'apple' | 'google' | 'outlook' | 'overig';
-
-export interface FeedStatus {
-  /** Migratie 0029 uitgevoerd. */
-  ingericht: boolean;
-  heeftLink: boolean;
-  gekoppeld: boolean;
-  client: AgendaClient | null;
-  laatstOpgehaald: string | null;
-  uitgesteldTot: string | null;
-}
+export { moetKoppelen, type AgendaClient, type FeedStatus } from './feed-status';
 
 const UITSTEL_UREN = 24;
 const TOKEN = /^[A-Za-z0-9_-]{40,64}$/;
 
 const hash = (token: string) => createHash('sha256').update(token, 'utf8').digest('hex');
 
-interface FeedRij {
-  user_id: string;
-  eerst_opgehaald_op: string | null;
-  laatst_opgehaald_op: string | null;
-  client: AgendaClient | null;
-  uitgesteld_tot: string | null;
-}
-
-function naarStatus(r: FeedRij | null): FeedStatus {
-  return {
-    ingericht: true,
-    heeftLink: Boolean(r),
-    gekoppeld: Boolean(r?.eerst_opgehaald_op),
-    client: r?.client ?? null,
-    laatstOpgehaald: r?.laatst_opgehaald_op ?? null,
-    uitgesteldTot: r?.uitgesteld_tot ?? null
-  };
-}
-
-const KOLOMMEN = 'user_id, eerst_opgehaald_op, laatst_opgehaald_op, client, uitgesteld_tot';
+const KOLOMMEN = FEED_KOLOMMEN;
 
 export async function feedStatus(lid: Teamlid): Promise<FeedStatus> {
   const { data, error } = await lid.sb.from('agenda_feeds').select(KOLOMMEN).eq('user_id', lid.userId).maybeSingle();
   if (error) {
-    if (tabelOntbreekt(error)) return { ingericht: false, heeftLink: false, gekoppeld: false, client: null, laatstOpgehaald: null, uitgesteldTot: null };
+    if (tabelOntbreekt(error)) return NIET_INGERICHT;
     throw error;
   }
-  return naarStatus((data as FeedRij | null) ?? null);
-}
-
-/** Moet dit teamlid nu eerst zijn agenda koppelen? (Zonder migratie 0029: nee.) */
-export function moetKoppelen(s: FeedStatus, nu = new Date()): boolean {
-  if (!s.ingericht || s.gekoppeld) return false;
-  return !(s.uitgesteldTot && new Date(s.uitgesteldTot) > nu);
+  return naarFeedStatus((data as FeedRij | null) ?? null);
 }
 
 export async function nieuweLink(lid: Teamlid): Promise<string> {

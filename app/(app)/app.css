@@ -155,6 +155,13 @@
 .db-skelet-groot { height: 34px; width: 55%; margin-bottom: 6px; }
 @keyframes db-glans { from { background-position: 100% 0; } to { background-position: -100% 0; } }
 
+/* Laadscherm bij het wisselen van tabblad (app/(app)/loading.tsx). */
+.sl-laden { min-height: 100vh; background: var(--sl-bg); }
+.sl-laden .sl-kop-tekst { display: grid; gap: 10px; min-width: 240px; }
+.sl-laden-label { width: 90px; height: 10px; }
+.sl-laden-titel { width: 220px; margin: 0; }
+.sl-laden-inhoud { display: grid; gap: 14px; max-width: 1240px; margin-inline: auto; padding: 32px var(--sl-gutter, 40px); }
+
 /* ---------- facturen ---------- */
 .db-omzet { display: grid; gap: 4px; }
 .db-omzet-bedrag {

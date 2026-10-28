@@ -1,3 +1,4 @@
+import { after } from 'next/server';
 import { ImapFlow } from 'imapflow';
 import type { MailConfig } from './config';
 import { MailFout, naarMailFout, NIET_GEKOPPELD } from './fout';
@@ -5,7 +6,9 @@ import { openbaarAdres } from './dns';
 import { logFout } from '@/lib/log';
 
 // Eén IMAP-sessie per request: openen, werk doen, altijd netjes uitloggen. Geen IDLE en
-// geen verbindingen die blijven openstaan — dat past bij serverless (Vercel).
+// geen verbindingen die blijven openstaan — dat past bij serverless (Vercel). Het uitloggen
+// gebeurt ná het antwoord (next/server `after`): de mailserver staat ver weg (VS) en op zijn
+// bevestiging hoeft de gebruiker niet te wachten. Buiten een verzoek (scripts) gewoon meteen.
 
 export async function metImap<T>(cfg: MailConfig | null, fn: (client: ImapFlow) => Promise<T>): Promise<T> {
   if (!cfg) throw new MailFout(503, 'niet_gekoppeld', NIET_GEKOPPELD);
@@ -48,10 +51,17 @@ export async function metImap<T>(cfg: MailConfig | null, fn: (client: ImapFlow) 
     }
     throw naarMailFout(e);
   } finally {
+    const afmelden = async () => {
+      try {
+        await client.logout();
+      } catch {
+        client.close();
+      }
+    };
     try {
-      await client.logout();
+      after(afmelden);
     } catch {
-      client.close();
+      await afmelden();
     }
   }
 }

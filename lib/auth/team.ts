@@ -8,6 +8,7 @@ import { createClient } from '@/lib/supabase/server';
 import { tabelOntbreekt } from '@/lib/db/ontbreekt';
 import { veiligVervolg } from '@/lib/vervolg';
 import { welkomKlaarVan } from '@/lib/account/types';
+import { FEED_KOLOMMEN, NIET_INGERICHT, naarFeedStatus, type FeedRij, type FeedStatus } from '@/lib/agenda/feed-status';
 import { logFout } from '@/lib/log';
 import { eigenHerkomst, isWijzigend } from './herkomst';
 import { afdwingenUitEnv, alsAal, tfaStap, type Aal, type TfaStap } from './tfa-kern';
@@ -138,6 +139,8 @@ export interface Teamlid {
   /** Volledige boekhouding (boekingen, bank, btw, rapporten). false = alleen facturen,
    *  klanten en bonnetjes (team_members.boekhouding, migratie 0028; zonder kolom: true). */
   boekhouding: boolean;
+  /** Agenda-koppeling (migratie 0029), in dezelfde ronde opgehaald als de toegang. */
+  agenda: FeedStatus;
   /** false = de welkomstflow (/welkom) nog doorlopen. true als hij klaar is, en ook zonder
    *  kolom profiles.welkom_klaar_op (migratie 0022 nog niet uitgevoerd) of zonder profiel. */
   welkomKlaar: boolean;
@@ -234,13 +237,15 @@ async function bepaalStatus(): Promise<TeamStatus> {
   // profielen van het team + toegang_status() (0026: is de migratie er, staat de noodstop
   // aan?). Alles met hetzelfde token; RLS: een niet-lid ziet alleen zijn eigen lidmaatschap.
   // team_members met select('*'): zonder kolom boekhouding (0028 nog niet uitgevoerd) geen fout.
-  const [userRes, lidRes, profielRes, toegangRes] = await Promise.all([
+  // agenda_feeds: RLS laat alleen je eigen rij zien (0029), dus geen filter op user-id nodig.
+  const [userRes, lidRes, profielRes, toegangRes, agendaRes] = await Promise.all([
     sb.auth.getUser(),
     sb.from('team_members').select('*').limit(200),
     // select('*') i.p.v. losse kolommen: zo geeft een ontbrekende kolom welkom_klaar_op
     // (0022 nog niet uitgevoerd) geen fout en blijft het profiel gewoon leesbaar.
     sb.from('profiles').select('*').limit(200),
-    sb.rpc('toegang_status')
+    sb.rpc('toegang_status'),
+    sb.from('agenda_feeds').select(FEED_KOLOMMEN).limit(1)
   ]);
   const user = userRes.data.user;
   if (!user) return { soort: 'anoniem' };
@@ -284,6 +289,7 @@ async function bepaalStatus(): Promise<TeamStatus> {
           profiel,
           rol: 'lid',
           boekhouding: true,
+          agenda: NIET_INGERICHT,
           welkomKlaar: true,
           overgang: true,
           sb,
@@ -336,6 +342,7 @@ async function bepaalStatus(): Promise<TeamStatus> {
       profiel,
       rol,
       boekhouding,
+      agenda: agendaStatus(agendaRes, userId),
       welkomKlaar,
       overgang: false,
       sb,
@@ -344,6 +351,16 @@ async function bepaalStatus(): Promise<TeamStatus> {
       team: profielen ? { profielen, leden: leden.map((l) => ({ user_id: l.user_id, actief: l.actief === true })) } : undefined
     }
   };
+}
+
+/** Agenda-koppeling uit de parallelle ronde; zonder tabel (0029) of bij een fout: niet blokkeren. */
+function agendaStatus(res: { data: unknown; error: { code?: string; message?: string } | null }, userId: string): FeedStatus {
+  if (res.error) {
+    if (!tabelOntbreekt(res.error)) logFout('[team] agenda-koppeling', res.error);
+    return NIET_INGERICHT;
+  }
+  const rij = ((res.data ?? []) as FeedRij[]).find((r) => r.user_id === userId) ?? null;
+  return naarFeedStatus(rij);
 }
 
 /** De toegangsstatus van dit verzoek (binnen één render maar één keer opgehaald). */
