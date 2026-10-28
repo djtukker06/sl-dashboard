@@ -17,6 +17,21 @@ export interface LidBeveiliging {
   zelf: boolean;
 }
 
+/**
+ * Aantal geverifieerde 2FA-apparaten per gebruiker. Apart per gebruiker opgehaald: de lijst van
+ * auth.admin.listUsers() bevat geen factoren (dan leek iedereen "nog geen 2FA" te hebben).
+ */
+export async function geverifieerdeFactoren(sb: ReturnType<typeof createServiceRoleClient>, ids: string[]): Promise<Map<string, number>> {
+  const paren = await Promise.all(
+    ids.map(async (id) => {
+      const { data, error } = await sb.auth.admin.mfa.listFactors({ userId: id });
+      if (error) throw error;
+      return [id, (data?.factors ?? []).filter((f) => f.status === 'verified').length] as const;
+    })
+  );
+  return new Map(paren);
+}
+
 export async function teamBeveiliging(lid: Teamlid): Promise<LidBeveiliging[]> {
   const sb = createServiceRoleClient(lid.bewijs);
   const [ledenRes, profielRes, usersRes] = await Promise.all([
@@ -25,6 +40,7 @@ export async function teamBeveiliging(lid: Teamlid): Promise<LidBeveiliging[]> {
     sb.auth.admin.listUsers({ page: 1, perPage: 200 })
   ]);
   if (ledenRes.error) throw ledenRes.error;
+  const factoren = await geverifieerdeFactoren(sb, ((ledenRes.data ?? []) as { user_id: string }[]).map((m) => m.user_id));
   const namen = new Map(((profielRes.data ?? []) as { id: string; naam: string }[]).map((p) => [p.id, p.naam]));
   const users = new Map((usersRes.data?.users ?? []).map((u) => [u.id, u]));
   return ((ledenRes.data ?? []) as { user_id: string; actief: boolean; rol: string }[])
@@ -36,7 +52,7 @@ export async function teamBeveiliging(lid: Teamlid): Promise<LidBeveiliging[]> {
         email: u?.email ?? '',
         rol: m.rol === 'eigenaar' ? ('eigenaar' as const) : ('lid' as const),
         actief: m.actief === true,
-        factoren: (u?.factors ?? []).filter((f) => f.status === 'verified').length,
+        factoren: factoren.get(m.user_id) ?? 0,
         laatstIngelogd: u?.last_sign_in_at ?? null,
         zelf: m.user_id === lid.userId
       };

@@ -2,6 +2,7 @@ import 'server-only';
 import type { Teamlid } from './team';
 import { createServiceRoleClient } from '@/lib/supabase/service-role';
 import { tabelOntbreekt } from '@/lib/db/ontbreekt';
+import { geverifieerdeFactoren } from './beveiliging';
 import {
   beheerFout,
   dbRolVan,
@@ -58,6 +59,7 @@ export async function gebruikersLijst(lid: Teamlid): Promise<{ gebruikers: Gebru
     sb.auth.admin.listUsers({ page: 1, perPage: 500 })
   ]);
   if (usersRes.error) throw usersRes.error;
+  const factoren = await geverifieerdeFactoren(sb, leden.map((m) => m.user_id));
   const profielen = new Map(((profielRes.data ?? []) as { id: string; naam: string; initialen: string; kleur: string }[]).map((p) => [p.id, p]));
   const users = new Map((usersRes.data?.users ?? []).map((u) => [u.id, u]));
   const migratie = leden.length === 0 || leden.some((l) => 'boekhouding' in l);
@@ -77,7 +79,7 @@ export async function gebruikersLijst(lid: Teamlid): Promise<{ gebruikers: Gebru
         boekhouding: rol === 'admin' || m.boekhouding !== false,
         actief: m.actief === true,
         wachtwoordWijzigen: u?.app_metadata?.wachtwoord_wijzigen === true,
-        factoren: (u?.factors ?? []).filter((f) => f.status === 'verified').length,
+        factoren: factoren.get(m.user_id) ?? 0,
         laatstIngelogd: u?.last_sign_in_at ?? null,
         aangemaakt: u?.created_at ?? null,
         zelf: m.user_id === lid.userId
