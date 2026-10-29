@@ -608,3 +608,74 @@ input:focus { outline: none; border-color: var(--cream-dim); }
   font-size: 14px;
 }
 .login-melding { margin: 0 0 16px; font-size: 13px; color: var(--cream-dim); }
+
+/* Openingsanimatie van /login (components/login/Openingsanimatie.tsx). Alleen actief als het
+   inline script in app/login/page.tsx de klasse "sl-intro" op .login-wrap zette; zonder JavaScript
+   of na afloop is alles hierboven gewoon zichtbaar. De begintoestand staat hier (en niet pas
+   na de hydratie), zodat het formulier niet eerst even opflitst. */
+/* De positionering staat op .login-intro zelf (niet alleen onder .sl-intro): bij overslaan
+   vervaagt het overlay nog even nádat sl-intro weg is, en moet het dan vast over de pagina
+   blijven liggen in plaats van als flex-item naast de kaart te schuiven. */
+.login-intro {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  cursor: pointer;
+}
+.login-wrap.sl-intro .login-card,
+.login-wrap.sl-intro .login-banner { opacity: 0; }
+.login-wrap.sl-intro .login-intro { display: flex; }
+.login-intro-bg {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 60% 45% at 50% 50%, rgba(231, 226, 219, 0.05), transparent 70%),
+    var(--bg-page);
+}
+.login-intro-logo {
+  position: relative;
+  width: min(460px, 78vw);
+  aspect-ratio: 800 / 297;
+}
+.login-intro-laag { position: absolute; inset: 0; will-change: transform, clip-path; }
+.login-wrap.sl-intro .login-intro-laag { opacity: 0; }
+.login-intro-laag img { display: block; width: 100%; height: 100%; }
+/* Eindtoestand van de delen (zie de maten in Openingsanimatie.tsx): samen het hele logo. */
+.login-intro-merk { clip-path: inset(0% 61.5% 0% 0%); }
+.login-intro-regel-1 { clip-path: inset(0% 0% 60.6% 38.5%); }
+.login-intro-regel-2 { clip-path: inset(39.4% 0% 17.2% 38.5%); }
+.login-intro-regel-3 { clip-path: inset(82.8% 0% 0% 38.5%); }
+.login-intro-glans {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  background: linear-gradient(100deg, transparent 42%, rgba(255, 255, 255, 0.95) 50%, transparent 58%) 93% 0 / 250% 100% no-repeat;
+  -webkit-mask: url('/brand/banner-licht.png') 0 0 / 100% 100% no-repeat;
+  mask: url('/brand/banner-licht.png') 0 0 / 100% 100% no-repeat;
+}
+.login-intro-skip {
+  position: absolute;
+  right: 24px;
+  bottom: 24px;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  padding: 8px 14px;
+  font-family: 'Fragment Mono', ui-monospace, monospace;
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--cream-faint);
+  cursor: pointer;
+  transition: color 0.2s, border-color 0.2s;
+}
+.login-intro-skip:hover, .login-intro-skip:focus-visible { color: var(--cream); border-color: var(--border); outline: none; }
+@media (prefers-reduced-motion: reduce) {
+  .login-wrap.sl-intro .login-intro { display: none; }
+  .login-wrap.sl-intro .login-card,
+  .login-wrap.sl-intro .login-banner { opacity: 1; }
+}

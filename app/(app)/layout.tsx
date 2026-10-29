@@ -16,6 +16,7 @@ import './account.css';
 import './taken.css';
 import './klanten.css';
 import './bestanden.css';
+import './notities.css';
 
 // Gedeelde shell voor alle ingelogde React-pagina's (dashboard, mail, agenda, boekhouding, account).
 // De social-module (statisch HTML) krijgt dezelfde rail via app/social/route.ts.

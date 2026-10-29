@@ -2,7 +2,7 @@
 //   - lib/crm/invoer.ts: klant aanmaken/wijzigen (bedrijfsnaam verplicht, status standaard
 //     lead, e-mail/telefoon gecontroleerd), notities en de ilike-escape voor prijsopgaven;
 //   - bronbewaking: elke nieuwe route en pagina gaat via de centrale teamcheck, klanten
-//     verwijderen kan hier niet, de rail heeft één tab "Klanten" (7 items, met Bestanden) en de
+//     verwijderen kan hier niet, de rail heeft één tab "Klanten" (8 items, met Bestanden en Scratchpad) en de
 //     facturen-routes zijn niet aangeraakt.
 //   - lib/crm/projectstatus.ts (0023): deadlinekleur, dagen in een status, afgerond in de
 //     laatste 30 dagen, sorteren op deadline, buurstatus (Alt + ←/→);
@@ -391,10 +391,10 @@ test("pagina's tonen 'nog niet ingericht' zonder 0022", () => {
   for (const f of PAGINAS.slice(0, 4)) assert.match(lees(f), /CrmNietIngericht/, f);
 });
 
-test("rail: één tab Klanten (/klanten + /projecten), 7 items (met Bestanden)", () => {
+test("rail: één tab Klanten (/klanten + /projecten), 8 items (met Bestanden en Scratchpad)", () => {
   const src = lees("lib/modules.ts");
   const ids = [...src.matchAll(/^\s{4}id: '([a-z]+)'/gm)].map((m) => m[1]);
-  assert.deepEqual(ids, ["dashboard", "mail", "agenda", "klanten", "bestanden", "boekhouding", "social"]);
+  assert.deepEqual(ids, ["dashboard", "mail", "agenda", "scratchpad", "klanten", "bestanden", "boekhouding", "social"]);
   assert.match(src, /paden: \['\/klanten', '\/projecten'\]/);
   assert.match(lees("lib/shell/iconen.ts"), /klanten:/);
 });

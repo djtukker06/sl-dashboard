@@ -56,7 +56,7 @@
 //    - 0022: leesregels op taken/toewijzingen/subtaken/afspraken/deelnemers, met teamcheck.
 // Live: /agenda?wie=team zonder sessie -> /login; /api/taken?filter=uitgezet -> 401.
 // 9. Statisch, team van twee — stap 3 (klanten & projecten):
-//    - één rail-tab "Klanten" (/klanten + /projecten), toen 6 items (nu 7, met Bestanden); /agenda/projecten stuurt door;
+//    - één rail-tab "Klanten" (/klanten + /projecten), toen 6 items (nu 8, met Bestanden en Scratchpad); /agenda/projecten stuurt door;
 //    - nieuwe routes via de teamcheck; 0022: clients-kolommen, client_notes, project_eigenaren
 //      met RLS (is_teamlid), projectstatus gepland/bezig/afgerond.
 // Live: /klanten, /projecten, /klanten/<id>, /projecten/<id> en /agenda/projecten zonder
@@ -64,7 +64,7 @@
 // 11. Statisch, projectenbord (0023): bord + lijst, stappenbalk, dashboardkaart, oude
 //     statussen nergens meer als keuze; UITVOEREN_0023.sql in één transactie.
 // Live: /projecten?weergave=bord|lijst zonder sessie -> /login; PATCH /api/projecten/<id> -> 401.
-// 12. Statisch, Bestanden (Google Drive, 0024): module in de rail (7 items), elke /api/drive-
+// 12. Statisch, Bestanden (Google Drive, 0024): module in de rail (8 items, met Scratchpad), elke /api/drive-
 //     route via de teamcheck, koppelen/ontkoppelen/kopiëren alleen voor de eigenaar, tokens
 //     alleen server-side, upload rechtstreeks naar Google, kopieën na het antwoord (after),
 //     blok op klant- en projectpagina; UITVOEREN_0024.sql in één transactie.
@@ -173,13 +173,19 @@ function bestandenIn(map, filter) {
       check(/export const GET = cronRoute\(/.test(lees(f)), `${f} gebruikt cronRoute (CRON_SECRET)`);
       continue;
     }
+    // Het agenda-abonnement (Apple/Google) heeft geen sessie: het geheime token is de controle.
+    if (f === path.join("app", "api", "agenda-feed", "[token]", "route.ts")) {
+      check(/feedVoorToken\(/.test(lees(f)), `${f} controleert het token (feedVoorToken)`);
+      continue;
+    }
     check(WRAPPERS.test(lees(f)), `${f} gebruikt de teamlidcontrole`);
   }
   for (const f of bestandenIn("app/social-files", (n) => n === "route.ts")) {
     check(/\broute\(/.test(lees(f)), `${f} gebruikt route() (teamlidcontrole)`);
   }
   for (const f of bestandenIn("app/(app)", (n) => n === "page.tsx")) {
-    check(/vereisTeamlidPagina\(/.test(lees(f)), `${f} begint met vereisTeamlidPagina()`);
+    // vereisBoekhouderPagina = vereisTeamlidPagina + vinkje Boekhouding (lib/auth/team.ts).
+    check(/vereis(Teamlid|Boekhouder)Pagina\(/.test(lees(f)), `${f} begint met vereisTeamlidPagina()`);
   }
   check(/vereisTeamlidPagina\(/.test(lees("app/(app)/layout.tsx")), "app/(app)/layout.tsx controleert het lidmaatschap");
   check(/huidigTeamlid\(/.test(lees("app/social/route.ts")), "/social controleert het lidmaatschap");
@@ -476,7 +482,7 @@ console.log("Team van twee, stap 3 (klanten & projecten)");
 {
   const modules = lees("lib/modules.ts");
   const ids = [...modules.matchAll(/^\s{4}id: '([a-z]+)'/gm)].map((m) => m[1]);
-  check(ids.length === 7 && ids.includes("klanten") && ids.includes("bestanden"), "rail: 7 items, waaronder Klanten en Bestanden", ids.join(","));
+  check(ids.length === 8 && ids.includes("klanten") && ids.includes("bestanden") && ids.includes("scratchpad"), "rail: 8 items, waaronder Klanten, Bestanden en Scratchpad", ids.join(","));
   check(/paden: \['\/klanten', '\/projecten'\]/.test(modules), "Klanten is actief op /klanten en /projecten");
   check(/redirect\('\/projecten'\)/.test(lees("app/(app)/agenda/projecten/page.tsx")), "/agenda/projecten stuurt door naar /projecten");
   for (const f of ["app/(app)/klanten/page.tsx", "app/(app)/klanten/[id]/page.tsx", "app/(app)/projecten/page.tsx", "app/(app)/projecten/[id]/page.tsx"]) {
@@ -594,7 +600,8 @@ console.log("Boekhouding: bank & boekingen (0027)");
   for (const f of bestandenIn("app/(app)/boekhouding", (n) => n === "page.tsx").filter((f) => !/bonnetjes/.test(f) && f !== path.join("app", "(app)", "boekhouding", "page.tsx"))) {
     const src = lees(f);
     const opslag = src.search(/(kiesRepo|repoVoorPagina)\(/);
-    check(src.indexOf("vereisTeamlidPagina(") > 0 && opslag > 0 && src.indexOf("vereisTeamlidPagina(") < opslag, `${f}: teamcheck vóór de opslag`);
+    const check0 = src.search(/vereis(Teamlid|Boekhouder)Pagina\(/);
+    check(check0 > 0 && opslag > 0 && check0 < opslag, `${f}: teamcheck vóór de opslag`);
   }
   const demo = lees("lib/boekhouding/repo/demo.ts").replace(/\/\/[^\n]*/g, "");
   check(!/supabase|@\/lib\/supabase|fetch\(/.test(demo), "demo-opslag importeert geen Supabase en doet geen netwerk");
@@ -638,7 +645,8 @@ console.log("Boekhouding: bank & boekingen (0027)");
   check(/export const DELETE = bkRoute\([\s\S]*?\{ alleenEigenaar: true \}\s*\);/.test(agRoute), "aangifte intrekken alleen door de eigenaar (route)");
   check(/aangifteRubrieken\(journaalVan\(data\)/.test(lees("lib/boekhouding/acties.ts")), "bij indienen rekent de server de aangifte zelf uit");
   // Facturen ongewijzigd sinds de start van de boekhouding (commit 7df4ae9).
-  const fdiff = spawnSync("git", ["diff", "--name-only", "7df4ae9", "--", "lib/invoice", "app/actions", "app/api/invoices", "app/api/quotes", "app/(app)/facturen", "components/InvoiceForm.tsx", "components/InvoicesTable.tsx", "components/QuotesTable.tsx", "components/RestfactuurKnop.tsx"], { cwd: ROOT, encoding: "utf8" });
+  // (app/actions/wachtwoord.ts hoort niet bij facturen: verplicht eigen wachtwoord, 0028.)
+  const fdiff = spawnSync("git", ["diff", "--name-only", "7df4ae9", "--", "lib/invoice", "app/actions", ":(exclude)app/actions/wachtwoord.ts", "app/api/invoices", "app/api/quotes", "app/(app)/facturen", "components/InvoiceForm.tsx", "components/InvoicesTable.tsx", "components/QuotesTable.tsx", "components/RestfactuurKnop.tsx"], { cwd: ROOT, encoding: "utf8" });
   if (fdiff.status === 0) check(fdiff.stdout.trim() === "", "facturen-code ongewijzigd sinds de start van de boekhouding", fdiff.stdout.trim().replace(/\n/g, ", "));
 }
 

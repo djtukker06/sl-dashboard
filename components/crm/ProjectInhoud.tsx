@@ -2,13 +2,14 @@ import Link from 'next/link';
 import type { Project, Taak } from '@/lib/agenda/types';
 import type { DriveStatus } from '@/lib/drive/types';
 import { BestandenBlok } from '@/components/bestanden/BestandenBlok';
+import { NotitiesBlok } from '@/components/notities/NotitiesBlok';
 import { ModuleKop } from '@/components/shell/ModuleKop';
 import { ProjectKop, ProjectTitel } from './ProjectKop';
 import { ProjectNotitie } from './ProjectNotitie';
 import { StatusStappen } from './StatusStappen';
 import { TakenBlok } from './TakenBlok';
 
-/** De projectpagina zelf (zonder data ophalen): kop, status en gegevens, taken, notities, bestanden. */
+/** De projectpagina zelf (zonder data ophalen): kop, status en gegevens, taken, notities, Scratchpad, bestanden. */
 export function ProjectInhoud({ project, taken, vandaag, drive, nu }: { project: Project; taken: Taak[]; vandaag: string; drive: DriveStatus | null; nu: string }) {
   return (
     <>
@@ -68,6 +69,7 @@ export function ProjectInhoud({ project, taken, vandaag, drive, nu }: { project:
               <ProjectNotitie projectId={project.id} start={project.notitie} />
             </div>
           </section>
+          <NotitiesBlok koppeling={{ project: project.id }} />
           <BestandenBlok status={drive} start={{ project: project.id }} />
         </aside>
       </div>

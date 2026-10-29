@@ -64,6 +64,19 @@ export const MODULES: Module[] = [
     actief: true
   },
   {
+    // Kladblok van het team (Notion-achtig): ideeën uitschrijven met titel, koppen, lijstjes
+    // en afvinkpunten, eventueel gekoppeld aan een klant/lead of project. Gedeeld met het
+    // team, of privé. Tabel public.notities (migratie 0031), API /api/notities.
+    id: 'scratchpad',
+    naam: 'Scratchpad',
+    kort: 'Scratchpad',
+    beschrijving: 'Brainstormen en ideeën uitschrijven, gekoppeld aan een klant of project',
+    href: '/scratchpad',
+    icoon: 'scratchpad',
+    actief: true,
+    snelactie: { label: 'Nieuwe notitie', href: '/scratchpad?nieuw=1' }
+  },
+  {
     // Eén tab voor klanten en projecten (simpel CRM/PM): /klanten en /projecten, met
     // bovenin een schakelaar Klanten | Projecten. Een project hangt aan een klant, dus
     // één tab houdt de rail rustig (6 items).

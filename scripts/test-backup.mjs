@@ -195,7 +195,7 @@ await test("tabellenlijst: alle tabellen uit de migraties (behalve inlog_poginge
   for (const t of F.TABELLEN) assert.ok(t.pk.length > 0, t.naam);
   // FK-volgorde: ouders vóór kinderen.
   const plek = (n) => lijst.indexOf(n);
-  for (const [ouder, kind] of [["clients", "projects"], ["clients", "invoices"], ["projects", "tasks"], ["tasks", "task_assignees"], ["expenses", "expense_files"], ["social_projects", "social_slides"], ["calendar_events", "event_attendees"], ["projects", "drive_bestanden"], ["bk_grootboek", "bk_rekeningen"], ["bk_rekeningen", "bk_boekingen"], ["bk_vennoten", "bk_boekingen"], ["bk_imports", "bk_boekingen"], ["bk_boekingen", "bk_koppelingen"], ["bk_boekingen", "bk_activa"], ["bk_activa", "bk_bron_extra"], ["bk_memoriaal", "bk_memoriaal_regels"], ["bk_memoriaal", "bk_boekjaren"]]) {
+  for (const [ouder, kind] of [["clients", "projects"], ["clients", "invoices"], ["projects", "tasks"], ["tasks", "task_assignees"], ["expenses", "expense_files"], ["social_projects", "social_slides"], ["calendar_events", "event_attendees"], ["projects", "drive_bestanden"], ["clients", "notities"], ["projects", "notities"], ["bk_grootboek", "bk_rekeningen"], ["bk_rekeningen", "bk_boekingen"], ["bk_vennoten", "bk_boekingen"], ["bk_imports", "bk_boekingen"], ["bk_boekingen", "bk_koppelingen"], ["bk_boekingen", "bk_activa"], ["bk_activa", "bk_bron_extra"], ["bk_memoriaal", "bk_memoriaal_regels"], ["bk_memoriaal", "bk_boekjaren"]]) {
     assert.ok(plek(ouder) < plek(kind), `${ouder} vóór ${kind}`);
   }
   assert.deepEqual([...F.BUCKETS], ["invoices", "uitgaven", "social-assets"]);

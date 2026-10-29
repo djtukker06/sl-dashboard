@@ -216,17 +216,39 @@
 .db-rij-bedrag { font-size: 13.5px; font-variant-numeric: tabular-nums; white-space: nowrap; }
 
 /* ---------- social ---------- */
+/* Compact: elke rij heeft een vaste hoogte (miniatuur + naam + meta), en de lijst toont er
+   hooguit twee. De rest scrollt binnen de kaart, rij voor rij (scroll-snap). Houd
+   --db-post-thumb gelijk aan THUMB_H in components/dashboard/SocialWidget.tsx. */
 .db-posts {
+  --db-post-thumb: 120px;
+  --db-post-rij: calc(var(--db-post-thumb) + 6px + 4px + 19px + 4px + 22px);
+  --db-post-gat: 16px;
   list-style: none;
-  margin: 0;
-  padding: 0;
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 16px;
+  grid-auto-rows: var(--db-post-rij);
+  gap: var(--db-post-gat);
+  /* twee rijen + tussenruimte + de 3px binnenrand boven en onder */
+  max-height: calc(2 * var(--db-post-rij) + var(--db-post-gat) + 6px);
+  overflow-y: auto;
+  scroll-snap-type: y mandatory;
+  scroll-padding-top: 3px;
+  /* ruimte voor de focusring en de scrollbalk */
+  padding: 3px 6px 3px 3px;
+  margin: -3px -6px -3px -3px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--sl-line) transparent;
 }
+.db-posts > li { scroll-snap-align: start; min-width: 0; }
+.db-posts::-webkit-scrollbar { width: 6px; }
+.db-posts::-webkit-scrollbar-track { background: transparent; }
+.db-posts::-webkit-scrollbar-thumb { background: var(--sl-line); border-radius: 999px; }
+.db-posts::-webkit-scrollbar-thumb:hover { background: var(--sl-faint); }
 .db-post {
   display: grid;
+  grid-template-rows: auto 19px 22px;
   gap: 4px;
+  height: 100%;
   color: var(--sl-text);
   text-decoration: none;
   border-radius: var(--sl-r);
@@ -235,7 +257,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-bottom: 8px;
+  margin-bottom: 6px;
   overflow: hidden;
   background: var(--sl-bg);
   border: 1px solid var(--sl-line-soft);
@@ -259,7 +281,7 @@
   background: #000;
 }
 .db-post-leeg { font-family: var(--sl-mono); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--sl-faint); }
-.db-post-naam { font-size: 14px; font-weight: 500; line-height: 1.35; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.db-post-naam { font-size: 14px; font-weight: 500; line-height: 19px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* ---------- responsive ---------- */
 @media (max-width: 1180px) {

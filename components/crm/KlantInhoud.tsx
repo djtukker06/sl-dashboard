@@ -5,6 +5,7 @@ import { korteDatum } from '@/lib/dashboard/tijd';
 import { formatEuro } from '@/lib/format';
 import type { DriveStatus } from '@/lib/drive/types';
 import { BestandenBlok } from '@/components/bestanden/BestandenBlok';
+import { NotitiesBlok } from '@/components/notities/NotitiesBlok';
 import { ModuleKop } from '@/components/shell/ModuleKop';
 import { ContactActies, LeadActies, OpvolgVelden } from './KlantActies';
 import { KlantContact, KlantTitel } from './KlantContact';
@@ -230,6 +231,8 @@ export function KlantInhoud({ data, vandaag, drive }: { data: KlantPagina; vanda
               </div>
             </div>
           </section>
+
+          <NotitiesBlok koppeling={{ klant: klant.id }} />
 
           <BestandenBlok status={drive} start={{ klant: klant.id }} />
         </aside>

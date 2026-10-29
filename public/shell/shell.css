@@ -147,8 +147,9 @@ body.sl-met-rail { grid-template-columns: var(--sl-rail-w) 272px 1fr; }
   text-transform: uppercase;
   white-space: nowrap;
 }
-/* "Boekhouding" is het langste label: iets minder spatiëring, zodat het binnen de rail past. */
-.sl-rail-item[href="/boekhouding"] .sl-rail-label { letter-spacing: 0.01em; }
+/* "Boekhouding" en "Scratchpad" zijn de langste labels: iets minder spatiëring, zodat ze binnen de rail passen. */
+.sl-rail-item[href="/boekhouding"] .sl-rail-label,
+.sl-rail-item[href="/scratchpad"] .sl-rail-label { letter-spacing: 0.01em; }
 
 .sl-rail-foot {
   margin-top: auto;
@@ -284,6 +285,9 @@ body.sl-met-rail { grid-template-columns: var(--sl-rail-w) 272px 1fr; }
   .sl-rail-nav li { flex: 1; display: flex; }
   .sl-rail-item { flex: 1; justify-content: center; margin: 6px 2px; padding: 6px 0; gap: 6px; }
   .sl-rail-item::before { left: 25%; right: 25%; top: -7px; bottom: auto; width: auto; height: 2px; }
+  /* Acht tabs op een telefoon: labels iets kleiner en nooit over de buren heen. */
+  .sl-rail-nav li, .sl-rail-item { min-width: 0; }
+  .sl-rail-label { max-width: 100%; overflow: hidden; text-overflow: ellipsis; font-size: 8.5px; letter-spacing: 0.02em; }
   .sl-rail-badge { top: 0; left: calc(50% + 4px); }
   .sl-rail-foot { margin: 0; padding: 0 6px; border-top: 0; align-items: center; }
   .sl-avatar { width: 28px; height: 28px; font-size: 11px; }

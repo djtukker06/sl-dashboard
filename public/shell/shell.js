@@ -34,6 +34,12 @@
     } catch {
       /* geen opslag */
     }
+    // Niet-opgeslagen concepten van de Scratchpad (lib/notities/client.ts) niet laten staan.
+    try {
+      for (const k of Object.keys(localStorage)) if (k.startsWith("sl-notitie-concept:")) localStorage.removeItem(k);
+    } catch {
+      /* geen opslag */
+    }
   });
   const MAIL_MS = 60_000;
   // Geen mailbox gekoppeld (bv. een nieuw teamlid): niet elke 2 minuten opnieuw vragen.

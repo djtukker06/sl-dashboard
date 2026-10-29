@@ -5,14 +5,19 @@ import { Persoon } from '@/components/team/Persoon';
 import { Kaart, KaartMelding } from './Kaart';
 import { OpnieuwKnop } from './OpnieuwKnop';
 
-const THUMB_H = 168;
+// Compacte miniaturen: houd THUMB_H gelijk aan --db-post-thumb in app/(app)/app.css (daarmee
+// rekent de CSS de hoogte van precies twee rijen uit).
+const THUMB_H = 120;
 const THUMB_MAX_W = 150;
+// Meer posts ophalen dan er zichtbaar zijn: maximaal twee rijen in beeld, de rest scrollt
+// binnen de kaart (of via "Alle …" naar /social).
+const AANTAL = 12;
 
 // Laatste posts uit de social-module, met de eerste slide als miniatuur (zelfde
 // sandbox als de thumbnails in social zelf: geen scripts). Een klik opent het project
 // via de bestaande deep-link /social#p=<id>.
 export async function SocialWidget({ lid }: { lid: Teamlid }) {
-  const res = await recentePosts(lid, 4);
+  const res = await recentePosts(lid, AANTAL);
 
   if (!res.ok) {
     return (

@@ -16,6 +16,7 @@ import { UitgavenWidget } from '@/components/dashboard/UitgavenWidget';
 import { BonnetjeKnop } from '@/components/uitgaven/BonnetjeKnop';
 import { DashboardTaken } from '@/components/taken/DashboardTaken';
 import { BackupWaarschuwing } from '@/components/dashboard/BackupWaarschuwing';
+import { ScratchpadWidget } from '@/components/dashboard/ScratchpadWidget';
 
 export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'Dashboard · Studio Levant' };
@@ -25,7 +26,7 @@ export const metadata: Metadata = { title: 'Dashboard · Studio Levant' };
 //   - persoonlijk: begroeting, jouw afspraken en taken, wat je uitdeelde, jouw mailbox;
 //   - gedeeld met het team: op te volgen leads/klanten (alleen als er iets is), projecten
 //     (tellers per status), facturen, bonnetjes en posts
-//     (met wie ze maakte).
+//     (met wie ze maakte), en de Scratchpad (vastgepinde en laatst bewerkte notities).
 export default async function DashboardPage() {
   // Elke pagina controleert zelf sessie + teamlidmaatschap (de social-widget leest daarna
   // met de service-role, met dit teamlid als bewijs).
@@ -94,6 +95,11 @@ export default async function DashboardPage() {
               <UitgavenWidget />
             </Suspense>
           </div>
+
+          {/* Scratchpad: vastgepinde en laatst bewerkte notities, onder de posts (notities.css). */}
+          <Suspense fallback={<KaartSkelet label="Scratchpad" regels={3} className="db-scratchpad" />}>
+            <ScratchpadWidget lid={lid} />
+          </Suspense>
         </div>
       </div>
     </DashboardTaken>

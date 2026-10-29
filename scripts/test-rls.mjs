@@ -60,6 +60,10 @@
 //             buitenstaanders, gedeactiveerde/onbevestigde/anonieme accounts niets en kunnen ze
 //             niets verwijderen of boeken; een teamlid leest alles; met een 2FA-factor op aal1
 //             niets, op aal2 alles; UITVOEREN_0026.sql daarna laat de boekhouding staan.
+// Scenario E  0001–0027 → UITVOEREN_0028–0031.sql (elk 2x): gebruikersbeheer, agenda-links,
+//             boekhoudrechten en de Scratchpad (0031): gedeelde notities voor het team, privé
+//             alleen voor de maker, created_by vast, alleen de maker maakt privé of verwijdert
+//             definitief, grenzen op titel en inhoud, buitenstaanders zien en wijzigen niets.
 //
 // Gebruik:  node scripts/test-rls.mjs        (vereist de devDependency @electric-sql/pglite)
 import fs from "node:fs";
@@ -1771,8 +1775,88 @@ async function scenarioE() {
   await db.query("update public.team_members set boekhouding = true where user_id = $1", [U.mark]);
   const met = await alsMetAal(db, "mark", "aal1", "select count(*)::int as n from public.bk_grootboek");
   check(met.ok && met.rows[0].n > 0, "E: met vinkje weer boekhouding", uitleg(met));
+
+  // 0031: Scratchpad. Gedeelde notities voor het team, privé alleen voor de maker; created_by
+  // staat vast, updated_by zet de database; alleen de maker maakt privé of verwijdert definitief.
+  checkControle(await voerUit(db, lees("supabase/UITVOEREN_0031.sql"), "UITVOEREN_0031.sql"), "E: UITVOEREN_0031 (1e keer)");
+  checkControle(await voerUit(db, lees("supabase/UITVOEREN_0031.sql"), "UITVOEREN_0031.sql (2x)"), "E: UITVOEREN_0031 (2e keer)");
+  const N = {
+    gedeeld: "a1a1a1a1-0000-4000-8000-000000000001",
+    prive: "a1a1a1a1-0000-4000-8000-000000000002",
+    markPrive: "a1a1a1a1-0000-4000-8000-000000000003",
+  };
+  await db.query(
+    `insert into public.notities (id, titel, inhoud_tekst, prive, created_by, updated_by) values
+      ($1, 'Ideeën huisstijl', 'logo en kleuren', false, $4, $4),
+      ($2, 'Privé van Daniel', 'geheim', true, $4, $4),
+      ($3, 'Privé van Mark', 'ook geheim', true, $5, $5)`,
+    [N.gedeeld, N.prive, N.markPrive, U.daniel, U.mark],
+  );
+  const frag = await db.query("select fragment from public.notities where id = $1", [N.gedeeld]);
+  check(frag.rows[0]?.fragment === "logo en kleuren", "E: notities.fragment uit de platte tekst", JSON.stringify(frag.rows));
+  const ids = (r) => (r.ok ? r.rows.map((x) => x.id).sort() : []);
+  const dLees = await alsMetAal(db, "daniel", "aal1", "select id from public.notities");
+  check(JSON.stringify(ids(dLees)) === JSON.stringify([N.gedeeld, N.prive].sort()), "E: Daniel ziet gedeeld + eigen privé", uitleg(dLees));
+  const mLees = await alsMetAal(db, "mark", "aal1", "select id from public.notities");
+  check(JSON.stringify(ids(mLees)) === JSON.stringify([N.gedeeld, N.markPrive].sort()), "E: Mark ziet gedeeld + eigen privé, niet die van Daniel", uitleg(mLees));
+  for (const wie of ["anon", "indringer", "oudlid", "onbevestigd"]) {
+    const r = await als(db, wie, "select * from public.notities");
+    check(leeg(r), `E: ${wie} ziet geen notities`, uitleg(r));
+    const ins = await als(db, wie, "insert into public.notities (titel) values ('x')");
+    check(!ins.ok, `E: ${wie} maakt geen notitie`, uitleg(ins));
+    const upd = await als(db, wie, "update public.notities set titel = 'x'");
+    check(nietsGeraakt(upd), `E: ${wie} wijzigt geen notities`, uitleg(upd));
+    const del = await als(db, wie, "delete from public.notities");
+    check(nietsGeraakt(del), `E: ${wie} verwijdert geen notities`, uitleg(del));
+  }
+  const mWijzigPrive = await alsMetAal(db, "mark", "aal1", "update public.notities set titel = 'gekaapt' where id = $1", [N.prive]);
+  check(nietsGeraakt(mWijzigPrive), "E: Mark wijzigt de privé-notitie van Daniel niet", uitleg(mWijzigPrive));
+  const mWijzig = await alsMetAal(db, "mark", "aal1", "update public.notities set titel = 'Ideeën v2', created_by = $2 where id = $1 returning created_by, updated_by", [N.gedeeld, U.mark]);
+  check(
+    mWijzig.ok && mWijzig.n === 1 && mWijzig.rows[0].created_by === U.daniel && mWijzig.rows[0].updated_by === U.mark,
+    "E: Mark wijzigt een gedeelde notitie (maker blijft Daniel, updated_by = Mark)",
+    mWijzig.ok ? JSON.stringify(mWijzig.rows) : uitleg(mWijzig),
+  );
+  const mMaakPrive = await alsMetAal(db, "mark", "aal1", "update public.notities set prive = true where id = $1", [N.gedeeld]);
+  check(!mMaakPrive.ok, "E: Mark maakt de notitie van Daniel niet privé", uitleg(mMaakPrive));
+  const dMaakPrive = await alsMetAal(db, "daniel", "aal1", "update public.notities set prive = true where id = $1", [N.gedeeld]);
+  check(dMaakPrive.ok && dMaakPrive.n === 1, "E: de maker maakt zijn notitie privé", uitleg(dMaakPrive));
+  const mZacht = await alsMetAal(db, "mark", "aal1", "update public.notities set verwijderd_op = now() where id = $1", [N.gedeeld]);
+  check(mZacht.ok && mZacht.n === 1, "E: teamlid verwijdert een gedeelde notitie zacht", uitleg(mZacht));
+  const mHard = await alsMetAal(db, "mark", "aal1", "delete from public.notities where id = $1", [N.gedeeld]);
+  check(nietsGeraakt(mHard), "E: alleen de maker verwijdert definitief", uitleg(mHard));
+  const dHard = await alsMetAal(db, "daniel", "aal1", "delete from public.notities where id = $1", [N.gedeeld]);
+  check(dHard.ok && dHard.n === 1, "E: de maker verwijdert definitief", uitleg(dHard));
+  const mNamens = await alsMetAal(db, "mark", "aal1", "insert into public.notities (titel, created_by) values ('namens Daniel', $1)", [U.daniel]);
+  check(!mNamens.ok, "E: geen notitie op naam van een ander", uitleg(mNamens));
+  const mNieuw = await alsMetAal(db, "mark", "aal1", "insert into public.notities (titel) values ('Snel idee') returning created_by, prive");
+  check(mNieuw.ok && mNieuw.rows[0].created_by === U.mark && mNieuw.rows[0].prive === false, "E: nieuwe notitie: maker = jij, standaard gedeeld", uitleg(mNieuw));
+  const mNepBewerkt = await alsMetAal(
+    db,
+    "mark",
+    "aal1",
+    "insert into public.notities (titel, updated_by, created_at) values ('Nep', $1, '2000-01-01') returning updated_by, created_at > now() - interval '1 hour' as vers",
+    [U.daniel],
+  );
+  check(
+    mNepBewerkt.ok && mNepBewerkt.rows[0].updated_by === U.mark && mNepBewerkt.rows[0].vers === true,
+    "E: nieuwe notitie: updated_by en created_at zet de database (niet van een ander)",
+    mNepBewerkt.ok ? JSON.stringify(mNepBewerkt.rows) : uitleg(mNepBewerkt),
+  );
+  const teGroot = await alsMetAal(db, "daniel", "aal1", "insert into public.notities (titel, inhoud) values ('x', jsonb_build_object('type', 'doc', 'tekst', repeat('a', 1100000)))");
+  check(!teGroot.ok, "E: inhoud groter dan 1 MB geweigerd", uitleg(teGroot));
+  const teLang = await alsMetAal(db, "daniel", "aal1", "insert into public.notities (titel) values (repeat('a', 201))");
+  check(!teLang.ok, "E: titel langer dan 200 tekens geweigerd", uitleg(teLang));
+  // Een verwijderd project of klant laat de notitie staan (koppeling leeg).
+  const klant = (await db.query("select id from public.clients limit 1")).rows[0].id;
+  await db.query("insert into public.projects (id, naam, client_id) values ('b2b2b2b2-0000-4000-8000-000000000001', 'Notitieproject', $1)", [klant]);
+  await db.query("update public.notities set project_id = 'b2b2b2b2-0000-4000-8000-000000000001' where id = $1", [N.prive]);
+  await db.query("delete from public.projects where id = 'b2b2b2b2-0000-4000-8000-000000000001'");
+  const los = await db.query("select project_id from public.notities where id = $1", [N.prive]);
+  check(los.rows.length === 1 && los.rows[0].project_id === null, "E: project weg → notitie blijft, zonder koppeling");
+
   await db.close();
-  if (fouten === fouten0) console.log("  scenario E (gebruikersbeheer, agenda-links, boekhoudrechten: UITVOEREN_0028–0030.sql): ok");
+  if (fouten === fouten0) console.log("  scenario E (gebruikersbeheer, agenda-links, boekhoudrechten, scratchpad: UITVOEREN_0028–0031.sql): ok");
 }
 
 await scenarioA();

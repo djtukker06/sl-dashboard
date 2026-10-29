@@ -186,10 +186,14 @@ export interface TabelDef {
 export const TABELLEN: TabelDef[] = [
   { naam: 'profiles', pk: ['id'] },
   { naam: 'team_members', pk: ['user_id'] },
+  // Agenda-abonnementen (0029): alleen de hash van het token.
+  { naam: 'agenda_feeds', pk: ['user_id'] },
   { naam: 'clients', pk: ['id'], zonder: ['company_name_normalized'] },
   { naam: 'client_notes', pk: ['id'] },
   { naam: 'projects', pk: ['id'] },
   { naam: 'project_eigenaren', pk: ['project_id', 'user_id'] },
+  // Scratchpad (0031): fragment is gegenereerd uit inhoud_tekst.
+  { naam: 'notities', pk: ['id'], zonder: ['fragment'] },
   { naam: 'invoice_counters', pk: ['year'] },
   { naam: 'quotes', pk: ['id'] },
   { naam: 'invoices', pk: ['id'], zelfVerwijzing: 'remainder_of_invoice_id' },
