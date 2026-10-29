@@ -523,7 +523,7 @@ export function NotitieScherm({
             </>
           )}
         </p>
-        <NotitieEditor key={editorVersie} inhoud={startInhoud} onWijziging={opInhoud} onKlaar={opEditor} />
+        <NotitieEditor key={editorVersie} notitieId={id} inhoud={startInhoud} onWijziging={opInhoud} onKlaar={opEditor} />
       </div>
     </article>
   );

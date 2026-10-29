@@ -2,9 +2,10 @@
 
 import { useRef, useState } from 'react';
 import { api } from '@/lib/beveiliging/client';
+import { markeerWelkom } from '@/lib/shell/welkom';
 
 // De code bij het inloggen (/login/2fa). Na een goede code een volledige paginalading naar
-// `vervolg` (de cookies staan dan op aal2).
+// `vervolg` (de cookies staan dan op aal2), met de welkomstanimatie.
 export function TfaCode({ vervolg, factoren }: { vervolg: string; factoren: { id: string; naam: string }[] }) {
   const [code, setCode] = useState('');
   const [factorId, setFactorId] = useState(factoren[0]?.id ?? '');
@@ -18,6 +19,7 @@ export function TfaCode({ vervolg, factoren }: { vervolg: string; factoren: { id
     setBezig(true);
     try {
       await api('/api/beveiliging/2fa/uitdagen', 'POST', { code, factorId });
+      markeerWelkom(); // welkomstanimatie in de app (components/shell/Welkomstanimatie.tsx)
       window.location.href = vervolg;
     } catch (err) {
       setFout(err instanceof Error ? err.message : 'Controleren mislukt.');

@@ -8,7 +8,11 @@ import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
 import TaskList from '@tiptap/extension-task-list';
 import TaskItem from '@tiptap/extension-task-item';
+import Image from '@tiptap/extension-image';
 import { veiligeLink, type TiptapKnoop } from '@/lib/notities/kern';
+import { uploadBijlage } from '@/lib/notities/client';
+import { useToast } from '@/components/agenda/Toast';
+import { BijlageKnoop } from './BijlageKnoop';
 
 // De tekst van een notitie: Tiptap (ProseMirror) met koppen, lijsten, afvinklijstjes, citaat,
 // code en scheidingslijn. Markdown-sneltoetsen ("# ", "- ", "1. ", "[ ] ", "> ", "```", "---")
@@ -17,6 +21,10 @@ import { veiligeLink, type TiptapKnoop } from '@/lib/notities/kern';
 //   - een opmaakbalk bij een selectie (vet, cursief, onderstreept, doorhalen, code, link, kop).
 // De inhoud is altijd Tiptap-JSON en wordt alleen door Tiptap getoond (geen losse HTML), dus
 // geen ruimte voor ingevoegde scripts; links kunnen alleen http(s), mailto, tel of een eigen pad zijn.
+//
+// Foto's en bestanden (migratie 0032): via "/foto" of "/bestand", door te plakken (bv. een
+// screenshot) of door ze in de tekst te slepen. Ze gaan rechtstreeks naar de privé-opslag; in
+// de tekst komt een foto (te verkleinen aan de randen) of een bestandskaartje.
 
 type Blok = {
   id: string;
@@ -26,7 +34,14 @@ type Blok = {
   woorden: string;
   icoon: string;
   doe: (e: Editor) => void;
+  /** Opent de bestandskiezer in plaats van een blok te maken. */
+  bijlage?: 'foto' | 'bestand';
 };
+
+const BIJLAGE_BLOKKEN: Blok[] = [
+  { id: 'foto', label: 'Foto', hint: 'Afbeelding uploaden', woorden: 'foto afbeelding plaatje image beeld screenshot', icoon: '▣', doe: () => {}, bijlage: 'foto' },
+  { id: 'bestand', label: 'Bestand', hint: 'PDF, Word, Excel … (max. 25 MB)', woorden: 'bestand bijlage file pdf document upload', icoon: '⎘', doe: () => {}, bijlage: 'bestand' }
+];
 
 const BLOKKEN: Blok[] = [
   { id: 'tekst', label: 'Tekst', hint: 'Gewone alinea', woorden: 'tekst text alinea paragraaf', icoon: 'T', doe: (e) => e.chain().focus().setParagraph().run() },
@@ -41,11 +56,14 @@ const BLOKKEN: Blok[] = [
   { id: 'lijn', label: 'Scheidingslijn', hint: 'Horizontale lijn  ·  ---', woorden: 'scheidingslijn lijn divider streep hr', icoon: '—', doe: (e) => e.chain().focus().setHorizontalRule().run() }
 ];
 
-function filterBlokken(q: string): Blok[] {
+function filterBlokken(q: string, metBijlagen: boolean): Blok[] {
+  const alle = metBijlagen ? [...BLOKKEN, ...BIJLAGE_BLOKKEN] : BLOKKEN;
   const t = q.toLowerCase();
-  if (!t) return BLOKKEN;
-  return BLOKKEN.filter((b) => b.label.toLowerCase().includes(t) || b.woorden.includes(t));
+  if (!t) return alle;
+  return alle.filter((b) => b.label.toLowerCase().includes(t) || b.woorden.includes(t));
 }
+
+type Upload = { id: number; naam: string };
 
 type Slash = { van: number; tot: number; query: string; x: number; y: number; boven: boolean };
 
@@ -75,12 +93,15 @@ function zoekSlash(editor: Editor, genegeerd: number | null): Slash | null {
 
 export function NotitieEditor({
   inhoud,
+  notitieId,
   bewerkbaar = true,
   onWijziging,
   onKlaar,
   autofocus = false
 }: {
   inhoud: TiptapKnoop;
+  /** Zonder id: geen foto's of bestanden toevoegen. */
+  notitieId?: string;
   bewerkbaar?: boolean;
   /** Bij elke wijziging van de inhoud (de ouder slaat met vertraging op). */
   onWijziging: () => void;
@@ -88,17 +109,24 @@ export function NotitieEditor({
   onKlaar?: (editor: Editor | null) => void;
   autofocus?: boolean;
 }) {
+  const toast = useToast();
   const [slash, setSlash] = useState<Slash | null>(null);
+  const [uploads, setUploads] = useState<Upload[]>([]);
+  const kiezer = useRef<HTMLInputElement>(null);
+  /** Waar de bestanden uit de kiezer komen (positie in het document bij het openen). */
+  const kiezerPos = useRef<number | null>(null);
+  const metBijlagen = Boolean(notitieId) && bewerkbaar;
   const [actief, setActief] = useState(0);
   const slashRef = useRef<{ s: Slash | null; actief: number; lijst: Blok[] }>({ s: null, actief: 0, lijst: BLOKKEN });
   const genegeerd = useRef<number | null>(null);
+  const metBijlagenRef = useRef(false);
   const editorRef = useRef<Editor | null>(null);
   const wijziging = useRef(onWijziging);
   useEffect(() => {
     wijziging.current = onWijziging;
   }, [onWijziging]);
 
-  const lijst = slash ? filterBlokken(slash.query) : [];
+  const lijst = slash ? filterBlokken(slash.query, metBijlagen) : [];
   useEffect(() => {
     slashRef.current = { s: slash, actief, lijst };
   });
@@ -106,9 +134,57 @@ export function NotitieEditor({
   function kies(editor: Editor, b: Blok) {
     const s = slashRef.current.s;
     if (s) editor.chain().focus().deleteRange({ from: s.van, to: s.tot }).run();
-    b.doe(editor);
     setSlash(null);
+    if (b.bijlage) {
+      openKiezer(b.bijlage, editor.state.selection.from);
+      return;
+    }
+    b.doe(editor);
   }
+
+  function openKiezer(soort: 'foto' | 'bestand', pos: number | null) {
+    const k = kiezer.current;
+    if (!k) return;
+    k.accept = soort === 'foto' ? 'image/*' : '';
+    kiezerPos.current = pos;
+    k.click();
+  }
+
+  // Uploaden en daarna invoegen op de plek waar het bestand werd neergezet. Die plek schuift
+  // mee met wat er intussen getypt wordt (transaction mapping).
+  const volgnr = useRef(0);
+  const plekken = useRef(new Map<number, number>());
+  async function uploadBestanden(bestanden: File[], pos: number | null) {
+    const ed = editorRef.current;
+    if (!ed || !notitieId || !bestanden.length) return;
+    let plek = pos ?? ed.state.selection.to;
+    for (const f of bestanden) {
+      const id = ++volgnr.current;
+      plekken.current.set(id, plek);
+      setUploads((u) => [...u, { id, naam: f.name }]);
+      try {
+        const b = await uploadBijlage(notitieId, f);
+        const e = editorRef.current;
+        if (!e || e.isDestroyed) return;
+        const doel = Math.min(plekken.current.get(id) ?? e.state.doc.content.size, e.state.doc.content.size);
+        const knoop = b.afbeelding
+          ? { type: 'image', attrs: { src: b.url, alt: b.naam } }
+          : { type: 'bijlage', attrs: { src: b.url, naam: b.naam, type: b.type, grootte: b.grootte } };
+        e.chain().insertContentAt(doel, knoop).run();
+        // Volgende bestand direct erna.
+        plek = Math.min(e.state.selection.to, e.state.doc.content.size);
+      } catch (err) {
+        toast(err instanceof Error ? err.message : `Uploaden van “${f.name}” mislukt.`, { fout: true });
+      } finally {
+        plekken.current.delete(id);
+        setUploads((u) => u.filter((x) => x.id !== id));
+      }
+    }
+  }
+  const uploadRef = useRef(uploadBestanden);
+  useEffect(() => {
+    uploadRef.current = uploadBestanden;
+  });
 
   const editor = useEditor({
     // Geen server-render (geen hydration-verschil); de editor verschijnt direct na laden.
@@ -122,6 +198,11 @@ export function NotitieEditor({
       }),
       TaskList,
       TaskItem.configure({ nested: true }),
+      Image.configure({
+        HTMLAttributes: { class: 'sp-foto', loading: 'lazy' },
+        resize: { enabled: true, directions: ['left', 'right', 'bottom-left', 'bottom-right'], minWidth: 80, minHeight: 40, alwaysPreserveAspectRatio: true }
+      }),
+      BijlageKnoop,
       Placeholder.configure({
         placeholder: ({ node }) => (node.type.name === 'heading' ? 'Kop' : 'Schrijf iets, of typ “/” voor blokken…'),
         includeChildren: false
@@ -130,6 +211,22 @@ export function NotitieEditor({
     content: inhoud,
     editorProps: {
       attributes: { class: 'sp-tekst', 'aria-label': 'Inhoud van de notitie', spellcheck: 'true' },
+      // Geplakte of gesleepte bestanden (bv. een screenshot) worden een bijlage.
+      handlePaste: (_view, e) => {
+        const files = Array.from(e.clipboardData?.files ?? []);
+        if (!files.length || !metBijlagenRef.current) return false;
+        e.preventDefault();
+        void uploadRef.current(files, null);
+        return true;
+      },
+      handleDrop: (view, e, _slice, verplaatst) => {
+        const files = Array.from(e.dataTransfer?.files ?? []);
+        if (verplaatst || !files.length || !metBijlagenRef.current) return false;
+        e.preventDefault();
+        const pos = view.posAtCoords({ left: e.clientX, top: e.clientY })?.pos ?? null;
+        void uploadRef.current(files, pos);
+        return true;
+      },
       handleKeyDown: (_view, e) => {
         const { s, actief: a, lijst: l } = slashRef.current;
         if (!s) return false;
@@ -162,8 +259,15 @@ export function NotitieEditor({
     onSelectionUpdate: ({ editor: e }) => {
       if (slashRef.current.s) setSlash(zoekSlash(e, genegeerd.current));
     },
-    onBlur: () => setSlash(null)
+    onBlur: () => setSlash(null),
+    onTransaction: ({ transaction }) => {
+      if (!transaction.docChanged || !plekken.current.size) return;
+      for (const [id, p] of plekken.current) plekken.current.set(id, transaction.mapping.map(p));
+    }
   });
+  useEffect(() => {
+    metBijlagenRef.current = metBijlagen;
+  }, [metBijlagen]);
   useEffect(() => {
     editorRef.current = editor;
     onKlaar?.(editor);
@@ -188,6 +292,42 @@ export function NotitieEditor({
     <>
       <OpmaakBalk editor={editor} />
       <EditorContent editor={editor} className="sp-editor" />
+      {metBijlagen && (
+        <input
+          ref={kiezer}
+          type="file"
+          multiple
+          hidden
+          onChange={(e) => {
+            const files = Array.from(e.currentTarget.files ?? []);
+            e.currentTarget.value = '';
+            void uploadBestanden(files, kiezerPos.current);
+          }}
+        />
+      )}
+      {metBijlagen && (
+        <button
+          type="button"
+          className="sp-bijlage-toevoegen"
+          onClick={() => openKiezer('bestand', editor.state.doc.content.size)}
+          title="Of sleep een bestand in de tekst, of plak een screenshot"
+        >
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M21 11.5 12.6 19.9a5 5 0 0 1-7.1-7.1l8.5-8.5a3.4 3.4 0 0 1 4.8 4.8l-8.5 8.5a1.7 1.7 0 0 1-2.4-2.4l7.8-7.8" />
+          </svg>
+          Foto of bestand toevoegen
+        </button>
+      )}
+      {uploads.length > 0 && (
+        <div className="sp-uploads" role="status" aria-live="polite">
+          {uploads.map((u) => (
+            <span key={u.id} className="sp-upload">
+              <span className="sp-upload-draai" aria-hidden="true" />
+              {u.naam} uploaden…
+            </span>
+          ))}
+        </div>
+      )}
       {slash && (
         <div
           className={`sp-slash${slash.boven ? ' is-boven' : ''}`}

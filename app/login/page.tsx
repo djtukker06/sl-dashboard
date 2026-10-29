@@ -5,6 +5,7 @@ import { VervolgVeld } from '@/components/VervolgVeld';
 import { veiligVervolg } from '@/lib/vervolg';
 import { Openingsanimatie } from '@/components/login/Openingsanimatie';
 import { IntroScript } from '@/components/login/IntroScript';
+import { WelkomVlag } from '@/components/login/WelkomVlag';
 
 // Draait tijdens het parsen, vóór de kaart getekend wordt: beslist of de openingsanimatie
 // speelt (klasse "sl-intro" op .login-wrap, zie components/login/Openingsanimatie.tsx). Eén keer
@@ -40,6 +41,7 @@ export default async function LoginPage({
         {error && <div className="foutmelding">{error}</div>}
         <form action={signIn}>
           <VervolgVeld next={vervolg !== '/' ? vervolg : undefined} />
+          <WelkomVlag />
           <label>
             E-mailadres
             {/* Geen autoFocus: Openingsanimatie zet de focus, pas na de animatie. */}

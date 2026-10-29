@@ -323,5 +323,43 @@ test("autosave: vertraging, flush bij verlaten, concept wissen bij uitloggen", (
   assert.match(lees("public/shell/shell.js"), /startsWith\("sl-notitie-concept:"\)/);
 });
 
+// ---------- bijlagen (0032) ----------
+const NID = "a1a1a1a1-0000-4000-8000-000000000001";
+const BID = "b2b2b2b2-0000-4000-8000-000000000002";
+const EIGEN = `/api/notities/${NID}/bestanden/${BID}`;
+test("foto: alleen de eigen bijlage-route, maat begrensd", () => {
+  const doc = (attrs) => K.schoonInhoud({ type: "doc", content: [{ type: "image", attrs }] }).content[0];
+  assert.deepEqual(doc({ src: EIGEN, alt: "foto.jpg", width: 320.4, height: 99999, title: "x", onerror: "alert(1)" }), {
+    type: "image",
+    attrs: { src: EIGEN, alt: "foto.jpg", width: 320, height: null },
+  });
+  for (const src of ["https://evil.example/x.png", "data:image/png;base64,AAAA", "javascript:alert(1)", `${EIGEN}?x=1`, `//evil${EIGEN}`, null]) {
+    assert.equal(doc({ src }).type, "paragraph", String(src));
+  }
+});
+test("bestandskaartje: naam, type en grootte opgeschoond; zonder geldige src weg", () => {
+  const k = K.schoonInhoud({
+    type: "doc",
+    content: [
+      { type: "bijlage", attrs: { src: EIGEN, naam: "../../<b>offerte</b>.pdf", type: "Application/PDF", grootte: "2048" }, content: [{ type: "text", text: "x" }] },
+      { type: "bijlage", attrs: { src: "https://evil.example/a.exe", naam: "a.exe" } },
+    ],
+  });
+  assert.equal(k.content.length, 1);
+  assert.deepEqual(k.content[0], { type: "bijlage", attrs: { src: EIGEN, naam: "b.pdf", type: "application/pdf", grootte: 2048 } });
+  assert.match(K.platteTekst(k), /b\.pdf/);
+});
+test("bijlage-paden: per notitie, vast formaat", () => {
+  const pad = K.bijlagePad(NID, "Offerte Café 2026.PDF", 1761700000000, "0a1b2c3d");
+  assert.equal(pad, `${NID}/1761700000000-0a1b2c3d-offerte-cafe-2026.pdf`);
+  assert.ok(K.isBijlagePadVan(NID, pad));
+  assert.ok(!K.isBijlagePadVan(BID, pad));
+  assert.ok(!K.isBijlagePadVan(NID, `${NID}/../x/1761700000000-0a1b2c3d-a.pdf`));
+  assert.equal(K.bijlagePad(NID, "zonder-extensie", 1, "00000000").split(".").pop(), "bin");
+  assert.equal(K.schoonType("text/html<script>"), "application/octet-stream");
+  assert.equal(K.leesbareGrootte(2_500_000), "2,4 MB");
+  assert.ok(K.isAfbeelding("image/PNG") && !K.isAfbeelding("image/svg+xml"));
+});
+
 console.log(`test-notities: ${fout ? `FOUTEN (${goed} geslaagd, ${fout} mislukt)` : `${goed} geslaagd`}`);
 if (fout) process.exit(1);

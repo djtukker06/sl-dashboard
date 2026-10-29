@@ -461,3 +461,90 @@
 .db-backup strong { font-weight: 700; color: var(--sl-text); }
 .db-backup a { color: var(--sl-sand); text-decoration: underline; text-underline-offset: 3px; }
 .db-backup a:hover { color: var(--sl-sand-hover); }
+
+/* ---------- welkomstanimatie na het inloggen (components/shell/Welkomstanimatie.tsx) ----------
+   Alleen zichtbaar met de klasse sl-welkom-aan op .sl-shell (inline script of de component).
+   Laadt het JavaScript niet, dan verdwijnt het vlak na 3,5 s vanzelf (zolang de animatie niet
+   loopt: data-bezig). */
+.sl-welkom {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  place-items: center;
+  cursor: pointer;
+  overflow: hidden;
+}
+.sl-shell.sl-welkom-aan .sl-welkom { display: grid; }
+.sl-shell.sl-welkom-aan .sl-welkom:not([data-bezig]) { animation: sl-welkom-nood .3s ease 3.5s forwards; }
+@keyframes sl-welkom-nood { to { opacity: 0; visibility: hidden; } }
+.sl-welkom > * { grid-area: 1 / 1; }
+.sl-welkom-bg {
+  --gat: 0;
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 55% 45% at 50% 50%, rgba(231, 226, 219, 0.045), transparent 70%),
+    var(--sl-bg, #141414);
+  -webkit-mask-image: radial-gradient(circle at 50% 50%, transparent calc(var(--gat) * 1%), #000 calc(var(--gat) * 1% + 1.5%));
+  mask-image: radial-gradient(circle at 50% 50%, transparent calc(var(--gat) * 1%), #000 calc(var(--gat) * 1% + 1.5%));
+}
+.sl-welkom-gloed {
+  position: relative;
+  width: min(560px, 120vw);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(200, 169, 126, 0.16), rgba(200, 169, 126, 0.05) 42%, transparent 68%);
+  pointer-events: none;
+}
+.sl-shell.sl-welkom-aan .sl-welkom:not([data-bezig]) .sl-welkom-gloed,
+.sl-shell.sl-welkom-aan .sl-welkom:not([data-bezig]) .sl-welkom-ring { opacity: 0; }
+.sl-welkom-merk {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: min(220px, 52vw);
+  aspect-ratio: 1;
+  will-change: transform, opacity, filter;
+}
+.sl-welkom-ring {
+  position: absolute;
+  inset: -22%;
+  width: 144%;
+  height: 144%;
+  overflow: visible;
+}
+.sl-welkom-ring circle {
+  fill: none;
+  stroke: rgba(231, 226, 219, 0.28);
+  stroke-width: 1px;
+  stroke-dasharray: 1;
+  vector-effect: non-scaling-stroke;
+}
+.sl-welkom-beeld { position: relative; width: 100%; aspect-ratio: 592 / 594; }
+.sl-welkom-strook { position: absolute; inset: 0; will-change: transform, opacity, filter; }
+.sl-welkom-strook img { display: block; width: 100%; height: 100%; }
+.sl-welkom-glans {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  background: linear-gradient(105deg, transparent 40%, rgba(255, 255, 255, 0.95) 50%, transparent 60%) 120% 0 / 260% 100% no-repeat;
+  -webkit-mask: url('/brand/merk-licht.png') 0 0 / 100% 100% no-repeat;
+  mask: url('/brand/merk-licht.png') 0 0 / 100% 100% no-repeat;
+}
+.sl-welkom-skip {
+  position: absolute;
+  left: 50%;
+  bottom: max(28px, env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  font-family: var(--sl-mono, ui-monospace, monospace);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--sl-faint, rgba(231, 226, 219, 0.35));
+  white-space: nowrap;
+  align-self: end;
+}
+@media (prefers-reduced-motion: reduce) {
+  .sl-shell.sl-welkom-aan .sl-welkom { display: none; }
+}

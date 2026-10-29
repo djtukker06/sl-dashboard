@@ -1855,8 +1855,51 @@ async function scenarioE() {
   const los = await db.query("select project_id from public.notities where id = $1", [N.prive]);
   check(los.rows.length === 1 && los.rows[0].project_id === null, "E: project weg → notitie blijft, zonder koppeling");
 
+  // 0032: bijlagen bij notities. Zichtbaar als de notitie zichtbaar is (privé = alleen de maker).
+  checkControle(await voerUit(db, lees("supabase/UITVOEREN_0032.sql"), "UITVOEREN_0032.sql"), "E: UITVOEREN_0032 (1e keer)");
+  checkControle(await voerUit(db, lees("supabase/UITVOEREN_0032.sql"), "UITVOEREN_0032.sql (2x)"), "E: UITVOEREN_0032 (2e keer)");
+  const deel = (await db.query("insert into public.notities (titel, created_by, updated_by) values ('Moodboard', $1, $1) returning id", [U.daniel])).rows[0].id;
+  const dBijlage = await alsMetAal(
+    db,
+    "daniel",
+    "aal1",
+    "insert into public.notitie_bestanden (notitie_id, storage_path, file_name, mime_type, size_bytes) values ($1::uuid, $1::text || '/1-aa-foto.jpg', 'foto.jpg', 'image/jpeg', 10), ($2::uuid, $2::text || '/1-bb-geheim.pdf', 'geheim.pdf', 'application/pdf', 10) returning created_by",
+    [deel, N.prive],
+  );
+  check(dBijlage.ok && dBijlage.n === 2 && dBijlage.rows[0].created_by === U.daniel, "E: maker voegt bijlagen toe", uitleg(dBijlage));
+  // (als/alsMetAal draaien in een teruggedraaide transactie: de rijen hieronder vast zaaien.)
+  await db.query(
+    "insert into public.notitie_bestanden (notitie_id, storage_path, file_name, mime_type, created_by) values ($1::uuid, $1::text || '/1-aa-foto.jpg', 'foto.jpg', 'image/jpeg', $3), ($2::uuid, $2::text || '/1-bb-geheim.pdf', 'geheim.pdf', 'application/pdf', $3)",
+    [deel, N.prive, U.daniel],
+  );
+  const mBijlagen = await alsMetAal(db, "mark", "aal1", "select file_name from public.notitie_bestanden");
+  check(mBijlagen.ok && mBijlagen.rows.map((r) => r.file_name).join() === "foto.jpg", "E: Mark ziet alleen bijlagen van gedeelde notities", uitleg(mBijlagen));
+  const mBijPrive = await alsMetAal(
+    db,
+    "mark",
+    "aal1",
+    "insert into public.notitie_bestanden (notitie_id, storage_path, file_name, mime_type) values ($1, 'x/y.png', 'y.png', 'image/png')",
+    [N.prive],
+  );
+  check(!mBijPrive.ok, "E: geen bijlage bij de privé-notitie van een ander", uitleg(mBijPrive));
+  const mNamensBij = await alsMetAal(
+    db,
+    "mark",
+    "aal1",
+    "insert into public.notitie_bestanden (notitie_id, storage_path, file_name, mime_type, created_by) values ($1, 'x/z.png', 'z.png', 'image/png', $2)",
+    [deel, U.daniel],
+  );
+  check(!mNamensBij.ok, "E: geen bijlage op naam van een ander", uitleg(mNamensBij));
+  for (const wie of ["anon", "indringer", "oudlid", "onbevestigd"]) {
+    const r = await als(db, wie, "select * from public.notitie_bestanden");
+    check(leeg(r), `E: ${wie} ziet geen bijlagen`, uitleg(r));
+  }
+  await db.query("delete from public.notities where id = $1", [deel]);
+  const weg = await db.query("select count(*)::int as n from public.notitie_bestanden where notitie_id = $1", [deel]);
+  check(weg.rows[0].n === 0, "E: notitie definitief weg → bijlagen-rijen mee weg");
+
   await db.close();
-  if (fouten === fouten0) console.log("  scenario E (gebruikersbeheer, agenda-links, boekhoudrechten, scratchpad: UITVOEREN_0028–0031.sql): ok");
+  if (fouten === fouten0) console.log("  scenario E (gebruikersbeheer, agenda-links, boekhoudrechten, scratchpad: UITVOEREN_0028–0032.sql): ok");
 }
 
 await scenarioA();

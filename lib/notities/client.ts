@@ -1,6 +1,6 @@
 'use client';
 
-import type { Notitie, NotitieFilter, NotitieSamenvatting, TiptapKnoop } from './kern';
+import { MAX_BIJLAGE_BYTES, type Bijlage, type Notitie, type NotitieFilter, type NotitieSamenvatting, type TiptapKnoop } from './kern';
 
 // Browser-kant van de Scratchpad: fetch-hulpjes voor /api/notities. Gebruikt door de
 // pagina /scratchpad en het blok op de klant- en projectpagina.
@@ -80,6 +80,31 @@ export const notitieApi = {
   verwijder: (id: string) => api<{ ok: true }>(`/api/notities/${id}`, { method: 'DELETE' }),
   herstel: (id: string) => api<{ notitie: NotitieSamenvatting }>(`/api/notities/${id}`, { method: 'PATCH', body: JSON.stringify({ verwijderd: false }) })
 };
+
+/**
+ * Foto of bestand bij een notitie: signed URL ophalen → PUT rechtstreeks naar Storage →
+ * aanmelden. Geeft de bijlage terug (met de eigen URL voor in de tekst).
+ */
+export async function uploadBijlage(notitieId: string, f: File): Promise<Bijlage> {
+  if (f.size > MAX_BIJLAGE_BYTES) throw new NotitieApiFout(400, `“${f.name}” is te groot (max. 25 MB).`);
+  const type = f.type || 'application/octet-stream';
+  const doel = await api<{ pad: string; signedUrl: string }>(`/api/notities/${notitieId}/bestanden`, {
+    method: 'POST',
+    body: JSON.stringify({ naam: f.name, type, grootte: f.size })
+  });
+  let put: Response;
+  try {
+    put = await fetch(doel.signedUrl, { method: 'PUT', headers: { 'Content-Type': type }, body: f });
+  } catch {
+    throw new NotitieApiFout(0, 'Uploaden mislukt: geen verbinding.');
+  }
+  if (!put.ok) throw new NotitieApiFout(put.status, put.status === 413 ? `“${f.name}” is te groot (max. 25 MB).` : `Uploaden mislukt (${put.status}).`);
+  const { bijlage } = await api<{ bijlage: Bijlage }>(`/api/notities/${notitieId}/bestanden`, {
+    method: 'POST',
+    body: JSON.stringify({ pad: doel.pad, naam: f.name, type })
+  });
+  return bijlage;
+}
 
 // ---------- concept in de browser (vangnet) ----------
 // Elke wijziging staat tot hij is opgeslagen ook in localStorage (per gebruiker en notitie).

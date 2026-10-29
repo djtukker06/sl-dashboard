@@ -90,6 +90,97 @@ export interface NotitieRij {
 
 export const LEGE_INHOUD: TiptapKnoop = { type: 'doc', content: [{ type: 'paragraph' }] };
 
+
+// ---------------------------------------------------------------------------------
+// Bijlagen (migratie 0032)
+// ---------------------------------------------------------------------------------
+// Een bestand staat in de privé-bucket "notities" onder <notitie-id>/<ts>-<hex>-<naam>.<ext>;
+// in de tekst staat alleen de eigen route /api/notities/<notitie-id>/bestanden/<bestand-id>.
+
+export const MAX_BIJLAGE_BYTES = 25 * 1024 * 1024;
+export const MAX_BIJLAGE_MB = 25;
+
+/** Een geüploade bijlage, zoals de API hem teruggeeft. */
+export interface Bijlage {
+  id: string;
+  url: string;
+  naam: string;
+  type: string;
+  grootte: number;
+  afbeelding: boolean;
+}
+
+const UUID_DEEL = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
+const BIJLAGE_URL = new RegExp(`^/api/notities/${UUID_DEEL}/bestanden/${UUID_DEEL}$`, 'i');
+
+/** Foto's die de browser zelf kan tonen (de rest wordt een bestandskaartje). */
+const AFBEELDINGEN = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/avif']);
+
+export function isAfbeelding(type: string): boolean {
+  return AFBEELDINGEN.has(type.toLowerCase());
+}
+
+export function bijlageUrl(notitieId: string, bestandId: string): string {
+  return `/api/notities/${notitieId}/bestanden/${bestandId}`;
+}
+
+/** Alleen verwijzingen naar onze eigen bijlage-route (geen externe afbeeldingen of data:). */
+export function isBijlageUrl(v: unknown): v is string {
+  return typeof v === 'string' && BIJLAGE_URL.test(v);
+}
+
+/** Bestandsnaam zonder pad- en stuurtekens, max. 200 tekens. */
+export function schoonBestandsnaam(naam: unknown): string {
+  const n = String(naam ?? '')
+    .split(/[\\/]/)
+    .pop()!
+    .replace(/[\u0000-\u001f\u007f<>"]+/g, '')
+    .trim()
+    .slice(0, 200);
+  return n || 'bestand';
+}
+
+/** MIME-type zoals de browser hem geeft; onbekend of vreemd = application/octet-stream. */
+export function schoonType(type: unknown): string {
+  const t = String(type ?? '').toLowerCase().trim();
+  return /^[a-z0-9.+-]+\/[a-z0-9.+-]{1,100}$/.test(t) ? t : 'application/octet-stream';
+}
+
+function bijlageSlug(s: string, max: number): string {
+  return (
+    s
+      .normalize('NFKD')
+      .replace(/[̀-ͯ]/g, '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, max) || 'bestand'
+  );
+}
+
+/** Pad in de bucket voor een nieuw bestand; `rnd` = 8 hex-tekens (van de server). */
+export function bijlagePad(notitieId: string, naam: string, ts: number, rnd: string): string {
+  const m = /\.([a-z0-9]{1,8})$/i.exec(naam);
+  const ext = m ? m[1].toLowerCase() : 'bin';
+  const basis = bijlageSlug(m ? naam.slice(0, -m[0].length) : naam, 40);
+  return `${notitieId}/${ts}-${rnd}-${basis}.${ext}`;
+}
+
+/** Klopt een pad (terug van de browser) met bijlagePad voor deze notitie? */
+export function isBijlagePadVan(notitieId: string, pad: unknown): pad is string {
+  if (typeof pad !== 'string' || pad.length > 300) return false;
+  const [map, bestand, ...rest] = pad.split('/');
+  return map === notitieId && rest.length === 0 && /^\d{10,16}-[0-9a-f]{8}-[a-z0-9-]{1,40}\.[a-z0-9]{1,8}$/.test(bestand ?? '');
+}
+
+/** "2,4 MB" / "380 kB" / "12 bytes". */
+export function leesbareGrootte(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes < 0) return '';
+  if (bytes < 1024) return `${bytes} bytes`;
+  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} kB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1).replace('.', ',')} MB`;
+}
+
 // ---------------------------------------------------------------------------------
 // Inhoud opschonen: alleen bekende knopen, marks en attributen
 // ---------------------------------------------------------------------------------
@@ -113,8 +204,31 @@ const BLOK_ATTRS: Record<string, (a: Record<string, unknown>) => Record<string, 
   blockquote: () => undefined,
   codeBlock: (a) => (typeof a.language === 'string' && /^[a-z0-9+#.-]{1,32}$/i.test(a.language) ? { language: a.language } : undefined),
   horizontalRule: () => undefined,
-  hardBreak: () => undefined
+  hardBreak: () => undefined,
+  // Bijlagen (0032): alleen verwijzingen naar de eigen bijlage-route, anders valt de knoop weg.
+  image: (a) =>
+    isBijlageUrl(a.src)
+      ? { src: a.src, alt: typeof a.alt === 'string' && a.alt ? a.alt.slice(0, 200) : null, width: maat(a.width), height: maat(a.height) }
+      : undefined,
+  bijlage: (a) =>
+    isBijlageUrl(a.src)
+      ? {
+          src: a.src,
+          naam: schoonBestandsnaam(a.naam),
+          type: schoonType(a.type),
+          grootte: Number.isFinite(Number(a.grootte)) && Number(a.grootte) >= 0 ? Math.round(Number(a.grootte)) : 0
+        }
+      : undefined
 };
+
+/** Breedte/hoogte van een verkleinde foto in pixels, of null. */
+function maat(v: unknown): number | null {
+  const n = Math.round(Number(v));
+  return v !== null && v !== undefined && Number.isFinite(n) && n >= 16 && n <= 4000 ? n : null;
+}
+
+/** Knopen zonder inhoud (atomen). */
+const ATOMEN = new Set(['horizontalRule', 'hardBreak', 'image', 'bijlage']);
 
 const MARKS = new Set(['bold', 'italic', 'strike', 'code', 'underline', 'link']);
 
@@ -166,7 +280,8 @@ function schoonKnoop(k: unknown, diepte: number, teller: { n: number }): TiptapK
   const uit: TiptapKnoop = { type };
   const attrs = BLOK_ATTRS[type](ruw.attrs && typeof ruw.attrs === 'object' ? (ruw.attrs as Record<string, unknown>) : {});
   if (attrs) uit.attrs = attrs;
-  if (Array.isArray(ruw.content) && type !== 'horizontalRule' && type !== 'hardBreak') {
+  else if (type === 'image' || type === 'bijlage') return null;
+  if (Array.isArray(ruw.content) && !ATOMEN.has(type)) {
     const kinderen = ruw.content.map((c) => schoonKnoop(c, diepte + 1, teller)).filter((c): c is TiptapKnoop => c !== null);
     if (kinderen.length) uit.content = kinderen;
   }
@@ -227,6 +342,13 @@ export function platteTekst(doc: TiptapKnoop | null | undefined): string {
     }
     if (k.type === 'horizontalRule') {
       if (huidig) regels.push(huidig);
+      huidig = '';
+      return;
+    }
+    if (k.type === 'bijlage') {
+      // De bestandsnaam telt mee bij het zoeken.
+      if (huidig) regels.push(huidig);
+      regels.push(String(k.attrs?.naam ?? ''));
       huidig = '';
       return;
     }

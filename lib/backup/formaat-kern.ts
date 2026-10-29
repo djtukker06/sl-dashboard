@@ -194,6 +194,7 @@ export const TABELLEN: TabelDef[] = [
   { naam: 'project_eigenaren', pk: ['project_id', 'user_id'] },
   // Scratchpad (0031): fragment is gegenereerd uit inhoud_tekst.
   { naam: 'notities', pk: ['id'], zonder: ['fragment'] },
+  { naam: 'notitie_bestanden', pk: ['id'] },
   { naam: 'invoice_counters', pk: ['year'] },
   { naam: 'quotes', pk: ['id'] },
   { naam: 'invoices', pk: ['id'], zelfVerwijzing: 'remainder_of_invoice_id' },
@@ -240,7 +241,7 @@ export const TABELLEN: TabelDef[] = [
 export const NIET_EXPORTEREN = new Set(['inlog_pogingen']);
 
 /** Storage-buckets in de back-up. mail-tmp en uitgaven-export zijn tijdelijk. */
-export const BUCKETS = ['invoices', 'uitgaven', 'social-assets'] as const;
+export const BUCKETS = ['invoices', 'uitgaven', 'social-assets', 'notities'] as const;
 
 export interface DbTabelExport {
   pk: string[];

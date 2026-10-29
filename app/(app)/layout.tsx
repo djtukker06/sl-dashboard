@@ -6,6 +6,9 @@ import { teamProfielen } from '@/lib/team/profielen';
 import { moetKoppelen } from '@/lib/agenda/feed-status';
 import { Rail } from '@/components/shell/Rail';
 import { TeamProvider } from '@/components/team/TeamProvider';
+import { Welkomstanimatie } from '@/components/shell/Welkomstanimatie';
+import { IntroScript } from '@/components/login/IntroScript';
+import { WELKOM_SCRIPT } from '@/lib/shell/welkom';
 import '../../public/shell/shell.css';
 import './app.css';
 import './agenda.css';
@@ -37,7 +40,10 @@ export default async function AppLayout({ children }: Readonly<{ children: React
   const nonce = (await headers()).get('x-nonce') ?? undefined;
 
   return (
-    <div className="sl-shell" data-gebruiker={lid.userId}>
+    // suppressHydrationWarning: het inline script zet hier vóór de hydratie de klasse sl-welkom-aan.
+    <div className="sl-shell" data-gebruiker={lid.userId} suppressHydrationWarning>
+      <IntroScript code={WELKOM_SCRIPT} nonce={nonce} />
+      <Welkomstanimatie />
       <Rail
         account={{ id: lid.userId, email: lid.email, naam: lid.profiel.naam, initialen: lid.profiel.initialen, kleur: lid.profiel.kleur, eigenaar: lid.rol === 'eigenaar' }}
       />
