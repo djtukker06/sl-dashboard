@@ -687,7 +687,6 @@
 /* ---------- grote monitoren (≥ 1920px): ruimere marges, iets bredere overzichten ---------- */
 @media (min-width: 1920px) {
   .sl-main { --sl-gutter: 56px; }
-  .sl-main:has(.db-grid),
   .sl-main:has(.bs),
   .sl-main:has(.ug-inhoud) { --sl-inhoud: 1600px; }
   .sl-main:has(.kp:not(.kp-breed)),
@@ -697,7 +696,6 @@
   .sl-main:has(> .wrap) { --sl-inhoud: 980px; --sl-gutter: 24px; }
   .sl-main:has(.ac-inhoud) { --sl-inhoud: 940px; }
   .sl-main:has(.bh-instellingen) { --sl-inhoud: 1060px; }
-  .db-grid { gap: 28px; }
 }
 
 /* ==========================================================

@@ -1036,9 +1036,6 @@ input.ag-snel-veld {
 }
 
 /* ---------- dashboard: indeling ---------- */
-/* Back-upmelding (alleen eigenaar) over de volle breedte van het grid, uitgelijnd met de kaarten. */
-.db-grid > .db-backup { grid-column: 1 / -1; margin: 0; }
-
 @media (pointer: coarse), (max-width: 720px) {
   /* De "Alles →"-link is hier 40px hoog (app.css); de kop blijft daardoor compact. */
   .db-grid .db-kaart-kop { min-height: 52px; box-sizing: border-box; padding-top: 6px; padding-bottom: 6px; }
@@ -1056,20 +1053,6 @@ input.ag-snel-veld {
   .db-tijdlijn { grid-template-columns: 42px minmax(0, 1fr); }
 }
 
-/* Grote monitor (≥ 1920px, inhoud 1600px breed): drie kolommen i.p.v. twee.
-     rij 1: Vandaag (5) · Deze week (3) · Taken (4)
-     rij 2: Inbox (3) · Recente posts (5) · Opvolgen/projecten/facturen/bonnetjes (4)
-     rij 3: Scratchpad (8), naast de doorlopende stapel (notities.css)
-   Vaste kolommen, zodat een ontbrekende kaart geen gat verderop in het grid schuift. */
-@media (min-width: 1920px) {
-  .db-grid > .db-vandaag { grid-column: 1 / span 5; }
-  .db-grid > .db-week-stapel { grid-column: 6 / span 3; }
-  .db-grid > .db-taken { grid-column: 9 / span 4; }
-  .db-grid > .db-inbox { grid-column: 1 / span 3; }
-  .db-grid > .db-social { grid-column: 4 / span 5; }
-  .db-grid > .db-stapel:not(.db-week-stapel) { grid-column: 9 / span 4; }
-  .db-grid > .db-social .db-posts { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-}
 @media (prefers-reduced-motion: reduce) {
   .ag-chip, .ag-toast, .ag-paneel, .ag-paneel-achter, .ag-popover, .ag-vink[aria-checked="true"], .ag-laadt { animation: none; }
 }
