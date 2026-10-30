@@ -4,7 +4,7 @@ import { backupStatus, waarschuwingVan } from '@/lib/backup/status';
 import { logWaarschuwing } from '@/lib/log';
 
 // Alleen voor de eigenaar (met 2FA-sessie): een balk op het dashboard als de laatste
-// back-up is mislukt, de laatste geslaagde ouder is dan 2 dagen, of de keep-alive al 3 dagen
+// back-up is mislukt, de laatste geslaagde ouder is dan 4 dagen (hij draait om de 3 dagen), of de keep-alive al 3 dagen
 // niets heeft gedaan. Alles in orde = niets zichtbaar. Een fout bij het lezen houdt het
 // dashboard nooit op.
 export async function BackupWaarschuwing({ lid }: { lid: Teamlid }) {

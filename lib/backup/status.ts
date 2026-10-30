@@ -117,7 +117,8 @@ export function waarschuwingVan(s: BackupStatus, nu: number = Date.now()): Backu
   }
   const okOp = s.laatsteDbOk ? new Date(s.laatsteDbOk.gestart).getTime() : null;
   if (okOp === null) return { soort: 'oud', tekst: 'Er is nog geen geslaagde back-up.' };
-  if (nu - okOp > 48 * UUR) return { soort: 'oud', tekst: 'De laatste geslaagde back-up is ouder dan 2 dagen.' };
+  // De cron maakt om de 3 dagen een back-up; pas als er daarna een dag niets is gelukt, melden.
+  if (nu - okOp > 96 * UUR) return { soort: 'oud', tekst: 'De laatste geslaagde back-up is ouder dan 4 dagen: de geplande back-up is overgeslagen.' };
   const hbOp = s.heartbeat ? new Date(s.heartbeat.op).getTime() : null;
   if (hbOp === null || nu - hbOp > 72 * UUR) {
     return { soort: 'heartbeat', tekst: 'De keep-alive heeft al meer dan 3 dagen niets gedaan: Supabase kan pauzeren.' };
