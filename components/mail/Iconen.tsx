@@ -19,6 +19,7 @@ const PADEN = {
   terug: '<path d="m15 5-7 7 7 7"/>',
   taak: '<rect x="3.5" y="3.5" width="17" height="17" rx="3"/><path d="m8 12 3 3 5-6"/>',
   zoek: '<circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.4-4.4"/>',
+  vink: '<path d="m5 12.5 4.5 4.5L19 7.5"/>',
   kruis: '<path d="M6 6l12 12M18 6 6 18"/>',
   download: '<path d="M12 4v11"/><path d="m7 10 5 5 5-5"/><path d="M5 20h14"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',

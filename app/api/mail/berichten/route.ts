@@ -59,7 +59,8 @@ export const GET = mailRoute(async (request: Request, _ctx: unknown, mail) => {
       totaal: gelukt.reduce((s, d) => s + d.res!.totaal, 0),
       meer: gelukt.some((d) => d.res!.meer),
       berichten,
-      fouten: delen.filter((d) => !d.res).map((d) => ({ id: d.m.id, label: d.m.label }))
+      fouten: delen.filter((d) => !d.res).map((d) => ({ id: d.m.id, label: d.m.label })),
+      geldigheid: Object.fromEntries(gelukt.map((d) => [d.m.id, d.res!.uidValidity]))
     } satisfies BerichtenPagina);
   }
 
@@ -68,5 +69,10 @@ export const GET = mailRoute(async (request: Request, _ctx: unknown, mail) => {
     return berichtenPagina(c, map.pad, { pagina, per, zoek });
   });
   const mb = mail.mailbox?.id;
-  return json(mb ? { ...res, berichten: res.berichten.map((e) => ({ ...e, mb })) } : res);
+  const { uidValidity, ...rest } = res;
+  return json(
+    mb
+      ? ({ ...rest, berichten: res.berichten.map((e) => ({ ...e, mb })), geldigheid: { [mb]: uidValidity } } satisfies BerichtenPagina)
+      : rest
+  );
 });

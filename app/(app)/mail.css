@@ -755,11 +755,14 @@ input.ml-veld:focus { border: 0; }
   cursor: pointer;
 }
 .ml-link:hover { color: var(--sl-text); }
+/* Tekstvak, handtekening en citaat scrollen samen (het tekstvak groeit mee). */
+.ml-opstel-inhoud { flex: 1; min-height: 0; overflow-y: auto; padding-bottom: 20px; cursor: text; }
 .ml-tekstvak {
-  flex: 1;
-  min-height: 220px;
+  display: block;
+  min-height: 160px;
+  overflow: hidden;
   width: 100%;
-  padding: 20px 24px;
+  padding: 20px 24px 8px;
   border: 0;
   outline: none;
   resize: none;
@@ -770,6 +773,65 @@ input.ml-veld:focus { border: 0; }
   line-height: 1.65;
   color-scheme: dark;
 }
+.ml-handtekening { padding: 4px 24px 0; cursor: default; }
+.ml-hand-groet { margin: 0 0 14px; font-size: 14.5px; line-height: 1.65; color: var(--sl-text); }
+.ml-hand-tekst { margin: 0; font-family: var(--sl-font); font-size: 14.5px; line-height: 1.65; color: var(--sl-text); white-space: pre-wrap; }
+.ml-handtekening table { border-collapse: separate; }
+.ml-citaat { padding: 14px 24px 0; cursor: default; }
+.ml-citaat-knop {
+  padding: 0 8px;
+  height: 18px;
+  border: 1px solid var(--sl-line);
+  border-radius: 9px;
+  background: var(--sl-raise);
+  color: var(--sl-muted);
+  font-size: 11px;
+  line-height: 1;
+  letter-spacing: .1em;
+  cursor: pointer;
+}
+.ml-citaat-knop:hover { color: var(--sl-text); }
+.ml-citaat-tekst { margin-top: 12px; font-size: 13px; line-height: 1.6; color: var(--sl-muted); }
+.ml-citaat-tekst p { margin: 0 0 8px; }
+.ml-citaat-tekst pre { margin: 0; font-family: var(--sl-font); white-space: pre-wrap; overflow-wrap: anywhere; }
+.ml-citaat-antwoord pre { padding-left: 12px; border-left: 2px solid var(--sl-line); }
+.ml-hand-kiezer { position: relative; }
+.ml-hand-knop { display: inline-flex; align-items: center; gap: 7px; }
+.ml-hand-knop .ml-icoon { color: var(--sl-muted); }
+.ml-hand-knop-naam { max-width: 180px; overflow: hidden; text-overflow: ellipsis; }
+.ml-hand-knop[aria-expanded="true"] .ml-hand-pijl { transform: rotate(180deg); }
+.ml-hand-pijl { transition: transform .16s var(--sl-ease); }
+/* Klapt omhoog open (de knop staat onderaan het opstelscherm). */
+.ml-hand-menu { top: auto; bottom: calc(100% + 6px); width: 270px; padding: 6px; }
+.ml-hand-menu-kop {
+  margin: 0;
+  padding: 6px 10px 8px;
+  font-family: var(--sl-mono);
+  font-size: 10.5px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--sl-muted);
+}
+.ml-hand-optie {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 10px;
+  border: 0;
+  border-radius: var(--sl-r);
+  background: transparent;
+  color: var(--sl-text);
+  font-family: var(--sl-font);
+  text-align: left;
+  cursor: pointer;
+}
+.ml-hand-optie:hover, .ml-hand-optie:focus-visible { background: var(--sl-raise); outline: none; }
+.ml-hand-optie-geen { margin-top: 4px; border-top: 1px solid var(--sl-line-soft); border-radius: 0 0 var(--sl-r) var(--sl-r); padding-top: 11px; }
+.ml-hand-optie-tekst { flex: 1; min-width: 0; display: grid; gap: 1px; }
+.ml-hand-optie-naam { font-size: 13.5px; font-weight: 500; }
+.ml-hand-optie-geen .ml-hand-optie-naam { color: var(--sl-muted); }
+.ml-hand-optie-sub { font-family: var(--sl-mono); font-size: 11px; color: var(--sl-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ml-bijlagen-opstel { padding: 12px 24px 0; border-top: 1px solid var(--sl-line-soft); }
 .ml-opsteller-fout { margin: 12px 24px 0; font-size: 13px; color: var(--sl-danger); }
 .ml-opsteller-voet {

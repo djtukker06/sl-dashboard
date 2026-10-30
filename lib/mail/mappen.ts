@@ -46,8 +46,26 @@ function selecteerbaar(m: ListResponse): boolean {
   return !m.flags.has('\\Noselect') && !m.flags.has('\\NonExistent');
 }
 
+/**
+ * Mappenlijst per (warme) verbinding, 60 s: zo kost het controleren van een mappad niet bij
+ * elk verzoek een LIST. Met `status` (aantallen) altijd vers; dat ververst de cache meteen.
+ * Een map die intussen elders is verwijderd, geeft bij openen gewoon een nette fout.
+ */
+const MAPPEN_MS = 60_000;
+const mappenCache = new WeakMap<ImapFlow, { tot: number; mappen: MailMap[] }>();
+
 /** Alle selecteerbare mappen, in een vaste volgorde. Met `status` ook de aantallen. */
 export async function lijstMappen(client: ImapFlow, opties: { status?: boolean } = {}): Promise<MailMap[]> {
+  if (!opties.status) {
+    const hit = mappenCache.get(client);
+    if (hit && hit.tot > Date.now()) return hit.mappen;
+  }
+  const mappen = await haalMappen(client, opties);
+  mappenCache.set(client, { tot: Date.now() + MAPPEN_MS, mappen });
+  return mappen;
+}
+
+async function haalMappen(client: ImapFlow, opties: { status?: boolean }): Promise<MailMap[]> {
   const lijst = await client.list(
     opties.status ? { statusQuery: { messages: true, unseen: true } } : undefined
   );
@@ -92,6 +110,7 @@ export async function mapVoorRol(client: ImapFlow, rol: MapRol, aanmaken = false
   const naam = rol === 'archief' ? 'Archive' : rol === 'verzonden' ? 'Sent' : rol === 'prullenbak' ? 'Trash' : null;
   if (!naam) return null;
   const res = await client.mailboxCreate(naam);
+  mappenCache.delete(client);
   return res.path;
 }
 

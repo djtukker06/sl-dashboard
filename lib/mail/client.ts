@@ -63,6 +63,8 @@ export const mailApi = {
   bericht: (mb: string, map: string, uid: number) => api<{ bericht: Bericht }>(`/api/mail/berichten/${uid}?${q({ mb, map })}`),
   gesprek: (mb: string, map: string, uid: number) =>
     api<{ gesprek: GesprekBericht[] }>(`/api/mail/berichten/${uid}/gesprek?${q({ mb, map })}`),
+  vooruit: (mb: string, map: string, uids: number[]) =>
+    api<{ berichten: Bericht[] }>(`/api/mail/berichten/vooruit?${q({ mb, map, uids: uids.join(',') })}`),
   vlaggen: (mb: string, map: string, uid: number, v: { gelezen?: boolean; gemarkeerd?: boolean }) =>
     api<{ ok: true }>(`/api/mail/berichten/${uid}/vlaggen?${q({ mb, map })}`, { method: 'POST', body: JSON.stringify(v) }),
   verplaats: (mb: string, map: string, uid: number, naar: { naar?: string; naarMap?: string }) =>
@@ -136,7 +138,7 @@ const CACHE_MS = 60_000;
  * dezelfde computer inlogt, ziet nooit diens mail uit de cache. Uitloggen leegt alle
  * "sl-"-sleutels (public/shell/shell.js).
  */
-function perGebruiker(sleutel: string): string {
+export function perGebruiker(sleutel: string): string {
   try {
     const id = document.querySelector('.sl-rail[data-gebruiker]')?.getAttribute('data-gebruiker');
     return id ? `${sleutel}:${id}` : sleutel;

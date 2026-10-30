@@ -34,6 +34,8 @@ export interface Envelop {
   gemarkeerd: boolean;
   beantwoord: boolean;
   heeftBijlagen: boolean;
+  /** Grootte van het hele bericht in bytes (bepaalt of het vooruit geladen wordt). */
+  grootte?: number;
   /** Id van de inbox waar dit bericht in staat (meerdere inboxen). */
   mb?: string;
 }
@@ -48,6 +50,8 @@ export interface BerichtenPagina {
   meer: boolean;
   /** Bij "Alle inboxen": inboxen die nu niet bereikbaar waren. */
   fouten?: { id: string; label: string }[];
+  /** UIDVALIDITY van de map (per inbox-id). Verandert die, dan horen bewaarde uid's niet meer bij dezelfde berichten. */
+  geldigheid?: Record<string, string>;
 }
 
 export interface Bijlage {
