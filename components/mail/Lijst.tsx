@@ -30,7 +30,8 @@ export function Lijst({
   onKies,
   onMeer,
   onOpnieuw,
-  onVlag
+  onVlag,
+  onVoorladen
 }: {
   mapNaam: string;
   rol: MapRol;
@@ -56,8 +57,15 @@ export function Lijst({
   onMeer: () => void;
   onOpnieuw: () => void;
   onVlag: (e: Envelop) => void;
+  /** Muis blijft even op een rij: dat bericht alvast ophalen. */
+  onVoorladen?: (e: Envelop) => void;
 }) {
   const lijstRef = useRef<HTMLUListElement>(null);
+  const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const stopHover = () => {
+    if (hoverTimer.current) clearTimeout(hoverTimer.current);
+    hoverTimer.current = null;
+  };
 
   // Houd de geselecteerde regel in beeld (j/k).
   useEffect(() => {
@@ -160,6 +168,12 @@ export function Lijst({
                     className={`ml-rij${b.gelezen ? '' : ' ml-rij-nieuw'}`}
                     aria-current={sleutel === geselecteerd ? 'true' : undefined}
                     onClick={() => onKies(b)}
+                    onPointerEnter={(ev) => {
+                      if (!onVoorladen || ev.pointerType !== 'mouse') return;
+                      stopHover();
+                      hoverTimer.current = setTimeout(() => onVoorladen(b), 70);
+                    }}
+                    onPointerLeave={stopHover}
                   >
                     <span className="ml-rij-stip" aria-hidden="true" />
                     <span className="ml-rij-boven">

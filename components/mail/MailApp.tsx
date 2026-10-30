@@ -56,6 +56,12 @@ const SNELTOETSEN: [string, string][] = [
   ['⌘ Enter', 'verzenden']
 ];
 const VERVERS_MS = 2 * 60_000;
+/** Geopende en vooruit geladen berichten in het geheugen (daarboven de oudste eruit). */
+const MAX_BERICHTEN = 60;
+/** Berichten tot deze grootte vooruit laden (gelijk aan de grens van de server). */
+const VOORUIT_GROOTTE = 512 * 1024;
+/** Zoveel berichten bovenaan de lijst alvast ophalen. */
+const VOORUIT_BOVEN = 8;
 const lijstSleutel = (mb: string, map: string, zoek: string) => `${mb}\n${map}\n${zoek}`;
 const berichtSleutel = (mb: string, map: string, uid: number) => `${mb}\n${map}\n${uid}`;
 const envSleutel = (e: { mb?: string; uid: number }) => `${e.mb ?? ''}\n${e.uid}`;
@@ -148,6 +154,14 @@ function Mail({
   const mappenBezig = useRef(new Set<string>());
   const laatsteVerversing = useRef(0);
   const lijstVerzoek = useRef(0);
+  /** Berichten die nu vooruit worden opgehaald (sleutel → belofte met de opgehaalde sleutels). */
+  const vooruitBezig = useRef(new Map<string, Promise<Set<string>>>());
+  /** Laatst bekende UIDVALIDITY per "inbox\nmap". */
+  const geldigheid = useRef(new Map<string, string>());
+  const berichtenRef = useRef(berichten);
+  useEffect(() => {
+    berichtenRef.current = berichten;
+  }, [berichten]);
 
   const alle = mb === ALLE_INBOXEN;
   const lijstMap = alle ? 'INBOX' : map;
@@ -169,6 +183,40 @@ function Mail({
   }, [totaal, tellersBekend]);
 
   // ---------- laden ----------
+
+  /** Berichten in het geheugen zetten; boven MAX_BERICHTEN gaan de oudste eruit. */
+  const bewaarBerichten = useCallback((inbox: string, m: string, lijst: Bericht[]) => {
+    if (!lijst.length) return;
+    setBerichten((oud) => {
+      const nieuw = { ...oud };
+      for (const b of lijst) {
+        const k = berichtSleutel(inbox, m, b.uid);
+        delete nieuw[k];
+        nieuw[k] = b;
+      }
+      const sleutels = Object.keys(nieuw);
+      return sleutels.length > MAX_BERICHTEN
+        ? Object.fromEntries(sleutels.slice(-MAX_BERICHTEN).map((k) => [k, nieuw[k]]))
+        : nieuw;
+    });
+  }, []);
+
+  /**
+   * Is de UIDVALIDITY van een map veranderd (de server heeft de map opnieuw opgebouwd), dan
+   * horen bewaarde uid's niet meer bij dezelfde berichten: die berichten uit het geheugen.
+   */
+  const controleerGeldigheid = useCallback((m: string, nu: Record<string, string> | undefined) => {
+    if (!nu) return;
+    const verlopen: string[] = [];
+    for (const [inbox, waarde] of Object.entries(nu)) {
+      const k = `${inbox}\n${m}`;
+      const oud = geldigheid.current.get(k);
+      if (oud !== undefined && oud !== waarde) verlopen.push(`${k}\n`);
+      geldigheid.current.set(k, waarde);
+    }
+    if (!verlopen.length) return;
+    setBerichten((oud) => Object.fromEntries(Object.entries(oud).filter(([k]) => !verlopen.some((v) => k.startsWith(v)))));
+  }, []);
 
   const laadInboxen = useCallback(async () => {
     try {
@@ -207,6 +255,7 @@ function Mail({
       else setMeerLaden(true);
       try {
         const res = await mailApi.berichten(inbox, m, pagina, z, PER);
+        controleerGeldigheid(m, res.geldigheid);
         const nieuwe = res.berichten.map((e) => (e.mb ? e : { ...e, mb: inbox }));
         const samen = inbox === ALLE_INBOXEN;
         setLijsten((oud) => {
@@ -250,7 +299,7 @@ function Mail({
         setMeerLaden(false);
       }
     },
-    [toast]
+    [toast, controleerGeldigheid]
   );
 
   const laadBericht = useCallback(async (inbox: string, m: string, u: number) => {
@@ -258,18 +307,41 @@ function Mail({
     setBerichtFout(null);
     try {
       const { bericht } = await mailApi.bericht(inbox, m, u);
-      setBerichten((oud) => {
-        // Houd de cache klein: max. 40 berichten in het geheugen.
-        const sleutels = Object.keys(oud);
-        const rest = sleutels.length > 40 ? Object.fromEntries(sleutels.slice(-30).map((k) => [k, oud[k]])) : oud;
-        return { ...rest, [berichtSleutel(inbox, m, u)]: bericht };
-      });
+      bewaarBerichten(inbox, m, [bericht]);
     } catch (e) {
       setBerichtFout({ sleutel: berichtSleutel(inbox, m, u), fout: e instanceof MailApiFout ? e : new MailApiFout(0, 'Bericht laden mislukt.') });
     } finally {
       setBerichtLaden(false);
     }
-  }, []);
+  }, [bewaarBerichten]);
+
+  /**
+   * Berichten alvast ophalen die je waarschijnlijk zo opent (bovenaan, de volgende, onder de
+   * muis), zodat openen direct is. Met PEEK: niets gaat op gelezen. Alleen in het geheugen.
+   */
+  const laadVooruit = useCallback(
+    (inbox: string, m: string, kandidaten: Envelop[]) => {
+      const nodig = kandidaten
+        .filter((e) => (e.grootte ?? Infinity) <= VOORUIT_GROOTTE)
+        .map((e) => e.uid)
+        .filter((u) => {
+          const k = berichtSleutel(inbox, m, u);
+          return !berichtenRef.current[k] && !vooruitBezig.current.has(k);
+        })
+        .slice(0, 10);
+      if (!nodig.length) return;
+      const belofte = mailApi
+        .vooruit(inbox, m, nodig)
+        .then((r) => {
+          bewaarBerichten(inbox, m, r.berichten);
+          return new Set(r.berichten.map((b) => berichtSleutel(inbox, m, b.uid)));
+        })
+        .catch(() => new Set<string>())
+        .finally(() => nodig.forEach((u) => vooruitBezig.current.delete(berichtSleutel(inbox, m, u))));
+      nodig.forEach((u) => vooruitBezig.current.set(berichtSleutel(inbox, m, u), belofte));
+    },
+    [bewaarBerichten]
+  );
 
   const laadAdressen = useCallback((inbox: string) => {
     if (adressenGeladen.current.has(inbox)) return;
@@ -328,9 +400,43 @@ function Mail({
   const inGeheugen = sel != null && Boolean(berichten[berichtSleutel(sel.mb, lijstMap, sel.uid)]);
   useEffect(() => {
     if (!sel || inGeheugen) return;
+    // Wordt het al vooruit opgehaald? Dan daarop wachten in plaats van nog een verzoek.
+    const k = berichtSleutel(sel.mb, lijstMap, sel.uid);
+    const onderweg = vooruitBezig.current.get(k);
+    if (onderweg) {
+      let weg = false;
+      setBerichtLaden(true);
+      onderweg.then((gekregen) => {
+        if (weg) return;
+        if (gekregen.has(k)) setBerichtLaden(false);
+        else void laadBericht(sel.mb, lijstMap, sel.uid);
+      });
+      return () => {
+        weg = true;
+      };
+    }
     const t = setTimeout(() => laadBericht(sel.mb, lijstMap, sel.uid), 120);
     return () => clearTimeout(t);
   }, [sel, lijstMap, inGeheugen, laadBericht]);
+
+  // Vooruit laden: de bovenste berichten van de lijst, en rond het geopende bericht de
+  // volgende (j) en vorige (k). Pas als de lijst even stilstaat en het venster zichtbaar is.
+  const zichtbareLijst = lijst?.berichten;
+  useEffect(() => {
+    if (!zichtbareLijst?.length) return;
+    const t = setTimeout(() => {
+      if (document.visibilityState !== 'visible') return;
+      const i = sel ? zichtbareLijst.findIndex((b) => b.mb === sel.mb && b.uid === sel.uid) : -1;
+      const kandidaten = i >= 0 ? [...zichtbareLijst.slice(i + 1, i + 4), ...zichtbareLijst.slice(Math.max(0, i - 1), i)] : zichtbareLijst.slice(0, VOORUIT_BOVEN);
+      const perInbox = new Map<string, Envelop[]>();
+      for (const e of kandidaten) {
+        const ib = e.mb ?? mb;
+        perInbox.set(ib, [...(perInbox.get(ib) ?? []), e]);
+      }
+      perInbox.forEach((lijstje, ib) => laadVooruit(ib, lijstMap, lijstje));
+    }, sel ? 250 : 400);
+    return () => clearTimeout(t);
+  }, [zichtbareLijst, sel, mb, lijstMap, laadVooruit]);
 
   // Verversen bij terugkeren naar het venster (max. 1× per 30 s) en elke 2 minuten.
   useEffect(() => {
@@ -822,6 +928,7 @@ function Mail({
           onMeer={() => laadLijst(mb, lijstMap, zoek, (lijst?.pagina ?? 1) + 1)}
           onOpnieuw={() => laadLijst(mb, lijstMap, zoek, 1)}
           onVlag={(e) => zetVlag(e.mb ?? mb, lijstMap, e.uid, !e.gemarkeerd)}
+          onVoorladen={(e) => laadVooruit(e.mb ?? mb, lijstMap, [e])}
         />
 
         {opstel ? (
