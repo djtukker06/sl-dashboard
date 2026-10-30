@@ -1,4 +1,5 @@
 import type { Browser } from 'puppeteer-core';
+import { chromiumEnv } from '../social/render';
 
 // `puppeteer` (met eigen gedownloade Chrome) is alleen een devDependency, voor lokaal
 // ontwikkelen op de Mac. In productie (Vercel) gebruiken we puppeteer-core met de
@@ -7,15 +8,17 @@ import type { Browser } from 'puppeteer-core';
 async function getBrowser(): Promise<Browser> {
   if (process.env.NODE_ENV !== 'production') {
     const puppeteer = await import('puppeteer');
-    return puppeteer.launch({ headless: true }) as unknown as Promise<Browser>;
+    return puppeteer.launch({ headless: true, env: chromiumEnv() }) as unknown as Promise<Browser>;
   }
 
   const chromium = (await import('@sparticuz/chromium')).default;
   const puppeteerCore = await import('puppeteer-core');
+  const executablePath = await chromium.executablePath();
   return puppeteerCore.launch({
     args: chromium.args,
-    executablePath: await chromium.executablePath(),
-    headless: true
+    executablePath,
+    headless: true,
+    env: chromiumEnv()
   });
 }
 

@@ -43,23 +43,43 @@ const LOCAL_CHROME = [
   "/usr/bin/chromium",
 ].filter(Boolean) as string[];
 
+// Minimale omgeving voor de headless Chromium (ook gebruikt door lib/invoice/pdf.ts).
+// Standaard geeft puppeteer de browser alle variabelen van de server mee, dus ook de
+// service-role-key en de versleutelingssleutels; de browser rendert HTML van gebruikers en
+// de AI, dus hij krijgt alleen wat hij nodig heeft om te starten. Pas aanroepen NA
+// `chromium.executablePath()`: @sparticuz/chromium zet daar zelf HOME, FONTCONFIG_PATH en
+// LD_LIBRARY_PATH. (Staat hier en niet in een eigen bestand: scripts/rooktest-render.mjs laadt
+// dit bestand met --experimental-strip-types, dat geen imports zonder extensie oplost.)
+const CHROMIUM_ENV = ["PATH", "HOME", "TMPDIR", "TZ", "LANG", "LD_LIBRARY_PATH", "FONTCONFIG_PATH", "FONTCONFIG_FILE"];
+
+export function chromiumEnv(): Record<string, string> {
+  const env: Record<string, string> = {};
+  for (const naam of CHROMIUM_ENV) {
+    const waarde = process.env[naam];
+    if (waarde !== undefined) env[naam] = waarde;
+  }
+  return env;
+}
+
 async function launchBrowser(): Promise<Browser> {
   if (process.env.NODE_ENV !== "production") {
     const local = LOCAL_CHROME.find((p) => fs.existsSync(p));
     if (local) {
       const puppeteerCore = await import("puppeteer-core");
-      return puppeteerCore.launch({ executablePath: local, headless: true, args: ["--hide-scrollbars"] });
+      return puppeteerCore.launch({ executablePath: local, headless: true, args: ["--hide-scrollbars"], env: chromiumEnv() });
     }
     const puppeteer = await import("puppeteer");
-    return puppeteer.launch({ headless: true, args: ["--hide-scrollbars"] }) as unknown as Promise<Browser>;
+    return puppeteer.launch({ headless: true, args: ["--hide-scrollbars"], env: chromiumEnv() }) as unknown as Promise<Browser>;
   }
 
   const chromium = (await import("@sparticuz/chromium")).default;
   const puppeteerCore = await import("puppeteer-core");
+  const executablePath = await chromium.executablePath();
   return puppeteerCore.launch({
     args: [...chromium.args, "--hide-scrollbars"],
-    executablePath: await chromium.executablePath(),
+    executablePath,
     headless: true,
+    env: chromiumEnv(),
   });
 }
 
@@ -178,6 +198,9 @@ export async function openRenderer(projectId: string, source: RenderSource): Pro
     async renderPng(file, w, h, scale = 1) {
       const page = await newPage(true);
       try {
+        // Slides zijn statische HTML/CSS. Zonder JavaScript doen onerror/onload-attributen en
+        // javascript:-links (van de AI of een handmatige bewerking) niets op de server.
+        await page.setJavaScriptEnabled(false);
         await page.setViewport({ width: w, height: h, deviceScaleFactor: scale });
         await page.goto(`${RENDER_ORIGIN}/projects/${encodeURIComponent(projectId)}/slides/${encodeURIComponent(file)}`, {
           waitUntil: "networkidle0",
