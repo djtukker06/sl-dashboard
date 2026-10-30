@@ -1,7 +1,7 @@
 'use client';
 
 import { DAGNAMEN_KORT, inAmsterdam, MAANDNAMEN_KORT, plusDagen, vandaag } from '@/lib/agenda/datum';
-import type { Adres, Bericht, BerichtenPagina, InboxMetTeller, MailMap, MailOverzicht, MailStatus } from './types';
+import type { Adres, Bericht, BerichtenPagina, GesprekBericht, InboxMetTeller, MailMap, MailOverzicht, MailStatus } from './types';
 import { ALLE_INBOXEN } from './zichtbaarheid';
 
 // Browser-kant van de mail: fetch-hulpjes, korte cache in sessionStorage (badge, dashboard)
@@ -61,6 +61,8 @@ export const mailApi = {
         : `/api/mail/berichten?${q({ mb, map, pagina, per, zoek })}`
     ),
   bericht: (mb: string, map: string, uid: number) => api<{ bericht: Bericht }>(`/api/mail/berichten/${uid}?${q({ mb, map })}`),
+  gesprek: (mb: string, map: string, uid: number) =>
+    api<{ gesprek: GesprekBericht[] }>(`/api/mail/berichten/${uid}/gesprek?${q({ mb, map })}`),
   vlaggen: (mb: string, map: string, uid: number, v: { gelezen?: boolean; gemarkeerd?: boolean }) =>
     api<{ ok: true }>(`/api/mail/berichten/${uid}/vlaggen?${q({ mb, map })}`, { method: 'POST', body: JSON.stringify(v) }),
   verplaats: (mb: string, map: string, uid: number, naar: { naar?: string; naarMap?: string }) =>

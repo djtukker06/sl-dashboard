@@ -944,3 +944,115 @@ input.ml-veld:focus { border: 0; }
   .ml-draait, .ml-laadbalk { animation: none; }
   .ml-opsteller, .ml-pop { animation: none; }
 }
+
+/* ---------- Gesprek (mail-chain), zoals Gmail: per bericht een in-/uitklapbare regel ---------- */
+.ml-lezer-onderwerp .ml-gesprek-aantal {
+  display: inline-block;
+  margin-left: 10px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--sl-panel);
+  border: 1px solid var(--sl-line-soft);
+  font-family: var(--sl-mono);
+  font-size: 11px;
+  font-weight: 500;
+  vertical-align: middle;
+  color: var(--sl-muted);
+}
+.ml-avatar.ml-avatar-kleur { border: 0; background: var(--ml-avatar-kleur); color: #fff; font-weight: 600; }
+.ml-avatar.ml-avatar-klein { width: 30px; height: 30px; font-size: 11px; }
+.ml-gesprek-laden { margin: -8px 0 0; font-size: 12.5px; color: var(--sl-muted); }
+.ml-gesprek-lijst { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--sl-line-soft); }
+.ml-gesprek-kaart, .ml-gesprek-meer { border-bottom: 1px solid var(--sl-line-soft); }
+.ml-lezer-afzender.ml-na-gesprek { margin-top: -4px; }
+.ml-gesprek-kop {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: calc(100% + 20px);
+  margin: 0 -10px;
+  padding: 12px 10px;
+  border: 0;
+  border-radius: var(--sl-r);
+  background: transparent;
+  color: var(--sl-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color .15s var(--sl-ease);
+}
+.ml-gesprek-kop:hover { background: var(--sl-panel); }
+.ml-gesprek-kop:focus-visible, .ml-gesprek-meer button:focus-visible, .ml-gesprek-citaat-knop:focus-visible { outline: none; box-shadow: var(--sl-focus); }
+.ml-open > .ml-gesprek-kop { align-items: flex-start; }
+.ml-gesprek-wie { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.ml-gesprek-naamregel { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; font-size: 14px; }
+.ml-gesprek-naamregel strong { font-weight: 600; }
+.ml-gesprek-sub { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13.5px; color: var(--sl-muted); }
+.ml-open .ml-gesprek-sub { font-size: 12.5px; white-space: normal; }
+.ml-gesprek-rechts {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--sl-mono);
+  font-size: 11px;
+  letter-spacing: .04em;
+  color: var(--sl-muted);
+  white-space: nowrap;
+}
+.ml-gesprek-inhoud { padding: 0 0 16px 52px; }
+.ml-gesprek-inhoud .ml-tekst { padding: 0 0 6px; font-size: 14px; }
+.ml-gesprek-citaat-knop {
+  margin: 2px 0 8px;
+  padding: 0 8px;
+  height: 18px;
+  line-height: 16px;
+  border: 1px solid var(--sl-line);
+  border-radius: 6px;
+  background: var(--sl-panel);
+  color: var(--sl-muted);
+  font: inherit;
+  font-size: 11px;
+  letter-spacing: .1em;
+  cursor: pointer;
+}
+.ml-gesprek-citaat-knop:hover { color: var(--sl-text); background: var(--sl-hover); }
+.ml-gesprek-citaat .ml-tekst { color: var(--sl-muted); }
+.ml-gesprek-bijlagen { padding: 6px 0 0; }
+/* "5 eerdere berichten": een rondje met het aantal op de scheidingslijn, zoals Gmail */
+.ml-gesprek-meer button {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  padding: 8px 0;
+  border: 0;
+  background: transparent;
+  color: var(--sl-muted);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.ml-gesprek-meer button:hover { color: var(--sl-text); }
+.ml-gesprek-meer-rondje {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  border: 1px solid var(--sl-line);
+  background: var(--sl-raise);
+  font-family: var(--sl-mono);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--sl-text);
+}
+.ml-gesprek-later { margin: 8px 32px 32px; }
+@media (max-width: 1100px) { .ml-gesprek-later { margin-left: 24px; margin-right: 24px; } }
+@media (min-width: 1920px) { .ml-gesprek-later { margin-left: 48px; margin-right: 48px; } }
+@media (max-width: 720px) {
+  .ml-gesprek-later { margin-left: 16px; margin-right: 16px; }
+  .ml-gesprek-kop { gap: 12px; }
+  .ml-gesprek-inhoud { padding-left: 0; }
+  .ml-open .ml-gesprek-rechts time { display: none; }
+}
