@@ -79,7 +79,7 @@ export function DriveInstellingen({ status }: { status: DriveStatus }) {
       <div className="db-kaart-inhoud">
         <p className="bs-uitleg">
           Gekoppeld met <strong>{status.email || 'het Google-account van Studio Levant'}</strong>. Alles staat in de map &ldquo;Studio Levant&rdquo;: Boekhouding
-          (facturen, prijsopgaven en bonnetjes per jaar, automatisch), Klanten (per klant en project) en Algemeen.
+          (facturen in de map Factuur, prijsopgaven en bonnetjes per jaar, automatisch), Klanten (per klant en project) en Algemeen.
         </p>
         {status.eigenaar ? (
           <div className="bs-instellingen-acties">

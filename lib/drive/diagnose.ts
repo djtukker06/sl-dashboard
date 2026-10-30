@@ -8,7 +8,7 @@ import type { DiagnoseResultaat, DiagnoseStap } from './types';
 
 // "Test Drive-koppeling" (knop in Bestanden, alleen de eigenaar): loopt de keten na die een
 // factuurkopie ook doorloopt — env, koppeling + token verversen, rootmap, de vaste mappen
-// (Boekhouding/Facturen|Prijsopgaven|Bonnetjes/<dit jaar>, Klanten, Algemeen; aangemaakt als
+// (Boekhouding/Factuur, Boekhouding/Prijsopgaven|Bonnetjes/<dit jaar>, Klanten, Algemeen; aangemaakt als
 // ze er nog niet zijn) en de tabellen — en meldt per stap OK of de fout. Er wordt geen
 // bestand geüpload en geen factuur gemaakt. Elke stap komt ook in de logs ("[drive] diagnose").
 

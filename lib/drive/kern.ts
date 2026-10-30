@@ -1,6 +1,6 @@
 // De kern van de Google Drive-koppeling: alles wat geen env, database of '@/'-imports
 // nodig heeft (zodat scripts/test-drive.mjs het los kan testen, met een nagebootste fetch).
-//   - namen en paden van de mappen (Boekhouding/Facturen/<jaar>, Klanten/<klant>/<project>);
+//   - namen en paden van de mappen (Boekhouding/Factuur, Klanten/<klant>/<project>);
 //   - Drive-zoekopdrachten (q) veilig opbouwen;
 //   - OAuth: de autorisatie-URL, code inwisselen, token vernieuwen, intrekken;
 //   - DriveClient: de paar Drive REST v3-aanroepen die we nodig hebben, rechtstreeks via
@@ -26,7 +26,7 @@ export const VASTE_MAPPEN = [BOEKHOUDING, KLANTEN, ALGEMEEN] as const;
 
 export type KopieSoort = 'factuur' | 'prijsopgave' | 'bonnetje';
 const BOEKHOUD_MAP: Record<KopieSoort, string> = {
-  factuur: 'Facturen',
+  factuur: 'Factuur',
   prijsopgave: 'Prijsopgaven',
   bonnetje: 'Bonnetjes'
 };
@@ -75,8 +75,12 @@ export function dagVan(datum: string | Date | null | undefined, nu: Date = new D
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Amsterdam', year: 'numeric', month: '2-digit', day: '2-digit' }).format(geldig);
 }
 
-/** Boekhouding/Facturen/2026 (resp. Prijsopgaven, Bonnetjes), als lijst mapnamen onder de root. */
+/**
+ * Boekhouding/Factuur (alle jaren in één map, zoals het archief daar al stond), en
+ * Boekhouding/Prijsopgaven/2026 en Boekhouding/Bonnetjes/2026, als lijst mapnamen onder de root.
+ */
 export function boekhoudPad(soort: KopieSoort, jaar: string): string[] {
+  if (soort === 'factuur') return [BOEKHOUDING, BOEKHOUD_MAP.factuur];
   return [BOEKHOUDING, BOEKHOUD_MAP[soort], /^\d{4}$/.test(jaar) ? jaar : 'Onbekend jaar'];
 }
 

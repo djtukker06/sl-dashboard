@@ -7,7 +7,7 @@ import type { Verbinding } from './koppeling';
 export const BACKUP_MAP = 'Back-ups';
 
 // De mappenstructuur onder de rootmap "Studio Levant":
-//   Boekhouding/Facturen/<jaar>, Boekhouding/Prijsopgaven/<jaar>, Boekhouding/Bonnetjes/<jaar>
+//   Boekhouding/Factuur, Boekhouding/Prijsopgaven/<jaar>, Boekhouding/Bonnetjes/<jaar>
 //   Klanten/<klantnaam>/<projectnaam>   (project zonder klant: Klanten/Zonder klant/<project>)
 //   Algemeen
 // Map-id's staan in drive_mappen (per root), zodat de server niet steeds hoeft te zoeken.

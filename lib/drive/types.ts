@@ -46,7 +46,7 @@ export type KoppelDoel = { map: string } | { klant: string } | { project: string
 
 /** Eén regel van "Test Drive-koppeling" (POST /api/drive/diagnose, alleen de eigenaar). */
 export interface DiagnoseStap {
-  /** Bv. "Toegang tot Google Drive" of "Boekhouding/Facturen/2026". */
+  /** Bv. "Toegang tot Google Drive" of "Boekhouding/Factuur". */
   naam: string;
   /** ok = gelukt, fout = mislukt, info = ter informatie (geen fout). */
   uitkomst: 'ok' | 'fout' | 'info';

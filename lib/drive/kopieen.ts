@@ -9,7 +9,7 @@ import { bonnetjeNaam, boekhoudPad, dagVan, DriveFout, foutTekst, jaarVan, MELDI
 import { verbind, type Verbinding } from './koppeling';
 import { zorgVoorPad } from './mappen';
 
-// Kopieën naar Boekhouding/Facturen|Prijsopgaven|Bonnetjes/<jaar> in Drive.
+// Kopieën naar Boekhouding/Factuur en Boekhouding/Prijsopgaven|Bonnetjes/<jaar> in Drive.
 //
 // - Na het aanmaken/bijwerken van een factuur, prijsopgave of bonnetje roept de route
 //   naDrive() aan: dat plant de kopie met next/server `after`, dus NA het antwoord. De
@@ -111,7 +111,7 @@ async function leesBron(v: Verbinding, soort: KopieSoort, id: string): Promise<B
 export type KopieUitkomst = 'gekopieerd' | 'bijgewerkt' | 'hernoemd' | 'overgeslagen' | 'geen_bestand';
 export interface KopieResultaat {
   uitkomst: KopieUitkomst;
-  /** Map in Drive, bv. "Boekhouding/Facturen/2026". */
+  /** Map in Drive, bv. "Boekhouding/Factuur" of "Boekhouding/Bonnetjes/2026". */
   map?: string;
   naam?: string;
 }

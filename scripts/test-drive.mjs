@@ -111,10 +111,11 @@ test("jaarVan / dagVan in Europe/Amsterdam", () => {
 });
 
 test("mappenpaden", () => {
-  assert.deepEqual(kern.boekhoudPad("factuur", "2026"), ["Boekhouding", "Facturen", "2026"]);
+  assert.deepEqual(kern.boekhoudPad("factuur", "2026"), ["Boekhouding", "Factuur"]);
   assert.deepEqual(kern.boekhoudPad("prijsopgave", "2025"), ["Boekhouding", "Prijsopgaven", "2025"]);
   assert.deepEqual(kern.boekhoudPad("bonnetje", "2024"), ["Boekhouding", "Bonnetjes", "2024"]);
-  assert.deepEqual(kern.boekhoudPad("factuur", "../x"), ["Boekhouding", "Facturen", "Onbekend jaar"]);
+  assert.deepEqual(kern.boekhoudPad("factuur", "../x"), ["Boekhouding", "Factuur"]);
+  assert.deepEqual(kern.boekhoudPad("prijsopgave", "../x"), ["Boekhouding", "Prijsopgaven", "Onbekend jaar"]);
   assert.deepEqual(kern.klantPad("Bakkerij / De Vries"), ["Klanten", "Bakkerij - De Vries"]);
   assert.deepEqual(kern.projectPad("Bakkerij", "Huisstijl 2026"), ["Klanten", "Bakkerij", "Huisstijl 2026"]);
   assert.deepEqual(kern.projectPad(null, "Eigen site"), ["Klanten", "Zonder klant", "Eigen site"]);
