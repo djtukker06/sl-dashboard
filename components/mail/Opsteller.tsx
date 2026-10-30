@@ -2,10 +2,11 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { adresNaam, adresVol, bewaarLaatsteVan, grootteTekst, mailApi, MailApiFout, perGebruiker, volleDatum } from '@/lib/mail/client';
-import { AFSLUITING, HANDTEKENINGEN, handtekeningKaart, INBOX_TEKST, standaardKeuze, zoekHandtekening, type HandtekeningKeuze } from '@/lib/mail/handtekening';
+import { AFSLUITING, handtekeningKaart, INBOX_TEKST, standaardKeuze, zoekHandtekening, type HandtekeningKeuze } from '@/lib/mail/handtekening';
 import type { Adres, Bericht, InboxDto } from '@/lib/mail/types';
 import { useToast } from '@/components/agenda/Toast';
 import { AdresVeld } from './AdresVeld';
+import { HandtekeningKiezer } from './HandtekeningKiezer';
 import { Icoon } from './Iconen';
 
 export type OpstelModus = 'nieuw' | 'antwoord' | 'allen' | 'doorsturen';
@@ -416,19 +417,12 @@ export function Opsteller({
             <Icoon naam="clip" grootte={15} />
             Bijlage
           </button>
-          <label className="ml-hand-keuze" title="Handtekening">
-            <Icoon naam="concepten" grootte={15} />
-            <select value={hand} onChange={(e) => kiesHand(e.target.value)} disabled={bezig} aria-label="Handtekening">
-              {HANDTEKENINGEN.map((h) => (
-                <option key={h.id} value={h.id}>
-                  {h.naam}
-                </option>
-              ))}
-              {vanInbox?.handtekening && <option value={INBOX_TEKST}>Tekst van {vanInbox.label || vanInbox.email}</option>}
-              <option value="">Geen handtekening</option>
-            </select>
-            <Icoon naam="pijlOmlaag" grootte={13} />
-          </label>
+          <HandtekeningKiezer
+            waarde={hand}
+            inboxTekst={vanInbox?.handtekening ? vanInbox.label || vanInbox.email : null}
+            disabled={bezig}
+            onKies={kiesHand}
+          />
           <input
             ref={bestandRef}
             type="file"
