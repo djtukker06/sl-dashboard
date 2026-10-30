@@ -61,6 +61,8 @@ export const mailApi = {
         : `/api/mail/berichten?${q({ mb, map, pagina, per, zoek })}`
     ),
   bericht: (mb: string, map: string, uid: number) => api<{ bericht: Bericht }>(`/api/mail/berichten/${uid}?${q({ mb, map })}`),
+  vooruit: (mb: string, map: string, uids: number[]) =>
+    api<{ berichten: Bericht[] }>(`/api/mail/berichten/vooruit?${q({ mb, map, uids: uids.join(',') })}`),
   vlaggen: (mb: string, map: string, uid: number, v: { gelezen?: boolean; gemarkeerd?: boolean }) =>
     api<{ ok: true }>(`/api/mail/berichten/${uid}/vlaggen?${q({ mb, map })}`, { method: 'POST', body: JSON.stringify(v) }),
   verplaats: (mb: string, map: string, uid: number, naar: { naar?: string; naarMap?: string }) =>

@@ -119,11 +119,12 @@ function naarEnvelop(m: FetchMessageObject): Envelop {
     gelezen: vlaggen.has('\\Seen'),
     gemarkeerd: vlaggen.has('\\Flagged'),
     beantwoord: vlaggen.has('\\Answered'),
-    heeftBijlagen: bijlagenUitStructuur(m.bodyStructure).length > 0
+    heeftBijlagen: bijlagenUitStructuur(m.bodyStructure).length > 0,
+    grootte: m.size ?? undefined
   };
 }
 
-const ENVELOP_QUERY = { uid: true, flags: true, envelope: true, internalDate: true, bodyStructure: true } as const;
+const ENVELOP_QUERY = { uid: true, flags: true, envelope: true, internalDate: true, bodyStructure: true, size: true } as const;
 
 /**
  * Een pagina berichten uit een map, nieuwste eerst. Zonder zoekterm op volgnummer
@@ -133,7 +134,7 @@ export async function berichtenPagina(
   client: ImapFlow,
   map: string,
   opties: { pagina: number; per: number; zoek?: string }
-): Promise<BerichtenPagina> {
+): Promise<BerichtenPagina & { uidValidity: string }> {
   const per = Math.min(MAX_PER, Math.max(1, opties.per));
   const pagina = Math.max(1, opties.pagina);
   const zoek = (opties.zoek || '').trim().slice(0, 200);
@@ -141,14 +142,15 @@ export async function berichtenPagina(
   const lock = await client.getMailboxLock(map, { readOnly: true });
   try {
     const exists = client.mailbox ? client.mailbox.exists : 0;
-    if (!exists) return { map, pagina, per, totaal: 0, berichten: [], meer: false };
+    const uidValidity = String(client.mailbox ? client.mailbox.uidValidity : '');
+    if (!exists) return { map, pagina, per, totaal: 0, berichten: [], meer: false, uidValidity };
 
     if (!zoek) {
       const hoog = exists - (pagina - 1) * per;
-      if (hoog < 1) return { map, pagina, per, totaal: exists, berichten: [], meer: false };
+      if (hoog < 1) return { map, pagina, per, totaal: exists, berichten: [], meer: false, uidValidity };
       const laag = Math.max(1, hoog - per + 1);
       const berichten = (await client.fetchAll(`${laag}:${hoog}`, ENVELOP_QUERY)).sort((a, b) => b.seq - a.seq).map(naarEnvelop);
-      return { map, pagina, per, totaal: exists, berichten, meer: laag > 1 };
+      return { map, pagina, per, totaal: exists, berichten, meer: laag > 1, uidValidity };
     }
 
     const uids = await client.search(
@@ -157,9 +159,9 @@ export async function berichtenPagina(
     );
     const alle = (Array.isArray(uids) ? uids : []).sort((a, b) => b - a);
     const plak = alle.slice((pagina - 1) * per, pagina * per);
-    if (!plak.length) return { map, pagina, per, totaal: alle.length, berichten: [], meer: false };
+    if (!plak.length) return { map, pagina, per, totaal: alle.length, berichten: [], meer: false, uidValidity };
     const berichten = (await client.fetchAll(plak, ENVELOP_QUERY, { uid: true })).sort((a, b) => b.uid - a.uid).map(naarEnvelop);
-    return { map, pagina, per, totaal: alle.length, berichten, meer: pagina * per < alle.length };
+    return { map, pagina, per, totaal: alle.length, berichten, meer: pagina * per < alle.length, uidValidity };
   } finally {
     lock.release();
   }
@@ -183,54 +185,90 @@ function adresLijst(a: AddressObject | AddressObject[] | undefined): Adres[] {
   return uit;
 }
 
+const BERICHT_QUERY = {
+  uid: true,
+  flags: true,
+  size: true,
+  bodyStructure: true,
+  envelope: true,
+  // De bron hooguit MAX_BRON; is het bericht groter, dan alleen het begin parsen (de tekst
+  // staat vrijwel altijd vooraan).
+  source: { start: 0, maxLength: MAX_BRON }
+} as const;
+
+/** Parset en saneert een opgehaald bericht (kop + bron uit één FETCH). */
+async function naarBericht(map: string, kop: FetchMessageObject): Promise<Bericht> {
+  if (!kop.source) throw new MailFout(404, 'niet_gevonden', 'Dit bericht bestaat niet meer.');
+  const groot = (kop.size ?? 0) > MAX_BRON;
+  const mail = await simpleParser(groot ? kop.source.subarray(0, BRON_BEGIN) : kop.source, {
+    skipTextToHtml: true,
+    // cid:-afbeeldingen worden data:-URI's, met een totaalbudget van 1 MB voor alle
+    // ingebedde beelden samen. Wat daarboven valt blijft cid: en haalt de sanitizer weg.
+    maxInlinedImagesSize: 1024 * 1024
+  });
+
+  const vlaggen = kop.flags ?? new Set<string>();
+  const saneer = mail.html ? saneerMailHtml(mail.html) : null;
+  const inhoud = begrensInhoud(saneer ? saneer.html : null, (mail.text ?? '').replace(/\r\n/g, '\n').trim());
+  const van = adresLijst(mail.from)[0] ?? adres(kop.envelope?.from?.[0]);
+
+  return {
+    map,
+    uid: kop.uid,
+    messageId: mail.messageId ?? kop.envelope?.messageId ?? null,
+    van: van ?? null,
+    antwoordAan: adresLijst(mail.replyTo),
+    aan: adresLijst(mail.to),
+    cc: adresLijst(mail.cc),
+    onderwerp: (mail.subject ?? kop.envelope?.subject ?? '').trim(),
+    datum: isoDatum(mail.date) ?? isoDatum(kop.envelope?.date),
+    gelezen: vlaggen.has('\\Seen'),
+    gemarkeerd: vlaggen.has('\\Flagged'),
+    html: inhoud.html,
+    tekst: inhoud.tekst,
+    bijlagen: bijlagenUitStructuur(kop.bodyStructure),
+    externeBeelden: saneer ? saneer.externeBeelden : 0,
+    ingekort: groot || inhoud.ingekort
+  };
+}
+
 /**
  * Eén bericht volledig: met PEEK opgehaald (zet het niet stilletjes op gelezen; dat doet
- * de client expliciet via /vlaggen), geparsed en de HTML gesaneerd.
+ * de client expliciet via /vlaggen), geparsed en de HTML gesaneerd. Eén FETCH.
  */
 export async function haalBericht(client: ImapFlow, map: string, uid: number): Promise<Bericht> {
   const lock = await client.getMailboxLock(map, { readOnly: true });
   try {
-    const kop = await client.fetchOne(String(uid), { uid: true, flags: true, size: true, bodyStructure: true, envelope: true }, { uid: true });
-    if (!kop) throw new MailFout(404, 'niet_gevonden', 'Dit bericht bestaat niet meer (verplaatst of verwijderd).');
+    const kop = await client.fetchOne(String(uid), BERICHT_QUERY, { uid: true });
+    if (!kop || !kop.source) throw new MailFout(404, 'niet_gevonden', 'Dit bericht bestaat niet meer (verplaatst of verwijderd).');
+    return await naarBericht(map, kop);
+  } finally {
+    lock.release();
+  }
+}
 
-    const groot = (kop.size ?? 0) > MAX_BRON;
-    const metBron = await client.fetchOne(
-      String(uid),
-      { uid: true, source: groot ? { start: 0, maxLength: BRON_BEGIN } : true },
-      { uid: true }
-    );
-    if (!metBron || !metBron.source) throw new MailFout(404, 'niet_gevonden', 'Dit bericht bestaat niet meer.');
-
-    const mail = await simpleParser(metBron.source, {
-      skipTextToHtml: true,
-      // cid:-afbeeldingen worden data:-URI's, met een totaalbudget van 1 MB voor alle
-      // ingebedde beelden samen. Wat daarboven valt blijft cid: en haalt de sanitizer weg.
-      maxInlinedImagesSize: 1024 * 1024
-    });
-
-    const vlaggen = kop.flags ?? new Set<string>();
-    const saneer = mail.html ? saneerMailHtml(mail.html) : null;
-    const inhoud = begrensInhoud(saneer ? saneer.html : null, (mail.text ?? '').replace(/\r\n/g, '\n').trim());
-    const van = adresLijst(mail.from)[0] ?? adres(kop.envelope?.from?.[0]);
-
-    return {
-      map,
-      uid,
-      messageId: mail.messageId ?? kop.envelope?.messageId ?? null,
-      van: van ?? null,
-      antwoordAan: adresLijst(mail.replyTo),
-      aan: adresLijst(mail.to),
-      cc: adresLijst(mail.cc),
-      onderwerp: (mail.subject ?? kop.envelope?.subject ?? '').trim(),
-      datum: isoDatum(mail.date) ?? isoDatum(kop.envelope?.date),
-      gelezen: vlaggen.has('\\Seen'),
-      gemarkeerd: vlaggen.has('\\Flagged'),
-      html: inhoud.html,
-      tekst: inhoud.tekst,
-      bijlagen: bijlagenUitStructuur(kop.bodyStructure),
-      externeBeelden: saneer ? saneer.externeBeelden : 0,
-      ingekort: groot || inhoud.ingekort
-    };
+/**
+ * Meerdere berichten vooruit ophalen (voor direct openen): ook met PEEK, in hooguit twee
+ * FETCH-rondgangen (eerst de groottes, dan de bronnen van wat klein genoeg is). Grote
+ * berichten en berichten die er niet (meer) zijn, worden overgeslagen; die laden pas bij openen.
+ */
+export async function haalBerichten(client: ImapFlow, map: string, uids: number[], maxGrootte: number): Promise<Bericht[]> {
+  if (!uids.length) return [];
+  const lock = await client.getMailboxLock(map, { readOnly: true });
+  try {
+    const maten = await client.fetchAll(uids.join(','), { uid: true, size: true }, { uid: true });
+    const klein = maten.filter((m) => (m.size ?? Infinity) <= maxGrootte).map((m) => m.uid);
+    if (!klein.length) return [];
+    const opgehaald = await client.fetchAll(klein.join(','), BERICHT_QUERY, { uid: true });
+    const uit: Bericht[] = [];
+    for (const kop of opgehaald) {
+      try {
+        uit.push(await naarBericht(map, kop));
+      } catch {
+        /* één onleesbaar bericht houdt de rest niet op */
+      }
+    }
+    return uit;
   } finally {
     lock.release();
   }
