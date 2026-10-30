@@ -774,14 +774,8 @@ input.ml-veld:focus { border: 0; }
   color-scheme: dark;
 }
 .ml-handtekening { padding: 4px 24px 0; cursor: default; }
-/* Zoals in de mail zelf: de tekst erboven op een lichte achtergrond leesbaar houden. */
-.ml-handtekening > div {
-  display: inline-block;
-  padding: 16px 18px;
-  border-radius: 10px;
-  background: #fff;
-  color: #1f1f1f;
-}
+.ml-hand-groet { margin: 0 0 14px; font-size: 14.5px; line-height: 1.65; color: var(--sl-text); }
+.ml-hand-tekst { margin: 0; font-family: var(--sl-font); font-size: 14.5px; line-height: 1.65; color: var(--sl-text); white-space: pre-wrap; }
 .ml-handtekening table { border-collapse: separate; }
 .ml-citaat { padding: 14px 24px 0; cursor: default; }
 .ml-citaat-knop {
@@ -804,6 +798,7 @@ input.ml-veld:focus { border: 0; }
 .ml-hand-keuze {
   position: relative;
   display: inline-flex;
+  flex-direction: row;
   align-items: center;
   gap: 6px;
   height: 34px;
@@ -816,6 +811,10 @@ input.ml-veld:focus { border: 0; }
 .ml-hand-keuze:hover, .ml-hand-keuze:focus-within { color: var(--sl-text); }
 .ml-hand-keuze select {
   appearance: none;
+  width: auto;
+  height: auto;
+  margin: 0;
+  padding: 0;
   border: 0;
   outline: none;
   background: transparent;

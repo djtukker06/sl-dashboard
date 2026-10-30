@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { adresNaam, adresVol, bewaarLaatsteVan, grootteTekst, mailApi, MailApiFout, perGebruiker, volleDatum } from '@/lib/mail/client';
-import { HANDTEKENINGEN, handtekeningHtml, INBOX_TEKST, standaardKeuze, zoekHandtekening, type HandtekeningKeuze } from '@/lib/mail/handtekening';
+import { AFSLUITING, HANDTEKENINGEN, handtekeningKaart, INBOX_TEKST, standaardKeuze, zoekHandtekening, type HandtekeningKeuze } from '@/lib/mail/handtekening';
 import type { Adres, Bericht, InboxDto } from '@/lib/mail/types';
 import { useToast } from '@/components/agenda/Toast';
 import { AdresVeld } from './AdresVeld';
@@ -170,7 +170,9 @@ export function Opsteller({
     }
   };
 
-  const voorbeeld = handtekeningHtml(hand, vanInbox?.handtekening ?? '', '');
+  // Voorbeeld: de afsluiting als gewone tekst, daaronder de kaart (zoals in de verzonden mail).
+  const sjabloon = zoekHandtekening(hand);
+  const inboxTekst = hand === INBOX_TEKST ? vanInbox?.handtekening ?? '' : '';
 
   const gewijzigd =
     aan !== begin.aan || cc !== begin.cc || bcc !== '' || onderwerp !== begin.onderwerp || tekst !== '' || bestanden.length > 0;
@@ -328,11 +330,18 @@ export function Opsteller({
             spellCheck
             lang="nl"
           />
-          {voorbeeld && (
+          {sjabloon ? (
             <div className="ml-handtekening" aria-label="Handtekening">
+              <p className="ml-hand-groet">{AFSLUITING}</p>
               {/* Eigen sjabloon met ge-escapete waarden (lib/mail/handtekening.ts). */}
-              <div dangerouslySetInnerHTML={{ __html: voorbeeld }} />
+              <div dangerouslySetInnerHTML={{ __html: handtekeningKaart(sjabloon, '') }} />
             </div>
+          ) : (
+            inboxTekst && (
+              <div className="ml-handtekening" aria-label="Handtekening">
+                <pre className="ml-hand-tekst">{inboxTekst}</pre>
+              </div>
+            )
           )}
           {begin.citaat && (
             <div className="ml-citaat">
