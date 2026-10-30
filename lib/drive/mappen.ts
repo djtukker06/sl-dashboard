@@ -211,36 +211,16 @@ export async function beschermdeMappen(v: Verbinding): Promise<Set<string>> {
 }
 
 /**
- * De Back-ups-map en alle gecachete mappen eronder (jaarmappen, Bestanden/<bucket>).
- * Die zijn alleen voor de eigenaar (via de back-upcode zelf, die v.client direct gebruikt)
- * en blijven onbereikbaar voor de Drive-module: bekijken, zoeken, downloaden, hernoemen,
- * verwijderen, uploaden en kopiëren geven 'buiten_root'.
- */
-export async function backupIds(v: Verbinding): Promise<Set<string>> {
-  const { data, error } = await v.service.from('drive_mappen').select('drive_id, sleutel').eq('root_id', v.rootId).eq('soort', 'pad').limit(1000);
-  if (error) {
-    if (tabelOntbreekt(error)) return new Set();
-    throw error;
-  }
-  return new Set(
-    ((data ?? []) as { drive_id: string; sleutel: string }[])
-      .filter((r) => r.sleutel === BACKUP_MAP || r.sleutel.startsWith(`${BACKUP_MAP}/`))
-      .map((r) => r.drive_id)
-  );
-}
-
-/**
  * Het bestand als het binnen de root ligt, anders DriveFout 'buiten_root'. Gecachete
  * mappen (drive_mappen) en eerder gecontroleerde mappen tellen als "binnen".
  */
 export async function binnen(v: Verbinding, id: string): Promise<DriveBestand> {
   const bekend = bekendVoor(v.rootId);
-  const verboden = await backupIds(v);
   if (bekend.size < 50) {
     const { data } = await v.service.from('drive_mappen').select('drive_id').eq('root_id', v.rootId).limit(500);
-    for (const r of (data ?? []) as { drive_id: string }[]) if (!verboden.has(r.drive_id)) bekend.add(r.drive_id);
+    for (const r of (data ?? []) as { drive_id: string }[]) bekend.add(r.drive_id);
   }
-  const b = await binnenRoot(v.client, v.rootId, id, bekend, verboden);
+  const b = await binnenRoot(v.client, v.rootId, id, bekend);
   if (!b) throw new DriveFout('buiten_root', MELDING.buiten_root);
   if (b.mimeType === 'application/vnd.google-apps.folder') bekend.add(b.id);
   return b;
