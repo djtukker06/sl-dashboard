@@ -1175,6 +1175,65 @@ await test("aangifte: afsluitpost bij indienen — 1530 = aangegeven bedrag, bet
   assert.equal(ag.vergelijkMetIngediend(aangifte.snapshot, ag.aangifteRubrieken(journaal.journaal(stam, { boekingen: lijst, facturen: groot }), 2026, 3)).advies, "suppletie");
   assert.equal(ag.vergelijkMetIngediend(aangifte.snapshot, ber).advies, "geen");
 });
+await test("aangifte: correcties van eerdere kwartalen in de eerstvolgende aangifte", () => {
+  const { lijst, facturen, posten } = kwartaalPosten();
+  const ber3 = ag.aangifteRubrieken(posten, 2026, 3);
+  const a3 = { id: "ag3", jaar: 2026, kwartaal: 3, ingediendOp: "2026-10-20T10:00:00Z", ingediendDoor: null, kenmerk: null, opmerking: null, snapshot: ag.naarSnapshot(ber3), teBetalen: ag.teBetalenCenten(ber3) };
+  // Na indiening wijzigt een factuur in Q3: het verschil hoort in de aangifte van Q4.
+  const gewijzigd = facturen.map((f) => (f.id === "f0000000-0000-4000-8000-000000000001" ? { ...f, subtotaal: 400000, omzet: 400000, btw: 84000, totaal: 484000 } : f));
+  const drift = journaal.journaal(stam, { boekingen: lijst, facturen: gewijzigd });
+  const nu3 = ag.aangifteRubrieken(drift, 2026, 3);
+  const open = ag.openCorrecties(drift, [a3], 2026, 4);
+  assert.equal(open.length, 1);
+  assert.deepEqual([open[0].jaar, open[0].kwartaal], [2026, 3]);
+  assert.deepEqual(open[0].rubrieken["1a"], { grondslag: nu3.rubrieken["1a"].grondslag.centen - ber3.rubrieken["1a"].grondslag.centen, btw: 21000 });
+  assert.equal(open[0].voorbelasting, 0);
+  assert.deepEqual(Object.keys(open[0].rubrieken), ["1a"], "alleen rubrieken met een verschil");
+  // Het formulier van Q4 = eigen boekingen + correctie (exact opgeteld, opnieuw afgerond).
+  const { eigen: eigen4, formulier: f4, correcties } = ag.aangifteVoorKwartaal(drift, [a3], 2026, 4);
+  assert.equal(f4.rubrieken["1a"].btw.centen, eigen4.rubrieken["1a"].btw.centen + 21000);
+  assert.equal(f4.rubrieken["1a"].btw.euro, ag.euroOmlaag(f4.rubrieken["1a"].btw.centen));
+  assert.equal(f4.saldo.centen, eigen4.saldo.centen + 21000);
+  assert.equal(f4.saldo.euro, f4.verschuldigd.euro - f4.voorbelasting.euro);
+  assert.deepEqual(f4.posten, eigen4.posten, "doorklik blijft bij de eigen boekingen");
+  // Overzicht vóór indienen van Q4: Q3 wijst naar Q4, Q4 rekent met de correctie.
+  const voor = ag.kwartaalOverzicht({ posten: drift, aangiften: [a3], betalingen: [], vanaf: "2026-07-01", vandaag: "2027-01-10" });
+  assert.deepEqual(voor.find((r) => r.kwartaal === 3).correctieIn, { jaar: 2026, kwartaal: 4, ingediend: false });
+  assert.equal(voor.find((r) => r.kwartaal === 3).afwijking.advies, "volgende_aangifte");
+  assert.equal(voor.find((r) => r.kwartaal === 4).teBetalen, ag.teBetalenCenten(f4));
+  // Q4 ingediend met de correctie: Q3 geldt dan als gecorrigeerd, Q4 zelf wijkt niet af.
+  const snap4 = JSON.parse(JSON.stringify({ ...ag.naarSnapshot(f4), correcties }));
+  assert.deepEqual(ag.leesSnapshot(snap4), snap4);
+  const a4 = { id: "ag4", jaar: 2026, kwartaal: 4, ingediendOp: "2027-01-20T10:00:00Z", ingediendDoor: null, kenmerk: null, opmerking: null, snapshot: snap4, teBetalen: ag.teBetalenCenten(f4) };
+  const na = ag.kwartaalOverzicht({ posten: drift, aangiften: [a3, a4], betalingen: [], vanaf: "2026-07-01", vandaag: "2027-01-25" });
+  assert.equal(na.find((r) => r.kwartaal === 3).afwijking.advies, "geen");
+  assert.deepEqual(na.find((r) => r.kwartaal === 3).correctieIn, { jaar: 2026, kwartaal: 4, ingediend: true });
+  assert.equal(na.find((r) => r.kwartaal === 4).afwijking.advies, "geen", "eigen deel van Q4 = de boekingen");
+  assert.deepEqual(ag.openCorrecties(drift, [a3, a4], 2027, 1), [], "niet nog een keer");
+  // Journaal: na beide betalingen staat 1530 op nul.
+  const betaal = (id, bedrag, datum) => maak({ id, soort: "btw", richting: bedrag > 0 ? "af" : "bij", bedrag: Math.abs(bedrag), btwCode: "geen", grootboek: null, datum });
+  const met = journaal.journaal(stam, { boekingen: [...lijst, betaal("b3", a3.teBetalen, "2026-10-28"), betaal("b4", a4.teBetalen, "2027-01-28")], facturen: gewijzigd, aangiften: [a3, a4] });
+  assert.equal(journaal.proefbalans(met).get("1530") ?? 0, 0);
+  // Zit er een niet-ingediend kwartaal tussen, dan hoort de correctie daar (niet later).
+  assert.deepEqual(ag.openCorrecties(drift, [a3], 2027, 1), []);
+  // Meer dan € 1.000 verschil: suppletie, geen correctie in de volgende aangifte.
+  const groot = facturen.map((f) => (f.id === "f0000000-0000-4000-8000-000000000001" ? { ...f, subtotaal: 1000000, omzet: 1000000, btw: 210000, totaal: 1210000 } : f));
+  assert.deepEqual(ag.openCorrecties(journaal.journaal(stam, { boekingen: lijst, facturen: groot }), [a3], 2026, 4), []);
+  // Overgenomen formulier: hele euro's passen niet bij de centen → het eurobedrag telt als aangegeven.
+  const s3 = structuredClone(a3.snapshot);
+  s3.voorbelasting.euro -= 3;
+  s3.saldo.euro += 3;
+  const b3 = { ...a3, snapshot: s3 };
+  const c = ag.openCorrecties(posten, [b3], 2026, 4);
+  assert.equal(c.length, 1);
+  assert.equal(c[0].voorbelasting, ber3.voorbelasting.centen - s3.voorbelasting.euro * 100);
+  const f4b = ag.metCorrecties(ag.aangifteRubrieken(posten, 2026, 4), c);
+  const b4 = { ...a4, snapshot: { ...ag.naarSnapshot(f4b), correcties: c } };
+  assert.equal(ag.vergelijkMetIngediend(ag.effectiefIngediend(b3, [b3, b4]), ber3).advies, "geen");
+  // Ongeldige correcties in een snapshot worden niet ingelezen.
+  assert.equal(ag.leesSnapshot({ ...snap4, correcties: [{ jaar: 2026, kwartaal: 5, rubrieken: {}, voorbelasting: 0 }] }), null);
+  assert.equal(ag.leesSnapshot({ ...snap4, correcties: [{ jaar: 2026, kwartaal: 3, rubrieken: { "9z": { grondslag: 1, btw: 1 } }, voorbelasting: 0 }] }), null);
+});
 await test("aangifte: kwartaalstatus, volgende aangifte en betaalcontrole", () => {
   const { posten } = kwartaalPosten();
   const a3 = { id: "x3", jaar: 2026, kwartaal: 3, ingediendOp: "2026-10-20T10:00:00Z", ingediendDoor: null, kenmerk: null, opmerking: null, snapshot: null, teBetalen: 50000 };

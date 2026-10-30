@@ -13,6 +13,7 @@ import {
   type Aangifte,
   type AangifteBerekening,
   type Afwijking,
+  type Correctie,
   type FormulierRubriek,
   type KwartaalStatus,
   type RubriekBedragen
@@ -40,7 +41,14 @@ export interface AangifteView {
   deadline: Datum;
   status: KwartaalStatus;
   vandaag: Datum;
+  /** Het formulier zoals je het invult (eigen boekingen + correcties van eerdere kwartalen). */
   huidig: AangifteBerekening;
+  /** Alleen de eigen boekingen van dit kwartaal. */
+  eigen: AangifteBerekening;
+  /** Correcties van eerdere kwartalen in deze aangifte (open, of meegenomen bij indienen). */
+  correcties: Correctie[];
+  /** Ingediend kwartaal met een later verschil: in welke aangifte dat wordt/is meegenomen. */
+  correctieIn: { jaar: number; kwartaal: Kwartaal; ingediend: boolean } | null;
   aangifte: Aangifte | null;
   afwijking: Afwijking | null;
   betaald: Centen;
@@ -81,6 +89,11 @@ export function AangifteApp({ view: v }: { view: AangifteView }) {
   const formulier = ingediend?.snapshot ?? v.huidig;
   const totaal = ingediend ? ingediend.teBetalen : teBetalenCenten(v.huidig);
   const gewijzigd = v.afwijking && v.afwijking.advies !== 'geen' ? v.afwijking : null;
+  // Het verschil wordt in een (nog niet ingediende) latere aangifte meegenomen.
+  const opgevangenIn = gewijzigd && gewijzigd.advies === 'volgende_aangifte' && v.correctieIn && !v.correctieIn.ingediend ? v.correctieIn : null;
+  // Totaal van de correcties per rubriek (exact), voor "waarvan correctie" bij de rubrieken.
+  const correctieVan = (r: FormulierRubriek | '5b', soort: 'grondslag' | 'btw'): number =>
+    v.correcties.reduce((t, c) => t + (r === '5b' ? (soort === 'btw' ? c.voorbelasting : 0) : (c.rubrieken[r]?.[soort] ?? 0)), 0);
   const nuVan = (r: FormulierRubriek | '5b', soort: 'grondslag' | 'btw') => gewijzigd?.rubrieken.find((x) => x.rubriek === r && x.soort === soort)?.nu;
 
   async function actie(fn: () => Promise<unknown>) {
@@ -106,7 +119,7 @@ export function AangifteApp({ view: v }: { view: AangifteView }) {
 
   const postenVan = (r: FormulierRubriek | '5b') => (v.huidig.posten[r] ?? []).map((id) => v.posten[id]).filter(Boolean);
 
-  const rijCtx: RijContext = { v, open, setOpen, nuVan, postenVan, ingediend: Boolean(ingediend) };
+  const rijCtx: RijContext = { v, open, setOpen, nuVan, postenVan, correctieVan, ingediend: Boolean(ingediend) };
   const letOp = v.controles.filter((c) => c.soort === 'let_op').length;
   const kanIndienen = !ingediend && v.status !== 'lopend' && !v.jaarDicht;
 
@@ -140,10 +153,32 @@ export function AangifteApp({ view: v }: { view: AangifteView }) {
         <div className="bh-btw-volgende-bedrag">
           <span className={`bh-btw-groot${totaal < 0 ? ' is-bij' : ''}`}>{formatHeleEuro(Math.abs(totaal) / 100)}</span>
           <span className="bh-kaart-sub">{totaal > 0 ? 'te betalen' : totaal < 0 ? 'terug te vragen' : 'niets te betalen'}{v.status === 'lopend' ? ' (tot nu toe)' : ''}</span>
+          {v.correcties.length > 0 && (
+            <span className="bh-kaart-sub">
+              incl. correcties eerdere kwartalen{!ingediend && ` · alleen dit kwartaal ${formatHeleEuro(teBetalenCenten(v.eigen) / 100)}`}
+            </span>
+          )}
         </div>
       </section>
 
-      {gewijzigd && (
+      {opgevangenIn ? (
+        <div className="bh-afwijking" role="status">
+          <strong>Na indiening gewijzigd.</strong>{' '}
+          {gewijzigd!.verschil !== 0
+            ? `Volgens de huidige boekingen is het ${formatCenten(Math.abs(gewijzigd!.verschil))} ${gewijzigd!.verschil > 0 ? 'meer te betalen' : 'minder te betalen'} dan aangegeven.`
+            : 'Er zijn rubrieken veranderd (het totaal blijft gelijk).'}{' '}
+          Dit verschil zit als correctie in de aangifte van{' '}
+          <Link href={`/boekhouding/btw/${opgevangenIn.jaar}/${opgevangenIn.kwartaal}`}>{kwartaalLabel(opgevangenIn.jaar, opgevangenIn.kwartaal)}</Link>; je hoeft hier niets te doen.{' '}
+          <span className="bh-zacht">Bij de rubrieken staat &ldquo;nu&rdquo; met de huidige waarde.</span>
+        </div>
+      ) : !gewijzigd && v.correctieIn?.ingediend ? (
+        <p className="bh-uitkomst-noot" role="status">
+          Het latere verschil in dit kwartaal is gecorrigeerd in de aangifte van{' '}
+          <Link href={`/boekhouding/btw/${v.correctieIn.jaar}/${v.correctieIn.kwartaal}`}>{kwartaalLabel(v.correctieIn.jaar, v.correctieIn.kwartaal)}</Link>.
+        </p>
+      ) : null}
+
+      {gewijzigd && !opgevangenIn && (
         <div className={`bh-afwijking${gewijzigd.advies === 'suppletie' ? ' is-suppletie' : ''}`} role="status">
           <strong>Na indiening gewijzigd.</strong>{' '}
           {gewijzigd.verschil !== 0
@@ -196,6 +231,7 @@ export function AangifteApp({ view: v }: { view: AangifteView }) {
               </ul>
             </div>
           ))}
+          {v.correcties.length > 0 && <CorrectieBlok correcties={v.correcties} ingediend={Boolean(ingediend)} />}
           <div className="bh-rubriek-groep">
             <h3 className="bh-rubriek-groep-titel">5. Voorbelasting en eindtotaal</h3>
             <ul className="bh-rubrieken">
@@ -401,7 +437,47 @@ interface RijContext {
   setOpen: (c: string | null) => void;
   nuVan: (r: FormulierRubriek | '5b', soort: 'grondslag' | 'btw') => number | undefined;
   postenVan: (r: FormulierRubriek | '5b') => PostRij[];
+  correctieVan: (r: FormulierRubriek | '5b', soort: 'grondslag' | 'btw') => number;
   ingediend: boolean;
+}
+
+const metTeken = (c: number) => `${c > 0 ? '+' : c < 0 ? '−' : ''}${formatCenten(Math.abs(c))}`;
+
+/** De correcties van eerdere kwartalen die in deze aangifte zitten, per kwartaal en rubriek. */
+function CorrectieBlok({ correcties, ingediend }: { correcties: Correctie[]; ingediend: boolean }) {
+  return (
+    <div className="bh-rubriek-groep bh-correcties">
+      <h3 className="bh-rubriek-groep-titel">Correcties eerdere kwartalen</h3>
+      <p className="bh-kaart-sub bh-correcties-uitleg">
+        {ingediend ? 'Meegenomen in deze aangifte' : 'Al verwerkt in de bedragen hierboven'}: wat het volgens de boekingen had moeten zijn min wat is aangegeven. Een
+        verschil tot € 1.000 btw verwerk je volgens de Belastingdienst in de eerstvolgende aangifte, bij de rubriek waar het hoort.
+      </p>
+      <ul className="bh-correcties-lijst">
+        {correcties.map((c) => (
+          <li key={`${c.jaar}-${c.kwartaal}`} className="bh-correctie">
+            <Link className="bh-correctie-kw" href={`/boekhouding/btw/${c.jaar}/${c.kwartaal}`}>
+              {kwartaalLabel(c.jaar, c.kwartaal)}
+            </Link>
+            <ul className="bh-correctie-regels">
+              {(Object.entries(c.rubrieken) as [FormulierRubriek, { grondslag: number; btw: number }][]).map(([r, d]) => (
+                <li key={r}>
+                  <span className="bh-rubriek-code">{r}</span>
+                  <span>omzet {metTeken(d.grondslag)}</span>
+                  {MET_BTW.has(r) && <span>btw {metTeken(d.btw)}</span>}
+                </li>
+              ))}
+              {c.voorbelasting !== 0 && (
+                <li>
+                  <span className="bh-rubriek-code">5b</span>
+                  <span>voorbelasting {metTeken(c.voorbelasting)}</span>
+                </li>
+              )}
+            </ul>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
 }
 
 function RubriekRij({
@@ -425,6 +501,8 @@ function RubriekRij({
   const leeg = !alleenBtw && !bedragen.grondslag && !bedragen.btw && lijst.length === 0;
   const nuG = kanOpen && code !== '5b' ? ctx.nuVan(code, 'grondslag') : undefined;
   const nuB = kanOpen ? ctx.nuVan(code, 'btw') : undefined;
+  const corG = kanOpen && code !== '5b' ? ctx.correctieVan(code, 'grondslag') : 0;
+  const corB = kanOpen ? ctx.correctieVan(code, 'btw') : 0;
   const inhoud = (
     <>
       <span className="bh-rubriek-code">{code}</span>
@@ -435,10 +513,12 @@ function RubriekRij({
       <span className="bh-rubriek-bedrag">
         {bedragen.grondslag === null || bedragen.grondslag === undefined ? '' : formatHeleEuro(bedragen.grondslag)}
         {nuG !== undefined && <span className="bh-rubriek-nu">nu {formatHeleEuro(nuG)}</span>}
+        {corG !== 0 && <span className="bh-rubriek-nu is-correctie">waarvan correctie {metTeken(corG)}</span>}
       </span>
       <span className="bh-rubriek-bedrag is-btw">
         {bedragen.btw === null || bedragen.btw === undefined ? '' : formatHeleEuro(bedragen.btw)}
         {nuB !== undefined && <span className="bh-rubriek-nu">nu {formatHeleEuro(nuB)}</span>}
+        {corB !== 0 && <span className="bh-rubriek-nu is-correctie">waarvan correctie {metTeken(corB)}</span>}
       </span>
       <span className="bh-rubriek-pijl" aria-hidden="true">
         {lijst.length > 0 ? (isOpen ? '−' : '+') : ''}

@@ -646,7 +646,8 @@ console.log("Boekhouding: bank & boekingen (0027)");
   check(/\/boekhouding\/btw/.test(lees("components/boekhouding/BoekhoudingTabs.tsx")) && /\/boekhouding\/activa/.test(lees("components/boekhouding/BoekhoudingTabs.tsx")), "tabs Btw-aangifte en Activa");
   const agRoute = lees("app/api/boekhouding/aangiften/[jaar]/[kw]/route.ts");
   check(/export const DELETE = bkRoute\([\s\S]*?\{ alleenEigenaar: true \}\s*\);/.test(agRoute), "aangifte intrekken alleen door de eigenaar (route)");
-  check(/aangifteRubrieken\(journaalVan\(data\)/.test(lees("lib/boekhouding/acties.ts")), "bij indienen rekent de server de aangifte zelf uit");
+  // aangifteVoorKwartaal = de eigen boekingen + de correcties van eerdere kwartalen (kern/aangifte.ts).
+  check(/aangifteVoorKwartaal\(journaalVan\(data\), data\.aangiften/.test(lees("lib/boekhouding/acties.ts")), "bij indienen rekent de server de aangifte zelf uit");
   // Facturen ongewijzigd sinds de start van de boekhouding (commit 7df4ae9).
   // (app/actions/wachtwoord.ts hoort niet bij facturen: verplicht eigen wachtwoord, 0028.)
   const fdiff = spawnSync("git", ["diff", "--name-only", "7df4ae9", "--", "lib/invoice", "app/actions", ":(exclude)app/actions/wachtwoord.ts", "app/api/invoices", "app/api/quotes", "app/(app)/facturen", "components/InvoiceForm.tsx", "components/InvoicesTable.tsx", "components/QuotesTable.tsx", "components/RestfactuurKnop.tsx"], { cwd: ROOT, encoding: "utf8" });

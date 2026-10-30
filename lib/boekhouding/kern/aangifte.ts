@@ -69,7 +69,24 @@ export interface AangifteBerekening {
 }
 
 /** Wat bij indienen wordt bewaard (bk_aangiften.rubrieken): de berekening zonder de posten. */
-export type AangifteSnapshot = Omit<AangifteBerekening, 'posten'> & { versie: 1 };
+export type AangifteSnapshot = Omit<AangifteBerekening, 'posten'> & {
+  versie: 1;
+  /** Correcties van eerdere kwartalen die in deze aangifte zijn meegenomen (zitten al in de bedragen). */
+  correcties?: Correctie[];
+};
+
+/**
+ * Een correctie van een eerder ingediend kwartaal, meegenomen in een latere aangifte (fouten tot
+ * € 1.000 btw verwerk je volgens de Belastingdienst in de eerstvolgende aangifte, bij de rubriek
+ * waar ze horen). Bedragen exact in centen: wat het had moeten zijn min wat is aangegeven.
+ */
+export interface Correctie {
+  jaar: number;
+  kwartaal: Kwartaal;
+  /** Alleen rubrieken met een verschil. */
+  rubrieken: Partial<Record<FormulierRubriek, { grondslag: Centen; btw: Centen }>>;
+  voorbelasting: Centen;
+}
 
 /** Naar beneden afronden op hele euro's (ook bij negatieve bedragen: −1,50 → −2). */
 export function euroOmlaag(c: Centen): number {
@@ -106,6 +123,11 @@ export function aangifteRubrieken(posten: readonly JournaalPost[], jaar: number,
       ids['5b'].push(p.id);
     }
   }
+  return { jaar, kwartaal, van, tot, ...formulierBedragen(rub, voorbelasting), posten: ids };
+}
+
+/** Formulierbedragen (hele euro's, 5a/5b/5c) bij exacte rubrieken en voorbelasting; rub wordt aangevuld. */
+function formulierBedragen(rub: Record<FormulierRubriek, RubriekBedragen>, voorbelasting: Centen) {
   let verschuldigdCenten = 0;
   let verschuldigdEuro = 0;
   for (const r of FORMULIER_RUBRIEKEN) {
@@ -117,16 +139,137 @@ export function aangifteRubrieken(posten: readonly JournaalPost[], jaar: number,
   }
   const vbEuro = euroOmhoog(voorbelasting);
   return {
-    jaar,
-    kwartaal,
-    van,
-    tot,
     rubrieken: rub,
     verschuldigd: { centen: verschuldigdCenten, euro: verschuldigdEuro },
     voorbelasting: { centen: voorbelasting, euro: vbEuro },
-    saldo: { centen: verschuldigdCenten - voorbelasting, euro: verschuldigdEuro - vbEuro },
-    posten: ids
+    saldo: { centen: verschuldigdCenten - voorbelasting, euro: verschuldigdEuro - vbEuro }
   };
+}
+
+// ---------------------------------------------------------------------------------
+// Correcties van eerdere kwartalen
+// ---------------------------------------------------------------------------------
+
+/** a + teken × de correcties, met opnieuw afgeronde formulierbedragen. Zonder correcties: a zelf. */
+function metBijtelling<T extends Omit<AangifteBerekening, 'posten'>>(a: T, correcties: readonly Correctie[], teken: 1 | -1): T {
+  if (!correcties.length) return a;
+  const rub = Object.fromEntries(
+    FORMULIER_RUBRIEKEN.map((r) => [r, { grondslag: { centen: a.rubrieken[r].grondslag.centen, euro: 0 }, btw: { centen: a.rubrieken[r].btw.centen, euro: 0 } }])
+  ) as Record<FormulierRubriek, RubriekBedragen>;
+  let vb = a.voorbelasting.centen;
+  for (const c of correcties) {
+    for (const [r, d] of Object.entries(c.rubrieken) as [FormulierRubriek, { grondslag: Centen; btw: Centen }][]) {
+      rub[r].grondslag.centen += teken * d.grondslag;
+      rub[r].btw.centen += teken * d.btw;
+    }
+    vb += teken * c.voorbelasting;
+  }
+  return { ...a, ...formulierBedragen(rub, vb) };
+}
+
+/** De berekening van een kwartaal met de correcties van eerdere kwartalen erin (zoals je het formulier invult). */
+export function metCorrecties(a: AangifteBerekening, correcties: readonly Correctie[]): AangifteBerekening {
+  return metBijtelling(a, correcties, 1);
+}
+
+const volgorde = (j: number, q: Kwartaal) => j * 4 + q;
+
+/**
+ * Wat er over een ingediend kwartaal nu geldt bij de Belastingdienst: het eigen deel van de
+ * snapshot (zonder de correcties van eerdere kwartalen die erin zijn meegenomen) plus de
+ * correcties van dit kwartaal die in latere aangiften zijn meegenomen.
+ */
+export function effectiefIngediend(a: Aangifte, alle: readonly Aangifte[]): AangifteSnapshot | null {
+  if (!a.snapshot) return null;
+  const eigen = metBijtelling(a.snapshot, a.snapshot.correcties ?? [], -1);
+  const later = alle.flatMap((x) => (x.id === a.id ? [] : (x.snapshot?.correcties ?? []).filter((c) => c.jaar === a.jaar && c.kwartaal === a.kwartaal)));
+  if (!later.length) return eigen;
+  // Correcties zijn berekend t.o.v. wat er is aangegeven (zie aangegeven()); daar ook bij optellen.
+  const basis: AangifteSnapshot = {
+    ...eigen,
+    rubrieken: Object.fromEntries(
+      FORMULIER_RUBRIEKEN.map((r) => [
+        r,
+        {
+          grondslag: { centen: aangegeven(eigen.rubrieken[r].grondslag), euro: eigen.rubrieken[r].grondslag.euro },
+          btw: { centen: MET_BTW.has(r) ? aangegeven(eigen.rubrieken[r].btw) : eigen.rubrieken[r].btw.centen, euro: eigen.rubrieken[r].btw.euro }
+        }
+      ])
+    ) as Record<FormulierRubriek, RubriekBedragen>,
+    voorbelasting: { centen: aangegeven(eigen.voorbelasting, true), euro: eigen.voorbelasting.euro }
+  };
+  return metBijtelling(basis, later, 1);
+}
+
+/** Het (eerste) latere kwartaal waarin de correctie van dit kwartaal is meegenomen. */
+export function gecorrigeerdIn(a: Aangifte, alle: readonly Aangifte[]): { jaar: number; kwartaal: Kwartaal } | null {
+  const x = alle
+    .filter((y) => (y.snapshot?.correcties ?? []).some((c) => c.jaar === a.jaar && c.kwartaal === a.kwartaal))
+    .sort((p, q) => volgorde(p.jaar, p.kwartaal) - volgorde(q.jaar, q.kwartaal))[0];
+  return x ? { jaar: x.jaar, kwartaal: x.kwartaal } : null;
+}
+
+/**
+ * Wat er is aangegeven, in centen. Normaal de exacte centen van de snapshot; past het bedrag in
+ * hele euro's daar niet bij (een overgenomen of gereconstrueerd formulier), dan telt dat bedrag.
+ */
+function aangegeven(b: Bedrag, omhoog = false): Centen {
+  return (omhoog ? euroOmhoog(b.centen) : euroOmlaag(b.centen)) === b.euro ? b.centen : b.euro * 100;
+}
+
+/** Het verschil tussen de huidige berekening en wat er nu geldt, als correctie (null = geen verschil). */
+function verschilAlsCorrectie(a: Aangifte, effectief: AangifteSnapshot, nu: AangifteBerekening): Correctie | null {
+  const rubrieken: Correctie['rubrieken'] = {};
+  for (const r of FORMULIER_RUBRIEKEN) {
+    const g = nu.rubrieken[r].grondslag.centen - aangegeven(effectief.rubrieken[r].grondslag);
+    const b = MET_BTW.has(r) ? nu.rubrieken[r].btw.centen - aangegeven(effectief.rubrieken[r].btw) : 0;
+    if (g || b) rubrieken[r] = { grondslag: g, btw: b };
+  }
+  const voorbelasting = nu.voorbelasting.centen - aangegeven(effectief.voorbelasting, true);
+  return Object.keys(rubrieken).length || voorbelasting ? { jaar: a.jaar, kwartaal: a.kwartaal, rubrieken, voorbelasting } : null;
+}
+
+/**
+ * De correcties die in de aangifte van (jaar, kwartaal) horen: per eerder ingediend kwartaal
+ * dat volgens de boekingen afwijkt van wat er geldt, met een verschil tot € 1.000 (anders
+ * suppletie). Een correctie komt in het EERSTE niet-ingediende kwartaal erna: zit er tussen het
+ * afwijkende kwartaal en (jaar, kwartaal) nog een kwartaal zonder aangifte, dan hoort hij daar.
+ */
+export function openCorrecties(posten: readonly JournaalPost[], aangiften: readonly Aangifte[], jaar: number, kwartaal: Kwartaal): Correctie[] {
+  const doel = volgorde(jaar, kwartaal);
+  const ingediend = new Set(aangiften.map((a) => volgorde(a.jaar, a.kwartaal)));
+  const uit: Correctie[] = [];
+  for (const a of [...aangiften].sort((p, q) => volgorde(p.jaar, p.kwartaal) - volgorde(q.jaar, q.kwartaal))) {
+    const v = volgorde(a.jaar, a.kwartaal);
+    if (v >= doel) continue;
+    let tussenOpen = false;
+    for (let x = v + 1; x < doel; x++) if (!ingediend.has(x)) tussenOpen = true;
+    if (tussenOpen) continue;
+    const eff = effectiefIngediend(a, aangiften);
+    if (!eff) continue;
+    const nu = aangifteRubrieken(posten, a.jaar, a.kwartaal);
+    if (vergelijkMetIngediend(eff, nu).advies !== 'volgende_aangifte') continue;
+    const c = verschilAlsCorrectie(a, eff, nu);
+    if (c) uit.push(c);
+  }
+  return uit;
+}
+
+/**
+ * De aangifte van een kwartaal zoals je hem invult: niet ingediend = de eigen boekingen plus de
+ * open correcties; ingediend = de snapshot met de correcties die erin zijn meegenomen.
+ */
+export function aangifteVoorKwartaal(
+  posten: readonly JournaalPost[],
+  aangiften: readonly Aangifte[],
+  jaar: number,
+  kwartaal: Kwartaal
+): { eigen: AangifteBerekening; formulier: AangifteBerekening; correcties: Correctie[] } {
+  const eigen = aangifteRubrieken(posten, jaar, kwartaal);
+  const aangifte = aangiften.find((a) => a.jaar === jaar && a.kwartaal === kwartaal);
+  if (aangifte?.snapshot) return { eigen, formulier: { ...aangifte.snapshot, posten: eigen.posten }, correcties: aangifte.snapshot.correcties ?? [] };
+  const correcties = openCorrecties(posten, aangiften, jaar, kwartaal);
+  return { eigen, formulier: metCorrecties(eigen, correcties), correcties };
 }
 
 export function naarSnapshot(a: AangifteBerekening): AangifteSnapshot {
@@ -146,6 +289,22 @@ export function leesSnapshot(v: unknown): AangifteSnapshot | null {
     if (!x || !ok(x.grondslag) || !ok(x.btw)) return null;
   }
   if (!ok(s.saldo) || !ok(s.verschuldigd) || !ok(s.voorbelasting)) return null;
+  if (s.correcties !== undefined) {
+    const geheel = (n: unknown) => Number.isSafeInteger(n);
+    const goed =
+      Array.isArray(s.correcties) &&
+      s.correcties.every(
+        (c) =>
+          c &&
+          geheel(c.jaar) &&
+          [1, 2, 3, 4].includes(c.kwartaal) &&
+          geheel(c.voorbelasting) &&
+          c.rubrieken &&
+          typeof c.rubrieken === 'object' &&
+          Object.entries(c.rubrieken).every(([r, d]) => (FORMULIER_RUBRIEKEN as readonly string[]).includes(r) && d && geheel(d.grondslag) && geheel(d.btw))
+      );
+    if (!goed) return null;
+  }
   return s as AangifteSnapshot;
 }
 
@@ -224,8 +383,12 @@ export interface KwartaalRij {
   /** Bij een ingediende aangifte: het ingediende saldo; anders de huidige berekening (formulier, centen). */
   teBetalen: Centen;
   betaald: Centen;
-  /** Afwijking na indiening (alleen bij ingediend). */
+  /** Afwijking na indiening (alleen bij ingediend), t.o.v. wat er geldt (incl. latere correcties). */
   afwijking: Afwijking | null;
+  /** Niet ingediend: de correcties van eerdere kwartalen die in deze aangifte horen; ingediend: die erin zijn meegenomen. */
+  correcties: Correctie[];
+  /** Ingediend en later gecorrigeerd: in welke aangifte (ingediend) of nog te doen (open). */
+  correctieIn: { jaar: number; kwartaal: Kwartaal; ingediend: boolean } | null;
 }
 
 /** Alle kwartalen van `vanaf` t/m het lopende kwartaal, nieuwste eerst. */
@@ -262,12 +425,14 @@ export function kwartaalOverzicht(o: {
   vanaf: Datum;
   vandaag: Datum;
 }): KwartaalRij[] {
-  return kwartalenTot(o.vanaf, o.vandaag).map(({ jaar, kwartaal }) => {
+  const rijen: KwartaalRij[] = kwartalenTot(o.vanaf, o.vandaag).map(({ jaar, kwartaal }) => {
     const { van, tot } = kwartaalGrenzen(jaar, kwartaal);
     const deadline = aangifteDeadline(jaar, kwartaal);
     const aangifte = o.aangiften.find((a) => a.jaar === jaar && a.kwartaal === kwartaal) ?? null;
-    const nu = aangifteRubrieken(o.posten, jaar, kwartaal);
+    const { eigen, formulier, correcties } = aangifteVoorKwartaal(o.posten, o.aangiften, jaar, kwartaal);
     const betaald = aangifte ? o.betalingen.filter((b) => b.aangifteId === aangifte.id).reduce((t, b) => t + b.bedrag, 0) : 0;
+    const eff = aangifte ? effectiefIngediend(aangifte, o.aangiften) : null;
+    const ingediendIn = aangifte ? gecorrigeerdIn(aangifte, o.aangiften) : null;
     return {
       jaar,
       kwartaal,
@@ -276,11 +441,22 @@ export function kwartaalOverzicht(o: {
       deadline,
       status: kwartaalStatus({ tot, deadline, aangifte, betaald, vandaag: o.vandaag }),
       aangifte,
-      teBetalen: aangifte ? aangifte.teBetalen : teBetalenCenten(nu),
+      teBetalen: aangifte ? aangifte.teBetalen : teBetalenCenten(formulier),
       betaald,
-      afwijking: aangifte?.snapshot ? vergelijkMetIngediend(aangifte.snapshot, nu) : null
+      afwijking: eff ? vergelijkMetIngediend(eff, eigen) : null,
+      correcties,
+      correctieIn: ingediendIn ? { ...ingediendIn, ingediend: true } : null
     };
   });
+  // Een afwijking die in een open aangifte wordt meegenomen: daar staat hij (nog niet ingediend).
+  for (const r of rijen) {
+    if (r.aangifte) continue;
+    for (const c of r.correcties) {
+      const doel = rijen.find((x) => x.jaar === c.jaar && x.kwartaal === c.kwartaal);
+      if (doel && !doel.correctieIn) doel.correctieIn = { jaar: r.jaar, kwartaal: r.kwartaal, ingediend: false };
+    }
+  }
+  return rijen;
 }
 
 /** Het eerstvolgende kwartaal waarvoor aangifte moet worden gedaan (oudste niet-ingediende afgelopen kwartaal, anders het lopende). */

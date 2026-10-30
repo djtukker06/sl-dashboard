@@ -5,7 +5,7 @@ import { Demo } from './Schermen';
 import { AangifteApp, type AangifteView, type PostRij } from './AangifteApp';
 import { formatCenten } from '@/lib/boekhouding/kern/geld';
 import { aangifteDeadline, jaarVan, korteDatum, kwartaalGrenzen, kwartaalLabel, langeDatum, plusDagen, vandaagNL, type Kwartaal } from '@/lib/boekhouding/kern/periode';
-import { aangifteRubrieken, kwartaalOverzicht, volgendeAangifte, type KwartaalRij, type KwartaalStatus } from '@/lib/boekhouding/kern/aangifte';
+import { aangifteVoorKwartaal, kwartaalOverzicht, volgendeAangifte, type KwartaalRij, type KwartaalStatus } from '@/lib/boekhouding/kern/aangifte';
 import { btwControles } from '@/lib/boekhouding/kern/btw-controles';
 import { berekenBoeking } from '@/lib/boekhouding/model';
 import { journaalVan, laadAlles, type BoekhoudData, type BoekhoudRepo } from '@/lib/boekhouding/repo/types';
@@ -139,9 +139,12 @@ export async function AangifteScherm({ repo, jaar, kwartaal, eigenaar }: { repo:
       aangifte: data.aangiften.find((a) => a.jaar === jaar && a.kwartaal === kwartaal) ?? null,
       teBetalen: 0,
       betaald: 0,
-      afwijking: null
+      afwijking: null,
+      correcties: [],
+      correctieIn: null
     } satisfies KwartaalRij);
-  const huidig = aangifteRubrieken(posten, jaar, kwartaal);
+  // Het formulier zoals je het invult: de eigen boekingen plus de correcties van eerdere kwartalen.
+  const { formulier: huidig, eigen, correcties } = aangifteVoorKwartaal(posten, data.aangiften, jaar, kwartaal);
 
   // De posten achter de rubrieken (voor de doorklik), zonder de interne afleidingen.
   const ids = new Set(Object.values(huidig.posten).flat());
@@ -185,6 +188,9 @@ export async function AangifteScherm({ repo, jaar, kwartaal, eigenaar }: { repo:
     status: rij.status,
     vandaag,
     huidig,
+    eigen,
+    correcties,
+    correctieIn: rij.correctieIn,
     aangifte,
     afwijking: rij.afwijking,
     betaald: rij.betaald,

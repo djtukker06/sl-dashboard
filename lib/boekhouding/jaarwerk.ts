@@ -3,7 +3,7 @@
 
 import type { Centen } from './kern/geld';
 import { administratieBegin, type JournaalPost } from './kern/journaal';
-import { aangifteRubrieken, vergelijkMetIngediend } from './kern/aangifte';
+import { aangifteRubrieken, effectiefIngediend, vergelijkMetIngediend } from './kern/aangifte';
 import { jaarVan, kwartaalLabel, type Datum } from './kern/periode';
 import { activastaat } from './kern/afschrijving';
 import {
@@ -37,7 +37,7 @@ export function boekjarenLijst(d: BoekhoudData, vandaag: Datum): number[] {
 export function gewijzigdNaIndiening(d: BoekhoudData, posten: readonly JournaalPost[], jaar: number): string[] {
   return d.aangiften
     .filter((a) => a.jaar === jaar && a.snapshot)
-    .filter((a) => vergelijkMetIngediend(a.snapshot!, aangifteRubrieken(posten, a.jaar, a.kwartaal)).advies !== 'geen')
+    .filter((a) => vergelijkMetIngediend(effectiefIngediend(a, d.aangiften)!, aangifteRubrieken(posten, a.jaar, a.kwartaal)).advies !== 'geen')
     .map((a) => kwartaalLabel(a.jaar, a.kwartaal));
 }
 

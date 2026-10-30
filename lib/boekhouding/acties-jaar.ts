@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server';
 import { fout, json, leesJson, isUuid } from './api';
 import { naarCenten, type Centen } from './kern/geld';
 import { isKwartaal, jaarVan, kwartaalLabel, vandaagNL, type Kwartaal } from './kern/periode';
-import { aangifteRubrieken } from './kern/aangifte';
+import { aangifteVoorKwartaal } from './kern/aangifte';
 import { factuurLabel, uitgaveLabel } from './kern/bronnen';
 import { parseAandelen, parseGrootboekInvoer, parseInstellingen, parseMemoriaalInvoer } from './kern/memoriaal';
 import { boekingenCsv, journaalCsv, wvCsv, balansCsv, proefbalansCsv, kapitaalCsv } from './kern/csv';
@@ -222,10 +222,10 @@ export async function exportActie(request: Request, repo: BoekhoudRepo): Promise
       const kw = Number(url.searchParams.get('kw'));
       if (!isKwartaal(kw)) return fout(400, 'Kies een kwartaal.');
       const q = kw as Kwartaal;
-      const ber = aangifteRubrieken(posten, jaar, q);
       const aangifte = data.aangiften.find((a) => a.jaar === jaar && a.kwartaal === q) ?? null;
-      // Ingediend: het overzicht zoals ingediend (de snapshot), niet een latere herberekening.
-      const getoond = aangifte?.snapshot ? { ...aangifte.snapshot, posten: ber.posten } : ber;
+      // Ingediend: het overzicht zoals ingediend (de snapshot), niet een latere herberekening;
+      // anders de eigen boekingen plus de correcties van eerdere kwartalen (zoals je invult).
+      const getoond = aangifteVoorKwartaal(posten, data.aangiften, jaar, q).formulier;
       const html = aangifteHtml({ inst: data.stam.instellingen, ber: getoond, aangifte, vandaag, demo: repo.modus === 'demo' });
       const { renderPdf } = await import('../invoice/pdf');
       return bestand(await renderPdf(html), `${naam}-btw-${kwartaalLabel(jaar, q).replace(' ', '-').toLowerCase()}${demo}.pdf`, 'application/pdf');

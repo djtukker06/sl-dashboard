@@ -20,7 +20,7 @@ import {
 } from './kern/bankimport';
 import { isFactuurBalansrekening, kiesbareCategorieen, kiesbareFactuurRekeningen } from './model';
 import { BoekhoudFout, journaalVan, laadAlles, type BoekhoudRepo } from './repo/types';
-import { aangifteRubrieken, betalingFout, naarSnapshot, teBetalenCenten } from './kern/aangifte';
+import { aangifteVoorKwartaal, betalingFout, naarSnapshot, teBetalenCenten } from './kern/aangifte';
 import { activumAlsInvoer, activumVergrendelFout, parseActivumInvoer, type ActivumWaarde } from './kern/afschrijving';
 import { activumBronFout, herkomstVan } from './kern/activeren';
 import { isKwartaal, isVergrendeld, kwartaalGrenzen, kwartaalLabel, type Kwartaal } from './kern/periode';
@@ -231,7 +231,9 @@ export async function indienenActie(request: Request, repo: BoekhoudRepo, kw: { 
   const data = await laadAlles(repo);
   if (data.aangiften.some((a) => a.jaar === kw.jaar && a.kwartaal === kw.kwartaal)) return fout(409, 'Dit kwartaal is al ingediend.', 'bestaat_al');
   if (data.stam.vergrendeling.boekjaren.includes(kw.jaar)) return fout(409, `Boekjaar ${kw.jaar} is afgesloten.`, 'periode_vergrendeld');
-  const ber = aangifteRubrieken(journaalVan(data), kw.jaar, kw.kwartaal);
+  // De aangifte zoals ingevuld: de eigen boekingen plus de correcties van eerdere kwartalen
+  // (tot € 1.000 btw, in de eerstvolgende aangifte). Die worden met de snapshot bewaard.
+  const { formulier: ber, correcties } = aangifteVoorKwartaal(journaalVan(data), data.aangiften, kw.jaar, kw.kwartaal);
   // De browser stuurt mee wat de gebruiker zag; is er intussen iets veranderd, dan eerst opnieuw bekijken.
   if (body.verwacht !== undefined && body.verwacht !== null && Number(body.verwacht) !== teBetalenCenten(ber)) {
     return fout(409, 'De cijfers zijn intussen veranderd. Bekijk de aangifte opnieuw en dien dan in.', 'gewijzigd');
@@ -239,7 +241,7 @@ export async function indienenActie(request: Request, repo: BoekhoudRepo, kw: { 
   const aangifte = await repo.aangifteIndienen({
     jaar: kw.jaar,
     kwartaal: kw.kwartaal,
-    snapshot: naarSnapshot(ber),
+    snapshot: correcties.length ? { ...naarSnapshot(ber), correcties } : naarSnapshot(ber),
     teBetalen: teBetalenCenten(ber),
     kenmerk: vrijeTekst(body.kenmerk, 120),
     opmerking: vrijeTekst(body.opmerking, 2000)
