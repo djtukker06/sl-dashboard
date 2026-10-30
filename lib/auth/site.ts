@@ -32,3 +32,9 @@ export function siteUrl(formOrigin: string | null): string | null {
   const o = origin(formOrigin);
   return o && toegestaneOrigins().includes(o) ? o : null;
 }
+
+/** Openbare origin voor links en afbeeldingen in uitgaande mail (bv. het handtekeninglogo):
+ *  NEXT_PUBLIC_SITE_URL, anders de productie-URL van Vercel, anders die van het verzoek. */
+export function publiekeOrigin(verzoekUrl: string): string {
+  return origin(process.env.NEXT_PUBLIC_SITE_URL) ?? origin(process.env.VERCEL_PROJECT_PRODUCTION_URL) ?? new URL(verzoekUrl).origin;
+}

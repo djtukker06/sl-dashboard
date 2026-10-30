@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { adresNaam, adresVol, bewaarLaatsteVan, grootteTekst, mailApi, MailApiFout, volleDatum } from '@/lib/mail/client';
+import { adresNaam, adresVol, bewaarLaatsteVan, grootteTekst, mailApi, MailApiFout, perGebruiker, volleDatum } from '@/lib/mail/client';
+import { HANDTEKENINGEN, handtekeningHtml, INBOX_TEKST, standaardKeuze, zoekHandtekening, type HandtekeningKeuze } from '@/lib/mail/handtekening';
 import type { Adres, Bericht, InboxDto } from '@/lib/mail/types';
 import { useToast } from '@/components/agenda/Toast';
 import { AdresVeld } from './AdresVeld';
@@ -17,14 +18,6 @@ function metVoorvoegsel(onderwerp: string, voor: 'Re' | 'Fwd') {
   return re.test(s) ? s : `${voor}: ${s}`;
 }
 
-function citeer(tekst: string) {
-  return tekst
-    .slice(0, 20_000)
-    .split('\n')
-    .map((r) => (r.startsWith('>') ? `>${r}` : `> ${r}`))
-    .join('\n');
-}
-
 function uniek(lijst: Adres[], zonder: string[]): Adres[] {
   const gezien = new Set(zonder.map((s) => s.toLowerCase()));
   return lijst.filter((a) => {
@@ -35,10 +28,11 @@ function uniek(lijst: Adres[], zonder: string[]): Adres[] {
   });
 }
 
-function beginWaarden(modus: OpstelModus, basis: Bericht | null, eigenAdressen: string[], handtekening: string, startAan: string) {
-  const hand = handtekening ? `\n\n${handtekening}` : '';
+// De handtekening en het origineel staan niet in het tekstvak: de server zet ze eronder
+// (tekst → handtekening → citaat), zoals Gmail en Outlook.
+function beginWaarden(modus: OpstelModus, basis: Bericht | null, eigenAdressen: string[], startAan: string) {
   if (!basis || modus === 'nieuw') {
-    return { aan: startAan ? `${startAan}, ` : '', cc: '', onderwerp: '', tekst: hand ? `\n${hand}` : '' };
+    return { aan: startAan ? `${startAan}, ` : '', cc: '', onderwerp: '', citaat: null };
   }
   if (modus === 'doorsturen') {
     const kop = [
@@ -53,7 +47,7 @@ function beginWaarden(modus: OpstelModus, basis: Bericht | null, eigenAdressen: 
       aan: '',
       cc: '',
       onderwerp: metVoorvoegsel(basis.onderwerp, 'Fwd'),
-      tekst: `\n${hand}\n\n${kop}\n\n${basis.tekst}`
+      citaat: { kop, tekst: basis.tekst }
     };
   }
   const ontvanger = basis.antwoordAan.length ? basis.antwoordAan : basis.van ? [basis.van] : [];
@@ -63,8 +57,22 @@ function beginWaarden(modus: OpstelModus, basis: Bericht | null, eigenAdressen: 
     aan: aan.map(adresVol).join(', ') + (aan.length ? ', ' : ''),
     cc: cc.map(adresVol).join(', '),
     onderwerp: metVoorvoegsel(basis.onderwerp, 'Re'),
-    tekst: `\n${hand}\n\nOp ${volleDatum(basis.datum)} schreef ${adresNaam(basis.van)}:\n${citeer(basis.tekst)}`
+    citaat: { kop: `Op ${volleDatum(basis.datum)} schreef ${adresNaam(basis.van)}:`, tekst: basis.tekst }
   };
+}
+
+/** Laatst gekozen handtekening per afzender-inbox (per gebruiker, alleen in deze browser). */
+const handSleutel = (inbox: string) => perGebruiker(`sl-mail-handtekening:${inbox}`);
+
+function beginHandtekening(inbox: InboxDto | undefined, mijnEmail: string): HandtekeningKeuze {
+  let bewaard: string | null = null;
+  try {
+    if (inbox) bewaard = localStorage.getItem(handSleutel(inbox.id));
+  } catch {
+    /* geen opslag */
+  }
+  if (bewaard !== null && (bewaard === '' || zoekHandtekening(bewaard) || (bewaard === INBOX_TEKST && inbox?.handtekening))) return bewaard;
+  return standaardKeuze(inbox, mijnEmail);
 }
 
 const TITELS: Record<OpstelModus, string> = {
@@ -76,7 +84,9 @@ const TITELS: Record<OpstelModus, string> = {
 
 // "Van": je kiest vanaf welke inbox je verstuurt (ook een met het team gedeelde). Bij
 // beantwoorden/doorsturen staat de inbox van het bericht vooraf ingesteld; bij een nieuwe mail
-// de inbox die je bekijkt, anders de laatst gebruikte. Handtekening en afzendernaam wisselen mee.
+// de inbox die je bekijkt, anders de laatst gebruikte. Handtekening en afzendernaam wisselen mee:
+// per inbox de laatst gekozen handtekening, anders die van het adres of van jou (zie
+// lib/mail/handtekening.ts). Onder het tekstvak staat een voorbeeld; wisselen kan altijd.
 export function Opsteller({
   modus,
   basis,
@@ -84,6 +94,7 @@ export function Opsteller({
   inboxen,
   startVan,
   startAan = '',
+  mijnEmail,
   adressenPer,
   laadAdressen,
   onSluit,
@@ -96,6 +107,8 @@ export function Opsteller({
   inboxen: InboxDto[];
   startVan: string;
   startAan?: string;
+  /** E-mail van wie er ingelogd is: kiest de handtekening bij een gedeelde inbox. */
+  mijnEmail: string;
   adressenPer: Record<string, Adres[]>;
   laadAdressen: (mb: string) => void;
   onSluit: () => void;
@@ -106,14 +119,16 @@ export function Opsteller({
   const [van, setVan] = useState(startVan);
   const vanInbox = inboxen.find((i) => i.id === van) ?? kiesbaar[0] ?? inboxen[0];
   const eigenAdressen = inboxen.map((i) => i.email);
-  const [begin] = useState(() => beginWaarden(modus, basis, eigenAdressen, vanInbox?.handtekening ?? '', startAan));
+  const [begin] = useState(() => beginWaarden(modus, basis, eigenAdressen, startAan));
+  const [hand, setHand] = useState<HandtekeningKeuze>(() => beginHandtekening(vanInbox, mijnEmail));
+  const [citaatOpen, setCitaatOpen] = useState(modus === 'doorsturen');
   const adressen = adressenPer[van] ?? [];
   const [aan, setAan] = useState(begin.aan);
   const [cc, setCc] = useState(begin.cc);
   const [bcc, setBcc] = useState('');
   const [ccOpen, setCcOpen] = useState(Boolean(begin.cc));
   const [onderwerp, setOnderwerp] = useState(begin.onderwerp);
-  const [tekst, setTekst] = useState(begin.tekst);
+  const [tekst, setTekst] = useState('');
   const [bestanden, setBestanden] = useState<File[]>([]);
   const origineel = modus === 'doorsturen' && basis ? basis.bijlagen : [];
   const [meeDelen, setMeeDelen] = useState<string[]>(() => origineel.map((b) => b.deel));
@@ -122,38 +137,43 @@ export function Opsteller({
   const tekstRef = useRef<HTMLTextAreaElement>(null);
   const bestandRef = useRef<HTMLInputElement>(null);
 
-  // Antwoord: cursor bovenaan het tekstvak (boven de handtekening en het citaat).
+  // Antwoord: cursor meteen in het tekstvak.
   useEffect(() => {
-    if (modus === 'antwoord' || modus === 'allen') {
-      const t = tekstRef.current;
-      if (t) {
-        t.focus();
-        t.setSelectionRange(0, 0);
-        t.scrollTop = 0;
-      }
-    }
+    if (modus === 'antwoord' || modus === 'allen') tekstRef.current?.focus();
   }, [modus]);
+
+  // Het tekstvak groeit mee; handtekening en citaat scrollen eronder mee.
+  useEffect(() => {
+    const t = tekstRef.current;
+    if (!t) return;
+    t.style.height = 'auto';
+    t.style.height = `${t.scrollHeight}px`;
+  }, [tekst]);
 
   // Adressuggesties uit de gekozen inbox (pas opgehaald als je opstelt).
   useEffect(() => {
     laadAdressen(van);
   }, [van, laadAdressen]);
 
-  /** Andere afzender: de handtekening in de tekst wisselt mee. */
+  /** Andere afzender: de handtekening van die inbox komt eronder. */
   const wisselVan = (nieuw: string) => {
-    const oud = inboxen.find((i) => i.id === van)?.handtekening ?? '';
-    const nieuwe = inboxen.find((i) => i.id === nieuw)?.handtekening ?? '';
     setVan(nieuw);
-    if (oud === nieuwe) return;
-    setTekst((t) => {
-      if (oud && t.includes(oud)) return t.replace(oud, nieuwe);
-      if (!oud && nieuwe && !t.trim()) return `\n\n\n${nieuwe}`;
-      return t;
-    });
+    setHand(beginHandtekening(inboxen.find((i) => i.id === nieuw), mijnEmail));
   };
 
+  const kiesHand = (keuze: HandtekeningKeuze) => {
+    setHand(keuze);
+    try {
+      localStorage.setItem(handSleutel(van), keuze);
+    } catch {
+      /* geen opslag */
+    }
+  };
+
+  const voorbeeld = handtekeningHtml(hand, vanInbox?.handtekening ?? '', '');
+
   const gewijzigd =
-    aan !== begin.aan || cc !== begin.cc || bcc !== '' || onderwerp !== begin.onderwerp || tekst !== begin.tekst || bestanden.length > 0;
+    aan !== begin.aan || cc !== begin.cc || bcc !== '' || onderwerp !== begin.onderwerp || tekst !== '' || bestanden.length > 0;
 
   const sluit = () => {
     if (bezig) return;
@@ -188,6 +208,8 @@ export function Opsteller({
       bcc: ccOpen ? bcc : '',
       onderwerp,
       tekst,
+      handtekening: hand,
+      citaat: begin.citaat,
       origineel:
         basis && modus !== 'nieuw'
           ? { mb: basisMb ?? van, map: basis.map, uid: basis.uid, modus: modus === 'doorsturen' ? 'doorsturen' : 'antwoord' }
@@ -295,15 +317,43 @@ export function Opsteller({
           </div>
         </div>
 
-        <textarea
-          ref={tekstRef}
-          className="ml-tekstvak"
-          aria-label="Bericht"
-          value={tekst}
-          onChange={(e) => setTekst(e.target.value)}
-          spellCheck
-          lang="nl"
-        />
+        <div className="ml-opstel-inhoud" onClick={(e) => e.target === e.currentTarget && tekstRef.current?.focus()}>
+          <textarea
+            ref={tekstRef}
+            className="ml-tekstvak"
+            aria-label="Bericht"
+            value={tekst}
+            onChange={(e) => setTekst(e.target.value)}
+            rows={6}
+            spellCheck
+            lang="nl"
+          />
+          {voorbeeld && (
+            <div className="ml-handtekening" aria-label="Handtekening">
+              {/* Eigen sjabloon met ge-escapete waarden (lib/mail/handtekening.ts). */}
+              <div dangerouslySetInnerHTML={{ __html: voorbeeld }} />
+            </div>
+          )}
+          {begin.citaat && (
+            <div className="ml-citaat">
+              <button
+                type="button"
+                className="ml-citaat-knop"
+                onClick={() => setCitaatOpen((o) => !o)}
+                aria-expanded={citaatOpen}
+                title={citaatOpen ? 'Origineel verbergen' : 'Origineel tonen'}
+              >
+                •••
+              </button>
+              {citaatOpen && (
+                <div className={`ml-citaat-tekst${modus === 'doorsturen' ? '' : ' ml-citaat-antwoord'}`}>
+                  <p>{begin.citaat.kop}</p>
+                  <pre>{begin.citaat.tekst}</pre>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
 
         {(bestanden.length > 0 || origineel.length > 0) && (
           <ul className="ml-bijlagen ml-bijlagen-opstel" aria-label="Bijlagen">
@@ -357,6 +407,19 @@ export function Opsteller({
             <Icoon naam="clip" grootte={15} />
             Bijlage
           </button>
+          <label className="ml-hand-keuze" title="Handtekening">
+            <Icoon naam="concepten" grootte={15} />
+            <select value={hand} onChange={(e) => kiesHand(e.target.value)} disabled={bezig} aria-label="Handtekening">
+              {HANDTEKENINGEN.map((h) => (
+                <option key={h.id} value={h.id}>
+                  {h.naam}
+                </option>
+              ))}
+              {vanInbox?.handtekening && <option value={INBOX_TEKST}>Tekst van {vanInbox.label || vanInbox.email}</option>}
+              <option value="">Geen handtekening</option>
+            </select>
+            <Icoon naam="pijlOmlaag" grootte={13} />
+          </label>
           <input
             ref={bestandRef}
             type="file"

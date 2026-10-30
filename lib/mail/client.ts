@@ -134,7 +134,7 @@ const CACHE_MS = 60_000;
  * dezelfde computer inlogt, ziet nooit diens mail uit de cache. Uitloggen leegt alle
  * "sl-"-sleutels (public/shell/shell.js).
  */
-function perGebruiker(sleutel: string): string {
+export function perGebruiker(sleutel: string): string {
   try {
     const id = document.querySelector('.sl-rail[data-gebruiker]')?.getAttribute('data-gebruiker');
     return id ? `${sleutel}:${id}` : sleutel;

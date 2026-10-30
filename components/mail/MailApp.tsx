@@ -74,6 +74,7 @@ export function MailApp(props: {
   startUid: number | null;
   nieuw: boolean;
   nieuwAan: string;
+  mijnEmail: string;
 }) {
   return (
     <ToastProvider>
@@ -89,7 +90,8 @@ function Mail({
   startMap,
   startUid,
   nieuw,
-  nieuwAan
+  nieuwAan,
+  mijnEmail
 }: {
   inboxen: InboxDto[];
   startMb: string | null;
@@ -98,6 +100,7 @@ function Mail({
   startUid: number | null;
   nieuw: boolean;
   nieuwAan: string;
+  mijnEmail: string;
 }) {
   const toast = useToast();
   const { mijnId } = useTeam();
@@ -830,6 +833,7 @@ function Mail({
             inboxen={inboxen}
             startVan={opstel.basisMb && inboxInfo.get(opstel.basisMb)?.leesbaar ? opstel.basisMb : standaardVan()}
             startAan={opstel.aan}
+            mijnEmail={mijnEmail}
             adressenPer={adressenPer}
             laadAdressen={laadAdressen}
             onSluit={() => {

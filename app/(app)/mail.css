@@ -755,11 +755,14 @@ input.ml-veld:focus { border: 0; }
   cursor: pointer;
 }
 .ml-link:hover { color: var(--sl-text); }
+/* Tekstvak, handtekening en citaat scrollen samen (het tekstvak groeit mee). */
+.ml-opstel-inhoud { flex: 1; min-height: 0; overflow-y: auto; padding-bottom: 20px; cursor: text; }
 .ml-tekstvak {
-  flex: 1;
-  min-height: 220px;
+  display: block;
+  min-height: 160px;
+  overflow: hidden;
   width: 100%;
-  padding: 20px 24px;
+  padding: 20px 24px 8px;
   border: 0;
   outline: none;
   resize: none;
@@ -768,6 +771,58 @@ input.ml-veld:focus { border: 0; }
   font-family: var(--sl-font);
   font-size: 14.5px;
   line-height: 1.65;
+  color-scheme: dark;
+}
+.ml-handtekening { padding: 4px 24px 0; cursor: default; }
+/* Zoals in de mail zelf: de tekst erboven op een lichte achtergrond leesbaar houden. */
+.ml-handtekening > div {
+  display: inline-block;
+  padding: 16px 18px;
+  border-radius: 10px;
+  background: #fff;
+  color: #1f1f1f;
+}
+.ml-handtekening table { border-collapse: separate; }
+.ml-citaat { padding: 14px 24px 0; cursor: default; }
+.ml-citaat-knop {
+  padding: 0 8px;
+  height: 18px;
+  border: 1px solid var(--sl-line);
+  border-radius: 9px;
+  background: var(--sl-raise);
+  color: var(--sl-muted);
+  font-size: 11px;
+  line-height: 1;
+  letter-spacing: .1em;
+  cursor: pointer;
+}
+.ml-citaat-knop:hover { color: var(--sl-text); }
+.ml-citaat-tekst { margin-top: 12px; font-size: 13px; line-height: 1.6; color: var(--sl-muted); }
+.ml-citaat-tekst p { margin: 0 0 8px; }
+.ml-citaat-tekst pre { margin: 0; font-family: var(--sl-font); white-space: pre-wrap; overflow-wrap: anywhere; }
+.ml-citaat-antwoord pre { padding-left: 12px; border-left: 2px solid var(--sl-line); }
+.ml-hand-keuze {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--sl-line);
+  border-radius: var(--sl-r);
+  color: var(--sl-muted);
+  font-size: 13px;
+}
+.ml-hand-keuze:hover, .ml-hand-keuze:focus-within { color: var(--sl-text); }
+.ml-hand-keuze select {
+  appearance: none;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--sl-text);
+  font-family: var(--sl-font);
+  font-size: 13px;
+  cursor: pointer;
   color-scheme: dark;
 }
 .ml-bijlagen-opstel { padding: 12px 24px 0; border-top: 1px solid var(--sl-line-soft); }

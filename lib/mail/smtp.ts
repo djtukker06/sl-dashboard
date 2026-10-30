@@ -43,6 +43,8 @@ export interface UitgaandBericht {
   bcc: Adres[];
   onderwerp: string;
   tekst: string;
+  /** Opgemaakte versie (met de handtekening); de platte tekst gaat altijd mee als alternatief. */
+  html?: string;
   inReplyTo?: string | null;
   references?: string[];
   bijlagen: UitgaandeBijlage[];
@@ -69,6 +71,7 @@ export async function bouwBericht(
     bcc: b.bcc.length ? b.bcc.map(naarAdres) : undefined,
     subject: b.onderwerp,
     text: b.tekst,
+    html: b.html || undefined,
     inReplyTo: b.inReplyTo || undefined,
     references: b.references?.length ? b.references : undefined,
     date: new Date(),
