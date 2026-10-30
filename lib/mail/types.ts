@@ -86,6 +86,23 @@ export interface Bericht {
   ingekort: boolean;
 }
 
+/** Een ander bericht uit hetzelfde gesprek (GET /api/mail/berichten/[uid]/gesprek). */
+export interface GesprekBericht {
+  map: string;
+  uid: number;
+  van: Adres | null;
+  aan: Adres[];
+  onderwerp: string;
+  datum: string | null;
+  /** Platte tekst zonder de geciteerde geschiedenis. */
+  tekst: string;
+  /** De geciteerde geschiedenis ("Op … schreef …:" en verder), of ''. */
+  citaat: string;
+  bijlagen: Bijlage[];
+  /** Uit de map Verzonden (een eigen antwoord). */
+  verzonden: boolean;
+}
+
 /** Ongelezen in de inbox van één gekoppelde mailbox (of waarom dat niet lukte). */
 export interface InboxTeller {
   id: string;

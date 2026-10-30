@@ -1,12 +1,13 @@
 'use client';
 
-import { Fragment, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { adresNaam, bijlageUrl, downloadBijlage, grootteTekst, initialen, MailApiFout, volleDatum } from '@/lib/mail/client';
+import { adresNaam, bijlageUrl, downloadBijlage, grootteTekst, mailApi, MailApiFout, volleDatum } from '@/lib/mail/client';
 import { useToast } from '@/components/agenda/Toast';
 import { uitgavenApi } from '@/lib/uitgaven/client';
 import { isBestandsType, ontbreektMelding, ontbrekendeVelden, typeUitNaam } from '@/lib/uitgaven/model';
-import type { Adres, Bericht, MapRol } from '@/lib/mail/types';
+import type { Adres, Bericht, GesprekBericht, MapRol } from '@/lib/mail/types';
+import { GekleurdeAvatar, GesprekLijst } from './Gesprek';
 import { Icoon, type MailIcoonNaam } from './Iconen';
 import { VeiligeMailFrame } from './VeiligeMailFrame';
 
@@ -27,7 +28,7 @@ const kanUitgave = (x: { naam: string; type: string }) => isBestandsType(x.type.
 const URL_RE = /(https?:\/\/[^\s<>"']+[^\s<>"'.,;:!?)\]])|([\w.+-]+@[\w-]+\.[\w.-]+\w)/g;
 
 /** Platte tekst met klikbare links (React escapet de rest). Geciteerde regels ("> ") gedimd. */
-function TekstMail({ tekst }: { tekst: string }) {
+export function TekstMail({ tekst }: { tekst: string }) {
   const regels = tekst.split('\n');
   return (
     <div className="ml-tekst">
@@ -134,8 +135,25 @@ export function Lezer({
   const [beelden, setBeelden] = useState(false);
   const [downloadt, setDownloadt] = useState<string | null>(null);
   const [bewaart, setBewaart] = useState<string | null>(null);
+  const [gesprek, setGesprek] = useState<GesprekBericht[] | null>(null);
   const toast = useToast();
   const router = useRouter();
+
+  // Het gesprek (eerdere en latere mails in dezelfde chain) apart ophalen, zodat het bericht
+  // zelf niet hoeft te wachten. Lukt het niet, dan tonen we gewoon alleen dit bericht.
+  const gesprekVan = bericht ? `${bericht.map}:${bericht.uid}` : null;
+  useEffect(() => {
+    if (!bericht) return;
+    let weg = false;
+    mailApi
+      .gesprek(mb, bericht.map, bericht.uid)
+      .then((r) => !weg && setGesprek(r.gesprek))
+      .catch(() => !weg && setGesprek([]));
+    return () => {
+      weg = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mb, gesprekVan]);
 
   // "Opslaan als uitgave": de server haalt de bijlage op, zet hem bij de uitgaven en leest hem uit.
   async function alsUitgave(map: string, uid: number, deel: string, onderwerp: string) {
@@ -210,6 +228,9 @@ export function Lezer({
   }
 
   const b = bericht;
+  const eigenDatum = b.datum ?? '';
+  const eerder = (gesprek ?? []).filter((g) => (g.datum ?? '') <= eigenDatum);
+  const later = (gesprek ?? []).filter((g) => (g.datum ?? '') > eigenDatum);
   return (
     <section className="ml-lezer" aria-label="Leesvenster">
       <div className="ml-acties" role="toolbar" aria-label="Acties voor dit bericht">
@@ -236,11 +257,23 @@ export function Lezer({
 
       <div className="ml-lezer-scroll">
         <header className="ml-lezer-kop">
-          <h2 className="ml-lezer-onderwerp">{b.onderwerp || '(geen onderwerp)'}</h2>
-          <div className="ml-lezer-afzender">
-            <span className="ml-avatar" aria-hidden="true">
-              {initialen(b.van)}
-            </span>
+          <h2 className="ml-lezer-onderwerp">
+            {b.onderwerp || '(geen onderwerp)'}
+            {gesprek !== null && gesprek.length > 0 && (
+              <span className="ml-gesprek-aantal" title="Berichten in dit gesprek">
+                {gesprek.length + 1}
+              </span>
+            )}
+          </h2>
+          {gesprek === null ? (
+            <p className="ml-gesprek-laden" aria-live="polite">
+              Gesprek zoeken…
+            </p>
+          ) : (
+            <GesprekLijst mb={mb} berichten={eerder} label="Eerder in dit gesprek" samenvatten />
+          )}
+          <div className={`ml-lezer-afzender${eerder.length ? ' ml-na-gesprek' : ''}`}>
+            <GekleurdeAvatar adres={b.van} />
             <div className="ml-lezer-wie">
               <p className="ml-lezer-van">
                 <strong>{adresNaam(b.van)}</strong>
@@ -320,6 +353,12 @@ export function Lezer({
           <TekstMail tekst={b.tekst} />
         ) : (
           <p className="ml-leeg-tekst ml-tekst">(Dit bericht heeft geen tekst.)</p>
+        )}
+
+        {later.length > 0 && (
+          <div className="ml-gesprek-later">
+            <GesprekLijst mb={mb} berichten={later} label="Later in dit gesprek" />
+          </div>
         )}
       </div>
     </section>
