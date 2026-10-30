@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { adresNaam, adresVol, bewaarLaatsteVan, grootteTekst, mailApi, MailApiFout, perGebruiker, volleDatum } from '@/lib/mail/client';
-import { AFSLUITING, handtekeningKaart, INBOX_TEKST, standaardKeuze, zoekHandtekening, type HandtekeningKeuze } from '@/lib/mail/handtekening';
+import { AFSLUITING, handtekeningKaart, VOORBEELD_BRON, INBOX_TEKST, standaardKeuze, zoekHandtekening, type HandtekeningKeuze } from '@/lib/mail/handtekening';
 import type { Adres, Bericht, InboxDto } from '@/lib/mail/types';
 import { useToast } from '@/components/agenda/Toast';
 import { AdresVeld } from './AdresVeld';
@@ -335,7 +335,7 @@ export function Opsteller({
             <div className="ml-handtekening" aria-label="Handtekening">
               <p className="ml-hand-groet">{AFSLUITING}</p>
               {/* Eigen sjabloon met ge-escapete waarden (lib/mail/handtekening.ts). */}
-              <div dangerouslySetInnerHTML={{ __html: handtekeningKaart(sjabloon, '') }} />
+              <div dangerouslySetInnerHTML={{ __html: handtekeningKaart(sjabloon, VOORBEELD_BRON) }} />
             </div>
           ) : (
             inboxTekst && (

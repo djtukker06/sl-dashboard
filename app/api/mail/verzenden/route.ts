@@ -5,8 +5,8 @@ import { metImap } from '@/lib/mail/imap';
 import { controleerMap, mapVoorRol, parseUid } from '@/lib/mail/mappen';
 import { bijlagenUitStructuur, haalBijlage, threadKoppen } from '@/lib/mail/berichten';
 import { bouwBericht, parseAdressen, verstuur, type UitgaandeBijlage } from '@/lib/mail/smtp';
-import { bouwInhoud, INBOX_TEKST, zoekHandtekening, type Citaat } from '@/lib/mail/handtekening';
-import { publiekeOrigin } from '@/lib/auth/site';
+import { bouwInhoud, cidVan, INBOX_TEKST, zoekHandtekening, type Citaat } from '@/lib/mail/handtekening';
+import { HANDTEKENING_BEELDEN } from '@/lib/mail/handtekening-beelden';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -98,7 +98,13 @@ export const POST = mailRoute(
       : null;
     // Alleen een bekend sjabloon of de eigen tekst van de verzendende inbox (die staat op de server).
     const keuze = typeof g.handtekening === 'string' && (zoekHandtekening(g.handtekening) || g.handtekening === INBOX_TEKST) ? g.handtekening : '';
-    const inhoud = bouwInhoud(tekst, keuze, mail.cfg?.handtekening ?? '', citaat, publiekeOrigin(request.url));
+    const inhoud = bouwInhoud(tekst, keuze, mail.cfg?.handtekening ?? '', citaat);
+    const handBeelden: UitgaandeBijlage[] = [...new Set(inhoud.beelden)].map((bestand) => ({
+      naam: bestand,
+      type: 'image/png',
+      inhoud: Buffer.from(HANDTEKENING_BEELDEN[bestand], 'base64'),
+      cid: cidVan(bestand)
+    }));
     const gewensteDelen = Array.isArray(g.origineleBijlagen) ? g.origineleBijlagen.map(String).slice(0, 30) : [];
 
     // In welke inbox staat het origineel? Standaard dezelfde als waarvandaan je verstuurt;
@@ -170,6 +176,7 @@ export const POST = mailRoute(
         onderwerp,
         tekst: inhoud.text,
         html: inhoud.html,
+        inline: handBeelden,
         inReplyTo: o?.inReplyTo ?? null,
         references: o?.references ?? [],
         bijlagen: [...bijlagen, ...(o?.bijlagen ?? [])]

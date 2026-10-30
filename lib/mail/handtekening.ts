@@ -6,7 +6,9 @@
 //
 // Dit bestand draait op de client (voorbeeld in het opstelscherm) én op de server (het
 // verzonden bericht). De HTML is mailveilig: tabellen, inline stijlen, PNG's (geen SVG, geen
-// webfonts), absolute afbeeldings-URL's uit /brand/ (zie next.config.ts: daar geen CORP-kop).
+// webfonts). In de mail zitten de afbeeldingen als inline-bijlage (cid:, zie
+// handtekening-beelden.ts): geen externe URL die kan ontbreken of geblokkeerd wordt. Lopende
+// tekst krijgt geen vaste kleur, zodat donkere modus in de mailapp leesbaar blijft.
 
 export interface Handtekening {
   id: string;
@@ -53,10 +55,16 @@ const esc = (s: string) =>
 const FONT = "font-family:Arial,'Helvetica Neue',Helvetica,sans-serif";
 const GRIJS = '#8a8f98';
 const DONKER = '#1f1f1f';
+/** Lopende tekst: lettertype en maat, kleur van de mailapp. */
+const TEKST = `${FONT};font-size:14px;line-height:22px`;
 
-/** De kaart (zonder afsluiting). `basis` = origin voor de afbeeldingen ('' = relatief, voor het voorbeeld). */
-export function handtekeningKaart(h: Handtekening, basis: string): string {
-  const beeld = (bestand: string) => `${basis}/brand/${bestand}`;
+/** Bron van een afbeelding: in het voorbeeld /brand/…, in de mail cid:…. */
+export type BeeldBron = (bestand: string) => string;
+export const VOORBEELD_BRON: BeeldBron = (bestand) => `/brand/${bestand}`;
+export const cidVan = (bestand: string) => `${bestand}@studio-levant`;
+
+/** De kaart (zonder afsluiting). */
+export function handtekeningKaart(h: Handtekening, beeld: BeeldBron): string {
   const link = (href: string, tekst: string) =>
     `<a href="${esc(href)}" style="color:${DONKER};text-decoration:none">${esc(tekst)}</a>`;
   const regel = (label: string, waarde: string) =>
@@ -88,16 +96,13 @@ export function handtekeningKaart(h: Handtekening, basis: string): string {
 }
 
 /** Afsluiting + kaart, of de eigen inboxtekst; '' bij geen handtekening. */
-export function handtekeningHtml(keuze: HandtekeningKeuze, inboxTekst: string, basis: string): string {
+export function handtekeningHtml(keuze: HandtekeningKeuze, inboxTekst: string, beeld: BeeldBron): string {
   const h = zoekHandtekening(keuze);
   if (h) {
-    return (
-      `<div style="${FONT};font-size:14px;line-height:22px;color:${DONKER};margin:0 0 14px">${esc(AFSLUITING)}</div>` +
-      handtekeningKaart(h, basis)
-    );
+    return `<div style="${TEKST};margin:0 0 14px">${esc(AFSLUITING)}</div>` + handtekeningKaart(h, beeld);
   }
   if (keuze === INBOX_TEKST && inboxTekst) {
-    return `<div style="${FONT};font-size:14px;line-height:22px;color:${DONKER}">${esc(inboxTekst).replace(/\n/g, '<br>')}</div>`;
+    return `<div style="${TEKST}">${esc(inboxTekst).replace(/\n/g, '<br>')}</div>`;
   }
   return '';
 }
@@ -147,12 +152,16 @@ export function bouwInhoud(
   tekst: string,
   keuze: HandtekeningKeuze,
   inboxTekst: string,
-  citaat: Citaat | null,
-  basis: string
-): { text: string; html: string } {
+  citaat: Citaat | null
+): { text: string; html: string; beelden: string[] } {
   const body = tekst.replace(/\s+$/, '');
   const handTekst = handtekeningTekst(keuze, inboxTekst);
-  const handHtml = handtekeningHtml(keuze, inboxTekst, basis);
+  // De gebruikte afbeeldingen gaan als inline-bijlage mee (zie de verzendroute).
+  const beelden: string[] = [];
+  const handHtml = handtekeningHtml(keuze, inboxTekst, (bestand) => {
+    beelden.push(bestand);
+    return `cid:${cidVan(bestand)}`;
+  });
 
   const text = [
     body,
@@ -163,11 +172,11 @@ export function bouwInhoud(
     .join('\n\n');
 
   const blokken: string[] = [];
-  if (body) blokken.push(`<div style="${FONT};font-size:14px;line-height:22px;color:${DONKER}">${tekstNaarHtml(body)}</div>`);
+  if (body) blokken.push(`<div style="${TEKST}">${tekstNaarHtml(body)}</div>`);
   if (handHtml) blokken.push(`<div style="margin-top:${body ? 22 : 0}px">${handHtml}</div>`);
   if (citaat) {
-    const kop = `<div style="${FONT};font-size:13px;line-height:20px;color:#555">${tekstNaarHtml(citaat.kop)}</div>`;
-    const inhoud = `<div style="${FONT};font-size:13px;line-height:20px;color:#555">${tekstNaarHtml(citaat.tekst)}</div>`;
+    const kop = `<div style="${FONT};font-size:13px;line-height:20px">${tekstNaarHtml(citaat.kop)}</div>`;
+    const inhoud = `<div style="${FONT};font-size:13px;line-height:20px;opacity:.8">${tekstNaarHtml(citaat.tekst)}</div>`;
     blokken.push(
       `<div style="margin-top:26px">${kop}` +
         (citaat.antwoord
@@ -177,5 +186,5 @@ export function bouwInhoud(
     );
   }
   const html = `<!doctype html><html><head><meta charset="utf-8"></head><body style="margin:0;padding:0">${blokken.join('')}</body></html>`;
-  return { text, html };
+  return { text, html, beelden };
 }
