@@ -513,12 +513,20 @@ function RubriekRij({
       <span className="bh-rubriek-bedrag">
         {bedragen.grondslag === null || bedragen.grondslag === undefined ? '' : formatHeleEuro(bedragen.grondslag)}
         {nuG !== undefined && <span className="bh-rubriek-nu">nu {formatHeleEuro(nuG)}</span>}
-        {corG !== 0 && <span className="bh-rubriek-nu is-correctie">waarvan correctie {metTeken(corG)}</span>}
+        {corG !== 0 && (
+          <span className="bh-rubriek-nu is-correctie">
+            <span>waarvan correctie</span> <span>{metTeken(corG)}</span>
+          </span>
+        )}
       </span>
       <span className="bh-rubriek-bedrag is-btw">
         {bedragen.btw === null || bedragen.btw === undefined ? '' : formatHeleEuro(bedragen.btw)}
         {nuB !== undefined && <span className="bh-rubriek-nu">nu {formatHeleEuro(nuB)}</span>}
-        {corB !== 0 && <span className="bh-rubriek-nu is-correctie">waarvan correctie {metTeken(corB)}</span>}
+        {corB !== 0 && (
+          <span className="bh-rubriek-nu is-correctie">
+            <span>waarvan correctie</span> <span>{metTeken(corB)}</span>
+          </span>
+        )}
       </span>
       <span className="bh-rubriek-pijl" aria-hidden="true">
         {lijst.length > 0 ? (isOpen ? '−' : '+') : ''}

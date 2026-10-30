@@ -568,7 +568,11 @@ button.bh-rubriek-rij:focus-visible { outline: none; box-shadow: var(--sl-focus)
 .bh-rubriek-bedrag { display: grid; justify-items: end; font-size: 14.5px; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .bh-rubriek-bedrag.is-btw { font-weight: 700; }
 .bh-rubriek-nu { font-size: 11.5px; font-weight: 400; color: var(--bh-let-op); }
-.bh-rubriek-nu.is-correctie { color: var(--sl-muted); }
+.bh-rubriek-nu.is-correctie { display: grid; justify-items: end; color: var(--sl-muted); font-size: 11px; line-height: 1.35; white-space: normal; text-align: right; }
+/* Telefoon: label en bedrag naast elkaar (de bedragkolom is daar breed genoeg). */
+@media (max-width: 720px) {
+  .bh-rubriek-nu.is-correctie { display: block; }
+}
 /* Correcties van eerdere kwartalen (zitten al in de bedragen van de rubrieken). */
 .bh-correcties-uitleg { margin: 0 0 10px; }
 .bh-correcties-lijst { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
