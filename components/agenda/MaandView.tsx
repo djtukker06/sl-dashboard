@@ -10,7 +10,7 @@ import type { Verplaatsing } from './WeekView';
 const MAX = 3;
 const SLEEP_TYPE = 'application/x-sl-item';
 
-/** Maandweergave: 6×7 dagen, maximaal 3 items per dag, daarna "+N". Klik op een dag = week. */
+/** Maandweergave: 6×7 dagen, maximaal 3 items per dag, daarna "+N". Klik op een dag = week (telefoon: die dag). */
 export function MaandView({
   dagen,
   maand,
@@ -70,7 +70,9 @@ export function MaandView({
               key={d}
               className={`ag-maand-dag${m !== maand ? ' is-buiten' : ''}${d === vandaag ? ' is-vandaag' : ''}${drop === d ? ' is-drop' : ''}`}
               onClick={(e) => {
-                if (e.target === e.currentTarget) onKiesDag(d);
+                // Klik naast een item (ook op de telefoon, waar de items alleen streepjes zijn
+                // en de hele dag één tikvlak is: agenda.css) opent die dag.
+                if (!(e.target as HTMLElement).closest('button')) onKiesDag(d);
               }}
               onDragOver={(e) => {
                 const t = e.dataTransfer.types;

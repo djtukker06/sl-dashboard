@@ -346,6 +346,39 @@ function Mail({
     };
   }, [ververs]);
 
+  // Telefoon: de terugknop of het terugveeggebaar van het toestel gaat van het leesvenster
+  // terug naar de lijst (in plaats van Mail te verlaten). Bij het openen van het leesvenster
+  // komt er één stap in de geschiedenis bij (vóór het bijwerken van het adres hieronder, zodat
+  // de vorige stap het adres van de lijst houdt); gaat het venster op een andere manier dicht
+  // (Terug-knop, archiveren), dan halen we die stap weer weg.
+  const lezerStap = useRef(false);
+  const lezerOpen = smal && paneel === 'lezer';
+  useEffect(() => {
+    if (lezerOpen && !lezerStap.current) {
+      lezerStap.current = true;
+      window.history.pushState({ ...window.history.state, mlLezer: true }, '');
+    } else if (!lezerOpen && lezerStap.current) {
+      lezerStap.current = false;
+      if (window.history.state?.mlLezer) window.history.back();
+    }
+  }, [lezerOpen]);
+  const opstelOpen = opstel != null;
+  useEffect(() => {
+    const terug = () => {
+      if (!lezerStap.current) return;
+      if (opstelOpen) {
+        // Niet stil een concept weggooien: de stap terugzetten; sluiten gaat via Sluiten.
+        window.history.pushState({ ...window.history.state, mlLezer: true }, '');
+        return;
+      }
+      lezerStap.current = false;
+      setPaneel('lijst');
+      setSel(null);
+    };
+    window.addEventListener('popstate', terug);
+    return () => window.removeEventListener('popstate', terug);
+  }, [opstelOpen]);
+
   // Adres in de URL bijhouden (zonder navigatie), zodat verversen/delen hetzelfde bericht toont.
   useEffect(() => {
     const sp = new URLSearchParams();

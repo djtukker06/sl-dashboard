@@ -285,7 +285,7 @@ body.sl-met-rail { grid-template-columns: var(--sl-rail-w) 272px 1fr; }
   .sl-rail-nav li { flex: 1; display: flex; }
   .sl-rail-item { flex: 1; justify-content: center; margin: 6px 2px; padding: 6px 0; gap: 6px; }
   .sl-rail-item::before { left: 25%; right: 25%; top: -7px; bottom: auto; width: auto; height: 2px; }
-  /* Acht tabs op een telefoon: labels iets kleiner en nooit over de buren heen. */
+  /* Labels iets kleiner en nooit over de buren heen. */
   .sl-rail-nav li, .sl-rail-item { min-width: 0; }
   .sl-rail-label { max-width: 100%; overflow: hidden; text-overflow: ellipsis; font-size: 8.5px; letter-spacing: 0.02em; }
   .sl-rail-badge { top: 0; left: calc(50% + 4px); }
@@ -297,6 +297,102 @@ body.sl-met-rail { grid-template-columns: var(--sl-rail-w) 272px 1fr; }
   /* social: rail valt uit de grid, de eigen kolommen houden hun ruimte */
   body.sl-met-rail { grid-template-columns: 220px 1fr; padding-bottom: calc(var(--sl-tab-h) + env(safe-area-inset-bottom)); }
   body.sl-met-rail > .sidebar, body.sl-met-rail > main { height: calc(100vh - var(--sl-tab-h)); }
+}
+
+/* De modules onder "Meer" en het label "Meer" bestaan alleen op de telefoon (zie hieronder). */
+.sl-account-modules[hidden], .sl-account-meer[hidden] { display: none; }
+
+/* ---------- telefoon (≤ 720px): vijf tabs + "Meer" ----------
+   Hier en niet in app.css, zodat /social (laadt alleen deze shell.css) dezelfde tabbalk krijgt. */
+@media (max-width: 720px) {
+  .sl-rail { padding-left: env(safe-area-inset-left, 0px); padding-right: env(safe-area-inset-right, 0px); }
+  /* Vijf modules in de balk (lib/shell/rail.ts: MOBIEL_HOOFD); de rest onder "Meer". */
+  .sl-rail-neven { display: none !important; }
+  /* Zes even brede vakken: de lijst krijgt vijf delen, "Meer" één (houd gelijk aan MOBIEL_HOOFD). */
+  .sl-rail-nav { flex: 5 1 0; min-width: 0; }
+  .sl-rail-item { margin: 6px 1px; padding: 8px 0 6px; }
+  .sl-rail-label { font-size: 9px; letter-spacing: 0.03em; }
+  /* Langste label: past zo nog net op 375px (zes vakken van ±62px). */
+  .sl-rail-item[href="/boekhouding"] .sl-rail-label { font-size: 8.5px; letter-spacing: -0.02em; }
+
+  /* Het accountvak wordt het zesde tabvak "Meer" (avatar + label), even breed als de rest. */
+  .sl-rail-foot { flex: 1 1 0; display: flex; min-width: 0; padding: 0; }
+  .sl-account { flex: 1; display: flex; min-width: 0; position: static; }
+  .sl-account-knop {
+    position: relative;
+    flex: 1;
+    justify-content: center;
+    min-width: 0;
+    margin: 6px 1px;
+    padding: 7px 0 6px;
+    gap: 5px;
+    transition: color .2s var(--sl-ease), background-color .2s var(--sl-ease);
+  }
+  .sl-avatar { width: 22px; height: 22px; font-size: 9px; letter-spacing: 0; }
+  .sl-account-label:not(.sl-account-meer) { display: none; }
+  .sl-account-meer[hidden] { display: block; font-size: 9px; letter-spacing: 0.03em; }
+  .sl-account[open] .sl-account-knop { background: var(--sl-panel); }
+  /* Actief als je op een module onder "Meer" zit (bv. Scratchpad): zelfde streep als de tabs. */
+  .sl-rail:has(.sl-rail-neven .sl-rail-item[aria-current="page"]) .sl-account-knop { color: var(--sl-text); background: var(--sl-raise); }
+  .sl-rail:has(.sl-rail-neven .sl-rail-item[aria-current="page"]) .sl-account-knop::before {
+    content: "";
+    position: absolute;
+    left: 25%;
+    right: 25%;
+    top: -7px;
+    height: 2px;
+    background: var(--sl-sand);
+  }
+
+  /* Het menu opent als blad boven de tabbalk; de brede schaduw dimt de pagina eromheen
+     (een tik daarbuiten sluit het menu: public/shell/shell.js). */
+  .sl-account-pop {
+    position: fixed;
+    left: calc(8px + env(safe-area-inset-left, 0px));
+    right: calc(8px + env(safe-area-inset-right, 0px));
+    bottom: calc(var(--sl-tab-h) + env(safe-area-inset-bottom, 0px) + 8px);
+    min-width: 0;
+    max-height: calc(100dvh - var(--sl-tab-h) - env(safe-area-inset-bottom, 0px) - env(safe-area-inset-top, 0px) - 24px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 8px;
+    border-radius: 10px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, .5), 0 0 0 100vmax rgba(0, 0, 0, .45);
+  }
+  .sl-account-modules[hidden] {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+    list-style: none;
+    margin: 0 0 6px;
+    padding: 0 0 8px;
+    border-bottom: 1px solid var(--sl-line);
+  }
+  .sl-account-modules li { margin: 0; padding: 0; min-width: 0; }
+  .sl-account-module {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    min-height: 72px;
+    padding: 12px 4px;
+    border: 1px solid var(--sl-line-soft);
+    border-radius: var(--sl-r);
+    background: var(--sl-panel);
+    color: var(--sl-muted);
+    font-family: var(--sl-mono);
+    font-size: 10px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    text-decoration: none;
+    transition: color .2s var(--sl-ease), background-color .2s var(--sl-ease), border-color .2s var(--sl-ease);
+  }
+  .sl-account-module > span:last-child { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sl-account-module:active, .sl-account-module:hover { color: var(--sl-text); background: var(--sl-raise); }
+  .sl-account-module[aria-current="page"] { color: var(--sl-text); background: var(--sl-raise); border-color: var(--sl-sand); }
+  .sl-account-module:focus-visible { outline: none; box-shadow: var(--sl-focus); }
+  .sl-account-link { display: flex; align-items: center; min-height: 44px; padding: 10px 12px; font-size: 15px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

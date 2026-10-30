@@ -430,8 +430,9 @@ input.ag-snel-veld {
 .ag {
   display: grid;
   grid-template-columns: 360px minmax(0, 1fr);
+  /* Precies het scherm onder de modulekop (--sl-scherm-h: zonder statusbalk en tabbalk, app.css). */
   height: calc(100vh - var(--sl-head-h));
-  height: calc(100dvh - var(--sl-head-h));
+  height: calc(var(--sl-scherm-h, 100dvh) - var(--sl-head-h));
   min-height: 520px;
   background: var(--sl-bg);
   color: var(--sl-text);
@@ -442,7 +443,8 @@ input.ag-snel-veld {
   flex-direction: column;
   gap: 14px;
   min-height: 0;
-  padding: 20px 20px 12px 24px;
+  /* Links op één lijn met de titel in de modulekop (--sl-gutter, app.css). */
+  padding: 20px 20px 12px var(--sl-gutter, 24px);
   border-right: 1px solid var(--sl-line);
 }
 .ag-lijst { display: flex; flex-direction: column; min-height: 0; flex: 1; }
@@ -494,7 +496,7 @@ input.ag-snel-veld {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 14px 24px;
+  padding: 14px var(--sl-gutter, 24px) 14px 24px;
   border-bottom: 1px solid var(--sl-line);
 }
 .ag-nav { display: flex; align-items: center; gap: 6px; min-width: 0; }
@@ -805,7 +807,7 @@ input.ag-snel-veld {
   top: 0;
   right: 0;
   bottom: 0;
-  width: min(440px, 100vw);
+  width: min(440px, 100%);
   background: var(--sl-panel);
   border-left: 1px solid var(--sl-line);
   box-shadow: -24px 0 60px rgba(0, 0, 0, .4);
@@ -839,11 +841,12 @@ input.ag-snel-veld {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 12px;
   padding: 14px 24px calc(14px + env(safe-area-inset-bottom));
   border-top: 1px solid var(--sl-line);
 }
-.ag-paneel-acties { display: flex; gap: 8px; }
+.ag-paneel-acties { display: flex; flex-wrap: wrap; gap: 8px; margin-left: auto; }
 .ag-zeker { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 13px; color: var(--sl-danger); }
 .ag-klant { position: relative; }
 .ag-klant-gekozen { display: flex; align-items: center; gap: 12px; min-height: 38px; }
@@ -930,6 +933,9 @@ input.ag-snel-veld {
   .ag { grid-template-columns: 300px minmax(0, 1fr); }
   .ag-toetsen { display: none; }
 }
+
+/* Telefoon (≤ 720px): één kolom met de wissel Taken | Agenda in de kop; de agenda opent
+   standaard op één dag (AgendaApp: Weergave), de week toont drie dagen. */
 @media (max-width: 720px) {
   .ag {
     grid-template-columns: minmax(0, 1fr);
@@ -937,10 +943,12 @@ input.ag-snel-veld {
     min-height: 0;
   }
   .ag-links, .ag-rechts { display: none; }
-  .ag-toon-taken .ag-links { display: flex; border-right: 0; padding: 16px; }
-  .ag-toon-agenda .ag-rechts { display: flex; height: calc(100dvh - 150px - var(--sl-tab-h)); min-height: 440px; }
-  .ag-lijst-inhoud { overflow: visible; }
-  .ag-mobiel-tabs { display: inline-flex; padding: 2px; border: 1px solid var(--sl-line); border-radius: var(--sl-r); }
+  .ag-toon-taken .ag-links { display: flex; border-right: 0; padding: 16px var(--sl-gutter, 16px) 24px; }
+  /* Schermvullend onder de kop (±128px: label, titel en één rij knoppen); de uren scrollen
+     binnen de agenda, de rest van de pagina staat stil. */
+  .ag-toon-agenda .ag-rechts { display: flex; height: calc(var(--sl-scherm-h, 100dvh) - 128px); min-height: 420px; }
+  .ag-lijst-inhoud { overflow: visible; margin-right: 0; padding-right: 0; }
+  .ag-mobiel-tabs { display: inline-flex; margin-left: auto; padding: 2px; border: 1px solid var(--sl-line); border-radius: var(--sl-r); }
   .ag-mobiel-tabs button {
     padding: 6px 16px;
     border: 0;
@@ -952,19 +960,115 @@ input.ag-snel-veld {
     font-weight: 500;
   }
   .ag-mobiel-tabs button[aria-selected="true"] { background: var(--sl-raise); color: var(--sl-text); }
-  .ag-balk-boven { padding: 10px 12px; flex-wrap: wrap; gap: 8px; }
-  .ag-titel { font-size: 16px; margin-left: 4px; }
+  /* Navigatie op de eerste regel, de weergave (Dag · 3 dagen · Maand) over de hele breedte eronder. */
+  .ag-balk-boven { padding: 8px var(--sl-gutter, 12px); flex-wrap: wrap; gap: 8px; }
+  .ag-nav { flex: 1 1 100%; }
+  .ag-titel { flex: 1; min-width: 0; font-size: 16px; margin-left: 4px; }
   .ag-titel-week { display: none; }
-  .ag-week { --ag-gutter: 40px; }
-  .ag-maand-raster { grid-template-rows: repeat(6, minmax(64px, 1fr)); }
-  .ag-maand-item { font-size: 10.5px; padding: 1px 3px; }
+  .ag-balk-boven .ag-segment { flex: 1 1 100%; }
+  .ag-week { --ag-gutter: 44px; }
+  .ag-week-gutter-label { padding-right: 4px; font-size: 8.5px; text-align: right; }
+  .ag-week-dag { padding: 8px 2px; }
+
+  /* Maand: zeven smalle kolommen. Per dag het nummer en per item een streepje (afspraak
+     zand, taak omlijnd); de titels blijven voor schermlezers. Een tik op de dag opent die
+     dag met alle details (MaandView: de hele cel is één tikvlak). */
+  .ag-maand-kop span { padding: 6px 0; text-align: center; font-size: 9.5px; }
+  .ag-maand-raster { grid-template-rows: repeat(6, minmax(58px, 1fr)); }
+  .ag-maand-dag { align-items: center; gap: 4px; padding: 4px 3px 6px; }
+  .ag-maand-nr { align-self: center; min-width: 28px; height: 28px; font-size: 13px; }
+  .ag-maand-items { width: 100%; gap: 3px; justify-items: stretch; }
+  .ag-maand-item, .ag-maand-meer { pointer-events: none; }
+  .ag-maand-item { position: relative; display: block; height: 4px; padding: 0; border-radius: 2px; overflow: hidden; }
+  .ag-maand-afspraak { background: var(--sl-sand); box-shadow: none; }
+  .ag-maand-taak { box-shadow: inset 0 0 0 1px var(--sl-muted); }
+  .ag-maand-taak::before { content: none; }
+  .ag-maand-item.is-af { opacity: .4; }
   .ag-maand-tijd { display: none; }
+  .ag-maand-titel {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .ag-maand-meer { width: 100%; padding: 0; font-size: 9px; letter-spacing: 0; text-align: center; }
+
   .ag-snel-suggesties { left: 0; right: 0; min-width: 0; }
-  .ag-paneel { width: 100vw; border-left: 0; }
+  .ag-paneel { width: 100%; border-left: 0; }
+  .ag-paneel-kop { padding-left: 16px; padding-right: 8px; }
+  .ag-paneel-inhoud { padding: 18px 16px 24px; }
+  .ag-paneel-voet { padding: 12px 16px calc(12px + env(safe-area-inset-bottom)); }
   .ag-velden-2 { grid-template-columns: 1fr; }
-  .ag-toasts { bottom: calc(var(--sl-tab-h) + 12px + env(safe-area-inset-bottom)); }
+  .ag-toasts { bottom: calc(var(--sl-onder, 0px) + 12px); }
+  /* Lange meldingen op de telefoon niet afkappen maar laten doorlopen (max. drie regels). */
+  .ag-toast { align-items: center; }
+  .ag-toast > span {
+    white-space: normal;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+  }
   .ag-snel-knop { padding: 7px 10px; }
-  .ag-setup { padding: 32px 16px; }
+  .ag-setup { padding: 32px var(--sl-gutter, 16px); }
+}
+
+/* Aanraakschermen: doelen van minstens 40px, sneltoetshints weg (geen toetsenbord), en
+   blokken in de week laten de pagina scrollen i.p.v. te slepen (tikken opent ze nog wel). */
+@media (pointer: coarse), (max-width: 720px) {
+  .ag-segment button, .ag-tab, .ag-mobiel-tabs button { min-height: 40px; }
+  .ag-link-knop { display: inline-flex; align-items: center; min-height: 40px; }
+  .ag-vink:not(.ag-vink-klein) { position: relative; }
+  .ag-vink:not(.ag-vink-klein)::after { content: ""; position: absolute; inset: -11px; border-radius: 50%; }
+  .ag-taak { padding-top: 9px; padding-bottom: 9px; }
+  .ag-chip-x { width: 24px; height: 24px; }
+  .ag-schakel { min-height: 40px; }
+  .ag-schakel input { width: 20px; height: 20px; }
+  .ag-suggestie { min-height: 44px; align-content: center; }
+  .ag-toast-actie, .ag-toast-sluit { min-width: 40px; min-height: 40px; }
+  .ag-week-dag { min-height: 44px; }
+  .ag-maand-nr { min-width: 32px; height: 32px; }
+}
+@media (pointer: coarse) {
+  .ag-toetsen { display: none; }
+  .ag-blok { touch-action: manipulation; }
+}
+
+/* ---------- dashboard: indeling ---------- */
+/* Back-upmelding (alleen eigenaar) over de volle breedte van het grid, uitgelijnd met de kaarten. */
+.db-grid > .db-backup { grid-column: 1 / -1; margin: 0; }
+
+@media (pointer: coarse), (max-width: 720px) {
+  /* De "Alles →"-link is hier 40px hoog (app.css); de kop blijft daardoor compact. */
+  .db-grid .db-kaart-kop { min-height: 52px; box-sizing: border-box; padding-top: 6px; padding-bottom: 6px; }
+}
+@media (max-width: 720px) {
+  /* Snelknoppen in de kop: twee per regel, even breed (zes knoppen = drie nette rijen). */
+  .db > .sl-kop .sl-kop-acties > .db-knop { flex: 1 1 calc(50% - 4px); }
+  /* "+ Bonnetje" en de cameraknop delen samen één halve breedte (camera als icoon), zodat
+     het rooster van twee per regel heel blijft. */
+  .db > .sl-kop .sl-kop-acties > .db-knop:has(+ .ug-camera-knop) { flex: 1 1 calc(50% - 60px); }
+  .db > .sl-kop .sl-kop-acties > .ug-camera-knop { flex: 0 0 48px; padding-inline: 0; justify-content: center; }
+  .db > .sl-kop .sl-kop-acties > .ug-camera-knop .ug-camera-label { display: none; }
+  .db-grid .db-kaart-kop { padding-left: 16px; padding-right: 16px; }
+  .db-grid .db-kaart-inhoud { padding: 16px; }
+  .db-tijdlijn { grid-template-columns: 42px minmax(0, 1fr); }
+}
+
+/* Grote monitor (≥ 1920px, inhoud 1600px breed): drie kolommen i.p.v. twee.
+     rij 1: Vandaag (5) · Deze week (3) · Taken (4)
+     rij 2: Inbox (3) · Recente posts (5) · Opvolgen/projecten/facturen/bonnetjes (4)
+     rij 3: Scratchpad (8), naast de doorlopende stapel (notities.css)
+   Vaste kolommen, zodat een ontbrekende kaart geen gat verderop in het grid schuift. */
+@media (min-width: 1920px) {
+  .db-grid > .db-vandaag { grid-column: 1 / span 5; }
+  .db-grid > .db-week-stapel { grid-column: 6 / span 3; }
+  .db-grid > .db-taken { grid-column: 9 / span 4; }
+  .db-grid > .db-inbox { grid-column: 1 / span 3; }
+  .db-grid > .db-social { grid-column: 4 / span 5; }
+  .db-grid > .db-stapel:not(.db-week-stapel) { grid-column: 9 / span 4; }
+  .db-grid > .db-social .db-posts { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 @media (prefers-reduced-motion: reduce) {
   .ag-chip, .ag-toast, .ag-paneel, .ag-paneel-achter, .ag-popover, .ag-vink[aria-checked="true"], .ag-laadt { animation: none; }

@@ -69,6 +69,7 @@ export function NotitieScherm({
 
   const editor = useRef<Editor | null>(null);
   const titelRef = useRef<HTMLTextAreaElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
   const basis = useRef(notitie.bewerktOp);
   const titelNu = useRef(notitie.titel);
   /** Inhoud die net in de editor is gezet (concept terug) zolang de nieuwe editor er nog niet is. */
@@ -360,6 +361,29 @@ export function NotitieScherm({
     setStatus('opgeslagen');
   }
 
+  // Het menu "Meer acties" sluit bij een tik/klik ernaast of Esc (ook op de telefoon).
+  useEffect(() => {
+    if (!menu) return;
+    function buiten(e: PointerEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenu(false);
+        setZeker(false);
+      }
+    }
+    function toets(e: KeyboardEvent) {
+      if (e.key === 'Escape') {
+        setMenu(false);
+        setZeker(false);
+      }
+    }
+    document.addEventListener('pointerdown', buiten);
+    document.addEventListener('keydown', toets);
+    return () => {
+      document.removeEventListener('pointerdown', buiten);
+      document.removeEventListener('keydown', toets);
+    };
+  }, [menu]);
+
   async function verwijder() {
     setMenu(false);
     setZeker(false);
@@ -388,7 +412,7 @@ export function NotitieScherm({
               <path d="M9 3.5h6l-1 5 3.5 3.5v1.5h-11V12L10 8.5z" />
               <path d="M12 13.5V20" strokeLinecap="round" />
             </svg>
-            {vastgepind ? 'Vastgepind' : 'Vastpinnen'}
+            <span className="sp-meta-tekst">{vastgepind ? 'Vastgepind' : 'Vastpinnen'}</span>
           </button>
           <button
             type="button"
@@ -411,9 +435,9 @@ export function NotitieScherm({
                 </>
               )}
             </svg>
-            {prive ? 'Privé' : 'Team'}
+            <span className="sp-meta-tekst">{prive ? 'Privé' : 'Team'}</span>
           </button>
-          <div className="sp-menu">
+          <div className="sp-menu" ref={menuRef}>
             <button type="button" className="sp-meta-knop" aria-label="Meer acties" aria-haspopup="menu" aria-expanded={menu} onClick={() => { setMenu((m) => !m); setZeker(false); }}>
               ···
             </button>

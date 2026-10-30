@@ -65,7 +65,7 @@ function filterBlokken(q: string, metBijlagen: boolean): Blok[] {
 
 type Upload = { id: number; naam: string };
 
-type Slash = { van: number; tot: number; query: string; x: number; y: number; boven: boolean };
+type Slash = { van: number; tot: number; query: string; x: number; y: number; boven: boolean; hoogte: number };
 
 /** Staat de cursor direct na een "/" (aan het begin of na een spatie)? Dan het menu tonen. */
 function zoekSlash(editor: Editor, genegeerd: number | null): Slash | null {
@@ -79,15 +79,22 @@ function zoekSlash(editor: Editor, genegeerd: number | null): Slash | null {
   const van = selection.from - m[1].length - 1;
   if (van === genegeerd) return null;
   const c = editor.view.coordsAtPos(selection.from);
-  const hoogte = 330;
-  const boven = c.bottom + hoogte > window.innerHeight - 8 && c.top > hoogte;
+  // Op de telefoon neemt het toetsenbord een deel van het scherm in: reken met het zichtbare
+  // deel (visualViewport), anders valt het menu achter het toetsenbord.
+  const vv = window.visualViewport;
+  const zichtOnder = vv ? vv.offsetTop + vv.height : window.innerHeight;
+  const zichtBoven = vv ? vv.offsetTop : 0;
+  const hoogte = Math.min(330, Math.max(160, (zichtOnder - zichtBoven) * 0.45));
+  const boven = c.bottom + hoogte > zichtOnder - 8 && c.top - zichtBoven > hoogte;
+  const breedte = Math.min(260, window.innerWidth - 16);
   return {
     van,
     tot: selection.from,
     query: m[1],
-    x: Math.max(8, Math.min(c.left, window.innerWidth - 268)),
+    x: Math.max(8, Math.min(c.left, window.innerWidth - breedte - 8)),
     y: boven ? c.top - 6 : c.bottom + 6,
-    boven
+    boven,
+    hoogte
   };
 }
 
@@ -259,7 +266,13 @@ export function NotitieEditor({
     onSelectionUpdate: ({ editor: e }) => {
       if (slashRef.current.s) setSlash(zoekSlash(e, genegeerd.current));
     },
-    onBlur: () => setSlash(null),
+    // Even wachten: op een aanraakscherm verliest de editor de focus al bij het aantikken van
+    // een blok in het menu, vóórdat de klik binnenkomt. Kies() zet de focus terug.
+    onBlur: () => {
+      window.setTimeout(() => {
+        if (!editorRef.current?.isFocused) setSlash(null);
+      }, 150);
+    },
     onTransaction: ({ transaction }) => {
       if (!transaction.docChanged || !plekken.current.size) return;
       for (const [id, p] of plekken.current) plekken.current.set(id, transaction.mapping.map(p));
@@ -331,7 +344,7 @@ export function NotitieEditor({
       {slash && (
         <div
           className={`sp-slash${slash.boven ? ' is-boven' : ''}`}
-          style={{ left: slash.x, top: slash.y }}
+          style={{ left: slash.x, top: slash.y, maxHeight: slash.hoogte }}
           role="listbox"
           aria-label="Blok kiezen"
           onMouseDown={(e) => e.preventDefault()}
@@ -370,6 +383,9 @@ export function NotitieEditor({
 
 /** De opmaakbalk boven een selectie (niet in een codeblok). */
 function OpmaakBalk({ editor }: { editor: Editor }) {
+  // Op een aanraakscherm staat het systeemmenu (kopiëren, plakken) al boven de selectie: de
+  // balk komt daar eronder. Alleen in de browser gerenderd (de editor bestaat pas na laden).
+  const [aanraak] = useState(() => typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches);
   const st = useEditorState({
     editor,
     selector: ({ editor: e }) => ({
@@ -411,6 +427,7 @@ function OpmaakBalk({ editor }: { editor: Editor }) {
     <BubbleMenu
       editor={editor}
       className="sp-balk"
+      options={{ placement: aanraak ? 'bottom' : 'top', offset: aanraak ? 14 : 8, flip: true, shift: { padding: 8 } }}
       shouldShow={({ editor: e, state }) => !state.selection.empty && e.isEditable && !e.isActive('codeBlock') && !(state.selection instanceof NodeSelection)}
     >
       {knop('Kop 1', st.h1, () => editor.chain().focus().toggleHeading({ level: 1 }).run(), 'H1', 'is-tekst')}

@@ -346,7 +346,7 @@
 }
 .sl-overgang strong { font-weight: 700; }
 .sl-overgang code { font-family: var(--sl-mono); font-size: 12px; color: var(--sl-sand); }
-@media (max-width: 760px) {
+@media (max-width: 720px) {
   .sl-overgang { padding: 10px 16px; }
 }
 
@@ -436,7 +436,7 @@
 .sl-main .bh-tabs,
 .sl-main .ug-tabs { padding-inline: var(--sl-uitlijn); }
 
-@media (max-width: 760px) {
+@media (max-width: 720px) {
   .sl-main { --sl-gutter: 16px; }
   /* Facturen houdt op smalle schermen zijn eigen 24px. */
   .sl-main:has(> .wrap) { --sl-gutter: 24px; }
@@ -548,3 +548,285 @@
 @media (prefers-reduced-motion: reduce) {
   .sl-shell.sl-welkom-aan .sl-welkom { display: none; }
 }
+
+/* ==========================================================
+   Responsive: breakpoints, shell op telefoon/groot scherm, hulpklassen
+   ----------------------------------------------------------
+   Breakpoints (vaste px-waarden; @custom-media werkt niet zonder extra build-stap,
+   dus gebruik overal precies deze getallen):
+     480   kleine telefoon        @media (max-width: 480px)
+     720   telefoon → tabbalk     @media (max-width: 720px)   (gelijk aan public/shell/shell.css)
+     960   tablet / kleine laptop @media (max-width: 960px)   (kolommen en zijpanelen stapelen)
+     1440  grote laptop           @media (min-width: 1440px)
+     1920  grote monitor          @media (min-width: 1920px)  (ruimere marges, bredere inhoud)
+   Aanraakscherm (ongeacht breedte): @media (pointer: coarse) — knoppen minstens 40px.
+
+   Tokens voor vaste balken en schermhoogte (op .sl-shell, dus overal in de app):
+     --sl-boven     ruimte boven (statusbalk/notch in de web-app op iOS)
+     --sl-onder     ruimte onder (mobiele tabbalk + thuisbalk; 0 op grotere schermen)
+     --sl-scherm-h  bruikbare hoogte = 100dvh − boven − onder (gebruik i.p.v. 100vh/100dvh)
+   Sticky onderbalken: bottom: var(--sl-onder).
+   ========================================================== */
+.sl-shell {
+  --sl-boven: env(safe-area-inset-top, 0px);
+  --sl-onder: 0px;
+  --sl-scherm-h: calc(100dvh - var(--sl-boven) - var(--sl-onder));
+  min-height: 100dvh;
+  box-sizing: border-box;
+  /* In de web-app (viewport-fit=cover, statusbalk doorzichtig) begint de inhoud onder de statusbalk. */
+  padding-top: var(--sl-boven);
+  -webkit-tap-highlight-color: transparent;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+/* Vlak achter de statusbalk, zodat wat eronder scrolt niet door de klok heen leesbaar is. */
+.sl-shell::before {
+  content: "";
+  position: fixed;
+  z-index: 250;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: var(--sl-boven);
+  background: var(--sl-bg);
+  pointer-events: none;
+}
+
+/* ---------- rail naast de inhoud (> 720px): safe areas (iPad/telefoon liggend) ---------- */
+@media (min-width: 721px) {
+  .sl-shell { grid-template-columns: calc(var(--sl-rail-w) + env(safe-area-inset-left, 0px)) minmax(0, 1fr); }
+  .sl-rail {
+    top: var(--sl-boven);
+    width: calc(var(--sl-rail-w) + env(safe-area-inset-left, 0px));
+    height: calc(100dvh - var(--sl-boven));
+    padding-left: env(safe-area-inset-left, 0px);
+  }
+  .sl-main { padding-right: env(safe-area-inset-right, 0px); }
+  /* Lage vensters (laptop met zoom, telefoon liggend): de rail scrolt zelf i.p.v. af te kappen. */
+  .sl-rail-nav { min-height: 0; overflow-y: auto; scrollbar-width: none; }
+  .sl-rail-nav::-webkit-scrollbar { display: none; }
+}
+@media (min-width: 721px) and (max-height: 640px) {
+  .sl-rail-logo { height: 64px; }
+  .sl-rail-nav { padding: 6px 0; }
+  .sl-rail-item { padding: 8px 2px 7px; gap: 5px; }
+}
+/* ---------- telefoon (≤ 720px): tabbalk onderaan + "Meer" ---------- */
+@media (max-width: 720px) {
+  .sl-shell { --sl-onder: calc(var(--sl-tab-h) + env(safe-area-inset-bottom, 0px)); }
+  /* Tabbalk, "Meer" en het accountmenu: public/shell/shell.css (ook voor /social). */
+
+  /* Modulekop: compact, acties op een eigen regel die mag doorlopen. */
+  .sl-kop { min-height: 0; padding-block: 16px; gap: 12px; }
+  .sl-kop-tekst { gap: 4px; }
+  .sl-kop-titel { font-size: 22px; overflow-wrap: anywhere; }
+  .sl-kop-acties { width: 100%; }
+
+  /* Meldingen boven de tabbalk i.p.v. erachter. */
+  .sl-shell .ag-toasts { bottom: calc(var(--sl-onder) + 12px); }
+}
+
+/* Zijpaneel (agenda, uitgaven, taken) en dialogen: niet onder de statusbalk of thuisbalk. */
+.sl-shell .ag-paneel { padding-top: var(--sl-boven); box-sizing: border-box; }
+.sl-shell .ug-dialoog { max-height: calc(100dvh - var(--sl-boven) - 48px); }
+
+/* ---------- aanraakschermen en telefoon: grotere doelen, geen iOS-zoom ---------- */
+@media (pointer: coarse), (max-width: 720px) {
+  .sl-shell .db-knop { min-height: 40px; justify-content: center; }
+  .sl-shell .ag-icoonknop { min-width: 40px; min-height: 40px; }
+  .sl-shell .db-kaart-link { display: inline-flex; align-items: center; min-height: 40px; }
+  .sl-shell .db-rij { min-height: 44px; }
+}
+@media (max-width: 720px) {
+  /* iOS zoomt in op velden met een kleinere letter dan 16px. Grote titelvelden houden hun maat. */
+  .sl-shell input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not(.ag-veld-titel):not(.ug-veld-groot),
+  .sl-shell select,
+  .sl-shell textarea:not(.ag-veld-titel) { font-size: 16px; }
+}
+
+/* ---------- subnavigatie (tabrijen): horizontaal vegen ---------- */
+/* Boekhouding, uitgaven en klanten: de tabs blijven op één regel en scrollen binnen hun eigen
+   balk (met momentum, zonder zichtbare scrollbalk). Het actieve tabblad schuift in beeld
+   (components/shell/ShellGedrag.tsx). Zelfde gedrag voor elke nieuwe rij met .sl-tabrij. */
+.sl-main .bh-tabs,
+.sl-main .ug-tabs,
+.sl-main .kl-tabs,
+.sl-tabrij {
+  display: flex;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+  scroll-snap-type: x proximity;
+  scrollbar-width: none;
+}
+.sl-main .ug-tabs::-webkit-scrollbar,
+.sl-main .kl-tabs::-webkit-scrollbar,
+.sl-tabrij::-webkit-scrollbar { display: none; }
+.sl-main .bh-tab,
+.sl-main .ug-tab,
+.sl-main .kl-tabs > *,
+.sl-tabrij > * { flex: none; white-space: nowrap; scroll-snap-align: start; }
+@media (max-width: 720px) {
+  /* Zachte rand rechts als er meer tabs zijn dan er passen (alleen als het past: de laatste
+     tab ligt dan toch al binnen de rand dankzij scroll-padding). */
+  .sl-main .bh-tabs,
+  .sl-main .ug-tabs,
+  .sl-tabrij {
+    scroll-padding-inline: 16px;
+    -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+    mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+  }
+  .sl-main .bh-tabs::after,
+  .sl-main .ug-tabs::after,
+  .sl-tabrij::after { content: ""; flex: 0 0 12px; }
+  .sl-main .bh-tab, .sl-main .ug-tab { display: inline-flex; align-items: center; min-height: 44px; padding-block: 0; }
+}
+
+/* ---------- grote monitoren (≥ 1920px): ruimere marges, iets bredere overzichten ---------- */
+@media (min-width: 1920px) {
+  .sl-main { --sl-gutter: 56px; }
+  .sl-main:has(.db-grid),
+  .sl-main:has(.bs),
+  .sl-main:has(.ug-inhoud) { --sl-inhoud: 1600px; }
+  .sl-main:has(.kp:not(.kp-breed)),
+  .sl-main:has(.bh-tegels) { --sl-inhoud: 1400px; }
+  .sl-main:has(.bh-inhoud) { --sl-inhoud: 1480px; }
+  .sl-main:has(.kp-breed) { --sl-inhoud: 100%; }
+  .sl-main:has(> .wrap) { --sl-inhoud: 980px; --sl-gutter: 24px; }
+  .sl-main:has(.ac-inhoud) { --sl-inhoud: 940px; }
+  .sl-main:has(.bh-instellingen) { --sl-inhoud: 1060px; }
+  .db-grid { gap: 28px; }
+}
+
+/* ==========================================================
+   Gedeelde responsive hulpklassen (voor alle modules)
+   ========================================================== */
+
+/* Brede inhoud (tabel, tijdlijn) die binnen zijn eigen kader horizontaal scrolt, nooit de
+   hele pagina. <div class="sl-scroll-x"><table>…</table></div> */
+.sl-scroll-x {
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: var(--sl-line) transparent;
+}
+.sl-scroll-x > table { min-width: 100%; }
+.sl-scroll-x::-webkit-scrollbar { height: 6px; }
+.sl-scroll-x::-webkit-scrollbar-thumb { background: var(--sl-line); border-radius: 999px; }
+
+/* Tabel die op de telefoon (≤ 720px) een stapel kaarten wordt: elke rij een kaart, elke cel
+   een regel "label · waarde". Het label komt uit data-label op de <td>.
+   <table class="sl-stapeltabel"><thead>…</thead><tbody><tr><td data-label="Datum">…</td>…
+   Cellen met .sl-stapel-kop worden de kop van de kaart (zonder label, vet);
+   .sl-stapel-acties zet knoppen onderaan de kaart. */
+@media (max-width: 720px) {
+  .sl-stapeltabel, .sl-stapeltabel tbody, .sl-stapeltabel tr, .sl-stapeltabel td { display: block; width: auto; }
+  .sl-stapeltabel thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .sl-stapeltabel tbody { display: grid; gap: 10px; }
+  .sl-stapeltabel tr {
+    padding: 12px 14px;
+    border: 1px solid var(--sl-line);
+    border-radius: var(--sl-r);
+    background: var(--sl-panel);
+  }
+  .sl-stapeltabel td {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 16px;
+    padding: 6px 0 !important;
+    border: 0 !important;
+    text-align: right;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .sl-stapeltabel td[data-label]::before {
+    content: attr(data-label);
+    flex: none;
+    max-width: 45%;
+    font-family: var(--sl-mono);
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    text-align: left;
+    color: var(--sl-muted);
+  }
+  .sl-stapeltabel td:empty { display: none; }
+  .sl-stapeltabel td.sl-stapel-kop { display: block; padding-bottom: 8px !important; font-size: 15px; font-weight: 600; text-align: left; }
+  .sl-stapeltabel td.sl-stapel-kop::before { content: none; }
+  .sl-stapeltabel td.sl-stapel-acties { justify-content: flex-start; flex-wrap: wrap; gap: 8px; padding-top: 10px !important; }
+  .sl-stapeltabel td.sl-stapel-acties::before { content: none; }
+}
+
+/* Raster van kaarten dat zich zelf vult: zoveel kolommen als er passen, minimaal
+   --sl-raster-min breed (standaard 260px). Op een telefoon vanzelf één kolom. */
+.sl-raster {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(var(--sl-raster-min, 260px), 100%), 1fr));
+  gap: var(--sl-raster-gat, 16px);
+}
+/* Vaste kolommen die stapelen: 2 → 1 (≤ 720px), 3 → 2 (≤ 960px) → 1 (≤ 720px). */
+.sl-kolommen-2, .sl-kolommen-3 { display: grid; gap: var(--sl-raster-gat, 16px); }
+.sl-kolommen-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.sl-kolommen-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+/* Inhoud + zijpaneel (bv. lijst + details): naast elkaar, op ≤ 960px onder elkaar. */
+.sl-met-zij {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--sl-zij-w, 340px);
+  gap: var(--sl-raster-gat, 24px);
+  align-items: start;
+}
+@media (max-width: 960px) {
+  .sl-kolommen-3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .sl-met-zij { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 720px) {
+  .sl-kolommen-2, .sl-kolommen-3 { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* Werkbalk (filters, zoeken, knoppen): loopt door naar een volgende regel i.p.v. buiten beeld.
+   .sl-balk-groei krijgt de resterende ruimte (bv. het zoekveld); op de telefoon vult elk
+   .sl-balk-groei-element de hele regel. */
+.sl-balk { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
+.sl-balk-groei { flex: 1 1 220px; min-width: 0; }
+.sl-balk-eind { margin-left: auto; }
+@media (max-width: 720px) {
+  .sl-balk-groei { flex-basis: 100%; }
+  .sl-balk-eind { margin-left: 0; }
+}
+
+/* Rij die op de telefoon een kolom wordt (bv. label + waarde, knoppen naast elkaar). */
+.sl-rij-stapel { display: flex; align-items: center; gap: 12px; min-width: 0; }
+@media (max-width: 720px) {
+  .sl-rij-stapel { flex-direction: column; align-items: stretch; }
+}
+
+/* Actiebalk die op de telefoon onderaan blijft staan, boven de tabbalk (formulieren). */
+.sl-onderbalk {
+  position: sticky;
+  z-index: 20;
+  bottom: var(--sl-onder, 0px);
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 0;
+  background: var(--sl-bg);
+  border-top: 1px solid var(--sl-line);
+}
+
+/* Andere weergave per schermformaat (bv. kort label op de telefoon). Niet gebruiken om
+   inhoud weg te laten: beide varianten moeten dezelfde informatie geven. */
+@media (max-width: 720px) { .sl-niet-mobiel { display: none !important; } }
+@media (min-width: 721px) { .sl-alleen-mobiel { display: none !important; } }

@@ -774,8 +774,12 @@ select.pb-status:focus-visible { outline: none; box-shadow: var(--sl-focus); }
    Responsive
    ========================================================== */
 @media (max-width: 1180px) {
-  .kl-kop, .kl-rij { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, .9fr) minmax(0, 1.4fr); }
-  .kl-kop > :nth-child(4), .kl-rij > :nth-child(4) { display: none; }
+  /* Smallere kolommen, maar "Laatste contact" blijft zichtbaar. */
+  .kl-kop, .kl-rij {
+    grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, .9fr) minmax(0, .7fr) minmax(0, 1.3fr);
+    gap: 12px;
+    padding: 0 14px;
+  }
   .pb-regel { grid-template-columns: minmax(0, 2fr) minmax(60px, .5fr) minmax(100px, .8fr) minmax(120px, 1fr) 130px; }
 }
 @media (max-width: 1080px) {
@@ -795,19 +799,23 @@ select.pb-status:focus-visible { outline: none; box-shadow: var(--sl-focus); }
   .kl-rij > .kl-cel-naam { grid-column: 1 / -1; padding: 0; }
   .kl-rij > :nth-child(2) { grid-column: 1; }
   .kl-rij > :nth-child(3) { grid-column: 2; grid-row: 2; }
-  .kl-rij > :nth-child(4) { display: none; }
+  /* Laatste contact: eigen regel met label ("Contact 3 d geleden"). */
+  .kl-rij > :nth-child(4) { grid-column: 1 / -1; font-size: 12px; }
+  .kl-mlabel { display: inline; font-family: var(--sl-mono); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; }
   .kl-rij > .kl-cel-opvolg { grid-column: 1 / -1; }
   .kl-rij > .kl-cel-opvolg:empty { display: none; }
   /* Projectlijst → gestapelde rijen */
   .pb-regel { grid-template-columns: minmax(0, 1fr) auto; gap: 6px 12px; padding: 10px 14px; }
   .pb-regel-naam { grid-column: 1 / -1; padding: 0; }
-  .pb-regel-cel:nth-child(2) { display: none; }
+  /* Eigenaren rechtsonder (niet weglaten), status rechtsboven. */
+  .pb-regel-cel:nth-child(2) { grid-column: 2; grid-row: 3; justify-content: flex-end; }
   .pb-regel-cel:nth-child(3) { grid-column: 1; grid-row: 2; }
   .pb-regel-cel:nth-child(4) { grid-column: 1; grid-row: 3; }
-  .pb-regel-status { grid-column: 2; grid-row: 2 / span 2; }
+  .pb-regel-status { grid-column: 2; grid-row: 2; }
 }
-@media (max-width: 760px) {
-  .kp { padding: 16px 16px 40px; gap: 16px; }
+@media (max-width: 720px) {
+  /* Zijmarge komt uit --sl-gutter (app.css: 16px op de telefoon). */
+  .kp { padding: 16px var(--sl-gutter, 16px) 40px; gap: 16px; }
   .kp-hoofd, .kp-zij { gap: 16px; }
   .kp-form-rij { grid-template-columns: minmax(0, 1fr); }
   .kp-rij { flex-wrap: wrap; }
@@ -824,7 +832,19 @@ select.pb-status:focus-visible { outline: none; box-shadow: var(--sl-focus); }
   .kl-lead .kp-opvolg { grid-template-columns: minmax(0, 1fr); }
   .kl-lead .kp-opvolg .ag-veld { border-color: var(--sl-line-soft); }
   .kp-velden .kp-veld:last-child { grid-column: auto; }
-  .pb-bord { grid-template-columns: repeat(4, 84vw); gap: 10px; scroll-snap-type: x mandatory; margin: 0 -16px; padding: 0 16px 4px; scroll-padding: 0 16px; }
+  /* Bord: één kolom per scherm, vegen met snap; de kolom loopt tot de schermrand door. */
+  .pb-bord {
+    grid-template-columns: repeat(4, calc(100vw - 2 * var(--sl-gutter, 16px) - 24px));
+    gap: 10px;
+    scroll-snap-type: x mandatory;
+    margin-inline: calc(-1 * var(--sl-gutter, 16px));
+    padding: 0 var(--sl-gutter, 16px) 4px;
+    scroll-padding-inline: var(--sl-gutter, 16px);
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+  }
+  .pb-bord::-webkit-scrollbar { display: none; }
+  .pb-kolom { scroll-snap-stop: always; }
   .pb-hint { display: none; }
   .pb-balk { align-items: stretch; }
   .pb-zoek { width: 100%; }
@@ -832,6 +852,70 @@ select.pb-status:focus-visible { outline: none; box-shadow: var(--sl-focus); }
   .kp-stappen { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .kp-afgerond-melding, .kp-leadbanner { padding: 12px 14px; }
   .kp-contactacties .db-knop { padding: 7px 12px; }
+  .kp-contactacties { flex-wrap: wrap; }
+  .kp-leadacties { width: 100%; }
+  .kp-kop-acties { flex-wrap: wrap; justify-content: flex-end; }
+  .kp-form-acties { flex-wrap: wrap; }
+  .kp-opvolg-datum .ag-veld { min-width: 0; }
+  .kl-lead .kp-opvolg-datum { grid-template-columns: minmax(0, 1fr) auto; align-items: center; }
+  .kl-lead .kp-opvolg-datum .ag-veld { width: 100%; }
+  .kp-notitie-voet { flex-wrap: wrap; }
+}
+
+/* Kolomkiezer boven het bord (alleen telefoon): toont welke kolom in beeld is. */
+.pb-kolomkiezer { gap: 6px; margin: -4px 0 -2px; }
+.pb-kolomknop {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 40px;
+  padding: 0 12px;
+  border: 1px solid var(--sl-line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--sl-muted);
+  font-family: var(--sl-font);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color .15s var(--sl-ease), color .15s var(--sl-ease), border-color .15s var(--sl-ease);
+}
+.pb-kolomknop.is-aan { background: var(--sl-raise); color: var(--sl-text); border-color: var(--sl-muted); }
+.pb-kolomknop:focus-visible { outline: none; box-shadow: var(--sl-focus); }
+
+/* Aanraakschermen: kleine knoppen, chips en potloodjes minstens 40px. */
+@media (pointer: coarse), (max-width: 720px) {
+  .kp-chip { min-height: 40px; padding: 0 14px; font-size: 13px; }
+  .db-knop-klein { min-height: 40px; padding: 0 12px; }
+  .kp-segment a { display: inline-flex; align-items: center; justify-content: center; min-height: 36px; }
+  .kp-inline-potlood { width: 40px; height: 40px; opacity: 1; }
+  .kp-titel-potlood { opacity: 1; }
+  .kp-linkknop { min-height: 40px; display: inline-flex; align-items: center; }
+  .kp-inline-leeg { min-height: 40px; }
+  .kl-tab { min-height: 44px; }
+  .kl-nieuw-veld, .kl-zoek-veld, .pb-zoek .kl-zoek-veld { height: 44px; }
+  .pb-select { min-height: 40px; }
+  select.pb-status { min-height: 40px; padding-top: 8px; padding-bottom: 8px; }
+  /* Terug- en klantlinks in de kop ("← Klanten", "← Projecten · Klant"), de titel-als-knop
+     en de factuurlinks in de tijdlijn: tikvlak van 40px zonder dat de tekst verschuift. */
+  .sl-kop-label a { display: inline-flex; align-items: center; min-height: 40px; }
+  .kp-titelknop { min-height: 40px; }
+  .kp-tl-regel > a { display: inline-flex; align-items: center; min-height: 40px; }
+  .kp-rij { min-height: 44px; }
+  .db-opvolg-rij { min-height: 44px; }
+  .kp-stappen button { min-height: 48px; }
+  details.kp-klaar > summary { padding: 10px 0; }
+}
+/* Touch (geen hover): de statuskeuze op de kaart staat altijd zichtbaar, onder de inhoud
+   i.p.v. over de projectnaam heen. */
+@media (hover: none) {
+  .pb-status-kaal { position: relative; top: auto; right: auto; justify-self: start; }
+  .pb-kaart { cursor: default; }
+}
+/* Grote monitor: bordkolommen en klantentabel krijgen meer lucht. */
+@media (min-width: 1920px) {
+  .pb-bord { gap: 18px; }
+  .kl-rij { min-height: 66px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .pb-kolom, .pb-kaart, .kp-stappen button, .kl-tab, .kl-rij { transition: none; }

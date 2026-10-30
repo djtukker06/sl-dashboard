@@ -97,23 +97,41 @@ export function Toevoegen({
       <div className="ug-drop-inhoud">
         <UgIcoon naam="bon" grootte={28} className="ug-drop-icoon" />
         <div className="ug-drop-tekst">
-          <p className="ug-drop-titel">{sleep ? 'Laat los om te uploaden' : 'Sleep bonnetjes of inkoopfacturen hierheen'}</p>
+          {/* Met muis: slepen en plakken. Op een telefoon (aanraakscherm) kan dat niet; daar staat de camera voorop. */}
+          <p className="ug-drop-titel">
+            {sleep ? (
+              'Laat los om te uploaden'
+            ) : (
+              <>
+                <span className="ug-alleen-muis">Sleep bonnetjes of inkoopfacturen hierheen</span>
+                <span className="ug-alleen-mobiel">Bonnetje of inkoopfactuur toevoegen</span>
+              </>
+            )}
+          </p>
           <p className="ug-drop-sub">
-            Foto’s of PDF’s, meerdere tegelijk, of plak een screenshot met <kbd>⌘</kbd> <kbd>V</kbd>. Leverancier, datum
-            en bedrag worden vanzelf uitgelezen, zodat je alles later snel terugvindt.
+            <span className="ug-alleen-muis">
+              Foto’s of PDF’s, meerdere tegelijk, of plak een screenshot met <kbd>⌘</kbd> <kbd>V</kbd>.{' '}
+            </span>
+            <span className="ug-alleen-mobiel">Maak een foto van je bonnetje, of kies foto’s en PDF’s. </span>
+            Leverancier, datum en bedrag worden vanzelf uitgelezen, zodat je alles later snel terugvindt.
           </p>
         </div>
         <div className="ug-drop-knoppen">
           <button
             type="button"
-            className="db-knop db-knop-primair ug-knop-groot"
+            className="db-knop ug-knop-groot ug-knop-camera ug-alleen-mobiel"
+            title="Camera openen en een bonnetje fotograferen"
+            onClick={() => camera.current?.click()}
+          >
+            <UgIcoon naam="camera" grootte={16} /> Foto maken
+          </button>
+          <button
+            type="button"
+            className="db-knop db-knop-primair ug-knop-groot ug-knop-kies"
             title="Bestanden kiezen (n)"
             onClick={() => kiezer.current?.click()}
           >
             <UgIcoon naam="plus" grootte={16} /> Kies bestanden
-          </button>
-          <button type="button" className="db-knop ug-knop-groot ug-alleen-mobiel" onClick={() => camera.current?.click()}>
-            <UgIcoon naam="camera" grootte={16} /> Foto maken
           </button>
         </div>
       </div>

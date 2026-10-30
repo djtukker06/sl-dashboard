@@ -1,6 +1,7 @@
 import type { CSSProperties } from 'react';
 import Link from 'next/link';
 import { avatarStijl, LOGO_SRC, railItems, type RailAccount } from '@/lib/shell/rail';
+import { RailMeer } from './RailMeer';
 import { RailNav } from './RailNav';
 
 /** "--a:b;--c:d" → React-stijlobject (zelfde waarden als de HTML-rail). */
@@ -12,6 +13,7 @@ function alsStijl(css: string): CSSProperties | undefined {
 // De navigatierail voor alle React-pagina's binnen app/(app). Zelfde opbouw en classes
 // als railHtml() in lib/shell/rail.ts (die de social-module gebruikt).
 export function Rail({ account }: { account: RailAccount }) {
+  const items = railItems();
   return (
     <nav className="sl-rail" aria-label="Hoofdmenu" data-gebruiker={account.id}>
       {/* Het logo brengt je altijd terug naar het dashboard. */}
@@ -19,16 +21,22 @@ export function Rail({ account }: { account: RailAccount }) {
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src={LOGO_SRC} alt="" width={36} height={37} />
       </Link>
-      <RailNav items={railItems()} />
+      <RailNav items={items} />
       <div className="sl-rail-foot">
         <details className="sl-account">
-          <summary className="sl-account-knop" title={`${account.naam} · ${account.email}`} aria-label="Account">
-            <span className="sl-avatar" style={alsStijl(avatarStijl(account.kleur))}>
+          {/* Op de telefoon heet dit vak "Meer": het menu bevat dan ook de modules die niet in
+              de tabbalk passen (RailMeer) en opent als blad van onderen (shell.css). */}
+          <summary className="sl-account-knop" title={`${account.naam} · ${account.email}`}>
+            <span className="sl-avatar" aria-hidden="true" style={alsStijl(avatarStijl(account.kleur))}>
               {account.initialen}
             </span>
             <span className="sl-account-label">Account</span>
+            <span className="sl-account-label sl-account-meer" hidden>
+              Meer
+            </span>
           </summary>
           <div className="sl-account-pop">
+            <RailMeer items={items.filter((it) => !it.mobiel)} />
             <p className="sl-account-naam">{account.naam}</p>
             <p className="sl-account-mail">{account.email}</p>
             <a className="sl-account-link" href="/account">

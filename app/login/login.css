@@ -1,0 +1,58 @@
+/* ==========================================================
+   Studio Levant — inloggen en 2FA op de telefoon (/login, /login/2fa)
+   De basis staat in app/globals.css (.login-wrap, .login-card); dit bestand voegt alleen de
+   aanpassingen voor kleine schermen en de web-app op het beginscherm toe.
+   Breakpoints: zie app/(app)/app.css (480 kleine telefoon, 720 telefoon).
+   ========================================================== */
+
+/* Volle hoogte zonder de adresbalk mee te tellen, en niet onder de statusbalk of thuisbalk. */
+.login-wrap {
+  min-height: 100vh;
+  min-height: 100dvh;
+  box-sizing: border-box;
+  padding:
+    calc(24px + env(safe-area-inset-top, 0px))
+    calc(24px + env(safe-area-inset-right, 0px))
+    calc(24px + env(safe-area-inset-bottom, 0px))
+    calc(24px + env(safe-area-inset-left, 0px));
+}
+.login-card { box-sizing: border-box; }
+.login-card label { min-width: 0; }
+.login-card input:not([type="checkbox"]):not([type="radio"]), .login-card select { width: 100%; box-sizing: border-box; }
+
+/* Telefoon: velden van 16px (anders zoomt iOS in), grotere doelen. */
+@media (max-width: 720px) {
+  .login-wrap .login-card input[type="text"],
+  .login-wrap .login-card input[type="email"],
+  .login-wrap .login-card input[type="password"],
+  .login-wrap .login-card select { font-size: 16px; min-height: 46px; }
+  .login-card .btn-primair { min-height: 48px; }
+  .login-link { display: flex; align-items: center; justify-content: center; min-height: 44px; margin-top: 12px; }
+  /* De 2FA-code: groot en goed leesbaar. */
+  .login-wrap .login-card input[name="code"] { font-size: 20px; letter-spacing: 0.3em; text-align: center; }
+}
+
+/* Kleine telefoon: kaart vult de breedte, minder binnenruimte, kaart iets hoger op het scherm
+   zodat het toetsenbord de knop niet bedekt. */
+@media (max-width: 480px) {
+  .login-wrap {
+    align-items: flex-start;
+    padding:
+      calc(max(40px, 10vh) + env(safe-area-inset-top, 0px))
+      calc(16px + env(safe-area-inset-right, 0px))
+      calc(24px + env(safe-area-inset-bottom, 0px))
+      calc(16px + env(safe-area-inset-left, 0px));
+  }
+  .login-card { max-width: none; padding: 28px 20px 24px; border-radius: 14px; }
+  .login-banner { max-width: 180px; margin-bottom: 18px; }
+  .login-card h1 { margin-bottom: 20px; }
+}
+
+/* Openingsanimatie: niet onder de notch. */
+.login-intro {
+  padding:
+    calc(24px + env(safe-area-inset-top, 0px))
+    calc(24px + env(safe-area-inset-right, 0px))
+    calc(24px + env(safe-area-inset-bottom, 0px))
+    calc(24px + env(safe-area-inset-left, 0px));
+}

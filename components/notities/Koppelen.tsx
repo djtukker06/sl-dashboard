@@ -26,17 +26,17 @@ export function Koppelen({
 
   useEffect(() => {
     if (!open) return;
-    function buiten(e: MouseEvent) {
+    function buiten(e: PointerEvent) {
       // De suggestielijsten van de kiezers vallen binnen de doos.
       if (doos.current && !doos.current.contains(e.target as Node)) setOpen(false);
     }
     function toets(e: KeyboardEvent) {
       if (e.key === 'Escape') setOpen(false);
     }
-    document.addEventListener('mousedown', buiten);
+    document.addEventListener('pointerdown', buiten);
     document.addEventListener('keydown', toets);
     return () => {
-      document.removeEventListener('mousedown', buiten);
+      document.removeEventListener('pointerdown', buiten);
       document.removeEventListener('keydown', toets);
     };
   }, [open]);

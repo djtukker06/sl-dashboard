@@ -130,10 +130,10 @@ export function Planning({
     );
     return (
       <>
-        <Kaart label="Vandaag" href="/agenda" linkTekst="Agenda" className="db-breed">
+        <Kaart label="Vandaag" href="/agenda" linkTekst="Agenda" className="db-breed db-vandaag">
           {melding}
         </Kaart>
-        <Kaart label="Deze week" href="/agenda" linkTekst="Week" className="db-smal">
+        <Kaart label="Deze week" href="/agenda" linkTekst="Week" className="db-smal db-week-stapel">
           <WeekStrip vandaag={vandaag} taken={[]} afspraken={[]} />
         </Kaart>
       </>
@@ -144,7 +144,7 @@ export function Planning({
   return (
     <>
       <VandaagKaart vandaag={vandaag} nu={nu} data={d} onToggle={toggle} onNieuw={() => nieuw()} onOpen={open} />
-      <div className="db-smal db-stapel">
+      <div className="db-smal db-stapel db-week-stapel">
         <Kaart label="Deze week" href={`/agenda?dag=${vandaag}`} linkTekst="Agenda" className="db-week-kaart">
           <WeekStrip vandaag={vandaag} taken={d.taken} afspraken={d.afspraken} />
           <Eerstvolgende vandaag={vandaag} nu={nu} afspraken={d.afspraken} />
@@ -378,7 +378,7 @@ function TakenKaart({
   const vol = data.zonderDeadline.length >= EXTRA_MAX || data.later.length >= EXTRA_MAX;
 
   return (
-    <Kaart label={open ? `Taken · ${open} open` : 'Taken'} href="/agenda" linkTekst="Alle taken" className="db-breed">
+    <Kaart label={open ? `Taken · ${open} open` : 'Taken'} href="/agenda" linkTekst="Alle taken" className="db-breed db-taken">
       {groepen.length === 0 ? (
         <>
         <KaartMelding

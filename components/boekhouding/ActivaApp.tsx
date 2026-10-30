@@ -176,21 +176,21 @@ export function ActivaApp({
                     <span style={{ width: `${Math.round(r.voortgang * 100)}%` }} />
                   </span>
                 </span>
-                <span className="bh-rij-bank" role="cell">
+                <span className="bh-rij-bank" role="cell" data-label="Termijn">
                   {looptijdLabel(r.activum.looptijdMaanden)}
                   <span className="bh-rij-meta"> vanaf {korteDatum(r.activum.ingebruikname)}</span>
                 </span>
-                <span className="bh-rij-bedrag bh-r" role="cell">
+                <span className="bh-rij-bedrag bh-r" role="cell" data-label="Aanschaf">
                   {formatCenten(r.activum.aanschaf)}
                 </span>
-                <span className="bh-rij-saldo bh-r" role="cell">
+                <span className="bh-rij-saldo bh-r" role="cell" data-label={`Begin ${jaar}`}>
                   {r.investering ? <span className="bh-zacht">nieuw</span> : formatCenten(r.begin)}
                 </span>
-                <span className="bh-rij-bedrag bh-r" role="cell">
+                <span className="bh-rij-bedrag bh-r" role="cell" data-label="Afschrijving">
                   {r.afschrijving ? `−${formatCenten(r.afschrijving)}` : '—'}
                   {r.desinvestering ? <span className="bh-rij-meta">weg {formatCenten(r.desinvestering)}</span> : null}
                 </span>
-                <span className="bh-rij-bedrag bh-r bh-sterk" role="cell">
+                <span className="bh-rij-bedrag bh-r bh-sterk" role="cell" data-label={`Eind ${jaar}`}>
                   {formatCenten(r.eind)}
                 </span>
               </Link>
@@ -199,13 +199,13 @@ export function ActivaApp({
               <span role="cell">Totaal</span>
               <span role="cell" />
               <span role="cell" />
-              <span className="bh-r" role="cell">
+              <span className="bh-r" role="cell" data-label={`Begin ${jaar}`}>
                 {formatCenten(totaal.begin)}
               </span>
-              <span className="bh-r" role="cell">
+              <span className="bh-r" role="cell" data-label="Afschrijving">
                 −{formatCenten(totaal.afschrijving)}
               </span>
-              <span className="bh-r" role="cell">
+              <span className="bh-r" role="cell" data-label={`Eind ${jaar}`}>
                 {formatCenten(totaal.eind)}
               </span>
             </div>

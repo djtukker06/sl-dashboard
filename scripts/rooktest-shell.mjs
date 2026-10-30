@@ -132,10 +132,13 @@ function check(ok, label, detail = "") {
 console.log("Rail: React en HTML gelijk");
 {
   const html = lees("lib/shell/rail.ts");
-  const react = lees("components/shell/Rail.tsx") + lees("components/shell/RailNav.tsx");
-  const klassen = (src, re) => new Set([...src.matchAll(re)].flatMap((m) => m[1].split(/\s+/)).filter(Boolean));
-  const htmlKlassen = klassen(html, /class="([^"$]+)"/g);
-  const reactKlassen = klassen(react, /className="([^"]+)"/g);
+  // RailMeer.tsx: de modules onder "Meer" op de telefoon (het neven-blok in railHtml()).
+  const react = lees("components/shell/Rail.tsx") + lees("components/shell/RailNav.tsx") + lees("components/shell/RailMeer.tsx");
+  const klassen = (src, ...res) =>
+    new Set(res.flatMap((re) => [...src.matchAll(re)]).flatMap((m) => m[1].split(/\s+/)).filter(Boolean));
+  // In railHtml() ook class="${voorwaarde ? '' : 'klasse'}"; in React className={voorwaarde ? undefined : 'klasse'}.
+  const htmlKlassen = klassen(html, /class="([^"$]+)"/g, /class="\$\{[^}]*?'([a-z][\w-]*)'[^}]*\}"/g);
+  const reactKlassen = klassen(react, /className="([^"]+)"/g, /className=\{[^}]*?'([a-z][\w-]*)'[^}]*\}/g);
   const verschil = [...htmlKlassen].filter((k) => !reactKlassen.has(k)).concat([...reactKlassen].filter((k) => !htmlKlassen.has(k)));
   check(verschil.length === 0, "zelfde classes", verschil.join(", "));
   for (const href of ["/", "/account", "/nieuw-wachtwoord", "/auth/uitloggen"]) {

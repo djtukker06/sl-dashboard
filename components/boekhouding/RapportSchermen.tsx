@@ -200,49 +200,51 @@ function WinstVerlies({ r, href }: { r: Rapport; href: (code: string) => string 
   if (!r.wv.groepen.length) return <p className="bh-leeg">Nog geen opbrengsten of kosten in {r.jaar}.</p>;
   return (
     <div className="bh-rt-wrap">
-      <table className="bh-rt">
-        <thead>
-          <tr>
-            <th>Rekening</th>
-            {['Q1', 'Q2', 'Q3', 'Q4'].map((q) => (
-              <th key={q} className="bh-r bh-rt-kw">
-                {q}
-              </th>
-            ))}
-            <th className="bh-r bh-rt-jaar">{r.jaar}</th>
-            <th className="bh-r bh-rt-vorig">{r.jaar - 1}</th>
-          </tr>
-        </thead>
-        {r.wv.groepen.map((g) => (
-          <tbody key={g.id}>
-            <tr className="bh-rt-groep">
-              <th colSpan={7} scope="rowgroup">
-                {g.titel}
-              </th>
+      <div className="bh-rt-scroll">
+        <table className="bh-rt">
+          <thead>
+            <tr>
+              <th>Rekening</th>
+              {['Q1', 'Q2', 'Q3', 'Q4'].map((q) => (
+                <th key={q} className="bh-r bh-rt-kw">
+                  {q}
+                </th>
+              ))}
+              <th className="bh-r bh-rt-jaar">{r.jaar}</th>
+              <th className="bh-r bh-rt-vorig">{r.jaar - 1}</th>
             </tr>
-            {g.regels.map((x) => (
-              <tr key={x.code}>
-                <td>
-                  <Link href={href(x.code)} className="bh-rt-link">
-                    <span className="bh-rt-code">{x.code}</span> {x.naam}
-                  </Link>
-                </td>
-                {rij(x)}
+          </thead>
+          {r.wv.groepen.map((g) => (
+            <tbody key={g.id}>
+              <tr className="bh-rt-groep">
+                <th colSpan={7} scope="rowgroup">
+                  {g.titel}
+                </th>
               </tr>
-            ))}
-            <tr className="bh-rt-tot">
-              <td>Totaal {g.titel.toLowerCase()}</td>
-              {rij(g)}
+              {g.regels.map((x) => (
+                <tr key={x.code}>
+                  <td>
+                    <Link href={href(x.code)} className="bh-rt-link">
+                      <span className="bh-rt-code">{x.code}</span> {x.naam}
+                    </Link>
+                  </td>
+                  {rij(x)}
+                </tr>
+              ))}
+              <tr className="bh-rt-tot">
+                <td>Totaal {g.titel.toLowerCase()}</td>
+                {rij(g)}
+              </tr>
+            </tbody>
+          ))}
+          <tbody>
+            <tr className="bh-rt-groot">
+              <td>{r.wv.resultaat.jaar >= 0 ? 'Winst' : 'Verlies'}</td>
+              {rij(r.wv.resultaat)}
             </tr>
           </tbody>
-        ))}
-        <tbody>
-          <tr className="bh-rt-groot">
-            <td>{r.wv.resultaat.jaar >= 0 ? 'Winst' : 'Verlies'}</td>
-            {rij(r.wv.resultaat)}
-          </tr>
-        </tbody>
-      </table>
+        </table>
+      </div>
       <p className="bh-kaart-sub">
         Exclusief btw. Factuurstelsel: omzet en kosten vallen in de periode van de factuur- of bondatum.{r.lopend ? ` Het lopende jaar telt tot en met vandaag.` : ''} Klik op een rekening voor de mutaties.
       </p>
@@ -253,52 +255,54 @@ function WinstVerlies({ r, href }: { r: Rapport; href: (code: string) => string 
 function BalansZijde({ titel, eind, begin, totaal, totaalBegin, href }: { titel: string; eind: BalansGroep[]; begin: BalansGroep[]; totaal: Centen; totaalBegin: Centen; href: (code: string) => string }) {
   const ids = [...new Set([...begin.map((g) => g.id), ...eind.map((g) => g.id)])];
   return (
-    <table className="bh-rt bh-rt-balans">
-      <thead>
-        <tr>
-          <th>{titel}</th>
-          <th className="bh-r bh-rt-vorig">begin</th>
-          <th className="bh-r">eind</th>
-        </tr>
-      </thead>
-      {ids.map((id) => {
-        const ge = eind.find((g) => g.id === id);
-        const gb = begin.find((g) => g.id === id);
-        const namen = new Map<string, string | null>();
-        for (const x of [...(gb?.regels ?? []), ...(ge?.regels ?? [])]) namen.set(x.naam, x.code);
-        return (
-          <tbody key={id}>
-            <tr className="bh-rt-groep">
-              <th colSpan={3} scope="rowgroup">
-                {(ge ?? gb)!.titel}
-              </th>
-            </tr>
-            {[...namen].map(([naam, code]) => (
-              <tr key={naam}>
-                <td>
-                  {code ? (
-                    <Link href={href(code)} className="bh-rt-link">
-                      <span className="bh-rt-code">{code}</span> {naam}
-                    </Link>
-                  ) : (
-                    naam
-                  )}
-                </td>
-                <td className="bh-r bh-rt-vorig">{b(gb?.regels.find((x) => x.naam === naam)?.bedrag ?? 0)}</td>
-                <td className="bh-r">{b(ge?.regels.find((x) => x.naam === naam)?.bedrag ?? 0)}</td>
+    <div className="bh-rt-scroll">
+      <table className="bh-rt bh-rt-balans">
+        <thead>
+          <tr>
+            <th>{titel}</th>
+            <th className="bh-r bh-rt-vorig">begin</th>
+            <th className="bh-r">eind</th>
+          </tr>
+        </thead>
+        {ids.map((id) => {
+          const ge = eind.find((g) => g.id === id);
+          const gb = begin.find((g) => g.id === id);
+          const namen = new Map<string, string | null>();
+          for (const x of [...(gb?.regels ?? []), ...(ge?.regels ?? [])]) namen.set(x.naam, x.code);
+          return (
+            <tbody key={id}>
+              <tr className="bh-rt-groep">
+                <th colSpan={3} scope="rowgroup">
+                  {(ge ?? gb)!.titel}
+                </th>
               </tr>
-            ))}
-          </tbody>
-        );
-      })}
-      <tbody>
-        <tr className="bh-rt-groot">
-          <td>Totaal</td>
-          <td className="bh-r bh-rt-vorig">{formatBedrag(totaalBegin)}</td>
-          <td className="bh-r">{formatBedrag(totaal)}</td>
-        </tr>
-      </tbody>
-    </table>
+              {[...namen].map(([naam, code]) => (
+                <tr key={naam}>
+                  <td>
+                    {code ? (
+                      <Link href={href(code)} className="bh-rt-link">
+                        <span className="bh-rt-code">{code}</span> {naam}
+                      </Link>
+                    ) : (
+                      naam
+                    )}
+                  </td>
+                  <td className="bh-r bh-rt-vorig">{b(gb?.regels.find((x) => x.naam === naam)?.bedrag ?? 0)}</td>
+                  <td className="bh-r">{b(ge?.regels.find((x) => x.naam === naam)?.bedrag ?? 0)}</td>
+                </tr>
+              ))}
+            </tbody>
+          );
+        })}
+        <tbody>
+          <tr className="bh-rt-groot">
+            <td>Totaal</td>
+            <td className="bh-r bh-rt-vorig">{formatBedrag(totaalBegin)}</td>
+            <td className="bh-r">{formatBedrag(totaal)}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
   );
 }
 
@@ -338,30 +342,32 @@ function Vennoten({ r }: { r: Rapport }) {
         Resultaat {r.jaar}: <strong>{formatCenten(k.resultaat)}</strong>, verdeeld naar winstaandeel ({k.regels.map((x) => `${x.naam} ${x.aandeel}%`).join(' · ')}). Het winstaandeel is de basis voor de
         inkomstenbelasting van elke vennoot.
       </p>
-      <table className="bh-rt bh-rt-vennoten">
-        <thead>
-          <tr>
-            <th></th>
-            {k.regels.map((x) => (
-              <th key={x.vennootId} className="bh-r">
-                {x.naam}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {regels.map((g) => (
-            <tr key={g.label} className={g.sterk ? 'bh-rt-tot' : undefined}>
-              <td>{g.label}</td>
+      <div className="bh-rt-scroll">
+        <table className="bh-rt bh-rt-vennoten">
+          <thead>
+            <tr>
+              <th></th>
               {k.regels.map((x) => (
-                <td key={x.vennootId} className="bh-r">
-                  {g.sterk ? formatBedrag(g.waarde(x)) : b(g.waarde(x))}
-                </td>
+                <th key={x.vennootId} className="bh-r">
+                  {x.naam}
+                </th>
               ))}
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {regels.map((g) => (
+              <tr key={g.label} className={g.sterk ? 'bh-rt-tot' : undefined}>
+                <td>{g.label}</td>
+                {k.regels.map((x) => (
+                  <td key={x.vennootId} className="bh-r">
+                    {g.sterk ? formatBedrag(g.waarde(x)) : b(g.waarde(x))}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
       {r.afgesloten ? (
         <p className="bh-kaart-sub">Afgesloten: het winstaandeel en de privé-opnamen staan op de kapitaalrekeningen.</p>
       ) : (
@@ -381,39 +387,41 @@ function Proef({ posten, data, jaar, tot, href }: { posten: JournaalPost[]; data
   const p = proefbalansRapport(posten, data.stam.grootboek, jaarBegin(jaar), tot);
   return (
     <div className="bh-rt-wrap">
-      <table className="bh-rt bh-rt-proef">
-        <thead>
-          <tr>
-            <th>Rekening</th>
-            <th className="bh-r bh-rt-kw">1 jan</th>
-            <th className="bh-r bh-rt-kw">Debet</th>
-            <th className="bh-r bh-rt-kw">Credit</th>
-            <th className="bh-r">Saldo {korteDatum(tot, false)}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {p.regels.map((x) => (
-            <tr key={x.code}>
-              <td>
-                <Link href={href(x.code)} className="bh-rt-link">
-                  <span className="bh-rt-code">{x.code}</span> {x.naam}
-                </Link>
-              </td>
-              <td className="bh-r bh-rt-kw">{b(x.begin)}</td>
-              <td className="bh-r bh-rt-kw">{b(x.debet)}</td>
-              <td className="bh-r bh-rt-kw">{b(x.credit)}</td>
-              <td className="bh-r">{b(x.eind)}</td>
+      <div className="bh-rt-scroll">
+        <table className="bh-rt bh-rt-proef">
+          <thead>
+            <tr>
+              <th>Rekening</th>
+              <th className="bh-r bh-rt-kw">1 jan</th>
+              <th className="bh-r bh-rt-kw">Debet</th>
+              <th className="bh-r bh-rt-kw">Credit</th>
+              <th className="bh-r">Saldo {korteDatum(tot, false)}</th>
             </tr>
-          ))}
-          <tr className="bh-rt-groot">
-            <td>Totaal</td>
-            <td className="bh-r bh-rt-kw">{formatBedrag(p.totaal.begin)}</td>
-            <td className="bh-r bh-rt-kw">{formatBedrag(p.totaal.debet)}</td>
-            <td className="bh-r bh-rt-kw">{formatBedrag(p.totaal.credit)}</td>
-            <td className="bh-r">{formatBedrag(p.totaal.eind)}</td>
-          </tr>
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {p.regels.map((x) => (
+              <tr key={x.code}>
+                <td>
+                  <Link href={href(x.code)} className="bh-rt-link">
+                    <span className="bh-rt-code">{x.code}</span> {x.naam}
+                  </Link>
+                </td>
+                <td className="bh-r bh-rt-kw">{b(x.begin)}</td>
+                <td className="bh-r bh-rt-kw">{b(x.debet)}</td>
+                <td className="bh-r bh-rt-kw">{b(x.credit)}</td>
+                <td className="bh-r">{b(x.eind)}</td>
+              </tr>
+            ))}
+            <tr className="bh-rt-groot">
+              <td>Totaal</td>
+              <td className="bh-r bh-rt-kw">{formatBedrag(p.totaal.begin)}</td>
+              <td className="bh-r bh-rt-kw">{formatBedrag(p.totaal.debet)}</td>
+              <td className="bh-r bh-rt-kw">{formatBedrag(p.totaal.credit)}</td>
+              <td className="bh-r">{formatBedrag(p.totaal.eind)}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
       <p className="bh-kaart-sub">
         Saldo = debet − credit (positief = debetsaldo). {p.totaal.debet === p.totaal.credit && p.totaal.eind === 0 ? <span className="is-bij">Debet en credit zijn gelijk.</span> : null}
       </p>
@@ -446,54 +454,56 @@ function Kaart({ posten, data, jaar, tot, code }: { posten: JournaalPost[]; data
           Toon
         </button>
       </form>
-      <table className="bh-rt bh-rt-kaart">
-        <thead>
-          <tr>
-            <th className="bh-rt-datum">Datum</th>
-            <th>Omschrijving</th>
-            <th className="bh-r bh-rt-kw">Debet</th>
-            <th className="bh-r bh-rt-kw">Credit</th>
-            <th className="bh-r">Saldo</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr className="bh-rt-groep">
-            <td className="bh-rt-datum">{korteDatum(jaarBegin(jaar))}</td>
-            <td>Beginsaldo</td>
-            <td className="bh-rt-kw" />
-            <td className="bh-rt-kw" />
-            <td className="bh-r">{formatBedrag(k.begin)}</td>
-          </tr>
-          {k.regels.map((x) => {
-            const h = bronHref(x.bron, x.bronId);
-            return (
-              <tr key={x.postId}>
-                <td className="bh-rt-datum">{korteDatum(x.datum)}</td>
-                <td>
-                  <span className="bh-rt-bron">{BRON_LABEL[x.bron]}</span>{' '}
-                  {h ? (
-                    <Link href={h} className="bh-rt-link">
-                      {x.omschrijving}
-                    </Link>
-                  ) : (
-                    x.omschrijving
-                  )}
-                </td>
-                <td className="bh-r bh-rt-kw">{b(x.debet)}</td>
-                <td className="bh-r bh-rt-kw">{b(x.credit)}</td>
-                <td className="bh-r">{formatBedrag(x.saldo)}</td>
-              </tr>
-            );
-          })}
-          <tr className="bh-rt-groot">
-            <td className="bh-rt-datum">{korteDatum(tot)}</td>
-            <td>Eindsaldo · {k.regels.length} mutaties</td>
-            <td className="bh-r bh-rt-kw">{formatBedrag(k.debet)}</td>
-            <td className="bh-r bh-rt-kw">{formatBedrag(k.credit)}</td>
-            <td className="bh-r">{formatBedrag(k.eind)}</td>
-          </tr>
-        </tbody>
-      </table>
+      <div className="bh-rt-scroll">
+        <table className="bh-rt bh-rt-kaart">
+          <thead>
+            <tr>
+              <th className="bh-rt-datum">Datum</th>
+              <th>Omschrijving</th>
+              <th className="bh-r bh-rt-kw">Debet</th>
+              <th className="bh-r bh-rt-kw">Credit</th>
+              <th className="bh-r">Saldo</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr className="bh-rt-groep">
+              <td className="bh-rt-datum">{korteDatum(jaarBegin(jaar))}</td>
+              <td>Beginsaldo</td>
+              <td className="bh-rt-kw" />
+              <td className="bh-rt-kw" />
+              <td className="bh-r">{formatBedrag(k.begin)}</td>
+            </tr>
+            {k.regels.map((x) => {
+              const h = bronHref(x.bron, x.bronId);
+              return (
+                <tr key={x.postId}>
+                  <td className="bh-rt-datum">{korteDatum(x.datum)}</td>
+                  <td>
+                    <span className="bh-rt-bron">{BRON_LABEL[x.bron]}</span>{' '}
+                    {h ? (
+                      <Link href={h} className="bh-rt-link">
+                        {x.omschrijving}
+                      </Link>
+                    ) : (
+                      x.omschrijving
+                    )}
+                  </td>
+                  <td className="bh-r bh-rt-kw">{b(x.debet)}</td>
+                  <td className="bh-r bh-rt-kw">{b(x.credit)}</td>
+                  <td className="bh-r">{formatBedrag(x.saldo)}</td>
+                </tr>
+              );
+            })}
+            <tr className="bh-rt-groot">
+              <td className="bh-rt-datum">{korteDatum(tot)}</td>
+              <td>Eindsaldo · {k.regels.length} mutaties</td>
+              <td className="bh-r bh-rt-kw">{formatBedrag(k.debet)}</td>
+              <td className="bh-r bh-rt-kw">{formatBedrag(k.credit)}</td>
+              <td className="bh-r">{formatBedrag(k.eind)}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

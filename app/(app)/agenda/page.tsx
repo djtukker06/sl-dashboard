@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { vereisTeamlidPagina } from '@/lib/auth/team';
 import { isDag, vandaag as vandaagNL } from '@/lib/agenda/datum';
@@ -12,7 +13,7 @@ export const metadata: Metadata = { title: 'Agenda & taken · Studio Levant' };
 // /api/agenda en /api/taken (die elk ook zelf de sessie controleren). Je ziet hier alleen
 // wat op JOUW naam staat; wat je voor een ander maakte staat onder de tab "Uitgezet".
 //   ?dag=YYYY-MM-DD      week/maand rond die dag (vanaf het dashboard "Deze week")
-//   ?weergave=maand      maandweergave
+//   ?weergave=dag|week|maand  vaste weergave (zonder: week, op de telefoon één dag)
 //   ?taak=<id>           opent direct de taak-popup; ?afspraak=<id> het afsprakenpaneel
 //   ?lijst=uitgezet      opent de takenlijst op de tab "Uitgezet"
 //   ?project=<id>        takenlijst gefilterd op een project
@@ -36,12 +37,18 @@ export default async function AgendaPage({
     redirect(`/agenda${qs ? `?${qs}` : ''}`);
   }
 
+  // Gok op de telefoon (User-Agent / Client Hint), zodat de eerste render al de telefoonweergave
+  // (dag / 3 dagen) toont i.p.v. eerst kort de hele week. Na het laden beslist de schermbreedte.
+  const h = await headers();
+  const telefoon = h.get('sec-ch-ua-mobile') === '?1' || /\b(iPhone|iPod|Android.+Mobile|Mobile)\b/i.test(h.get('user-agent') ?? '');
+
   const vandaag = vandaagNL();
   return (
     <AgendaApp
       vandaag={vandaag}
+      telefoon={telefoon}
       startDag={isDag(sp.dag) ? sp.dag : vandaag}
-      startWeergave={sp.weergave === 'maand' ? 'maand' : 'week'}
+      startWeergave={sp.weergave === 'maand' || sp.weergave === 'week' || sp.weergave === 'dag' ? sp.weergave : null}
       startFilter={sp.lijst === 'uitgezet' ? 'uitgezet' : 'vandaag'}
       startProject={isUuid(sp.project) ? sp.project : null}
       openTaak={isUuid(sp.taak) ? sp.taak : null}

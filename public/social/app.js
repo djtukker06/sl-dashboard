@@ -467,6 +467,9 @@ async function uploadFiles(files, kind) {
 
 function slideScale() {
   const f = fmt(state.project.format);
+  // dashboard: op de telefoon past een slide altijd binnen de schermbreedte (16px marge
+  // links en een stukje van de volgende slide rechts); daarboven blijft het 460px hoog.
+  if (window.innerWidth <= 720) return Math.min(460 / f.h, (window.innerWidth - 56) / f.w);
   return 460 / f.h;
 }
 

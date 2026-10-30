@@ -10,7 +10,22 @@ import { icoonSvg } from './iconen';
 
 export const LOGO_SRC = '/brand/beeldmerk-licht.png';
 
-export type RailItem = { id: string; label: string; href: string; icoon: string; document: boolean };
+/**
+ * Telefoon (≤720px): de rail wordt een tabbalk onderaan met deze modules; de rest (en het
+ * accountmenu) staat onder "Meer" (het accountmenu, dat dan als blad van onderen opent).
+ * Vijf plus "Meer" = zes vakken: op 375px nog ruim 60px breed per vak.
+ */
+export const MOBIEL_HOOFD = ['dashboard', 'mail', 'agenda', 'klanten', 'boekhouding'];
+
+export type RailItem = {
+  id: string;
+  label: string;
+  href: string;
+  icoon: string;
+  document: boolean;
+  /** Ook als tab in de mobiele tabbalk (anders onder "Meer"). */
+  mobiel: boolean;
+};
 
 export function railItems(): RailItem[] {
   return actieveModules().map((m) => ({
@@ -18,7 +33,8 @@ export function railItems(): RailItem[] {
     label: m.kort,
     href: m.href,
     icoon: icoonSvg(m.icoon),
-    document: Boolean(m.document)
+    document: Boolean(m.document),
+    mobiel: MOBIEL_HOOFD.includes(m.id)
   }));
 }
 
@@ -45,11 +61,21 @@ function esc(s: string) {
 
 /** De rail als HTML. Moet exact dezelfde structuur en classes hebben als Rail.tsx. */
 export function railHtml(actief: string, acc: RailAccount): string {
-  const items = railItems()
+  const alle = railItems();
+  const items = alle
     .map(
       (it) =>
-        `<li><a class="sl-rail-item" href="${esc(it.href)}"${it.id === actief ? ' aria-current="page"' : ''}>` +
+        `<li${it.mobiel ? '' : ' class="sl-rail-neven"'}><a class="sl-rail-item" href="${esc(it.href)}"${it.id === actief ? ' aria-current="page"' : ''}>` +
         `${it.icoon}<span class="sl-rail-label">${esc(it.label)}</span></a></li>`
+    )
+    .join('');
+  // Alleen op de telefoon zichtbaar (shell.css zet [hidden] daar aan): de modules onder "Meer".
+  const neven = alle
+    .filter((it) => !it.mobiel)
+    .map(
+      (it) =>
+        `<li><a class="sl-account-module" href="${esc(it.href)}"${it.id === actief ? ' aria-current="page"' : ''}>` +
+        `${it.icoon}<span>${esc(it.label)}</span></a></li>`
     )
     .join('');
   const stijl = avatarStijl(acc.kleur);
@@ -59,10 +85,11 @@ export function railHtml(actief: string, acc: RailAccount): string {
     `<img src="${LOGO_SRC}" alt="" width="36" height="37"></a>` +
     `<ul class="sl-rail-nav">${items}</ul>` +
     `<div class="sl-rail-foot"><details class="sl-account">` +
-    `<summary class="sl-account-knop" title="${esc(acc.naam)} · ${esc(acc.email)}" aria-label="Account">` +
-    `<span class="sl-avatar"${stijl ? ` style="${esc(stijl)}"` : ''}>${esc(acc.initialen)}</span>` +
-    `<span class="sl-account-label">Account</span></summary>` +
+    `<summary class="sl-account-knop" title="${esc(acc.naam)} · ${esc(acc.email)}">` +
+    `<span class="sl-avatar" aria-hidden="true"${stijl ? ` style="${esc(stijl)}"` : ''}>${esc(acc.initialen)}</span>` +
+    `<span class="sl-account-label">Account</span><span class="sl-account-label sl-account-meer" hidden>Meer</span></summary>` +
     `<div class="sl-account-pop">` +
+    (neven ? `<ul class="sl-account-modules" hidden>${neven}</ul>` : '') +
     `<p class="sl-account-naam">${esc(acc.naam)}</p>` +
     `<p class="sl-account-mail">${esc(acc.email)}</p>` +
     `<a class="sl-account-link" href="/account">Account &amp; mail</a>` +

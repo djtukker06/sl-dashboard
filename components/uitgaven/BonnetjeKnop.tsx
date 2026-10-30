@@ -3,15 +3,26 @@
 import { useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { uploadBonnetje, type UploadFase } from '@/lib/uitgaven/client';
+import { UgIcoon } from './Iconen';
 
 /**
- * "Bonnetje uploaden" (dashboard, /boekhouding): opent direct de bestandskiezer (op een
- * telefoon ook de camera), uploadt en leest uit, en opent daarna het bonnetje in
- * Bonnetjes & inkoopfacturen. Meerdere bestanden: daarna naar de lijst.
+ * "Bonnetje uploaden" (dashboard, /boekhouding): opent direct de bestandskiezer, uploadt en
+ * leest uit, en opent daarna het bonnetje in Bonnetjes & inkoopfacturen. Meerdere
+ * bestanden: daarna naar de lijst. Op een aanraakscherm staat ernaast een cameraknop die
+ * meteen de achtercamera opent (`camera={false}` laat hem weg).
  */
-export function BonnetjeKnop({ className = 'db-knop', label = '+ Bonnetje' }: { className?: string; label?: string }) {
+export function BonnetjeKnop({
+  className = 'db-knop',
+  label = '+ Bonnetje',
+  camera = true
+}: {
+  className?: string;
+  label?: string;
+  camera?: boolean;
+}) {
   const router = useRouter();
   const kiezer = useRef<HTMLInputElement>(null);
+  const cameraKiezer = useRef<HTMLInputElement>(null);
   const [fase, setFase] = useState<UploadFase | null>(null);
   const [fout, setFout] = useState('');
 
@@ -48,12 +59,26 @@ export function BonnetjeKnop({ className = 'db-knop', label = '+ Bonnetje' }: { 
       >
         {tekst}
       </button>
+      {camera && (
+        <button
+          type="button"
+          className="db-knop ug-alleen-mobiel ug-camera-knop"
+          disabled={fase !== null}
+          title="Foto maken van een bonnetje"
+          aria-label="Foto maken van een bonnetje"
+          onClick={() => cameraKiezer.current?.click()}
+        >
+          <UgIcoon naam="camera" grootte={18} />
+          <span className="ug-camera-label">Foto</span>
+        </button>
+      )}
       {fout && (
         <span id="bonnetje-fout" className="ug-knop-fout" role="alert">
           {fout}
         </span>
       )}
       <input ref={kiezer} type="file" accept="image/*,application/pdf,.heic,.heif" multiple hidden onChange={gekozen} />
+      {camera && <input ref={cameraKiezer} type="file" accept="image/*" capture="environment" hidden onChange={gekozen} />}
     </>
   );
 }

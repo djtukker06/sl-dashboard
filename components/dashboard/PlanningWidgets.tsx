@@ -24,9 +24,9 @@ export async function PlanningWidgets({ lid }: { lid: Teamlid }) {
 export function PlanningSkelet() {
   return (
     <>
-      <KaartSkelet label="Vandaag" regels={3} className="db-breed" />
-      <KaartSkelet label="Deze week" regels={2} className="db-smal" />
-      <KaartSkelet label="Taken" regels={4} className="db-breed" />
+      <KaartSkelet label="Vandaag" regels={3} className="db-breed db-vandaag" />
+      <KaartSkelet label="Deze week" regels={2} className="db-smal db-week-stapel" />
+      <KaartSkelet label="Taken" regels={4} className="db-breed db-taken" />
     </>
   );
 }

@@ -3,7 +3,7 @@
    het keuzescherm met de twee tegels. Tokens: public/shell/shell.css.
    ========================================================== */
 
-.bh { min-height: 100vh; background: var(--sl-bg); color: var(--sl-text); font-family: var(--sl-font); }
+.bh { min-height: var(--sl-scherm-h, 100dvh); background: var(--sl-bg); color: var(--sl-text); font-family: var(--sl-font); }
 
 /* ---------- subnavigatie (ook boven de facturenschermen) ---------- */
 .bh-tabs {
@@ -55,6 +55,7 @@
   min-width: 0;
 }
 .bh-tegel-kop { display: flex; align-items: center; gap: 14px; }
+.bh-tegel-kop > div { min-width: 0; }
 .bh-tegel-icoon { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 6px; background: var(--sl-bg); color: var(--sl-sand); flex: none; }
 .bh-tegel-titel { margin: 0; font-size: 20px; font-weight: 700; letter-spacing: -0.01em; }
 .bh-tegel-titel a { color: inherit; text-decoration: none; }
@@ -84,7 +85,7 @@
    ========================================================== */
 .bh { --bh-bij: #a9c4a0; --bh-let-op: var(--sl-let-op, #d4b27a); }
 .bh-sr { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
-.bh-inhoud { display: grid; gap: 22px; padding: 24px 40px 64px; max-width: 1320px; min-width: 0; }
+.bh-inhoud { display: grid; grid-template-columns: minmax(0, 1fr); gap: 22px; padding: 24px 40px 64px; max-width: 1320px; min-width: 0; }
 .bh-label { font-family: var(--sl-mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--sl-muted); }
 .bh-zacht { color: var(--sl-faint); }
 .bh-pil {
@@ -125,7 +126,10 @@ button.bh-saldo:hover { border-color: #4a4847; background: var(--sl-raise); }
 .bh-saldo-sub { font-size: 12.5px; color: var(--sl-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* ---------- kaarten ---------- */
-.bh-kaart { display: grid; gap: 16px; padding: 20px 22px; border: 1px solid var(--sl-line); border-radius: 6px; background: var(--sl-panel); min-width: 0; }
+.bh-kaart { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; padding: 20px 22px; border: 1px solid var(--sl-line); border-radius: 6px; background: var(--sl-panel); min-width: 0; }
+/* Grid-kinderen krijgen standaard min-width: auto; dan duwen regels met white-space: nowrap
+   (bonnetjes, omschrijvingen) de kaart breder dan zijn kolom. */
+.bh-kaart > *, .bh-inhoud > *, .bh-lijst-blok > *, .bh-aangifte-zij > *, .bh-rap-zij > * { min-width: 0; }
 .bh-kaart-kop { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 14px; }
 .bh-kaart-titel { margin: 0; font-size: 17px; font-weight: 700; letter-spacing: -0.005em; }
 .bh-kaart-sub { margin: 0; font-size: 13px; line-height: 1.5; color: var(--sl-muted); }
@@ -178,7 +182,7 @@ button.bh-saldo:hover { border-color: #4a4847; background: var(--sl-raise); }
 .bh-melding.is-fout { border: 1px solid color-mix(in srgb, var(--sl-danger) 50%, transparent); color: var(--sl-danger); }
 
 /* ---------- lijst ---------- */
-.bh-lijst-blok { display: grid; gap: 14px; min-width: 0; }
+.bh-lijst-blok { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; min-width: 0; }
 .bh-lijst-kop { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px 18px; }
 .bh-rek-tabs { display: flex; gap: 4px; flex-wrap: wrap; }
 .bh-rek-tab {
@@ -216,7 +220,7 @@ button.bh-saldo:hover { border-color: #4a4847; background: var(--sl-raise); }
 .bh-th { padding-top: 4px; padding-bottom: 8px; font-family: var(--sl-mono); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--sl-faint); }
 .bh-r { text-align: right; justify-self: end; }
 .bh-rij {
-  width: 100%; border: 0; border-top: 1px solid var(--sl-line-soft); border-radius: 0; background: none; color: var(--sl-text);
+  width: 100%; box-sizing: border-box; border: 0; border-top: 1px solid var(--sl-line-soft); border-radius: 0; background: none; color: var(--sl-text);
   font-family: var(--sl-font); text-align: left; cursor: pointer; transition: background-color .15s var(--sl-ease);
 }
 .bh-rij:hover { background: var(--sl-hover); }
@@ -270,8 +274,8 @@ button.bh-saldo:hover { border-color: #4a4847; background: var(--sl-raise); }
 
 /* ---------- responsief ---------- */
 @media (max-width: 1180px) {
-  .bh-tr { grid-template-columns: 84px minmax(0, 1fr) 84px 40px 112px 116px; }
-  .bh-tr > :nth-child(7) { display: none; }
+  /* Kleine laptop: alle kolommen blijven, alleen smaller. */
+  .bh-tr { grid-template-columns: 80px minmax(0, 1fr) 92px 36px 108px 112px 100px; gap: 12px; }
 }
 @media (max-width: 960px) {
   .bh-form-rij {
@@ -279,8 +283,24 @@ button.bh-saldo:hover { border-color: #4a4847; background: var(--sl-raise); }
     grid-template-areas: "bank bank" "omschrijving omschrijving" "datum bedrag" "soort soort" "btw categorie" "schakel schakel";
   }
   .bh-form-rij .bh-veld-schakel { justify-self: start; margin-top: -4px; }
-  .bh-tr { grid-template-columns: 78px minmax(0, 1fr) 40px 116px; }
-  .bh-tr > :nth-child(3), .bh-tr > :nth-child(5) { display: none; }
+  /* Boekingen als kaartjes: omschrijving + bedrag, daaronder datum · bank · kwartaal en
+     btw · saldo. Niets valt weg; de kolomkoppen zijn dan overbodig. */
+  .bh-boekingen .bh-th { display: none; }
+  .bh-boekingen .bh-tr {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-areas: "hoofd hoofd bedrag" "datum bank kw" "btw btw saldo";
+    align-items: baseline; gap: 3px 12px; padding: 12px 10px;
+  }
+  .bh-boekingen .bh-rij-hoofd { grid-area: hoofd; }
+  .bh-boekingen .bh-rij-bedrag { grid-area: bedrag; }
+  .bh-boekingen .bh-rij-datum { grid-area: datum; }
+  .bh-boekingen .bh-rij-bank { grid-area: bank; }
+  .bh-boekingen .bh-rij-kw { grid-area: kw; justify-self: end; }
+  .bh-boekingen .bh-rij-btw { grid-area: btw; font-size: 12px; color: var(--sl-faint); }
+  .bh-boekingen .bh-rij-saldo { grid-area: saldo; font-size: 12px; }
+  .bh-boekingen .bh-rij-saldo:empty { display: none; }
+  /* Titel met labels (te verwerken, koppelen?) mag doorlopen i.p.v. de labels af te kappen. */
+  .bh-tabel .bh-rij-titel { flex-wrap: wrap; gap: 4px 0; white-space: normal; overflow-wrap: anywhere; }
   .bh-rek-velden { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
 }
 @media (max-width: 720px) {
@@ -296,20 +316,17 @@ button.bh-saldo:hover { border-color: #4a4847; background: var(--sl-raise); }
   .bh-kw { width: 100%; }
   .bh-filter { flex: 1 1 40%; max-width: none; }
   .bh-tabel { margin: 0 -6px; }
-  .bh-tr { grid-template-columns: minmax(0, 1fr) auto; gap: 2px 10px; padding: 10px 6px; }
-  .bh-th { display: none; }
-  .bh-rij-hoofd { grid-column: 1; grid-row: 1; }
-  .bh-rij-bedrag { grid-column: 2; grid-row: 1; }
-  .bh-rij-datum { grid-column: 1; grid-row: 2; }
-  .bh-rij-kw { grid-column: 2; grid-row: 2; justify-self: end; }
-  .bh-tr > :nth-child(3), .bh-tr > :nth-child(5), .bh-tr > :nth-child(7) { display: none; }
+  .bh-boekingen .bh-tr { padding: 12px 6px; gap: 3px 10px; }
   .bh-totalen { gap: 10px 22px; }
   .bh-form-paneel { grid-template-columns: minmax(0, 1fr); }
   .bh-form-paneel > * { grid-column: 1 / -1; }
   .bh-rek-velden { grid-template-columns: minmax(0, 1fr); }
   .bh-rek { padding: 14px; }
-  .bh-gb-rij { grid-template-columns: 44px minmax(0, 1fr) 54px; }
-  .bh-gb-soort { display: none; }
+  .bh-gb-rij { grid-template-columns: 44px minmax(0, 1fr) auto; grid-template-areas: "code naam btw" ". soort ."; row-gap: 2px; }
+  .bh-gb-code { grid-area: code; }
+  .bh-gb-naam { grid-area: naam; min-width: 0; overflow-wrap: anywhere; }
+  .bh-gb-soort { grid-area: soort; }
+  .bh-gb-btw { grid-area: btw; }
 }
 .bh-meer { justify-self: center; }
 
@@ -387,13 +404,13 @@ a.bh-saldo:hover { border-color: #4a4847; background: var(--sl-raise); }
 .bh-open-sugg-bedrag { font-variant-numeric: tabular-nums; font-size: 13.5px; white-space: nowrap; }
 
 .bh-controles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
-.bh-controle { display: grid; gap: 10px; align-content: start; padding: 16px 18px; border: 1px solid var(--sl-line); border-radius: 6px; background: var(--sl-panel); min-width: 0; }
+.bh-controle { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; align-content: start; padding: 16px 18px; border: 1px solid var(--sl-line); border-radius: 6px; background: var(--sl-panel); min-width: 0; }
 .bh-controle-kop { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 12px; align-items: start; }
 .bh-controle-teller { display: grid; place-items: center; min-width: 30px; height: 30px; padding: 0 6px; border-radius: 6px; background: var(--sl-bg); color: var(--bh-bij); font-weight: 700; font-variant-numeric: tabular-nums; }
 .bh-controle-teller.is-let-op { color: var(--bh-let-op); }
 .bh-controle-titel { margin: 0 0 2px; font-size: 14.5px; font-weight: 700; }
 .bh-controle-totaal { font-size: 13.5px; font-variant-numeric: tabular-nums; color: var(--sl-muted); white-space: nowrap; }
-.bh-controle-lijst { display: grid; margin: 0 -8px; padding: 0; list-style: none; }
+.bh-controle-lijst { display: grid; grid-template-columns: minmax(0, 1fr); margin: 0 -8px; padding: 0; list-style: none; min-width: 0; }
 .bh-controle-rij {
   display: grid; grid-template-columns: 78px minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 8px; border-top: 1px solid var(--sl-line-soft);
   color: var(--sl-text); text-decoration: none; border-radius: 0; transition: background-color .15s var(--sl-ease);
@@ -435,12 +452,21 @@ a.bh-saldo:hover { border-color: #4a4847; background: var(--sl-raise); }
 @media (max-width: 1100px) {
   .bh-open-grid, .bh-controles { grid-template-columns: minmax(0, 1fr); }
   .bh-import-tabel .bh-tr { grid-template-columns: 84px minmax(0, 1fr) minmax(0, 180px) 116px 116px; }
-  .bh-import-tabel .bh-tr > :nth-child(5) { display: block; }
 }
 @media (max-width: 960px) {
-  .bh-import-tabel .bh-tr { grid-template-columns: 78px minmax(0, 1fr) 116px 112px; }
-  .bh-import-tabel .bh-tr > :nth-child(3) { display: none; }
-  .bh-import-tabel .bh-tr > :nth-child(5) { display: block; }
+  /* Afschriftregels als kaartjes: omschrijving + bedrag, daaronder datum · voorstel · status. */
+  .bh-import-tabel .bh-th { display: none; }
+  .bh-import-tabel .bh-tr {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-areas: "hoofd hoofd bedrag" "datum voorstel status";
+    align-items: start; gap: 4px 12px; padding: 12px 10px;
+  }
+  .bh-import-tabel .bh-tr > :nth-child(1) { grid-area: datum; }
+  .bh-import-tabel .bh-tr > :nth-child(2) { grid-area: hoofd; }
+  .bh-import-tabel .bh-tr > :nth-child(3) { grid-area: voorstel; }
+  .bh-import-tabel .bh-tr > :nth-child(4) { grid-area: status; justify-self: end; }
+  .bh-import-tabel .bh-tr > :nth-child(5) { grid-area: bedrag; }
+  .bh-import-tabel .bh-pil { margin-left: 0; }
 }
 @media (max-width: 720px) {
   .bh-subnav { margin: 14px 16px 0; overflow-x: auto; flex-wrap: nowrap; scrollbar-width: none; }
@@ -453,17 +479,14 @@ a.bh-saldo:hover { border-color: #4a4847; background: var(--sl-raise); }
   .bh-open-sugg > button { grid-column: 1 / -1; justify-self: start; }
   .bh-open-kop { flex-direction: column; }
   .bh-open-totaal { justify-items: start; }
-  .bh-controle-rij { grid-template-columns: minmax(0, 1fr) auto; }
+  .bh-controle-rij { grid-template-columns: minmax(0, 1fr) auto; gap: 2px 12px; }
   .bh-controle-rij .bh-rij-datum { grid-column: 1; grid-row: 2; }
   .bh-controle-rij .bh-rij-hoofd { grid-column: 1; grid-row: 1; }
   .bh-controle-rij .bh-rij-bedrag { grid-column: 2; grid-row: 1; }
   .bh-import-kies { grid-template-columns: minmax(0, 1fr); }
   .bh-import-bestand { flex-wrap: wrap; }
   .bh-import-formaat { width: 100%; }
-  .bh-import-tabel .bh-tr { grid-template-columns: minmax(0, 1fr) auto; }
-  .bh-import-tabel .bh-tr > :nth-child(3) { display: none; }
-  .bh-import-tabel .bh-tr > :nth-child(4) { grid-column: 2; grid-row: 2; justify-self: end; display: block; }
-  .bh-import-tabel .bh-tr > :nth-child(5) { grid-column: 2; grid-row: 1; display: block; }
+  .bh-import-tabel .bh-tr { grid-template-areas: "hoofd hoofd bedrag" "voorstel voorstel status" "datum datum ."; padding: 12px 6px; }
 }
 .bh-import .bh-invoer-voet { align-items: center; justify-content: space-between; }
 .bh-import .bh-invoer-voet .db-knop { flex: none; }
@@ -515,7 +538,7 @@ a.bh-saldo:hover { border-color: #4a4847; background: var(--sl-raise); }
 }
 .bh-afwijking.is-suppletie { border-color: color-mix(in srgb, var(--sl-danger) 55%, transparent); background: color-mix(in srgb, var(--sl-danger) 8%, var(--sl-panel)); }
 .bh-aangifte-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(300px, 380px); gap: 18px; align-items: start; }
-.bh-aangifte-zij { display: grid; gap: 18px; min-width: 0; }
+.bh-aangifte-zij { display: grid; grid-template-columns: minmax(0, 1fr); gap: 18px; min-width: 0; }
 
 .bh-formulier { gap: 12px; }
 .bh-formulier-kop { justify-content: space-between; }
@@ -576,20 +599,29 @@ a.bh-posten-rij:focus-visible { outline: none; box-shadow: var(--sl-focus); }
 .bh-intrekken { justify-self: start; font-size: 13px; }
 
 .bh-btw-controles { gap: 12px; }
-.bh-btw-controle-lijst { display: grid; gap: 0; margin: 0; padding: 0; list-style: none; }
-.bh-btw-controle { display: grid; grid-template-columns: 24px minmax(0, 1fr); gap: 10px; padding: 11px 0; border-top: 1px solid var(--sl-line-soft); }
+.bh-btw-controle-lijst { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0; margin: 0; padding: 0; list-style: none; min-width: 0; }
+.bh-btw-controle { display: grid; grid-template-columns: 24px minmax(0, 1fr); gap: 10px; padding: 11px 0; border-top: 1px solid var(--sl-line-soft); min-width: 0; }
 .bh-btw-controle:first-child { border-top: 0; padding-top: 0; }
 .bh-btw-controle-icoon { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; font-size: 12px; font-weight: 700; background: var(--sl-bg); color: var(--sl-muted); }
 .bh-btw-controle.is-ok .bh-btw-controle-icoon { color: var(--bh-bij); }
 .bh-btw-controle.is-let_op .bh-btw-controle-icoon { background: color-mix(in srgb, var(--bh-let-op) 20%, transparent); color: var(--bh-let-op); }
 .bh-btw-controle-tekst { display: grid; gap: 4px; min-width: 0; }
-.bh-btw-controle-titel { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 14px; font-weight: 700; }
+.bh-btw-controle-titel { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; margin: 0; font-size: 14px; font-weight: 700; overflow-wrap: anywhere; }
 .bh-btw-controle-titel a { color: inherit; }
-.bh-btw-controle-regels { display: grid; gap: 4px; margin: 4px 0 0; padding: 0; list-style: none; }
-.bh-btw-controle-regels li { display: flex; align-items: center; gap: 10px; font-size: 12.5px; }
-.bh-btw-controle-regel { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bh-btw-controle-tekst .bh-kaart-sub { overflow-wrap: anywhere; }
+/* Regels (bonnetjes, boekingen): naam mag over twee regels lopen en wordt daarna afgekapt
+   (volledige tekst in de title); het bedrag staat rechts uitgelijnd binnen de kaart en een
+   eventuele knop schuift naar de volgende regel als het niet past. */
+.bh-btw-controle-regels { display: grid; gap: 0; margin: 4px 0 0; padding: 0; list-style: none; min-width: 0; }
+.bh-btw-controle-regels li { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; padding: 6px 0; border-top: 1px dashed var(--sl-line-soft); font-size: 12.5px; line-height: 1.45; min-width: 0; }
+.bh-btw-controle-regels li:first-child { border-top: 0; }
+.bh-btw-controle-regel {
+  flex: 1 1 140px; min-width: 0; overflow: hidden; overflow-wrap: anywhere;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2;
+}
 .bh-btw-controle-regels a { color: var(--sl-text); }
-.bh-btw-controle-regels .bh-koppel-bedrag { font-size: 12.5px; }
+.bh-btw-controle-regels .bh-koppel-bedrag { flex: none; margin-left: auto; font-size: 12.5px; text-align: right; }
+.bh-btw-controle-regels .bh-koppel-knop { flex: none; margin-left: auto; }
 
 /* ---------- activa ---------- */
 .bh-activeer .bh-koppel-reden { white-space: normal; }
@@ -618,14 +650,43 @@ a.bh-posten-rij:focus-visible { outline: none; box-shadow: var(--sl-focus); }
 
 @media (max-width: 1100px) {
   .bh-aangifte-grid { grid-template-columns: minmax(0, 1fr); }
-  .bh-staat .bh-tr { grid-template-columns: minmax(0, 1fr) 112px 112px 120px 120px; }
-  .bh-staat .bh-tr > :nth-child(2) { display: none; }
+  .bh-staat .bh-tr { grid-template-columns: minmax(0, 1fr) 120px 104px 104px 112px 112px; gap: 12px; }
 }
 @media (max-width: 960px) {
-  .bh-kw-rij { grid-template-columns: 80px minmax(0, 1fr) minmax(0, 1fr) 130px; }
-  .bh-kw-deadline { display: none; }
-  .bh-staat .bh-tr { grid-template-columns: minmax(0, 1fr) 112px 120px; }
-  .bh-staat .bh-tr > :nth-child(3), .bh-staat .bh-tr > :nth-child(4) { display: none; }
+  /* Deadline onder de periode i.p.v. een eigen kolom. */
+  .bh-kw-rij {
+    grid-template-columns: 80px minmax(0, 1fr) minmax(0, 1fr) 130px;
+    grid-template-areas: "naam periode status bedrag" "naam deadline status bedrag";
+    row-gap: 2px;
+  }
+  .bh-kw-naam { grid-area: naam; }
+  .bh-kw-periode { grid-area: periode; }
+  .bh-kw-deadline { grid-area: deadline; font-size: 12px; }
+  .bh-kw-status { grid-area: status; }
+  .bh-kw-bedrag { grid-area: bedrag; }
+  /* Activastaat als kaartjes: naam + eindwaarde, termijn, dan aanschaf · begin · afschrijving
+     met hun eigen label (data-label), zodat er geen kolom wegvalt. */
+  .bh-staat .bh-th { display: none; }
+  .bh-staat .bh-tr {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-areas: "hoofd hoofd eind" "termijn termijn termijn" "aanschaf begin afschr";
+    align-items: start; gap: 8px 12px; padding: 14px 10px;
+  }
+  .bh-staat .bh-tr > :nth-child(1) { grid-area: hoofd; }
+  .bh-staat .bh-tr > :nth-child(2) { grid-area: termijn; }
+  .bh-staat .bh-tr > :nth-child(3) { grid-area: aanschaf; }
+  .bh-staat .bh-tr > :nth-child(4) { grid-area: begin; }
+  .bh-staat .bh-tr > :nth-child(5) { grid-area: afschr; }
+  .bh-staat .bh-tr > :nth-child(6) { grid-area: eind; }
+  .bh-staat .bh-tr > :empty { display: none; }
+  .bh-staat .bh-tr > :nth-child(n+3):not(:nth-child(6)) { justify-self: start; justify-items: start; text-align: left; }
+  .bh-staat [data-label]::before {
+    content: attr(data-label); display: block; margin-bottom: 2px;
+    font-family: var(--sl-mono); font-size: 9.5px; font-weight: 400; letter-spacing: 0.08em; text-transform: uppercase; color: var(--sl-faint);
+  }
+  .bh-staat .bh-tr > :nth-child(6)::before { text-align: right; }
+  .bh-staat .bh-rij-bank { white-space: normal; }
+  .bh-staat .bh-staat-totaal { grid-template-areas: "hoofd hoofd eind" "aanschaf begin afschr"; padding-top: 12px; }
 }
 @media (max-width: 720px) {
   .bh-btw-volgende { grid-template-columns: minmax(0, 1fr); }
@@ -634,11 +695,11 @@ a.bh-posten-rij:focus-visible { outline: none; box-shadow: var(--sl-focus); }
   .bh-btw-groot { font-size: 26px; }
   .bh-btw-volgende-knop { justify-content: center; }
   .bh-kw-lijst { margin: 0 -6px; }
-  .bh-kw-rij { grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; padding: 12px 6px; }
-  .bh-kw-naam { grid-column: 1; grid-row: 1; }
-  .bh-kw-periode { grid-column: 1; grid-row: 2; }
-  .bh-kw-status { grid-column: 1; grid-row: 3; }
-  .bh-kw-bedrag { grid-column: 2; grid-row: 1 / span 2; }
+  .bh-kw-rij {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas: "naam bedrag" "periode bedrag" "deadline deadline" "status status";
+    gap: 4px 12px; padding: 12px 6px;
+  }
   .bh-aangifte-kop { grid-template-columns: minmax(0, 1fr); }
   .bh-aangifte-kop .bh-btw-volgende-bedrag { justify-items: start; text-align: left; }
   .bh-rubriek-kolommen { display: none; }
@@ -654,10 +715,7 @@ a.bh-posten-rij:focus-visible { outline: none; box-shadow: var(--sl-focus); }
   .bh-posten-rij .bh-rij-hoofd { grid-column: 1; grid-row: 1; }
   .bh-posten-rij > :nth-child(3) { grid-column: 2; grid-row: 2; color: var(--sl-muted); }
   .bh-posten-rij > :nth-child(4) { grid-column: 2; grid-row: 1; }
-  .bh-staat .bh-tr { grid-template-columns: minmax(0, 1fr) auto; }
-  .bh-staat .bh-th { display: none; }
-  .bh-staat .bh-tr > :nth-child(2), .bh-staat .bh-tr > :nth-child(3), .bh-staat .bh-tr > :nth-child(4), .bh-staat .bh-tr > :nth-child(5) { display: none; }
-  .bh-staat-totaal > :nth-child(1) { display: block; }
+  .bh-staat .bh-tr { padding: 14px 6px; gap: 8px 10px; }
   .bh-activum-form { grid-template-columns: minmax(0, 1fr); }
   .bh-schema-rij { grid-template-columns: minmax(0, 1fr) 100px 100px; }
 }
@@ -700,7 +758,12 @@ a.bh-rek-tab { text-decoration: none; }
 .bh-rap-kies { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .bh-rap-kies .ag-veld { width: auto; min-width: 0; max-width: 100%; flex: 1 1 260px; }
 
-.bh-rt-wrap { display: grid; gap: 12px; min-width: 0; }
+.bh-rt-wrap { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; min-width: 0; }
+/* Brede tabellen scrollen binnen hun eigen kader; de eerste kolom (rekening) blijft staan. */
+.bh-rt-scroll { min-width: 0; overflow-x: auto; overscroll-behavior-x: contain; -webkit-overflow-scrolling: touch; scrollbar-width: thin; scrollbar-color: var(--sl-line) transparent; }
+.bh-rt-scroll .bh-rt tr > :first-child { position: sticky; left: 0; z-index: 1; background: var(--sl-panel); }
+.bh-rt-scroll .bh-rt-groep > th[colspan] { position: static; }
+.bh-rt-scroll:focus-visible { outline: none; box-shadow: var(--sl-focus); }
 .bh-rt { width: 100%; border-collapse: collapse; font-size: 13.5px; font-variant-numeric: tabular-nums; }
 .bh-rt th { padding: 4px 8px 8px; font-family: var(--sl-mono); font-size: 10px; font-weight: 400; letter-spacing: 0.08em; text-transform: uppercase; color: var(--sl-faint); text-align: left; }
 .bh-rt td { padding: 8px; border-top: 1px solid var(--sl-line-soft); vertical-align: baseline; }
@@ -784,7 +847,6 @@ a.bh-rek-tab { text-decoration: none; }
 }
 @media (max-width: 960px) {
   .bh-rap-balans { grid-template-columns: minmax(0, 1fr); }
-  .bh-rt-kw { display: none; }
 }
 @media (max-width: 720px) {
   .bh-overzicht { padding: 16px 16px 0; }
@@ -792,20 +854,92 @@ a.bh-rek-tab { text-decoration: none; }
   .bh-rap-status { grid-template-columns: minmax(0, 1fr); }
   .bh-rap-status .db-knop { justify-content: center; }
   .bh-rt { font-size: 13px; }
-  .bh-rt td, .bh-rt th { padding-left: 4px; padding-right: 4px; }
-  .bh-rt-vorig { display: none; }
+  .bh-rt td, .bh-rt th { padding-left: 6px; padding-right: 6px; }
+  .bh-rt-scroll .bh-rt tr > :first-child { min-width: 148px; max-width: 200px; }
+  .bh-rt-kaart tr > :first-child { min-width: 64px; }
   .bh-rt-datum { width: 64px; }
   .bh-afs-saldo { grid-template-columns: minmax(0, 1fr) minmax(0, 150px); }
   .bh-afs-saldo-ber { grid-column: 1 / -1; }
-  .bh-mem-kop { grid-template-columns: minmax(0, 1fr) auto; gap: 2px 10px; }
-  .bh-mem-kop .bh-rij-datum { grid-column: 1; grid-row: 2; }
-  .bh-mem-kop .bh-pil { display: none; }
-  .bh-mem-kop .bh-rij-bedrag { grid-column: 2; grid-row: 1 / span 2; }
+  .bh-mem-kop {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-areas: "titel titel bedrag" "datum pil bedrag";
+    gap: 4px 10px; min-height: 44px; padding: 10px 4px;
+  }
+  .bh-mem-titel { grid-area: titel; white-space: normal; overflow-wrap: anywhere; }
+  .bh-mem-kop .bh-rij-datum { grid-area: datum; }
+  .bh-mem-kop .bh-pil { grid-area: pil; justify-self: start; margin-left: 0; }
+  .bh-mem-kop .bh-rij-bedrag { grid-area: bedrag; align-self: center; }
   .bh-mem-regels { padding-left: 4px; }
-  .bh-mem-regel { grid-template-columns: 44px minmax(0, 1fr) 84px; }
-  .bh-mem-regel > :nth-child(3):empty { display: none; }
+  .bh-mem-regel { grid-template-columns: 40px minmax(0, 1fr) 78px 78px; gap: 8px; }
   .bh-mem-invoer-rij { grid-template-columns: minmax(0, 1fr) 84px 84px 22px; gap: 6px; }
-  .bh-afs-regels .bh-afs-uitleg { display: none; }
+  .bh-afs-regels .bh-afs-uitleg { display: block; }
+}
+
+/* ==========================================================
+   Responsief en aanraakschermen (telefoon als web-app, grote monitoren)
+   Breakpoints en tokens: app/(app)/app.css (480 · 720 · 960 · 1440 · 1920).
+   ========================================================== */
+.bh-saldo-naam { flex-wrap: wrap; gap: 4px 0; }
+.bh-koppel-titel { overflow-wrap: anywhere; }
+.bh-aangifte-nav { flex-wrap: wrap; }
+.bh-rap-kies .db-knop { flex: none; }
+/* Zijpaneel (boeking, activum): inhoud nooit breder dan het paneel. */
+.bh-paneel .ag-paneel-inhoud { grid-template-columns: minmax(0, 1fr); }
+.bh-paneel .ag-paneel-inhoud > * { min-width: 0; }
+
+@media (pointer: coarse), (max-width: 720px) {
+  /* Doelen van minstens 40px: tabs, filters, chips, rijen en tekstknoppen. */
+  .bh-rek-tab, .bh-subnav-item, .bh-chip { min-height: 40px; }
+  .bh-rek-tab, .bh-chip { display: inline-flex; align-items: center; }
+  .bh-segment button { min-height: 36px; }
+  .bh-zoek input { padding-block: 10px; }
+  .bh .ag-link-knop { min-height: 40px; display: inline-flex; align-items: center; }
+  .bh-terug, .bh-aangifte-blader a { display: inline-flex; align-items: center; min-height: 40px; }
+  .bh-koppel-knop { min-height: 40px; }
+  .bh-rap-export { min-height: 44px; }
+  .bh-tegel-titel a { display: inline-block; padding-block: 4px; }
+  /* Tekstlinks in lopende tekst en lijsten: hoger tikvlak, de regel zelf blijft gelijk. */
+  .bh-tab { display: inline-flex; align-items: center; min-height: 44px; }
+  .bh-overzicht-taken a,
+  .bh-rt-link,
+  .bh-afs-uitleg a,
+  .bh-btw-controle-titel a { display: inline-flex; align-items: center; min-height: 40px; }
+  .bh-btw-controle-regel a { display: inline-block; padding-block: 11px; margin-block: -11px; }
+  .bh-btw-controle-regels li { padding-block: 10px; }
+  /* Vinkjes: het hele label is het tikvlak. */
+  .bh-veld-schakel { display: flex; flex-direction: row; align-items: center; gap: 10px; min-height: 40px; cursor: pointer; }
+  .bh-veld-schakel input[type="checkbox"] { flex: none; width: 22px; height: 22px; }
+}
+
+@media (max-width: 720px) {
+  .bh-paneel .ag-paneel-kop { padding: 0 8px 0 16px; }
+  .bh-paneel .ag-paneel-inhoud { padding: 18px 16px 24px; gap: 16px; }
+  .bh-paneel .ag-paneel-voet { flex-wrap: wrap; padding-inline: 16px; }
+  .bh-paneel .ag-paneel-acties { margin-left: auto; }
+  .bh-verwijder .ag-paneel-acties { flex-wrap: wrap; }
+  .bh-formulier-kop .bh-print { margin-left: 0; }
+  .bh-aangifte-blader { gap: 14px; }
+  .bh-filters > .bh-zoek { flex-basis: 100%; }
+  .bh-lijst-kop .bh-rek-tabs { width: 100%; }
+  .bh-rek-velden, .bh-mapping-velden { grid-template-columns: minmax(0, 1fr); }
+  .bh-koppel-kies-voet .bh-veld { width: 100%; }
+  .bh-termijn .bh-segment { width: 100%; }
+  .bh-schema { max-height: 360px; }
+}
+@media (max-width: 480px) {
+  .bh-saldi { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; }
+  .bh-saldo { padding: 12px; }
+  .bh-saldo-bedrag { font-size: 17px; }
+  .bh-btw-groot { font-size: 24px; }
+  .bh-mem-invoer-rij { grid-template-columns: minmax(0, 1fr) 76px 76px 28px; }
+}
+
+/* Grote monitoren: wat meer lucht in de kaarten en lijsten. */
+@media (min-width: 1920px) {
+  .bh-inhoud { gap: 26px; }
+  .bh-kaart { padding: 24px 26px; }
+  .bh-aangifte-grid { grid-template-columns: minmax(0, 1fr) minmax(340px, 420px); gap: 22px; }
+  .bh-rap-grid { grid-template-columns: minmax(0, 1fr) 340px; }
 }
 
 @media print {

@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation';
 import { huidigTeamlid } from '@/lib/auth/team';
 import { veiligVervolg } from '@/lib/vervolg';
 import { TfaCode } from '@/components/beveiliging/TfaCode';
+import '../login.css';
 
 export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'Code invullen · Studio Levant' };

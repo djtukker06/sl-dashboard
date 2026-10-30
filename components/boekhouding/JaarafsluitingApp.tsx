@@ -222,27 +222,29 @@ export function JaarafsluitingApp({ v }: { v: AfsluitView }) {
                 {toonPost ? 'Verberg de journaalregels' : `Toon de ${v.regels.length} journaalregels`}
               </button>
               {toonPost && (
-                <table className="bh-rt bh-afs-regels">
-                  <thead>
-                    <tr>
-                      <th>Rekening</th>
-                      <th className="bh-r">Debet</th>
-                      <th className="bh-r">Credit</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {v.regels.map((r, i) => (
-                      <tr key={i}>
-                        <td>
-                          <span className="bh-rt-code">{r.grootboek}</span> {r.naam}
-                          {r.omschrijving ? <span className="bh-afs-uitleg"> · {r.omschrijving}</span> : null}
-                        </td>
-                        <td className="bh-r">{r.debet ? formatCenten(r.debet) : ''}</td>
-                        <td className="bh-r">{r.credit ? formatCenten(r.credit) : ''}</td>
+                <div className="bh-rt-scroll">
+                  <table className="bh-rt bh-afs-regels">
+                    <thead>
+                      <tr>
+                        <th>Rekening</th>
+                        <th className="bh-r">Debet</th>
+                        <th className="bh-r">Credit</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {v.regels.map((r, i) => (
+                        <tr key={i}>
+                          <td>
+                            <span className="bh-rt-code">{r.grootboek}</span> {r.naam}
+                            {r.omschrijving ? <span className="bh-afs-uitleg"> · {r.omschrijving}</span> : null}
+                          </td>
+                          <td className="bh-r">{r.debet ? formatCenten(r.debet) : ''}</td>
+                          <td className="bh-r">{r.credit ? formatCenten(r.credit) : ''}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               )}
             </>
           )}

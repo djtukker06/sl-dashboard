@@ -147,7 +147,7 @@ function Scratchpad({ start, mijnId }: { start: ScratchpadStart; mijnId: string 
   useEffect(() => {
     if (start.nieuw || start.notitie || !start.lijst.length) return;
     // eslint-disable-next-line react-hooks/set-state-in-effect -- eenmalig na het laden (schermbreedte is pas in de browser bekend)
-    if (window.matchMedia('(min-width: 861px)').matches) void openNotitie(sorteerNotities(start.lijst)[0].id);
+    if (window.matchMedia('(min-width: 961px)').matches) void openNotitie(sorteerNotities(start.lijst)[0].id);
     // Alleen bij het laden van de pagina.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -222,7 +222,7 @@ function Scratchpad({ start, mijnId }: { start: ScratchpadStart; mijnId: string 
       setOpen(null);
       setOpenId(null);
       zetUrl(null);
-      if (rest.length && window.matchMedia('(min-width: 861px)').matches) void openNotitie(rest[0].id);
+      if (rest.length && window.matchMedia('(min-width: 961px)').matches) void openNotitie(rest[0].id);
       else setPaneel('lijst');
       toast(`“${weergaveTitel(n)}” verwijderd.`, {
         duur: 8000,
@@ -244,6 +244,17 @@ function Scratchpad({ start, mijnId }: { start: ScratchpadStart; mijnId: string 
   );
 
   const terug = useCallback(() => setPaneel('lijst'), []);
+
+  // Smal scherm (één paneel tegelijk, de pagina scrolt zelf): bij het wisselen tussen lijst en
+  // notitie weer bovenaan beginnen, anders opent een notitie halverwege de pagina.
+  const eersteKeer = useRef(true);
+  useEffect(() => {
+    if (eersteKeer.current) {
+      eersteKeer.current = false;
+      return;
+    }
+    if (window.matchMedia('(max-width: 960px)').matches) window.scrollTo({ top: 0 });
+  }, [paneel, openId]);
   const leeg = lijst.length === 0;
 
   return (

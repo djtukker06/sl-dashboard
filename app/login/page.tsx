@@ -6,6 +6,7 @@ import { veiligVervolg } from '@/lib/vervolg';
 import { Openingsanimatie } from '@/components/login/Openingsanimatie';
 import { IntroScript } from '@/components/login/IntroScript';
 import { WelkomVlag } from '@/components/login/WelkomVlag';
+import './login.css';
 
 // Draait tijdens het parsen, vóór de kaart getekend wordt: beslist of de openingsanimatie
 // speelt (klasse "sl-intro" op .login-wrap, zie components/login/Openingsanimatie.tsx). Eén keer

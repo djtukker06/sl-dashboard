@@ -7,6 +7,7 @@ import { moetKoppelen } from '@/lib/agenda/feed-status';
 import { Rail } from '@/components/shell/Rail';
 import { TeamProvider } from '@/components/team/TeamProvider';
 import { Welkomstanimatie } from '@/components/shell/Welkomstanimatie';
+import { ShellGedrag } from '@/components/shell/ShellGedrag';
 import { IntroScript } from '@/components/login/IntroScript';
 import { WELKOM_SCRIPT } from '@/lib/shell/welkom';
 import '../../public/shell/shell.css';
@@ -60,6 +61,7 @@ export default async function AppLayout({ children }: Readonly<{ children: React
           {children}
         </TeamProvider>
       </main>
+      <ShellGedrag />
       <Script src="/shell/shell.js" strategy="afterInteractive" nonce={nonce} />
     </div>
   );

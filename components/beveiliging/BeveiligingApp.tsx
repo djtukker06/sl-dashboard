@@ -213,7 +213,7 @@ function TeamTfa() {
       {!leden && !fout && <p className="ag-uitleg">Laden…</p>}
       {leden && (
         <div className="bv-tabel-wrap">
-          <table className="bv-tabel">
+          <table className="bv-tabel sl-stapeltabel">
             <thead>
               <tr>
                 <th>Teamlid</th>
@@ -226,22 +226,22 @@ function TeamTfa() {
             <tbody>
               {leden.map((l) => (
                 <tr key={l.userId}>
-                  <td>
+                  <td className="sl-stapel-kop">
                     {l.naam}
                     <div className="bv-klein">{l.email}</div>
                   </td>
-                  <td className="bv-nowrap">
+                  <td className="bv-nowrap" data-label="Rol">
                     {l.rol === 'eigenaar' ? 'Admin' : 'Gebruiker'}
                     {!l.actief && <div className="bv-klein">gedeactiveerd</div>}
                   </td>
-                  <td className="bv-nowrap">
+                  <td className="bv-nowrap" data-label="2FA">
                     <span className="bv-status">
                       <span className={`bv-stip ${l.factoren ? 'is-aan' : 'is-uit'}`} aria-hidden="true" />
                       {l.factoren ? `${l.factoren} ${l.factoren === 1 ? 'apparaat' : 'apparaten'}` : 'Nog niet'}
                     </span>
                   </td>
-                  <td className="bv-nowrap">{datumTijd(l.laatstIngelogd)}</td>
-                  <td className="bv-nowrap">
+                  <td className="bv-nowrap" data-label="Laatst ingelogd">{datumTijd(l.laatstIngelogd)}</td>
+                  <td className="bv-nowrap sl-stapel-acties">
                     {!l.zelf && l.factoren > 0 && (
                       <button type="button" className="bv-link" onClick={() => setResetId(l.userId)}>
                         Reset 2FA
@@ -372,7 +372,7 @@ function AuditLog({ mijnId }: { mijnId: string }) {
           {regels && regels.length === 0 && <p className="ag-uitleg">Nog niets vastgelegd.</p>}
           {regels && regels.length > 0 && (
             <div className="bv-tabel-wrap">
-              <table className="bv-tabel">
+              <table className="bv-tabel sl-stapeltabel">
                 <thead>
                   <tr>
                     <th>Wanneer</th>
@@ -384,16 +384,16 @@ function AuditLog({ mijnId }: { mijnId: string }) {
                 <tbody>
                   {regels.map((r) => (
                     <tr key={r.id}>
-                      <td className="bv-nowrap">{datumTijd(r.op)}</td>
-                      <td>
+                      <td className="bv-nowrap sl-stapel-kop">{datumTijd(r.op)}</td>
+                      <td data-label="Wie">
                         {r.naam ?? (r.userId ? r.userId.slice(0, 8) : r.bron === 'app' ? 'onbekend' : r.bron)}
                         {r.ip && <div className="bv-klein">netwerk {r.ip}</div>}
                       </td>
-                      <td>
+                      <td data-label="Wat">
                         <span className={`bv-actie${GEVAARLIJK.test(r.actie) ? ' is-gevaar' : ''}`}>{actieLabel(r.actie)}</span>
                         {r.bron !== 'app' && <div className="bv-klein">via {r.bron}</div>}
                       </td>
-                      <td className="bv-klein">
+                      <td className="bv-klein" data-label="Details">
                         {r.doel && <div>{r.doel}</div>}
                         {detailTekst(r.details)}
                       </td>

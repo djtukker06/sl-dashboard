@@ -227,10 +227,11 @@ export async function proxy(request: NextRequest) {
 export const config = {
   matcher: [
     // Alleen echte statische, openbare bestanden slaan de proxy over: shell/ (shell.css,
-    // shell.js), brand/ (logo's), het app-icoon en Next' eigen bestanden. GEEN algemene
+    // shell.js), brand/ (logo's), het app-icoon, het web-app-manifest (browsers halen dat
+    // zonder cookies op) en Next' eigen bestanden. GEEN algemene
     // uitzondering op .png/.jpg/…: dan zouden dynamische routes die zo eindigen
     // (bv. /social-files/…/foto.png) zonder controle en sessieverversing blijven.
     // /_next/image staat uit (next.config.ts: images.unoptimized), dus geen uitzondering nodig.
-    '/((?!_next/static|favicon\\.ico$|icon\\.png$|shell/|brand/).*)'
+    '/((?!_next/static|favicon\\.ico$|icon\\.png$|manifest\\.webmanifest$|shell/|brand/).*)'
   ]
 };

@@ -112,6 +112,7 @@ export function UitgavePaneel({
   const autoOpen = useRef(false);
   const aandachtGetoond = useRef(false);
   const bestandKiezer = useRef<HTMLInputElement>(null);
+  const cameraKiezer = useRef<HTMLInputElement>(null);
   const sluitKnop = useRef<HTMLButtonElement>(null);
 
   const onzekerGewijzigd =
@@ -494,7 +495,18 @@ export function UitgavePaneel({
                 <button type="button" className="ag-link-knop" disabled={!!bezig} onClick={() => bestandKiezer.current?.click()} title="Bv. een tweede pagina">
                   {bezig === 'bestand' ? 'Bezig…' : '+ Pagina'}
                 </button>
+                {/* Op een telefoon: meteen de camera voor een volgende pagina van de bon. */}
+                <button
+                  type="button"
+                  className="ag-link-knop ug-alleen-mobiel ug-paneel-camera"
+                  disabled={!!bezig}
+                  onClick={() => cameraKiezer.current?.click()}
+                  title="Foto maken van een volgende pagina"
+                >
+                  <UgIcoon naam="camera" grootte={15} /> Foto
+                </button>
                 <input ref={bestandKiezer} type="file" accept="image/*,application/pdf,.heic,.heif" multiple hidden onChange={bestandToevoegen} />
+                <input ref={cameraKiezer} type="file" accept="image/*" capture="environment" hidden onChange={bestandToevoegen} />
               </div>
             </div>
 

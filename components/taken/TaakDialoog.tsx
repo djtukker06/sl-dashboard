@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { agendaApi, ApiFout, vindKlant } from '@/lib/agenda/client';
+import { agendaApi, ApiFout, useSmal, vindKlant } from '@/lib/agenda/client';
 import { dagTekst, maandagVan, plusDagen, vandaag as vandaagNL, weekdagIndex } from '@/lib/agenda/datum';
 import { magTaakWijzigen, namenLijst } from '@/lib/agenda/rechten';
 import { parseSnelinvoer } from '@/lib/agenda/snelinvoer';
@@ -88,7 +88,12 @@ export function TaakDialoog({
     const vorige = document.activeElement as HTMLElement | null;
     const overflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
+    // Zonder autofocus (bestaande taak op de telefoon) toch de focus in het venster.
+    const raf = requestAnimationFrame(() => {
+      if (doos.current && !doos.current.contains(document.activeElement)) doos.current.focus({ preventScroll: true });
+    });
     return () => {
+      cancelAnimationFrame(raf);
       document.body.style.overflow = overflow;
       if (vorige && document.contains(vorige)) vorige.focus({ preventScroll: true });
     };
@@ -122,6 +127,7 @@ export function TaakDialoog({
       <div
         ref={doos}
         className="tk-dialoog"
+        tabIndex={-1}
         role="dialog"
         aria-modal="true"
         aria-labelledby="tk-dialoog-titel"
@@ -242,6 +248,9 @@ function TaakFormulier({
   const toast = useToast();
   const { mijnId, overgang, perId } = useTeam();
   const nieuw = !start;
+  // Op de telefoon een bestaande taak openen zonder meteen het toetsenbord over de helft van
+  // het scherm; een nieuwe taak begint wel direct in het titelveld.
+  const smal = useSmal();
   const vandaag = useMemo(() => vandaagNL(), []);
   const titelRef = useRef<HTMLInputElement>(null);
 
@@ -620,7 +629,7 @@ function TaakFormulier({
               value={titel}
               maxLength={300}
               placeholder="Wat moet er gebeuren?"
-              autoFocus
+              autoFocus={nieuw || !smal}
               autoComplete="off"
               aria-required="true"
               onChange={(e) => {

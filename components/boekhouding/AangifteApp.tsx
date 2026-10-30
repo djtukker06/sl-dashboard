@@ -370,7 +370,7 @@ export function AangifteApp({ view: v }: { view: AangifteView }) {
                       <ul className="bh-btw-controle-regels">
                         {c.regels.map((r, i) => (
                           <li key={i}>
-                            <span className="bh-btw-controle-regel">
+                            <span className="bh-btw-controle-regel" title={r.sub ? `${r.titel} · ${r.sub}` : r.titel}>
                               {r.href ? <Link href={r.href}>{r.titel}</Link> : r.titel}
                               {r.sub && <span className="bh-zacht"> · {r.sub}</span>}
                             </span>

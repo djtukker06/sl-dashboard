@@ -5,9 +5,11 @@
    Velden, paneel, segmenten en toasts: agenda.css (ag-).
    ========================================================== */
 
-.ug { min-height: 100vh; background: var(--sl-bg); color: var(--sl-text); font-family: var(--sl-font); }
+.ug { min-height: var(--sl-scherm-h, 100dvh); background: var(--sl-bg); color: var(--sl-text); font-family: var(--sl-font); }
 .ug-icoon { display: block; flex: 0 0 auto; }
-.ug-inhoud { display: grid; gap: 18px; padding: 24px 40px 56px; max-width: 1240px; }
+/* minmax(0, 1fr): anders groeit de impliciete kolom mee met de breedste inhoud (chiprij) en
+   scrollt de pagina horizontaal op de telefoon. */
+.ug-inhoud { display: grid; grid-template-columns: minmax(0, 1fr); gap: 18px; padding: 24px 40px 56px; max-width: 1240px; }
 
 /* ---------- tabs ---------- */
 .ug-tabs { display: flex; gap: 4px; padding: 0 40px; border-bottom: 1px solid var(--sl-line); }
@@ -64,8 +66,14 @@
 .ug-drop-sub { margin: 0; font-size: 13px; line-height: 1.55; color: var(--sl-muted); }
 .ug-drop-knoppen { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 14px; }
 .ug-knop-groot { padding: 10px 16px; font-size: 14px; }
+/* Camera en "Foto maken": alleen op aanraakschermen en telefoonbreedte; slepen en ⌘V alleen
+   met een muis. Het zijn alternatieve knoppen/teksten, er verdwijnt geen functie. */
 .ug-alleen-mobiel { display: none; }
-@media (pointer: coarse) { .ug-alleen-mobiel { display: inline-flex; } }
+@media (pointer: coarse), (max-width: 720px) {
+  .ug-alleen-mobiel { display: inline-flex; }
+  span.ug-alleen-mobiel { display: inline; }
+  .ug-alleen-muis { display: none; }
+}
 
 .ug-wachtrij { list-style: none; margin: 0; padding: 12px 0 0; border-top: 1px solid var(--sl-line-soft); display: grid; gap: 6px; }
 .ug-wacht { display: flex; align-items: center; gap: 10px; font-size: 13px; animation: ag-in .18s var(--sl-ease); }
@@ -77,7 +85,7 @@
 .ug-wacht.is-klaar .ug-wacht-stip { background: var(--sl-sand); }
 .ug-wacht.is-fout .ug-wacht-stip { background: var(--sl-danger); }
 .ug-wacht-naam { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ug-wacht-fase { flex: 0 0 auto; font-family: var(--sl-mono); font-size: 10.5px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--sl-muted); }
+.ug-wacht-fase { flex: 0 1 auto; min-width: 0; max-width: 60%; text-align: right; font-family: var(--sl-mono); font-size: 10.5px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--sl-muted); }
 .ug-wacht.is-fout .ug-wacht-fase { color: var(--sl-danger); text-transform: none; letter-spacing: 0; font-family: var(--sl-font); font-size: 12.5px; }
 @keyframes ug-puls { 50% { opacity: .35; } }
 
@@ -108,6 +116,7 @@
 .ug-zoek {
   flex: 1 1 260px;
   display: flex;
+  flex-direction: row; /* globals.css zet labels op column */
   align-items: center;
   gap: 8px;
   min-width: 0;
@@ -394,6 +403,7 @@ button.ug-kwartaal:hover { border-color: #4a4847; }
 .ug-dialoog-uitleg code { font-family: var(--sl-mono); font-size: 11px; color: var(--sl-text); }
 .ug-dialoog-knoppen { display: flex; flex-wrap: wrap; gap: 10px; }
 .ug-delen { display: grid; gap: 8px; justify-items: start; }
+.ug-delen .db-knop { max-width: 100%; overflow-wrap: anywhere; text-align: left; }
 
 /* ---------- dashboard ---------- */
 .db-stapel { display: flex; flex-direction: column; gap: 24px; min-width: 0; }
@@ -463,7 +473,7 @@ button.ug-kwartaal:hover { border-color: #4a4847; }
    ========================================================== */
 
 /* ---------- zoeken ---------- */
-.ug-zoekblok { display: grid; gap: 12px; }
+.ug-zoekblok { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
 .ug-zoek-groot { padding: 0 14px; gap: 10px; border-radius: 6px; background: var(--sl-panel); }
 .ug-zoek-groot input { padding: 13px 0; font-size: 16px; }
 .ug-zoek-toets {
@@ -624,6 +634,7 @@ button.ug-kwartaal:hover { border-color: #4a4847; }
   z-index: 60;
   display: grid;
   min-width: 250px;
+  max-width: calc(100vw - 32px);
   padding: 6px;
   border: 1px solid var(--sl-line);
   border-radius: 6px;
@@ -656,6 +667,8 @@ button.ug-kwartaal:hover { border-color: #4a4847; }
 .ug-paneel-kop { display: grid; gap: 4px; min-width: 0; }
 .ug-paneel-titel { margin: 0; font-size: 17px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ug-paneel-info { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; }
+.ug-paneel-info .ug-door { flex: 1 1 200px; min-width: 0; }
+.ug-paneel-camera { display: inline-flex; align-items: center; gap: 5px; }
 .ug-door { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin: 0; font-size: 13px; color: var(--sl-muted); }
 .ug-door .sl-persoon-naam { color: var(--sl-text); }
 .ug-gegevens { border-top: 1px solid var(--sl-line-soft); padding-top: 12px; }
@@ -699,4 +712,149 @@ button.ug-kwartaal:hover { border-color: #4a4847; }
   .ug-lrij-soort { display: none; }
   .ug-sneltoetsen { display: none; }
   .ug-meer-menu { right: auto; left: 0; }
+}
+
+/* ---------- camera ---------- */
+/* BonnetjeKnop (dashboard, /boekhouding): icoon + "Foto" naast de uploadknop. */
+.ug-camera-knop { gap: 6px; }
+.ug-camera-knop .ug-icoon { flex: none; }
+
+/* ---------- aanraakschermen: doelen van minstens 40px ---------- */
+@media (pointer: coarse), (max-width: 720px) {
+  .ug-chip { min-height: 40px; padding-inline: 14px; }
+  .ug-maanden .ug-chip { padding-inline: 12px; }
+  .ug-weergave button { width: 40px; height: 36px; }
+  .ug-mini-knop { width: 40px; height: 40px; }
+  .ug-bestand-naam { min-height: 40px; }
+  .ug-bestand-balk .ag-link-knop { min-height: 40px; }
+  .ug-meer-item { min-height: 44px; }
+  .ug-lrij { min-height: 52px; }
+  .ug-wacht { min-height: 32px; }
+  .ug-gegevens > summary { min-height: 40px; align-items: center; }
+  .ug-kaart-voet { min-height: 40px; }
+  /* Op een telefoon is de camera de hoofdactie: zandkleurig; "Kies bestanden" wordt secundair. */
+  .ug-drop .ug-knop-camera { background: var(--sl-sand); border-color: var(--sl-sand); color: var(--sl-dark); font-weight: 600; }
+  .ug-drop .ug-knop-kies { background: transparent; border-color: var(--sl-line); color: var(--sl-text); font-weight: 500; }
+}
+
+/* ---------- telefoon (≤ 720px) ---------- */
+@media (max-width: 720px) {
+  .ug-drop-knoppen { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
+  .ug-drop-knoppen .ug-knop-groot { min-height: 48px; }
+  /* Weergave-schakelaar rechts naast de chips i.p.v. eronder verloren. */
+  .ug-weergave { margin-left: auto; }
+  .ug-lrij-door { justify-content: flex-end; }
+  /* Export: knoppen over de volle breedte, periode-schuif centreert. */
+  .ug-dialoog { width: calc(100vw - 24px); }
+  .ug-dialoog-kop { padding: 10px 10px 10px 18px; }
+  .ug-dialoog-inhoud { padding: 16px 18px 20px; }
+  .ug-dialoog-knoppen .db-knop { flex: 1 1 100%; }
+  .ug-dialoog .ug-periode-label { min-width: 0; flex: 1; }
+  .ug-dialoog .ug-schuif { flex: 1 1 100%; justify-content: space-between; }
+  /* Paneel: voorbeeld iets hoger dan de oude 220px (bonnetjes zijn staand), acties
+     verdelen de breedte. */
+  .ug-voorbeeld { height: min(46vh, 340px); }
+  .ug-paneel .ag-paneel-kop { padding-left: 16px; }
+  .ug-paneel .ag-paneel-inhoud { padding: 16px 16px 24px; }
+  .ug-paneel .ag-paneel-voet { flex-wrap: wrap; padding-inline: 16px; }
+  .ug-paneel .ag-paneel-acties { flex: 1 1 auto; justify-content: flex-end; }
+  .ug-paneel .ag-zeker { width: 100%; }
+  .ug-bestand-naam { max-width: min(220px, 52vw); }
+  .ug-paneel-info .db-knop { flex: 1 1 100%; }
+}
+
+/* ---------- groot scherm ---------- */
+@media (min-width: 1920px) {
+  .ug-galerij { grid-template-columns: repeat(auto-fill, minmax(196px, 1fr)); gap: 16px; }
+}
+
+/* ==========================================================
+   Facturen- en prijsopgavelijst (components/InvoicesTable, QuotesTable)
+   Desktop: ongewijzigd (globals.css). De componenten zelf blijven onaangeroerd (factuur-guard
+   in rooktest-shell); op de telefoon wordt de tabel hier puur met CSS een stapel kaarten.
+   Kolommen (in beide tabellen gelijk): 1 nummer · 2 klant · 3 datum · 4 totaal ·
+   5 Aanpassen · 6 verwijderen (×).
+   ========================================================== */
+.facturen-tabel .verwijder-link:focus-visible,
+.facturen-tabel .bewerk-link:focus-visible { outline: none; box-shadow: var(--sl-focus); border-radius: 999px; }
+.facturen-tabel td.bedrag { white-space: nowrap; text-align: right; }
+.facturen-tabel th:nth-child(4) { text-align: right; }
+
+@media (max-width: 720px) {
+  /* Geen kader met vaste hoogte van ~5 rijen: de kaarten lopen gewoon mee met de pagina. */
+  .facturen-tabel-wrap { max-height: none; overflow: visible; border: 0; border-radius: 0; }
+  .facturen-tabel { display: block; background: transparent; border: 0; border-radius: 0; overflow: visible; }
+  .facturen-tabel thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .facturen-tabel tbody { display: grid; gap: 10px; }
+  .facturen-tabel tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    padding: 12px 14px 6px;
+    border: 1px solid var(--border, var(--sl-line));
+    border-radius: var(--sl-r);
+    background: var(--panel, var(--sl-panel));
+  }
+  .facturen-tabel tr:hover td { background: transparent; }
+  .facturen-tabel td,
+  .facturen-tabel td:last-child,
+  .facturen-tabel td.acties-col {
+    grid-column: 1 / -1;
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 16px;
+    width: auto;
+    min-width: 0;
+    padding: 6px 0;
+    border: 0;
+    white-space: normal;
+    text-align: right;
+    overflow-wrap: anywhere;
+  }
+  /* Labels via de kolompositie (de componenten hebben geen data-label). */
+  .facturen-tabel td:nth-child(2)::before,
+  .facturen-tabel td:nth-child(3)::before,
+  .facturen-tabel td:nth-child(4)::before {
+    flex: none;
+    font-family: var(--sl-mono);
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    text-align: left;
+    color: var(--sl-muted);
+  }
+  .facturen-tabel td:nth-child(2)::before { content: "Klant"; }
+  .facturen-tabel td:nth-child(3)::before { content: "Datum"; }
+  .facturen-tabel td:nth-child(4)::before { content: "Totaal"; }
+  .facturen-tabel td.bedrag { font-size: 15px; }
+  /* Kop van de kaart: nummer (+ soort en restfactuur). */
+  .facturen-tabel td:first-child { display: block; padding-bottom: 8px; font-size: 15px; text-align: left; }
+  .facturen-tabel td:first-child > a { display: inline-flex; align-items: center; min-height: 40px; }
+  .facturen-tabel td:first-child .soort-label { margin: 0 0 0 8px; vertical-align: middle; }
+  .facturen-tabel .rest-regel { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+  .facturen-tabel .rest-regel a { display: inline-flex; align-items: center; min-height: 40px; }
+  .facturen-tabel .restfactuur-knop { min-height: 40px; padding-inline: 16px; }
+  /* Voet: Aanpassen links, × rechts, samen op één regel met een lijn erboven. */
+  .facturen-tabel td.acties-col,
+  .facturen-tabel td:last-child {
+    margin-top: 6px;
+    padding: 8px 0;
+    border-top: 1px solid var(--border, var(--sl-line));
+  }
+  .facturen-tabel td.acties-col { grid-column: 1; justify-content: flex-start; }
+  .facturen-tabel td:last-child { grid-column: 2; justify-content: flex-end; }
+  .facturen-tabel .bewerk-link { display: inline-flex; align-items: center; min-height: 40px; padding-inline: 18px; }
+  .facturen-tabel .verwijder-link { display: inline-grid; place-items: center; min-width: 44px; min-height: 40px; font-size: 22px; }
+
+  /* Kopregel en topbar-links boven de lijsten: grotere tikvlakken. */
+  .sl-kop-link { display: inline-flex; align-items: center; min-height: 40px; }
+  .topbar nav { flex-wrap: wrap; gap: 4px 16px; }
+  .topbar nav a { display: inline-flex; align-items: center; min-height: 40px; }
 }

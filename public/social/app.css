@@ -673,3 +673,145 @@ textarea.code, #code {
   .brief, .canvas-area { overflow: visible; }
   .brief { padding-bottom: 8px; }
 }
+
+/* ==========================================================
+   dashboard: aanraakschermen en telefoon
+   Breakpoints gelijk aan de backoffice (app/(app)/app.css): 720 = telefoon met de tabbalk
+   van de rail onderaan (public/shell/shell.css). Selectors met "html body" zodat ze winnen
+   van de social-regels in shell.css (die na dit bestand geladen wordt).
+   ========================================================== */
+
+/* Knoppen die alleen bij hover verschijnen, zijn op een aanraakscherm altijd zichtbaar. */
+@media (hover: none) {
+  /* Zonder hover: altijd zichtbaar, met een tikvlak van 40px. */
+  .thumb button { opacity: 1; width: 40px; height: 40px; top: 2px; right: 2px; font-size: 16px; }
+  .slide-frame::after { content: none; }
+}
+@media (pointer: coarse) {
+  .btn { min-height: 40px; }
+  .btn.small { min-height: 36px; }
+  .link { min-height: 40px; padding-inline: 4px; }
+  .slide-meta button { min-height: 40px; min-width: 40px; padding: 6px 8px; }
+  .menu-pop a { padding-block: 13px; }
+  .tab { min-height: 34px; }
+  label.toggle input { width: 20px; height: 20px; }
+  /* Het hele label is het tikvlak van het vinkje. */
+  label.toggle { min-height: 40px; align-items: center; }
+  .brand-titel { display: inline-flex; align-items: center; min-height: 40px; }
+  .thumb button { width: 40px; height: 40px; top: 2px; right: 2px; font-size: 16px; }
+}
+
+@media (max-width: 720px) {
+  /* Eén kolom: de lijst met posts bovenaan (horizontaal vegen), daaronder de post. De pagina
+     scrolt zelf; de tabbalk van de rail ligt vast onderaan. */
+  html, body { height: auto; }
+  html body, html body.sl-met-rail { display: block; min-height: 100dvh; }
+  html body.sl-met-rail > .sidebar,
+  html body.sl-met-rail > main,
+  html body > .sidebar,
+  html body > main { height: auto; }
+
+  /* iOS zoomt in op velden met een kleinere letter dan 16px. */
+  input:not([type="checkbox"]):not([type="radio"]), textarea, select { font-size: 16px; }
+  .title-input { font-size: 20px; }
+  #projectFormat { font-size: 16px; text-transform: none; letter-spacing: 0; font-family: var(--font); }
+  .thumb input, .brand-grid textarea, textarea.code, #code { font-size: 16px; }
+
+  .sidebar {
+    position: static;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 10px;
+    padding: 0 16px 14px;
+    padding-top: env(safe-area-inset-top, 0px);
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .brand {
+    grid-column: 1 / -1;
+    height: auto;
+    min-height: 0;
+    margin: 0 -16px 4px;
+    padding: 16px;
+  }
+  .brand-titel { font-size: 22px; }
+  .sidebar > #newProject { grid-column: 2; grid-row: 2; width: auto; padding-block: 8px; }
+  .sidebar > .search { grid-column: 1; grid-row: 2; padding-block: 9px; }
+  .sidebar-label { grid-column: 1 / -1; margin: 4px 0 -2px; }
+  .project-list {
+    grid-column: 1 / -1;
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    overscroll-behavior-x: contain;
+    scroll-snap-type: x proximity;
+    scroll-padding-inline: 16px;
+    margin: 0 -16px;
+    padding: 2px 16px 6px;
+    scrollbar-width: none;
+  }
+  .project-list::-webkit-scrollbar { display: none; }
+  .project-list:empty { display: none; }
+  .project-list a {
+    flex: 0 0 min(240px, 72vw);
+    min-width: 0;
+    min-height: 56px;
+    border: 1px solid var(--line-soft);
+    background: var(--panel);
+    scroll-snap-align: start;
+  }
+  .project-list a.active { border-color: var(--sand); }
+  .sidebar-foot { grid-column: 1 / -1; padding-top: 8px; }
+
+  main { height: auto; overflow: visible; }
+
+  /* Lege staat */
+  .empty { height: auto; grid-template-rows: auto; gap: 24px; padding: 24px 16px 32px; }
+  .empty h1 { font-size: clamp(32px, 10vw, 44px); }
+  .empty-foot { flex-direction: column; align-items: stretch; gap: 20px; padding-top: 20px; }
+  .empty-intro { max-width: none; }
+
+  /* Project */
+  .project { display: block; height: auto; }
+  .project-head { flex-wrap: wrap; gap: 8px; min-height: 0; padding: 12px 16px; }
+  .title-input { flex: 1 1 100%; min-width: 0; margin-left: -8px; }
+  #projectFormat { flex: 1 1 160px; min-width: 0; max-width: none; }
+  .head-actions { flex-wrap: wrap; margin-left: auto; }
+  .menu-pop { min-width: min(260px, calc(100vw - 32px)); max-width: calc(100vw - 32px); }
+  .project-body { display: block; }
+  .brief { overflow: visible; padding: 20px 16px 0; border-right: 0; border-bottom: 1px solid var(--line); }
+  /* De genereer-knop plakt boven de tabbalk in plaats van erachter. */
+  .generate-bar { bottom: calc(var(--sl-tab-h, 64px) + env(safe-area-inset-bottom, 0px)); margin-inline: -16px; padding-inline: 16px; }
+  .canvas-area { overflow: visible; padding: 20px 16px 32px; gap: 24px; }
+  .slides-empty { padding: 48px 16px; }
+  .slides { gap: 16px; margin-right: -16px; padding-right: 16px; scroll-snap-type: x proximity; scroll-padding-inline: 0; }
+  .slide-card { scroll-snap-align: start; }
+  .post-tools { grid-template-columns: minmax(0, 1fr); gap: 24px; padding-top: 20px; }
+  .progress { flex-wrap: wrap; padding: 14px; }
+
+  /* Dialogen: bijna schermvullend, scrollen zelf, niet onder statusbalk of thuisbalk. */
+  dialog { padding: 20px 16px; max-height: calc(100dvh - 24px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)); overflow-y: auto; }
+  dialog h3 { font-size: 20px; }
+  .small-dialog, .wide-dialog { width: calc(100vw - 24px); max-width: none; }
+  .brand-grid { grid-template-columns: minmax(0, 1fr); }
+  .brand-grid textarea { height: 36vh; }
+  .dialog-actions { flex-wrap: wrap; }
+  .dialog-actions .btn { flex: 1 1 auto; }
+
+  /* Slide-editor: schermvullend. */
+  .editor { width: 100vw; height: 100dvh; max-height: none; border: 0; border-radius: 0; padding: 0; overflow: hidden; }
+  .editor header {
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: calc(10px + env(safe-area-inset-top, 0px)) 16px 10px;
+  }
+  .editor header strong { flex: 1 1 100%; }
+  .editor .tabs { margin-left: 0; }
+  .editor footer { padding: 10px 16px calc(10px + env(safe-area-inset-bottom, 0px)); }
+  .editor-body.split { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); }
+  #code { border-right: 0; border-bottom: 1px solid var(--line); }
+
+  /* Melding boven de tabbalk. */
+  .toast { bottom: calc(var(--sl-tab-h, 64px) + env(safe-area-inset-bottom, 0px) + 12px); max-width: calc(100vw - 32px); }
+}

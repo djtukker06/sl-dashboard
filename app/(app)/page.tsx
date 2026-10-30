@@ -59,12 +59,13 @@ export default async function DashboardPage() {
           </Suspense>
         </ModuleKop>
 
-        {/* Alleen de eigenaar: back-up mislukt/te oud of keep-alive stil. */}
-        <Suspense fallback={null}>
-          <BackupWaarschuwing lid={lid} />
-        </Suspense>
-
         <div className="db-grid">
+          {/* Alleen de eigenaar: back-up mislukt/te oud of keep-alive stil. Binnen het grid,
+              zodat de balk met de kaarten eronder uitlijnt (volle breedte, agenda.css). */}
+          <Suspense fallback={null}>
+            <BackupWaarschuwing lid={lid} />
+          </Suspense>
+
           {/* Jouw Vandaag, Deze week en Taken (alleen op jouw naam; uitgezet = alleen een link). */}
           <Suspense fallback={<PlanningSkelet />}>
             <PlanningWidgets lid={lid} />
@@ -75,7 +76,7 @@ export default async function DashboardPage() {
             <InboxKaart lid={lid} />
           </Suspense>
 
-          <Suspense fallback={<KaartSkelet label="Recente posts" regels={2} className="db-breed" />}>
+          <Suspense fallback={<KaartSkelet label="Recente posts" regels={2} className="db-breed db-social" />}>
             <SocialWidget lid={lid} />
           </Suspense>
 

@@ -421,7 +421,7 @@ export function BankApp({
         {gefilterd.length === 0 ? (
           <p className="bh-leeg bh-lijst-leeg">Geen boekingen met deze filters.</p>
         ) : (
-          <div className="bh-tabel" role="table" aria-label="Boekingen">
+          <div className="bh-tabel bh-boekingen" role="table" aria-label="Boekingen">
             <div className="bh-tr bh-th" role="row">
               <span role="columnheader">Datum</span>
               <span role="columnheader">Omschrijving</span>

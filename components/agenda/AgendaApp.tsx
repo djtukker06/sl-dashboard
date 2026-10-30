@@ -1,12 +1,13 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { agendaApi, ApiFout, typtIn, useNu, useSmal } from '@/lib/agenda/client';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { agendaApi, ApiFout, typtIn, useNu } from '@/lib/agenda/client';
 import {
   dagDelen,
   eersteVanMaand,
   inAmsterdam,
   korteDag,
+  langeDag,
   maandagVan,
   MAANDNAMEN,
   minutenNaarTijd,
@@ -28,16 +29,33 @@ import { ToastProvider, useToast } from './Toast';
 import { useAfvinken } from './useAfvinken';
 import { WeekView, type Verplaatsing } from './WeekView';
 
-type Weergave = 'week' | 'maand';
+// 'week' = zeven dagen (op de telefoon drie), 'dag' = één kolom. Zonder eigen keuze is de
+// standaard 'week' op een groot scherm en 'dag' op de telefoon (≤ 720px).
+export type Weergave = 'dag' | 'week' | 'maand';
 
 // Vroeger onthield de agenda de keuze "Mijn agenda / Heel team" per browser. Die teamweergave
 // bestaat niet meer (je ziet alleen wat op jouw naam staat); de oude sleutel ruimen we op.
 const OUDE_WIE_SLEUTEL = 'sl-agenda-wie';
 
+/** Als useSmal (≤ 720px), maar bij de server-render en hydratie de gok van de server
+ *  (telefoon of niet), zodat een telefoon niet eerst kort de weekweergave laat zien. */
+function useSmalScherm(telefoon: boolean): boolean {
+  return useSyncExternalStore(
+    (cb) => {
+      const mq = window.matchMedia('(max-width: 720px)');
+      mq.addEventListener('change', cb);
+      return () => mq.removeEventListener('change', cb);
+    },
+    () => window.matchMedia('(max-width: 720px)').matches,
+    () => telefoon
+  );
+}
+
 export function AgendaApp(props: {
   vandaag: Dag;
+  telefoon: boolean;
   startDag: Dag;
-  startWeergave: Weergave;
+  startWeergave: Weergave | null;
   startFilter: TakenFilter;
   startProject: string | null;
   openTaak: string | null;
@@ -54,6 +72,7 @@ export function AgendaApp(props: {
 
 function Agenda({
   vandaag: vandaagServer,
+  telefoon,
   startDag,
   startWeergave,
   startFilter,
@@ -62,8 +81,9 @@ function Agenda({
   openAfspraak
 }: {
   vandaag: Dag;
+  telefoon: boolean;
   startDag: Dag;
-  startWeergave: Weergave;
+  startWeergave: Weergave | null;
   startFilter: TakenFilter;
   startProject: string | null;
   openTaak: string | null;
@@ -71,13 +91,17 @@ function Agenda({
 }) {
   const toast = useToast();
   const nu = useNu();
-  const smal = useSmal();
+  const smal = useSmalScherm(telefoon);
   const { mijnId, overgang } = useTeam();
   const taakDialoog = useTaakDialoog();
   // "Vandaag" schuift mee als het scherm over middernacht open blijft staan.
   const vandaag = nu ? inAmsterdam(nu).dag : vandaagServer;
 
-  const [weergave, setWeergave] = useState<Weergave>(startWeergave);
+  // null = de standaard voor dit scherm (zie Weergave); zo opent de telefoon op één dag
+  // zonder dat de server de schermbreedte hoeft te kennen.
+  const [keuze, setWeergave] = useState<Weergave | null>(startWeergave);
+  const standaard: Weergave = smal ? 'dag' : 'week';
+  const weergave = keuze ?? standaard;
   const [focus, setFocus] = useState<Dag>(startDag);
   const [filter, setFilter] = useState<TakenFilter>(overgang && startFilter === 'uitgezet' ? 'vandaag' : startFilter);
   const [project, setProject] = useState<{ id: string; naam: string } | null>(
@@ -119,6 +143,7 @@ function Agenda({
       const start = maandagVan(eersteVanMaand(focus));
       return Array.from({ length: 42 }, (_, i) => plusDagen(start, i));
     }
+    if (weergave === 'dag') return [focus];
     const start = smal ? focus : maandagVan(focus);
     return Array.from({ length: smal ? 3 : 7 }, (_, i) => plusDagen(start, i));
   }, [weergave, focus, smal]);
@@ -192,13 +217,13 @@ function Agenda({
   useEffect(() => {
     const p = new URLSearchParams();
     if (focus !== vandaag) p.set('dag', focus);
-    if (weergave === 'maand') p.set('weergave', 'maand');
+    if (keuze && keuze !== standaard) p.set('weergave', keuze);
     if (filter === 'uitgezet') p.set('lijst', 'uitgezet');
     if (project) p.set('project', project.id);
     const qs = p.toString();
     const url = `/agenda${qs ? `?${qs}` : ''}`;
     if (window.location.pathname + window.location.search !== url) window.history.replaceState(null, '', url);
-  }, [focus, weergave, vandaag, filter, project]);
+  }, [focus, keuze, standaard, vandaag, filter, project]);
 
   const herlaad = useCallback(() => setTeller((t) => t + 1), []);
 
@@ -307,15 +332,26 @@ function Agenda({
   }
 
   // ---------- navigatie ----------
+  const stap = weergave === 'dag' ? 1 : smal ? 3 : 7;
   const vorige = useCallback(() => {
-    setFocus((f) => (weergave === 'maand' ? plusMaanden(f, -1) : plusDagen(f, smal ? -3 : -7)));
-  }, [weergave, smal]);
+    setFocus((f) => (weergave === 'maand' ? plusMaanden(f, -1) : plusDagen(f, -stap)));
+  }, [weergave, stap]);
   const volgende = useCallback(() => {
-    setFocus((f) => (weergave === 'maand' ? plusMaanden(f, 1) : plusDagen(f, smal ? 3 : 7)));
-  }, [weergave, smal]);
+    setFocus((f) => (weergave === 'maand' ? plusMaanden(f, 1) : plusDagen(f, stap)));
+  }, [weergave, stap]);
+  // Klik op een daglabel in de week: die dag als dagweergave. Klik op een dag in de maand:
+  // terug naar de standaardweergave rond die dag (groot scherm: week, telefoon: dag).
+  const naarDag = useCallback((d: Dag) => {
+    setFocus(d);
+    setWeergave('dag');
+  }, []);
+  const uitMaand = useCallback((d: Dag) => {
+    setFocus(d);
+    setWeergave(null);
+  }, []);
   const naarVandaag = useCallback(() => setFocus(vandaag), [vandaag]);
 
-  // Sneltoetsen: n = nieuwe taak (TakenProvider), a = afspraak, t = vandaag, w/m = weergave,
+  // Sneltoetsen: n = nieuwe taak (TakenProvider), a = afspraak, t = vandaag, d/w/m = weergave,
   // ←/→ = vorige/volgende.
   useEffect(() => {
     function toets(e: KeyboardEvent) {
@@ -326,6 +362,7 @@ function Agenda({
         e.preventDefault();
         nieuweAfspraakOp(dagen.includes(vandaag) ? vandaag : focus, null);
       } else if (k === 't') naarVandaag();
+      else if (k === 'd') setWeergave('dag');
       else if (k === 'w') setWeergave('week');
       else if (k === 'm') setWeergave('maand');
       else if (e.key === 'ArrowLeft') vorige();
@@ -350,6 +387,7 @@ function Agenda({
       const { j, m } = dagDelen(focus);
       return `${MAANDNAMEN[m - 1]} ${j}`;
     }
+    if (weergave === 'dag') return langeDag(focus);
     const a = dagDelen(dagen[0]);
     const b = dagDelen(dagen[dagen.length - 1]);
     if (a.m === b.m) return `${MAANDNAMEN[a.m - 1]} ${a.j}`;
@@ -429,7 +467,7 @@ function Agenda({
             metUitgezet={!overgang}
           />
           <p className="ag-toetsen" aria-hidden="true">
-            <kbd>n</kbd> taak · <kbd>a</kbd> afspraak · <kbd>t</kbd> vandaag · <kbd>w</kbd>/<kbd>m</kbd> week/maand · <kbd>←</kbd>
+            <kbd>n</kbd> taak · <kbd>a</kbd> afspraak · <kbd>t</kbd> vandaag · <kbd>d</kbd>/<kbd>w</kbd>/<kbd>m</kbd> dag/week/maand · <kbd>←</kbd>
             <kbd>→</kbd> bladeren
           </p>
         </section>
@@ -437,7 +475,7 @@ function Agenda({
         <section className="ag-rechts" aria-label="Agenda">
           <div className="ag-balk-boven">
             <div className="ag-nav">
-              <button type="button" className="db-knop" onClick={naarVandaag} disabled={dagen.includes(vandaag) && weergave === 'week'}>
+              <button type="button" className="db-knop" onClick={naarVandaag} disabled={weergave !== 'maand' && dagen.includes(vandaag)}>
                 Vandaag
               </button>
               <button type="button" className="ag-icoonknop" onClick={vorige} aria-label="Vorige" title="Vorige (←)">
@@ -452,13 +490,16 @@ function Agenda({
               </button>
               <h2 className="ag-titel">
                 {titel}
-                {weergave === 'week' && <span className="ag-titel-week">week {weeknummer(dagen[0])}</span>}
+                {weergave !== 'maand' && <span className="ag-titel-week">week {weeknummer(dagen[0])}</span>}
               </h2>
               {bereikLaadt && <span className="ag-laadt" aria-label="Laden" />}
             </div>
             <div className="ag-segment" role="group" aria-label="Weergave">
-              <button type="button" aria-pressed={weergave === 'week'} className={weergave === 'week' ? 'is-aan' : ''} onClick={() => setWeergave('week')} title="Week (w)">
-                Week
+              <button type="button" aria-pressed={weergave === 'dag'} className={weergave === 'dag' ? 'is-aan' : ''} onClick={() => setWeergave('dag')} title="Dag (d)">
+                Dag
+              </button>
+              <button type="button" aria-pressed={weergave === 'week'} className={weergave === 'week' ? 'is-aan' : ''} onClick={() => setWeergave('week')} title={smal ? 'Drie dagen (w)' : 'Week (w)'}>
+                {smal ? '3 dagen' : 'Week'}
               </button>
               <button type="button" aria-pressed={weergave === 'maand'} className={weergave === 'maand' ? 'is-aan' : ''} onClick={() => setWeergave('maand')} title="Maand (m)">
                 Maand
@@ -478,7 +519,7 @@ function Agenda({
                 </div>
               </div>
             </div>
-          ) : weergave === 'week' ? (
+          ) : weergave !== 'maand' ? (
             <WeekView
               dagen={dagen}
               vandaag={vandaag}
@@ -489,6 +530,7 @@ function Agenda({
               onToggle={toggle}
               onNieuw={(dag, tijd, x, y) => setNieuw({ dag, tijd, x, y })}
               onVerplaats={(v) => void verplaats(v)}
+              onKiesDag={weergave === 'dag' ? undefined : naarDag}
             />
           ) : (
             <MaandView
@@ -498,10 +540,7 @@ function Agenda({
               taken={toonBereik?.taken ?? []}
               afspraken={toonBereik?.afspraken ?? []}
               onOpen={openItem}
-              onKiesDag={(d) => {
-                setFocus(d);
-                setWeergave('week');
-              }}
+              onKiesDag={uitMaand}
               onVerplaats={(v) => void verplaats(v)}
             />
           )}
@@ -595,7 +634,8 @@ function NieuwKeuze({
   const breedte = 280;
   const stijl: React.CSSProperties = {
     left: `clamp(16px, ${x - breedte / 2}px, calc(100vw - ${breedte + 16}px))`,
-    top: `clamp(16px, ${y + 12}px, calc(100vh - 160px))`,
+    // Niet achter de tabbalk op de telefoon (--sl-onder, app.css).
+    top: `clamp(16px, ${y + 12}px, calc(100dvh - var(--sl-onder, 0px) - 160px))`,
     width: `min(${breedte}px, calc(100vw - 32px))`
   };
   return (

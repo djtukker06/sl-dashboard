@@ -21,6 +21,7 @@
   animation: tk-in .2s var(--sl-ease);
 }
 @keyframes tk-in { from { opacity: 0; transform: translateY(8px) scale(.99); } }
+.tk-dialoog:focus { outline: none; }
 .tk-form { display: flex; flex-direction: column; min-height: 0; flex: 1; margin: 0; }
 .tk-kop {
   display: flex;
@@ -236,7 +237,8 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 10px 16px;
-  padding: 12px 32px;
+  /* Zelfde lijn als de modulekop erboven (--sl-uitlijn, app.css). */
+  padding: 12px var(--sl-uitlijn, 32px);
   border-bottom: 1px solid var(--sl-line);
 }
 .ag-filter-project { padding: 4px 4px 4px 10px; font-size: 11px; text-transform: none; }
@@ -273,12 +275,20 @@
 
 /* ---------- mobiel ---------- */
 @media (max-width: 720px) {
-  .ag-filterbalk { padding: 10px 16px; }
-}
-@media (max-width: 640px) {
-  /* Popup als scherm-vullend blad. */
+  .ag-filterbalk { padding-top: 10px; padding-bottom: 10px; }
+  /* Popup als scherm-vullend blad (boven de tabbalk), met de kop onder de statusbalk van
+     de web-app (--sl-boven, app.css) en de knoppen boven de thuisbalk. */
   .tk-laag { padding: 0; place-items: stretch; }
-  .tk-dialoog { width: 100%; max-height: none; height: 100dvh; border: 0; border-radius: 0; animation: tk-blad .24s var(--sl-ease); }
+  .tk-dialoog {
+    width: 100%;
+    max-height: none;
+    height: 100dvh;
+    box-sizing: border-box;
+    padding-top: var(--sl-boven, env(safe-area-inset-top, 0px));
+    border: 0;
+    border-radius: 0;
+    animation: tk-blad .24s var(--sl-ease);
+  }
   .tk-inhoud { padding: 16px 16px 24px; }
   .tk-kop { padding: 10px 8px 10px 16px; }
   .tk-voet { padding: 12px 16px calc(12px + env(safe-area-inset-bottom)); flex-wrap: wrap; }
@@ -294,13 +304,25 @@
 @media (hover: none) {
   .tk-sub-acties { opacity: 1; }
 }
+/* Aanraakschermen: doelen van minstens 40px; sneltoetshints weg (geen toetsenbord). */
+@media (pointer: coarse), (max-width: 720px) {
+  .tk-snel-knop { min-height: 40px; padding-inline: 14px; }
+  .tk-wie-chip, .tk-wie-alle { min-height: 40px; }
+  .tk-mini { width: 40px; height: 40px; }
+  .tk-sub-regel { min-height: 44px; }
+  .tk-sub-nieuw { min-height: 44px; }
+  .ag-keuze-knop { min-height: 44px; }
+}
+@media (pointer: coarse) {
+  .tk-toetsen, .tk-toets { display: none; }
+}
 @media (prefers-reduced-motion: reduce) {
   .tk-dialoog, .tk-achter { animation: none; }
 }
 
 /* De filterbalk neemt hoogte van de agenda af (die vult precies het scherm). */
 .ag-filterbalk { min-height: 56px; box-sizing: border-box; }
-.ag-filterbalk + .ag { height: calc(100dvh - var(--sl-head-h) - 56px); }
+.ag-filterbalk + .ag { height: calc(var(--sl-scherm-h, 100dvh) - var(--sl-head-h) - 56px); }
 @media (max-width: 720px) {
   .ag-filterbalk + .ag { height: auto; }
 }

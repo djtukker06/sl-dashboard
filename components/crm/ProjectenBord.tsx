@@ -73,6 +73,9 @@ export function ProjectenBord({
   const [sleept, setSleept] = useState<string | null>(null);
   const [boven, setBoven] = useState<ProjectStatus | null>(null);
   const zoekVeld = useRef<HTMLInputElement>(null);
+  // Telefoon: het bord veegt per kolom; de kolomkiezer erboven toont waar je bent.
+  const bordRef = useRef<HTMLDivElement>(null);
+  const [zichtKolom, setZichtKolom] = useState(0);
   const moment = useMemo(() => new Date(nu), [nu]);
 
   useEffect(() => {
@@ -151,6 +154,20 @@ export function ProjectenBord({
   }
 
   const kaartProps = { vandaag, moment, onStatus: zetStatus, onToets: toets };
+
+  /** Welke kolom staat links in beeld (bij vegen op de telefoon). */
+  function bordGescrold() {
+    const el = bordRef.current;
+    const eerste = el?.firstElementChild as HTMLElement | null;
+    if (!el || !eerste) return;
+    const stap = eerste.offsetWidth + parseFloat(getComputedStyle(el).columnGap || '0');
+    if (stap > 0) setZichtKolom(Math.min(BORD_STATUSSEN.length - 1, Math.round(el.scrollLeft / stap)));
+  }
+  function naarKolom(i: number) {
+    const kolom = bordRef.current?.children[i] as HTMLElement | undefined;
+    kolom?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'start' });
+    setZichtKolom(i);
+  }
   const afgerondKnop = (verborgen > 0 || alleAfgerond) && (
     <button type="button" className="kp-linkknop pb-meer" onClick={() => setAlleAfgerond(!alleAfgerond)}>
       {alleAfgerond ? `Alleen afgerond in de laatste ${RECENT_AFGEROND_DAGEN} dagen` : `Toon alle ${afgerond.length} afgeronde`}
@@ -270,61 +287,78 @@ export function ProjectenBord({
           )}
         </div>
       ) : weergave === 'bord' ? (
-        <div className="pb-bord">
-          {BORD_STATUSSEN.map((status) => {
-            const inKolom = (status === 'afgerond' ? afgerondZichtbaar : lijst.filter((p) => p.status === status)).sort(
-              status === 'afgerond' ? (a, b) => ((a.statusSinds ?? '') < (b.statusSinds ?? '') ? 1 : -1) : opDeadline
-            );
-            const aantal = status === 'afgerond' ? afgerond.length : inKolom.length;
-            const teLaat = inKolom.filter((p) => deadlineStand(p.deadline, vandaag, p.status) === 'telaat').length;
-            return (
-              <section
+        <>
+          <div className="pb-kolomkiezer sl-tabrij sl-alleen-mobiel" role="group" aria-label="Kolom tonen">
+            {BORD_STATUSSEN.map((status, i) => (
+              <button
                 key={status}
-                id={`kolom-${status}`}
-                className={`pb-kolom pb-kolom-${status}${boven === status && sleept ? ' is-doel' : ''}`}
-                aria-labelledby={`kolom-${status}-kop`}
-                onDragOver={(e) => {
-                  if (!sleept) return;
-                  e.preventDefault();
-                  e.dataTransfer.dropEffect = 'move';
-                  if (boven !== status) setBoven(status);
-                }}
-                onDragLeave={(e) => {
-                  if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setBoven(null);
-                }}
-                onDrop={(e) => {
-                  e.preventDefault();
-                  const id = e.dataTransfer.getData('text/x-project') || sleept;
-                  const p = lijst.find((x) => x.id === id);
-                  setBoven(null);
-                  setSleept(null);
-                  if (p) void zetStatus(p, status);
-                }}
+                type="button"
+                className={`pb-kolomknop${zichtKolom === i ? ' is-aan' : ''}`}
+                aria-pressed={zichtKolom === i}
+                onClick={() => naarKolom(i)}
               >
-                <h2 id={`kolom-${status}-kop`} className="pb-kolom-kop">
-                  <span className={`kp-stip kp-stip-${status}`} aria-hidden="true" />
-                  <span className="pb-kolom-naam">{PROJECT_STATUS_LABEL[status]}</span>
-                  <span className="pb-kolom-n">{aantal}</span>
-                  {teLaat > 0 && <span className="pb-kolom-telaat">{teLaat} te laat</span>}
-                </h2>
-                {inKolom.length === 0 ? (
-                  <p className="pb-leeg">
-                    {status === 'afgerond' && verborgen ? `Niets afgerond in de laatste ${RECENT_AFGEROND_DAGEN} dagen.` : sleept ? 'Sleep hierheen' : 'Geen projecten'}
-                  </p>
-                ) : (
-                  <ul className="pb-kaarten">
-                    {inKolom.map((p) => (
-                      <li key={p.id}>
-                        <ProjectKaart project={p} {...kaartProps} sleept={sleept === p.id} onSleep={(id) => setSleept(id)} />
-                      </li>
-                    ))}
-                  </ul>
-                )}
-                {status === 'afgerond' && afgerondKnop}
-              </section>
-            );
-          })}
-        </div>
+                <span className={`kp-stip kp-stip-${status}`} aria-hidden="true" />
+                {PROJECT_STATUS_KORT[status]}
+                <span className="pb-kolom-n">{status === 'afgerond' ? afgerond.length : lijst.filter((p) => p.status === status).length}</span>
+              </button>
+            ))}
+          </div>
+          <div className="pb-bord" ref={bordRef} onScroll={bordGescrold}>
+            {BORD_STATUSSEN.map((status) => {
+              const inKolom = (status === 'afgerond' ? afgerondZichtbaar : lijst.filter((p) => p.status === status)).sort(
+                status === 'afgerond' ? (a, b) => ((a.statusSinds ?? '') < (b.statusSinds ?? '') ? 1 : -1) : opDeadline
+              );
+              const aantal = status === 'afgerond' ? afgerond.length : inKolom.length;
+              const teLaat = inKolom.filter((p) => deadlineStand(p.deadline, vandaag, p.status) === 'telaat').length;
+              return (
+                <section
+                  key={status}
+                  id={`kolom-${status}`}
+                  className={`pb-kolom pb-kolom-${status}${boven === status && sleept ? ' is-doel' : ''}`}
+                  aria-labelledby={`kolom-${status}-kop`}
+                  onDragOver={(e) => {
+                    if (!sleept) return;
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = 'move';
+                    if (boven !== status) setBoven(status);
+                  }}
+                  onDragLeave={(e) => {
+                    if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setBoven(null);
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    const id = e.dataTransfer.getData('text/x-project') || sleept;
+                    const p = lijst.find((x) => x.id === id);
+                    setBoven(null);
+                    setSleept(null);
+                    if (p) void zetStatus(p, status);
+                  }}
+                >
+                  <h2 id={`kolom-${status}-kop`} className="pb-kolom-kop">
+                    <span className={`kp-stip kp-stip-${status}`} aria-hidden="true" />
+                    <span className="pb-kolom-naam">{PROJECT_STATUS_LABEL[status]}</span>
+                    <span className="pb-kolom-n">{aantal}</span>
+                    {teLaat > 0 && <span className="pb-kolom-telaat">{teLaat} te laat</span>}
+                  </h2>
+                  {inKolom.length === 0 ? (
+                    <p className="pb-leeg">
+                      {status === 'afgerond' && verborgen ? `Niets afgerond in de laatste ${RECENT_AFGEROND_DAGEN} dagen.` : sleept ? 'Sleep hierheen' : 'Geen projecten'}
+                    </p>
+                  ) : (
+                    <ul className="pb-kaarten">
+                      {inKolom.map((p) => (
+                        <li key={p.id}>
+                          <ProjectKaart project={p} {...kaartProps} sleept={sleept === p.id} onSleep={(id) => setSleept(id)} />
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  {status === 'afgerond' && afgerondKnop}
+                </section>
+              );
+            })}
+          </div>
+        </>
       ) : (
         <div className="pb-lijst">
           {groepeer([...lijst.filter((p) => p.status !== 'afgerond'), ...afgerondZichtbaar], groep).map((g) => (

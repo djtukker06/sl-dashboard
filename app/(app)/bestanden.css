@@ -13,7 +13,7 @@
 .bs-koppelmelding { padding: 14px 18px; border: 1px solid var(--sl-line); border-radius: var(--sl-r); background: var(--sl-panel); }
 .bs-koppelmelding.is-goed .db-melding-titel { color: var(--sl-text); }
 
-.bs-verkenner { position: relative; display: grid; gap: 16px; min-width: 0; }
+.bs-verkenner { position: relative; display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; min-width: 0; }
 
 /* Balk: broodkruimel + acties */
 .bs-balk { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 20px; }
@@ -145,7 +145,7 @@ tr:hover .bs-acties, .bs-kaartje:hover .bs-acties, .bs-acties:focus-within { opa
 .bs-dialoog-titel { margin: 0; font-size: 18px; font-weight: 700; }
 .bs-dialoog-acties { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
 .bs-veldlabel { display: grid; gap: 6px; font-size: 12.5px; color: var(--sl-muted); }
-.bs-voorbeeld { width: min(1100px, calc(100vw - 32px)); height: calc(100dvh - 48px); max-height: none; overflow: hidden; }
+.bs-voorbeeld { width: min(1100px, calc(100vw - 32px)); height: calc(100dvh - 48px - env(safe-area-inset-top, 0px)); max-height: none; overflow: hidden; }
 .bs-voorbeeld[open] { display: flex; flex-direction: column; }
 .bs-voorbeeld-kop { display: flex; align-items: center; gap: 8px; padding: 12px 12px 12px 18px; border-bottom: 1px solid var(--sl-line); }
 .bs-voorbeeld-naam { flex: 1; min-width: 0; margin: 0; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -154,14 +154,81 @@ tr:hover .bs-acties, .bs-kaartje:hover .bs-acties, .bs-acties:focus-within { opa
 .bs-voorbeeld-vlak iframe { width: 100%; height: 100%; border: 0; background: #fff; }
 .bs-voorbeeld-voet { padding: 8px 18px; }
 
-@media (max-width: 760px) {
-  .bs { padding: 16px 16px 40px; }
-  .bs-hoofd { padding: 14px; }
-  .bs-zoek input { width: 100%; }
-  .bs-zoek { flex: 1 1 100%; }
-  .bs-kol-grootte { display: none; }
+/* Grote monitor: ruimere kaartjes in het raster. */
+@media (min-width: 1920px) {
+  .bs-raster { grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 16px; }
+}
+
+/* Aanraakschermen: icoonknoppen en kruimels minstens 40px; acties altijd zichtbaar. */
+@media (pointer: coarse), (max-width: 720px) {
+  .bs-icoonknop { width: 40px; height: 40px; }
   .bs-acties { opacity: 1; }
-  .bs-voorbeeld-kop .db-knop { padding: 8px; font-size: 0; gap: 0; }
+  .bs-kruimel button, .bs-kruimel [aria-current] { min-height: 40px; display: inline-flex; align-items: center; }
+  .bs-weergave button { min-width: 40px; min-height: 36px; }
+  .bs-naam { min-height: 40px; }
+  /* In een kaartje passen vier knoppen van 40px niet naast elkaar: even breed verdelen. */
+  .bs-kaartje .bs-acties { display: grid; grid-template-columns: repeat(auto-fit, minmax(32px, 1fr)); gap: 0; padding: 0 2px 2px; }
+  .bs-kaartje .bs-icoonknop { width: auto; }
+}
+
+@media (max-width: 720px) {
+  .bs { padding: 16px var(--sl-gutter, 16px) 40px; gap: 16px; }
+  .bs-hoofd { padding: 14px; }
+
+  /* Balk: kruimels op één regel (tussenliggende mappen afgekapt, de huidige map het
+     langst zichtbaar), daaronder zoeken en de knoppen over de volle breedte. */
+  .bs-balk { gap: 10px; }
+  .bs-kruimels { flex: 1 1 100%; flex-wrap: nowrap; overflow: hidden; }
+  .bs-kruimel { flex: 0 1 auto; min-width: 2.75em; }
+  .bs-kruimel:last-child { flex: 0 0 auto; max-width: 75%; min-width: 0; }
+  .bs-kruimel button, .bs-kruimel [aria-current] {
+    display: block;
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    line-height: 32px;
+  }
+  .bs-balk-acties { flex: 1 1 100%; }
+  .bs-zoek { flex: 1 1 100%; }
+  .bs-zoek input { width: 100%; }
+  .bs-balk-acties > .db-knop { flex: 1 1 0; }
+
+  /* Lijst → compacte rijen: naam over de hele breedte, daaronder grootte · datum en de
+     knoppen rechts. De kolomkoppen blijven er voor schermlezers. */
+  .bs-tabel thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .bs-tabel, .bs-tabel tbody { display: block; }
+  .bs-tabel tr { display: flex; flex-wrap: wrap; align-items: center; column-gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--sl-line-soft); }
+  .bs-tabel td { display: block; padding: 0; border-bottom: 0; }
+  .bs-tabel .bs-kol-naam { flex: 1 1 100%; width: auto; max-width: none; min-width: 0; }
+  .bs-naam { width: 100%; }
+  .bs-tabel .bs-kol-grootte, .bs-tabel .bs-kol-datum { flex: 0 0 auto; padding-left: 28px; font-size: 12px; text-align: left; }
+  .bs-tabel .bs-kol-grootte + .bs-kol-datum { padding-left: 0; }
+  .bs-tabel .bs-kol-grootte + .bs-kol-datum::before { content: "·"; margin-right: 8px; color: var(--sl-faint); }
+  .bs-tabel .bs-kol-acties { flex: 1 0 auto; text-align: right; }
+  .is-compact .bs-tabel td { padding: 0; }
+  .bs-door { margin-bottom: 0; }
+
+  .bs-upload { flex-wrap: wrap; }
+  .bs-blok-acties { flex-wrap: wrap; }
+  .bs-dialoog-acties { flex-wrap: wrap; }
+  .bs-dialoog-acties .db-knop { flex: 1 1 auto; }
+
+  /* Voorbeeld: schermvullend op de telefoon, binnen de veilige zones. */
+  .bs-voorbeeld {
+    width: 100vw;
+    max-width: 100vw;
+    height: 100dvh;
+    max-height: 100dvh;
+    margin: 0;
+    border: 0;
+    border-radius: 0;
+    padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
+    box-sizing: border-box;
+  }
+  .bs-voorbeeld-kop { padding: 8px 8px 8px 16px; }
+  .bs-voorbeeld-kop .db-knop { min-width: 40px; padding: 8px; font-size: 0; gap: 0; }
 }
 @media (prefers-reduced-motion: reduce) {
   .bs-upload-balk, .bs-acties, .bs-tabel tbody tr { transition: none; }

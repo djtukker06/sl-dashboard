@@ -229,7 +229,7 @@ export function Backups() {
 
           {status.runs.length > 0 && (
             <div className="bv-tabel-wrap">
-              <table className="bv-tabel">
+              <table className="bv-tabel sl-stapeltabel">
                 <thead>
                   <tr>
                     <th>Wanneer</th>
@@ -244,21 +244,21 @@ export function Backups() {
                     const rijen = rijenTotaal(r.tellingen);
                     return (
                       <tr key={r.id}>
-                        <td className="bv-nowrap">
+                        <td className="bv-nowrap sl-stapel-kop">
                           {datumTijd(r.gestart)}
                           <div className="bv-klein">via {BRON[r.bron] ?? r.bron}</div>
                         </td>
-                        <td className="bv-nowrap">{r.soort === 'db' ? 'Database' : 'Bestanden'}</td>
-                        <td>
+                        <td className="bv-nowrap" data-label="Soort">{r.soort === 'db' ? 'Database' : 'Bestanden'}</td>
+                        <td data-label="Status">
                           <span className={`bv-actie${r.status === 'mislukt' ? ' is-gevaar' : ''}`}>{STATUS[r.status]}</span>
                           {r.fout && <div className="bv-klein">{r.fout}</div>}
                         </td>
-                        <td className="bv-klein">
+                        <td className="bv-klein" data-label="Inhoud">
                           {r.soort === 'db'
                             ? [r.bestand, grootte(r.grootte), rijen !== null ? `${rijen} rijen` : null].filter(Boolean).join(' · ')
                             : `${Number(r.tellingen.gesynchroniseerd ?? 0)} bestanden${Number(r.tellingen.resterend ?? 0) ? `, nog ${Number(r.tellingen.resterend)}` : ''}`}
                         </td>
-                        <td className="bv-nowrap">
+                        <td className="bv-nowrap sl-stapel-acties">
                           {r.downloadbaar && (
                             <a className="bv-link" href={`/api/beveiliging/backup/${r.id}/download`}>
                               Download

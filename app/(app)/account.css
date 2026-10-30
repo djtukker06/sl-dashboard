@@ -3,7 +3,7 @@
    Velden en knoppen: agenda.css (ag-) en app.css (db-).
    ========================================================== */
 
-.ac { min-height: 100vh; background: var(--sl-bg); color: var(--sl-text); font-family: var(--sl-font); }
+.ac { min-height: var(--sl-scherm-h, 100dvh); background: var(--sl-bg); color: var(--sl-text); font-family: var(--sl-font); }
 .ac-inhoud { display: grid; gap: 20px; padding: 24px 40px 56px; max-width: 860px; }
 .ac-blok {
   display: grid;
@@ -39,7 +39,7 @@
 }
 .ac-voorbeeld-tekst { display: grid; gap: 3px; min-width: 0; }
 .ac-voorbeeld-tekst strong { font-size: 15px; font-weight: 700; }
-.ac-voorbeeld-tekst span { font-size: 12.5px; color: var(--sl-muted); overflow: hidden; text-overflow: ellipsis; }
+.ac-voorbeeld-tekst span { font-size: 12.5px; color: var(--sl-muted); overflow-wrap: anywhere; }
 .ac-velden { display: grid; grid-template-columns: minmax(0, 1fr) 110px; gap: 12px; }
 .ac-kleuren { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 0; padding: 0; border: 0; min-width: 0; }
 .ac-kleuren:disabled { opacity: .5; }
@@ -104,8 +104,11 @@
 
 @media (max-width: 720px) {
   .ac-inhoud { padding: 16px 16px 40px; gap: 16px; }
-  .ac-blok { padding: 18px 16px 20px; }
+  .ac-blok { padding: 18px 16px 20px; scroll-margin-top: calc(var(--sl-boven, 0px) + 16px); }
   .ac-velden { grid-template-columns: minmax(0, 1fr) 90px; }
+  .ac-status { flex-wrap: wrap; }
+  .ac-inbox { padding: 14px; }
+  .ac-inbox-balk { align-items: flex-start; }
 }
 @media (max-width: 560px) {
   .ac-mailform .ag-velden-2 { grid-template-columns: minmax(0, 1fr); }
@@ -135,7 +138,7 @@
   border-radius: 4px;
   background: var(--sl-bg);
 }
-.ac-inbox-kop { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.ac-inbox-kop { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; min-width: 0; }
 .ac-inbox-stip { flex: none; width: 10px; height: 10px; border-radius: 50%; background: var(--ml-inbox-kleur); }
 .ac-inbox-tekst { flex: 1; min-width: 0; display: grid; gap: 2px; }
 .ac-inbox-tekst strong { font-size: 14.5px; font-weight: 700; }
@@ -253,8 +256,11 @@
 .bv-apparaat-naam { font-size: 14px; font-weight: 600; }
 .bv-apparaat-sub { font-size: 12px; color: var(--sl-muted); }
 .bv-rij-form { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; }
+.bv-rij-form > .ag-label { flex: 1 1 220px; min-width: 0; }
+.bv-rij-form > .ag-label:has(.bv-code) { flex: 0 1 200px; }
 .bv-tabel-wrap { overflow-x: auto; border: 1px solid var(--sl-line); border-radius: 4px; }
 .bv-tabel { width: 100%; border-collapse: collapse; font-size: 13px; }
+.bv-tabel td.bv-nowrap, .bv-tabel td:first-child { font-variant-numeric: tabular-nums; }
 .bv-tabel th, .bv-tabel td { padding: 9px 12px; text-align: left; border-bottom: 1px solid var(--sl-line-soft); vertical-align: top; }
 .bv-tabel th { font-family: var(--sl-mono); font-size: 10.5px; font-weight: 500; letter-spacing: .08em; text-transform: uppercase; color: var(--sl-muted); white-space: nowrap; }
 .bv-tabel tr:last-child td { border-bottom: 0; }
@@ -268,6 +274,34 @@
 @media (max-width: 640px) {
   .bv-scan { grid-template-columns: 1fr; }
   .bv-qr-vlak { justify-self: start; }
+}
+/* Op de telefoon kun je je eigen QR-code niet scannen: een knop opent de authenticator-app
+   direct (TfaInstellen). Alleen op aanraakschermen; de QR-code en de sleutel blijven staan. */
+.bv-app-link { display: none; }
+@media (pointer: coarse) {
+  .bv-app-link { display: inline-flex; justify-self: start; }
+}
+
+/* Tabellen (team, audit-log, back-ups) op de telefoon: kaarten (.sl-stapeltabel in app.css).
+   Cellen met meerdere regels (naam + e-mail, status + fout) staan rechts onder elkaar. */
+@media (max-width: 720px) {
+  .bv-tabel-wrap { overflow: visible; border: 0; border-radius: 0; }
+  .bv-tabel.sl-stapeltabel tr { background: var(--sl-bg); }
+  .bv-tabel.sl-stapeltabel td[data-label] {
+    display: grid;
+    grid-template-columns: minmax(84px, 38%) minmax(0, 1fr);
+    column-gap: 12px;
+    align-items: baseline;
+    text-align: left;
+    white-space: normal;
+  }
+  .bv-tabel.sl-stapeltabel td[data-label]::before { grid-row: 1 / span 4; max-width: none; }
+  .bv-tabel.sl-stapeltabel td[data-label] > * { grid-column: 2; }
+  .bv-tabel.sl-stapeltabel td:empty { display: none; }
+  .bv-tabel.sl-stapeltabel td.sl-stapel-kop { white-space: normal; }
+  .bv-tabel.sl-stapeltabel td.sl-stapel-kop .bv-klein { margin-top: 2px; font-weight: 400; }
+  .bv-filters .ag-label { flex: 1 1 100%; min-width: 0; }
+  .bv-paginering { justify-content: space-between; }
 }
 
 /* Back-ups (bk-) op /beveiliging */
@@ -305,7 +339,7 @@
 }
 .gb-tekst { display: grid; gap: 3px; min-width: 0; }
 .gb-tekst strong { font-size: 15px; font-weight: 700; }
-.gb-tekst > span { font-size: 12.5px; color: var(--sl-muted); overflow: hidden; text-overflow: ellipsis; }
+.gb-tekst > span { font-size: 12.5px; color: var(--sl-muted); overflow-wrap: anywhere; }
 .gb-zelf { font-weight: 400; color: var(--sl-muted); }
 .gb-labels { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
 .gb-label {
@@ -337,4 +371,21 @@
 @media (max-width: 720px) {
   .gb-acties { padding-left: 0; }
   .gb-vink { padding-top: 0; }
+  .gb-kop > .db-knop { width: 100%; }
+}
+
+/* ---------- aanraakschermen: doelen van minstens 40px ---------- */
+@media (pointer: coarse), (max-width: 720px) {
+  .ac-pijl { width: 40px; height: 40px; }
+  .ac-zicht-optie { display: inline-flex; align-items: center; min-height: 36px; padding-inline: 16px; }
+  .ac-kleuren { gap: 6px; }
+  .ac-kleur { padding: 4px; }
+  .ac-kleur-stip { width: 32px; height: 32px; }
+  .ac-kleuren-klein .ac-kleur-stip { width: 28px; height: 28px; }
+  .ac-geavanceerd > summary { display: flex; align-items: center; min-height: 40px; }
+  .bv-link, .gb-acties .bv-link { display: inline-flex; align-items: center; min-height: 40px; }
+  .ac-inbox-knoppen .ag-link-knop, .ac-acties .ag-link-knop { display: inline-flex; align-items: center; min-height: 40px; }
+  .gb-vink { min-height: 40px; }
+  .gb-vink input { width: 20px; height: 20px; }
+  .gb-acties { gap: 0 18px; }
 }

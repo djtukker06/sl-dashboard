@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { agendaApi, ApiFout } from '@/lib/agenda/client';
+import { agendaApi, ApiFout, useSmal } from '@/lib/agenda/client';
 import { amsterdamNaarMoment, inAmsterdam, langeDag, minutenNaarTijd, plusDagen, tijdNaarMinuten, type Dag } from '@/lib/agenda/datum';
 import { magAfspraakWijzigen, namenLijst } from '@/lib/agenda/rechten';
 import { dagenVanAfspraak } from '@/lib/agenda/weergave';
@@ -214,6 +214,8 @@ function AfspraakFormulier({
   const [deelnemers, setDeelnemers] = useState<string[]>(afspraak.deelnemers.length ? afspraak.deelnemers : [mijnId]);
   const mag = nieuw || magAfspraakWijzigen(afspraak, mijnId, overgang);
   const { bezig, fout, doe } = useOpslaan();
+  // Telefoon: een bestaande afspraak openen zonder dat het toetsenbord meteen opent.
+  const smal = useSmal();
   const overMiddernacht = !heleDag && start && eind && eind <= start;
 
   async function opslaan(ev?: React.FormEvent) {
@@ -268,7 +270,7 @@ function AfspraakFormulier({
             value={titel}
             rows={2}
             maxLength={300}
-            autoFocus
+            autoFocus={nieuw || !smal}
             placeholder="Titel van de afspraak"
             onChange={(ev) => setTitel(ev.target.value.replace(/\n/g, ' '))}
             onKeyDown={(ev) => {

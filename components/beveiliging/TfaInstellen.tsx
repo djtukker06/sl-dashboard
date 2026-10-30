@@ -74,6 +74,11 @@ export function TfaInstellen({
   }
 
   const sleutelGroepen = start?.geheim.replace(/(.{4})/g, '$1 ').trim() ?? '';
+  // Op de telefoon zelf kun je je eigen QR-code niet scannen: een otpauth-link opent de
+  // authenticator-app direct met deze sleutel (alleen getoond op aanraakschermen, zie account.css).
+  const appLink = start
+    ? `otpauth://totp/${encodeURIComponent(`Studio Levant:${start.naam}`)}?secret=${encodeURIComponent(start.geheim)}&issuer=${encodeURIComponent('Studio Levant')}`
+    : '';
 
   return (
     <div className="bv-instellen">
@@ -111,6 +116,9 @@ export function TfaInstellen({
             <p className="bv-qr-geen">Geen QR-code beschikbaar. Voeg in je app handmatig een account toe met de sleutel hiernaast.</p>
           )}
           <div className="bv-scan-rechts">
+            <a className="db-knop bv-app-link" href={appLink}>
+              Openen in authenticator-app
+            </a>
             {start.qr && (
               <button type="button" className="bv-link" onClick={() => setToonSleutel((x) => !x)} aria-expanded={toonSleutel}>
                 {toonSleutel ? 'Sleutel verbergen' : 'Lukt scannen niet? Toon de sleutel'}
