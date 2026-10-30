@@ -11,9 +11,10 @@ export const dynamic = 'force-dynamic';
 
 const AANTAL = 6;
 
-// GET /api/mail/overzicht → { geconfigureerd, ongelezen, berichten, inboxen, fouten }
+// GET /api/mail/overzicht → { geconfigureerd, ongelezen, berichten, inboxen, fouten, perInbox }
 // voor de inbox-widget op het dashboard: de laatste 6 berichten over ALLE inboxen die je mag
-// zien (samengevoegd op datum, elk met het id van zijn inbox) en de som van de ongelezen.
+// zien (samengevoegd op datum, elk met het id van zijn inbox) en de som van de ongelezen, plus
+// per inbox zijn eigen laatste 6 en ongelezen (de widget kan op één inbox filteren).
 // Een inbox die nu niet bereikbaar is, staat in `fouten`; de rest wordt gewoon getoond.
 export const GET = mailRoute(async (_request: Request, _ctx: unknown, mail) => {
   const bruikbaar = mail.mailboxen.filter((m) => m.cfg);
@@ -53,6 +54,9 @@ export const GET = mailRoute(async (_request: Request, _ctx: unknown, mail) => {
     ongelezen: gelukt.reduce((s, d) => s + (d.ok ? d.ongelezen : 0), 0),
     berichten,
     inboxen: mail.mailboxen.map((m) => ({ id: m.id, label: m.label, email: m.email, kleur: m.kleur })),
-    fouten: delen.filter((d) => !d.ok).map((d) => ({ id: d.m.id, label: d.m.label }))
+    fouten: delen.filter((d) => !d.ok).map((d) => ({ id: d.m.id, label: d.m.label })),
+    perInbox: Object.fromEntries(
+      gelukt.map((d) => [d.m.id, { ongelezen: d.ok ? d.ongelezen : 0, berichten: d.ok ? d.berichten.map((b) => ({ ...b, mb: d.m.id })) : [] }])
+    )
   } satisfies MailOverzicht);
 });

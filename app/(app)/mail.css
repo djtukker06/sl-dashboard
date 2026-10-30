@@ -820,6 +820,39 @@ input.ml-veld:focus { border: 0; }
 .db-mail-onderwerp { font-size: 12.5px; color: var(--sl-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .db-mail-nieuw .db-mail-onderwerp { color: var(--sl-text); }
 .db-mail-tijd { flex: 0 0 auto; font-family: var(--sl-mono); font-size: 10.5px; color: var(--sl-muted); margin-top: 2px; }
+/* Keuze bovenin de widget: Alle of één inbox (alleen bij meerdere inboxen). */
+.db-inbox-keuze {
+  display: flex;
+  gap: 6px;
+  margin: -4px 0 14px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.db-inbox-keuze::-webkit-scrollbar { display: none; }
+.db-inbox-optie {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--sl-line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--sl-muted);
+  font-family: var(--sl-font);
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.db-inbox-optie:hover { color: var(--sl-text); border-color: var(--sl-muted); }
+.db-inbox-optie[aria-pressed="true"] { background: var(--sl-raise); border-color: var(--sl-raise); color: var(--sl-text); }
+.db-inbox-optie:focus-visible { outline: none; box-shadow: var(--sl-focus); }
+.db-inbox-optie-stip { width: 7px; height: 7px; border-radius: 50%; background: var(--ml-inbox-kleur); }
+.db-inbox-aantal { font-family: var(--sl-mono); font-size: 10px; color: var(--sl-sand); }
+@media (pointer: coarse), (max-width: 720px) {
+  .db-inbox-optie { min-height: 36px; padding: 0 12px; }
+}
 .db-inbox-skelet { display: grid; gap: 18px; }
 .db-inbox-skelet-rij { display: grid; gap: 8px; }
 

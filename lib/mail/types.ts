@@ -109,6 +109,8 @@ export interface MailOverzicht {
   inboxen?: Pick<InboxDto, 'id' | 'label' | 'email' | 'kleur'>[];
   /** Inboxen die nu niet bereikbaar waren. */
   fouten?: { id: string; label: string }[];
+  /** Per bereikbare inbox: zijn ongelezen en zijn eigen laatste berichten (de keuze in de widget). */
+  perInbox?: Record<string, { ongelezen: number; berichten: Envelop[] }>;
 }
 
 /** Wat de API stuurt bij een fout. */
