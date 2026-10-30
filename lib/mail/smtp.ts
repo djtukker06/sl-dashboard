@@ -35,6 +35,8 @@ export interface UitgaandeBijlage {
   naam: string;
   type: string;
   inhoud: Buffer;
+  /** Ingebed in de HTML (img src="cid:…"), bv. de handtekening. */
+  cid?: string;
 }
 
 export interface UitgaandBericht {
@@ -43,6 +45,10 @@ export interface UitgaandBericht {
   bcc: Adres[];
   onderwerp: string;
   tekst: string;
+  /** Opgemaakte versie (met de handtekening); de platte tekst gaat altijd mee als alternatief. */
+  html?: string;
+  /** Afbeeldingen waarnaar de HTML verwijst (cid:). */
+  inline?: UitgaandeBijlage[];
   inReplyTo?: string | null;
   references?: string[];
   bijlagen: UitgaandeBijlage[];
@@ -69,10 +75,14 @@ export async function bouwBericht(
     bcc: b.bcc.length ? b.bcc.map(naarAdres) : undefined,
     subject: b.onderwerp,
     text: b.tekst,
+    html: b.html || undefined,
     inReplyTo: b.inReplyTo || undefined,
     references: b.references?.length ? b.references : undefined,
     date: new Date(),
-    attachments: b.bijlagen.map((x) => ({ filename: x.naam, content: x.inhoud, contentType: x.type || undefined }))
+    attachments: [
+      ...(b.inline ?? []).map((x) => ({ filename: x.naam, content: x.inhoud, contentType: x.type, cid: x.cid, contentDisposition: 'inline' as const })),
+      ...b.bijlagen.map((x) => ({ filename: x.naam, content: x.inhoud, contentType: x.type || undefined }))
+    ]
   });
   const node = composer.compile();
   // keepBcc staat uit: de Bcc-kop komt niet in de ruwe MIME (ook niet in Verzonden).

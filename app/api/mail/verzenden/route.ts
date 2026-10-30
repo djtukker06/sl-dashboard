@@ -5,6 +5,8 @@ import { metImap } from '@/lib/mail/imap';
 import { controleerMap, mapVoorRol, parseUid } from '@/lib/mail/mappen';
 import { bijlagenUitStructuur, haalBijlage, threadKoppen } from '@/lib/mail/berichten';
 import { bouwBericht, parseAdressen, verstuur, type UitgaandeBijlage } from '@/lib/mail/smtp';
+import { bouwInhoud, cidVan, INBOX_TEKST, zoekHandtekening, type Citaat } from '@/lib/mail/handtekening';
+import { HANDTEKENING_BEELDEN } from '@/lib/mail/handtekening-beelden';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -20,6 +22,10 @@ type Gegevens = {
   bcc?: unknown;
   onderwerp?: unknown;
   tekst?: unknown;
+  /** Gekozen handtekening: een sjabloon-id (lib/mail/handtekening.ts), 'inbox' of leeg. */
+  handtekening?: unknown;
+  /** Het origineel onder een antwoord/doorgestuurd bericht (kop + tekst). */
+  citaat?: { kop?: unknown; tekst?: unknown } | null;
   /** Het bericht waarop je antwoordt of dat je doorstuurt; `mb` = de inbox waar het in staat. */
   origineel?: { mb?: unknown; map?: unknown; uid?: unknown; modus?: unknown } | null;
   /** Bij doorsturen: welke originele bijlagen mee moeten (deelnummers). */
@@ -63,8 +69,9 @@ async function leesVerzoek(request: Request): Promise<{ g: Gegevens; bijlagen: U
 
 // POST /api/mail/verzenden?mb=<inbox waarvandaan je verstuurt>
 //   JSON of multipart (veld "gegevens" = JSON, velden "bijlagen" = bestanden):
-//   { aan, cc?, bcc?, onderwerp, tekst,
+//   { aan, cc?, bcc?, onderwerp, tekst, handtekening?, citaat?: { kop, tekst },
 //     origineel?: { mb?, map, uid, modus: 'antwoord' | 'doorsturen' }, origineleBijlagen?: string[] }
+// Het bericht gaat als HTML (tekst + handtekening + citaat) met een platte-tekstversie ernaast.
 // Verstuurt via SMTP van de gekozen inbox (ook een met het team gedeelde), zet een kopie in
 // Verzonden van DIE inbox (IMAP APPEND) en markeert bij een antwoord het origineel als
 // beantwoord. Antwoorden krijgen In-Reply-To/References (threading). Staat het origineel in
@@ -79,11 +86,25 @@ export const POST = mailRoute(
     const bcc = parseAdressen(g.bcc, 'Bcc');
     const onderwerp = String(g.onderwerp ?? '').replace(/[\r\n]+/g, ' ').trim().slice(0, 500);
     const tekst = String(g.tekst ?? '');
+    const cit = g.citaat && typeof g.citaat === 'object' ? g.citaat : null;
+    const citaatTekst = cit ? String(cit.tekst ?? '').slice(0, 20_000) : '';
     if (tekst.length > 200_000) throw new MailFout(400, 'ongeldig', 'Het bericht is te lang.');
     if (!aan.length && !cc.length && !bcc.length) throw new MailFout(400, 'ongeldig', 'Vul minstens één ontvanger in.');
 
     const orig = g.origineel && typeof g.origineel === 'object' ? g.origineel : null;
     const modus = orig?.modus === 'antwoord' || orig?.modus === 'doorsturen' ? orig.modus : null;
+    const citaat: Citaat | null = cit
+      ? { kop: String(cit.kop ?? '').slice(0, 2000), tekst: citaatTekst, antwoord: modus !== 'doorsturen' }
+      : null;
+    // Alleen een bekend sjabloon of de eigen tekst van de verzendende inbox (die staat op de server).
+    const keuze = typeof g.handtekening === 'string' && (zoekHandtekening(g.handtekening) || g.handtekening === INBOX_TEKST) ? g.handtekening : '';
+    const inhoud = bouwInhoud(tekst, keuze, mail.cfg?.handtekening ?? '', citaat);
+    const handBeelden: UitgaandeBijlage[] = [...new Set(inhoud.beelden)].map((bestand) => ({
+      naam: bestand,
+      type: 'image/png',
+      inhoud: Buffer.from(HANDTEKENING_BEELDEN[bestand], 'base64'),
+      cid: cidVan(bestand)
+    }));
     const gewensteDelen = Array.isArray(g.origineleBijlagen) ? g.origineleBijlagen.map(String).slice(0, 30) : [];
 
     // In welke inbox staat het origineel? Standaard dezelfde als waarvandaan je verstuurt;
@@ -153,7 +174,9 @@ export const POST = mailRoute(
         cc,
         bcc,
         onderwerp,
-        tekst,
+        tekst: inhoud.text,
+        html: inhoud.html,
+        inline: handBeelden,
         inReplyTo: o?.inReplyTo ?? null,
         references: o?.references ?? [],
         bijlagen: [...bijlagen, ...(o?.bijlagen ?? [])]

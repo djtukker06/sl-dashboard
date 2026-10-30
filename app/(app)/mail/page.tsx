@@ -51,6 +51,7 @@ export default async function MailPage({
       startUid={Number.isInteger(uid) && uid > 0 ? uid : null}
       nieuw={sp.nieuw === '1'}
       nieuwAan={typeof sp.aan === 'string' ? sp.aan.slice(0, 300) : ''}
+      mijnEmail={lid.email ?? ''}
     />
   );
 }
