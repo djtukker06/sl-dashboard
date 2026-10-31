@@ -109,6 +109,8 @@ function Agenda({
   );
   const [teller, setTeller] = useState(0);
   const [bereik, setBereik] = useState<{ sleutel: string; taken: Taak[]; afspraken: Afspraak[] } | null>(null);
+  // Of migratie 0034 (herhalende afspraken) er is; tot het eerste antwoord: aannemen van wel.
+  const [herhalingKlaar, setHerhalingKlaar] = useState(true);
   const [bereikFout, setBereikFout] = useState<{ sleutel: string; fout: ApiFout | Error } | null>(null);
   const [lijst, setLijst] = useState<{ sleutel: string; taken: Taak[]; tellingen: Tellingen } | null>(null);
   const [lijstFout, setLijstFout] = useState<{ sleutel: string; fout: ApiFout | Error } | null>(null);
@@ -161,6 +163,7 @@ function Agenda({
       .then((r) => {
         if (weg) return;
         setBereik({ sleutel: s, taken: r.tasks, afspraken: r.events });
+        setHerhalingKlaar(r.herhaling !== false);
         setBereikFout(null);
       })
       .catch((e) => {
@@ -319,9 +322,13 @@ function Agenda({
         pasAfspraakAan({ ...a, start, eind: new Date(Date.parse(start) + duurMs).toISOString() });
       }
       try {
+        // Een voorkomen van een reeks slepen verplaatst alleen dat voorkomen.
+        const toepassen = a.reeksId ? ('deze' as const) : undefined;
         await agendaApi.wijzigAfspraak(
           a.id,
-          v.start ? { datum: v.datum, start: v.start, duur: Math.round((Date.parse(a.eind) - Date.parse(a.start)) / 60000) } : { datum: v.datum }
+          v.start
+            ? { datum: v.datum, start: v.start, duur: Math.round((Date.parse(a.eind) - Date.parse(a.start)) / 60000), toepassen }
+            : { datum: v.datum, toepassen }
         );
         toast(`Verplaatst naar ${korteDag(v.datum)}${v.start ? ` ${v.start}` : ''}`);
       } catch (e) {
@@ -567,6 +574,7 @@ function Agenda({
       {selectie && selectie.soort === 'afspraak' && (
         <ItemPaneel
           selectie={selectie}
+          herhalingKlaar={herhalingKlaar}
           onSluit={() => setSelectie(null)}
           onOpgeslagen={(s) => {
             setSelectie(null);

@@ -1,14 +1,16 @@
 import { parseAfspraak, parsePersonen } from '@/lib/agenda/invoer';
-import { afspraakOphalen, AgendaFout, controleerTeamleden, dbFout, zetPersonen } from '@/lib/agenda/repo';
+import { afspraakOphalen, AgendaFout, controleerTeamleden, schrijfAfspraak, zetPersonen } from '@/lib/agenda/repo';
 import type { AfspraakInvoer } from '@/lib/agenda/types';
 import { fout, foutAntwoord, json, leesBody, metSessie } from '@/lib/agenda/api';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-// POST /api/afspraken  { titel, datum, start?, eind?, duur?, heleDag?, eindDatum?, locatie?, notitie?, klantId?, deelnemers? }
+// POST /api/afspraken  { titel, datum, start?, eind?, duur?, heleDag?, eindDatum?, locatie?, notitie?, klantId?, deelnemers?,
+//                       herhaling?, herhaalTot? }
 // Tijden zijn Amsterdamse wandkloktijd; de server rekent ze om naar UTC. Zonder deelnemers
-// is de afspraak van jezelf. → { event }
+// is de afspraak van jezelf. Met herhaling (migratie 0034) één rij met een herhaalregel;
+// het antwoord is dan het eerste voorkomen. → { event }
 export async function POST(request: Request) {
   const s = await metSessie(request);
   if ('antwoord' in s) return s.antwoord;
@@ -25,9 +27,9 @@ export async function POST(request: Request) {
     const teamFout = await controleerTeamleden(bron, personen.waarde);
     if (teamFout) return fout(400, teamFout);
 
-    const { data, error } = await s.sb.from('calendar_events').insert(p.waarde).select('id').single();
-    if (error) throw dbFout(error);
-    const id = data.id as string;
+    const data = await schrijfAfspraak(p.waarde, (rij) => s.sb.from('calendar_events').insert(rij).select('id').single());
+    if (!data) throw new AgendaFout(500, 'De afspraak kon niet worden opgeslagen.');
+    const id = (data as { id: string }).id;
     if (bron.team) {
       try {
         await zetPersonen(bron, 'afspraak', id, personen.waarde);

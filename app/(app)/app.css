@@ -381,7 +381,7 @@
 /* ==========================================================
    Inhoudsbreedte: één kolom voor alle pagina's
    ----------------------------------------------------------
-   Elke pagina — dashboard, mail, agenda, scratchpad, klanten, projecten (+ bord en detail),
+   Elke pagina — dashboard, klanten, projecten (+ bord en detail),
    bestanden, boekhouding (alle schermen), bonnetjes, facturen, account, beveiliging,
    gebruikers, de laadschermen én social (public/social/app.css) — gebruikt dezelfde kolom:
      --sl-inhoud  1440px  breedte van de kolom inclusief de gutter (≥ 1920px: 1600px)
@@ -394,9 +394,10 @@
       → padding-inline: var(--sl-uitlijn);
    2. inhoudscontainers (dashboard-grid, lijsten, tabellen, formulieren, laadskelet)
       → padding-inline: var(--sl-uitlijn), geen max-width;
-   3. losse vlakken en werkblokken met een eigen rand (demo-banner, back-upmelding, mail,
-      agenda, scratchpad) → margin-inline: var(--sl-uitlijn). Mail, agenda en scratchpad
-      vullen daarbinnen de volle hoogte; tot en met 960px lopen ze over de hele breedte.
+   3. losse vlakken met een eigen rand (demo-banner, back-upmelding)
+      → margin-inline: var(--sl-uitlijn).
+   Uitzondering: de werkpagina's mail, agenda en scratchpad vullen de volle breedte naast de
+   rail (--sl-uitlijn = gutter), zodat kolommen, kalender en editor alle ruimte hebben.
    Smalle formulieren (account, beveiliging, gebruikers, boekhoud-instellingen, facturen-
    formulieren, setupmeldingen) houden binnen de kolom een smallere kolom (--sl-smal),
    links op dezelfde lijn — nooit een eigen gecentreerde container.
@@ -456,20 +457,10 @@
 }
 .sl-main .db-backup { margin-block: 24px 0; }
 .sl-main .db-backup + .db-grid { padding-top: 16px; }
-.sl-main .ml,
-.sl-main .ag,
-.sl-main .sp {
-  margin-inline: var(--sl-uitlijn);
-  border-inline: 1px solid var(--sl-line);
-  box-sizing: border-box;
-}
-/* Agenda: de takenlijst begint binnen de rand, niet nog een gutter verder. */
-.sl-main .ag-links { padding-left: 20px; }
-@media (max-width: 960px) {
-  .sl-main .ml,
-  .sl-main .ag,
-  .sl-main .sp { margin-inline: 0; border-inline: 0; }
-  .sl-main .ag-links { padding-left: var(--sl-gutter); }
+/* Werkpagina's mail, agenda en scratchpad (ook hun laad- en setupschermen): volle breedte
+   naast de rail. De kop lijnt daar uit op de gutter, de werkblokken lopen tot de randen. */
+.sl-main:has(.ml-app, .ml-setup, .ag, .ag-laadscherm, .ag-setup, .sp, .sp-laadscherm, .sp-setup) {
+  --sl-uitlijn: var(--sl-gutter);
 }
 
 @media (max-width: 720px) {

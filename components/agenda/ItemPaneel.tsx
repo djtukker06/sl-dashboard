@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { agendaApi, ApiFout, useSmal } from '@/lib/agenda/client';
 import { amsterdamNaarMoment, inAmsterdam, langeDag, minutenNaarTijd, plusDagen, tijdNaarMinuten, type Dag } from '@/lib/agenda/datum';
 import { magAfspraakWijzigen, namenLijst } from '@/lib/agenda/rechten';
+import { HERHALINGEN, isHerhaling, type Herhaling } from '@/lib/agenda/herhaling';
 import { dagenVanAfspraak } from '@/lib/agenda/weergave';
 import type { Afspraak, Taak } from '@/lib/agenda/types';
 import { Persoon } from '@/components/team/Persoon';
@@ -29,7 +30,11 @@ export function nieuweAfspraak(dag: Dag, start: string, mijnId: string): Afspraa
     klantId: null,
     klantNaam: null,
     deelnemers: [mijnId],
-    aangemaaktDoor: mijnId
+    aangemaaktDoor: mijnId,
+    herhaling: null,
+    herhaalTot: null,
+    reeksId: null,
+    voorkomen: null
   };
 }
 
@@ -38,12 +43,15 @@ export function ItemPaneel({
   selectie,
   onSluit,
   onOpgeslagen,
-  onVerwijderd
+  onVerwijderd,
+  herhalingKlaar = true
 }: {
   selectie: Extract<Selectie, { soort: 'afspraak' }>;
   onSluit: () => void;
   onOpgeslagen: (s: Selectie) => void;
   onVerwijderd: (s: Selectie) => void;
+  /** false zolang migratie 0034 (herhalen) niet is uitgevoerd: dan staat "Herhalen" uit. */
+  herhalingKlaar?: boolean;
 }) {
   const paneel = useRef<HTMLElement>(null);
 
@@ -77,6 +85,7 @@ export function ItemPaneel({
           key={selectie.item.id || 'nieuw'}
           afspraak={selectie.item}
           nieuw={!!selectie.nieuw}
+          herhalingKlaar={herhalingKlaar}
           onSluit={onSluit}
           onOpgeslagen={(a) => onOpgeslagen({ soort: 'afspraak', item: a })}
           onVerwijderd={() => onVerwijderd(selectie)}
@@ -103,13 +112,21 @@ function Voet({
   bezig,
   nieuw,
   mag,
+  reeks,
+  vraagOpslaan,
+  onKiesOpslaan,
   onVerwijder,
   onSluit
 }: {
   bezig: boolean;
   nieuw: boolean;
   mag: boolean;
-  onVerwijder: () => void;
+  /** Een voorkomen van een herhalende afspraak: dan "alleen deze" of "hele reeks". */
+  reeks: boolean;
+  /** Vraag bij opslaan op welke voorkomens de wijziging slaat (null = niet vragen). */
+  vraagOpslaan: boolean;
+  onKiesOpslaan: (toepassen: 'deze' | 'reeks' | null) => void;
+  onVerwijder: (toepassen?: 'deze' | 'reeks') => void;
   onSluit: () => void;
 }) {
   const [zeker, setZeker] = useState(false);
@@ -125,14 +142,45 @@ function Voet({
       </footer>
     );
   }
+  if (vraagOpslaan) {
+    return (
+      <footer className="ag-paneel-voet">
+        <span className="ag-zeker">
+          <span>Wijziging opslaan voor</span>
+          <button type="button" className="db-knop" disabled={bezig} onClick={() => onKiesOpslaan('deze')}>
+            Alleen deze
+          </button>
+          <button type="button" className="db-knop db-knop-primair" disabled={bezig} onClick={() => onKiesOpslaan('reeks')}>
+            Hele reeks
+          </button>
+          <button type="button" className="ag-link-knop" onClick={() => onKiesOpslaan(null)}>
+            Terug
+          </button>
+        </span>
+      </footer>
+    );
+  }
   return (
     <footer className="ag-paneel-voet">
       {nieuw ? (
         <span />
+      ) : zeker && reeks ? (
+        <span className="ag-zeker">
+          <span>Verwijderen:</span>
+          <button type="button" className="db-knop ag-knop-gevaar" disabled={bezig} onClick={() => onVerwijder('deze')}>
+            Alleen deze
+          </button>
+          <button type="button" className="db-knop ag-knop-gevaar" disabled={bezig} onClick={() => onVerwijder('reeks')}>
+            Hele reeks
+          </button>
+          <button type="button" className="db-knop" onClick={() => setZeker(false)}>
+            Nee
+          </button>
+        </span>
       ) : zeker ? (
         <span className="ag-zeker">
           <span>Definitief verwijderen?</span>
-          <button type="button" className="db-knop ag-knop-gevaar" disabled={bezig} onClick={onVerwijder}>
+          <button type="button" className="db-knop ag-knop-gevaar" disabled={bezig} onClick={() => onVerwijder()}>
             Ja, verwijderen
           </button>
           <button type="button" className="db-knop" onClick={() => setZeker(false)}>
@@ -188,12 +236,14 @@ function useOpslaan() {
 function AfspraakFormulier({
   afspraak,
   nieuw,
+  herhalingKlaar,
   onSluit,
   onOpgeslagen,
   onVerwijderd
 }: {
   afspraak: Afspraak;
   nieuw: boolean;
+  herhalingKlaar: boolean;
   onSluit: () => void;
   onOpgeslagen: (a: Afspraak) => void;
   onVerwijderd: () => void;
@@ -210,6 +260,11 @@ function AfspraakFormulier({
   const [start, setStart] = useState(afspraak.heleDag ? '09:00' : s.tijd);
   const [eind, setEind] = useState(afspraak.heleDag ? '10:00' : e.tijd);
   const [klant, setKlant] = useState(afspraak.klantId ? { id: afspraak.klantId, naam: afspraak.klantNaam ?? 'Klant' } : null);
+  const [herhaling, setHerhaling] = useState<Herhaling | ''>(afspraak.herhaling ?? '');
+  const [herhaalTot, setHerhaalTot] = useState(afspraak.herhaalTot ?? '');
+  // Een voorkomen van een reeks: bij opslaan en verwijderen vragen "alleen deze of de hele reeks".
+  const reeks = !nieuw && !!afspraak.reeksId;
+  const [vraagOpslaan, setVraagOpslaan] = useState(false);
   const { mijnId, overgang, perId } = useTeam();
   const [deelnemers, setDeelnemers] = useState<string[]>(afspraak.deelnemers.length ? afspraak.deelnemers : [mijnId]);
   const mag = nieuw || magAfspraakWijzigen(afspraak, mijnId, overgang);
@@ -218,12 +273,25 @@ function AfspraakFormulier({
   const smal = useSmal();
   const overMiddernacht = !heleDag && start && eind && eind <= start;
 
-  async function opslaan(ev?: React.FormEvent) {
+  // Herhaalregel gewijzigd: dat gaat altijd over de hele reeks (niet vragen).
+  const regelGewijzigd = herhaling !== (afspraak.herhaling ?? '') || (herhaling !== '' && herhaalTot !== (afspraak.herhaalTot ?? ''));
+
+  async function opslaan(ev?: React.FormEvent, toepassen?: 'deze' | 'reeks') {
     ev?.preventDefault();
     if (!mag) return;
-    const b = heleDag
+    if (reeks && !toepassen && !regelGewijzigd) {
+      setVraagOpslaan(true);
+      return;
+    }
+    setVraagOpslaan(false);
+    const basis = heleDag
       ? { titel, notitie, locatie, klantId: klant?.id ?? null, heleDag: true, datum, eindDatum: eindDatum || datum }
       : { titel, notitie, locatie, klantId: klant?.id ?? null, heleDag: false, datum, start, eind };
+    // Herhalen alleen meesturen als de database het kent (migratie 0034) of als er iets gekozen is.
+    const b =
+      herhalingKlaar || herhaling
+        ? { ...basis, herhaling: herhaling || null, herhaalTot: herhaling ? herhaalTot || null : null, toepassen }
+        : { ...basis, toepassen };
     const metWie = overgang ? b : { ...b, deelnemers };
     // Een afspraak zonder jou erop staat alleen in de agenda van de anderen: zeg dat erbij.
     const voorAnder = !overgang && !deelnemers.includes(mijnId);
@@ -236,13 +304,20 @@ function AfspraakFormulier({
           : 'Afspraak toegevoegd'
         : voorAnder
           ? `Afspraak opgeslagen voor ${namen} (staat niet meer in jouw agenda)`
-          : 'Afspraak opgeslagen'
+          : toepassen === 'deze'
+            ? 'Alleen deze afspraak opgeslagen'
+            : reeks || herhaling
+              ? 'Reeks opgeslagen'
+              : 'Afspraak opgeslagen'
     );
     if (r) onOpgeslagen(r.event);
   }
 
-  async function verwijder() {
-    const r = await doe(() => agendaApi.verwijderAfspraak(afspraak.id), 'Afspraak verwijderd');
+  async function verwijder(toepassen?: 'deze' | 'reeks') {
+    const r = await doe(
+      () => agendaApi.verwijderAfspraak(afspraak.id, toepassen),
+      toepassen === 'deze' ? 'Deze afspraak verwijderd (de reeks blijft)' : toepassen === 'reeks' ? 'Reeks verwijderd' : 'Afspraak verwijderd'
+    );
     if (r) onVerwijderd();
   }
 
@@ -341,6 +416,47 @@ function AfspraakFormulier({
           </>
         )}
 
+        <div className="ag-velden-2">
+          <label className="ag-label">
+            Herhalen
+            <select
+              className="ag-veld"
+              value={herhaling}
+              disabled={!herhalingKlaar && !herhaling}
+              onChange={(ev) => setHerhaling(isHerhaling(ev.target.value) ? ev.target.value : '')}
+            >
+              <option value="">Niet</option>
+              {HERHALINGEN.map((h) => (
+                <option key={h.waarde} value={h.waarde}>
+                  {h.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          {herhaling && (
+            <label className="ag-label">
+              Tot en met
+              <input
+                className="ag-veld"
+                type="date"
+                min={datum}
+                value={herhaalTot}
+                aria-describedby="ag-herhaal-uitleg"
+                onChange={(ev) => setHerhaalTot(ev.target.value)}
+              />
+            </label>
+          )}
+        </div>
+        {!herhalingKlaar ? (
+          <p className="ag-uitleg">Herhalen kan zodra migratie 0034 is uitgevoerd (supabase/UITVOEREN_0034.sql).</p>
+        ) : herhaling ? (
+          <p className="ag-uitleg" id="ag-herhaal-uitleg">
+            {herhaalTot ? `Laatste keer op ${langeDag(herhaalTot)}.` : 'Zonder einddatum: herhaalt tot je de reeks stopt.'}
+            {herhaling === 'maandelijks' && Number(datum.slice(8)) > 28 ? ' In kortere maanden op de laatste dag.' : ''}
+            {reeks && !regelGewijzigd ? ' Bij opslaan kies je: alleen deze of de hele reeks.' : ''}
+          </p>
+        ) : null}
+
         <label className="ag-label">
           Locatie
           <input
@@ -381,7 +497,16 @@ function AfspraakFormulier({
           </p>
         )}
       </div>
-      <Voet bezig={bezig} nieuw={nieuw} mag={mag} onVerwijder={verwijder} onSluit={onSluit} />
+      <Voet
+        bezig={bezig}
+        nieuw={nieuw}
+        mag={mag}
+        reeks={reeks}
+        vraagOpslaan={vraagOpslaan}
+        onKiesOpslaan={(t) => (t ? void opslaan(undefined, t) : setVraagOpslaan(false))}
+        onVerwijder={(t) => void verwijder(t)}
+        onSluit={onSluit}
+      />
     </form>
   );
 }

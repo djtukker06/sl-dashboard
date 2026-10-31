@@ -167,7 +167,7 @@ function AgendaLaden() {
           </button>
         </div>
       </ModuleKop>
-      <InhoudSkelet />
+      <InhoudSkelet klasse="sl-laden-inhoud ag-laadscherm" />
     </>
   );
 }

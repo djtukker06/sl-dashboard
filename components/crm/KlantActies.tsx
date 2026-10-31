@@ -2,12 +2,10 @@
 
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
-import { agendaApi } from '@/lib/agenda/client';
 import { plusDagen } from '@/lib/agenda/datum';
-import type { KlantInvoer } from '@/lib/crm/types';
+import type { KlantInvoer, KlantStatus } from '@/lib/crm/types';
 import { useToast } from '@/components/agenda/Toast';
-import { useTeam } from '@/components/team/TeamProvider';
-import { CrmDialoog, crmApi } from './CrmDialoog';
+import { crmApi } from './CrmDialoog';
 import { OpvolgBadge } from './StatusPil';
 
 /** Klant wijzigen (PATCH) met een foutmelding als toast; geeft true bij succes. */
@@ -111,108 +109,97 @@ export function OpvolgVelden({
   );
 }
 
+/** Onder welke tab een status staat (voor "staat weer onder …" na ongedaan maken). */
+const TAB_NAAM: Record<KlantStatus, string> = { koud: 'Op de radar', lead: 'Leads', actief: 'Actief', afgerond: 'Afgerond' };
+
 /**
- * Een lead afronden met één klik: "Gewonnen" (→ actief, optioneel meteen een project) of
- * "Afgewezen" (→ afgerond, met "Ongedaan maken").
+ * Knoppen bij een lead of iets op de radar, elk met één klik en "Ongedaan maken" in de
+ * melding: "Omzetten naar klant" (→ actief; er is akkoord), "Op de radar" ↔ "Naar leads",
+ * en "Afgewezen" (→ afgerond). `onStatus` laat de lijst meteen meeschuiven (optimistisch);
+ * mislukt het opslaan, dan gaat de klant terug. Bij klant/afgerond wordt de opvolgdatum
+ * gewist (zoals voorheen bij "Gewonnen"), en bij ongedaan maken teruggezet.
  */
 export function LeadActies({
   klant,
   opvolging,
-  klein = false
+  klein = false,
+  onStatus
 }: {
-  klant: { id: string; naam: string; opvolgenOp: string | null };
-  /** Migratie 0025 aanwezig (dan ook de opvolgdatum wissen bij afwijzen). */
+  klant: { id: string; naam: string; status: KlantStatus; opvolgenOp: string | null };
+  /** Migratie 0025 aanwezig (dan ook de opvolgdatum wissen/terugzetten). */
   opvolging: boolean;
   klein?: boolean;
+  /** Direct in de lijst bijwerken (de server volgt met router.refresh). */
+  onStatus?: (id: string, status: KlantStatus) => void;
 }) {
-  const router = useRouter();
-  const toast = useToast();
   const wijzig = useKlantWijzigen();
-  const { mijnId } = useTeam();
-  const [open, setOpen] = useState(false);
-  const [project, setProject] = useState('');
   const [bezig, setBezig] = useState(false);
-  const [fout, setFout] = useState('');
+  const knop = `db-knop${klein ? ' db-knop-klein' : ''}`;
 
-  async function afwijzen() {
-    const ok = await wijzig(
-      klant.id,
-      { status: 'afgerond', ...(opvolging ? { opvolgenOp: null } : {}) },
-      `${klant.naam} staat nu onder Afgerond`,
-      { label: 'Ongedaan maken', onClick: () => void wijzig(klant.id, { status: 'lead', ...(opvolging ? { opvolgenOp: klant.opvolgenOp } : {}) }, 'Terug bij de leads') }
-    );
-    return ok;
-  }
-
-  async function winnen(e: React.FormEvent) {
-    e.preventDefault();
+  async function zet(nieuw: KlantStatus, melding: string) {
+    if (bezig) return;
+    const oud = klant.status;
+    const oudeDatum = klant.opvolgenOp;
+    const wisDatum = opvolging && (nieuw === 'actief' || nieuw === 'afgerond') && !!oudeDatum;
     setBezig(true);
-    setFout('');
-    try {
-      await crmApi(`/api/klanten/${klant.id}`, 'PATCH', { status: 'actief', ...(opvolging ? { opvolgenOp: null } : {}) });
-      const naam = project.trim();
-      if (naam) {
-        const { project: p } = await agendaApi.maakProject({ naam, klantId: klant.id, status: 'voorbereiding', deadline: null, eigenaren: [mijnId] });
-        toast(`${klant.naam} is klant · project ‘${naam}’ aangemaakt`);
-        router.push(`/projecten/${p.id}`);
-        return;
+    onStatus?.(klant.id, nieuw);
+    const ok = await wijzig(klant.id, { status: nieuw, ...(wisDatum ? { opvolgenOp: null } : {}) }, melding, {
+      label: 'Ongedaan maken',
+      onClick: () => {
+        onStatus?.(klant.id, oud);
+        void wijzig(klant.id, { status: oud, ...(wisDatum ? { opvolgenOp: oudeDatum } : {}) }, `${klant.naam} staat weer onder ${TAB_NAAM[oud]}`).then((terug) => {
+          if (!terug) onStatus?.(klant.id, nieuw);
+        });
       }
-      toast(`${klant.naam} is nu een actieve klant`);
-      setOpen(false);
-      router.refresh();
-    } catch (err) {
-      setFout(err instanceof Error ? err.message : 'Niet gelukt.');
-    } finally {
-      setBezig(false);
-    }
+    });
+    if (!ok) onStatus?.(klant.id, oud);
+    setBezig(false);
   }
 
   return (
     <span className="kp-leadacties">
       <button
         type="button"
-        className={`db-knop kp-knop-gewonnen${klein ? ' db-knop-klein' : ''}`}
-        onClick={() => {
-          setProject('');
-          setFout('');
-          setOpen(true);
-        }}
-        title="Lead gewonnen: wordt een actieve klant"
+        className={`${knop} kp-knop-gewonnen`}
+        disabled={bezig}
+        onClick={() => void zet('actief', `${klant.naam} is nu een klant`)}
+        title="Er is akkoord: wordt een actieve klant (staat daarna onder Actief)"
       >
         <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
           <path d="M3 8.5l3 3 7-7" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
-        Gewonnen
+        Omzetten naar klant
       </button>
-      <button type="button" className={`db-knop kp-knop-stil${klein ? ' db-knop-klein' : ''}`} onClick={() => void afwijzen()} title="Lead afgewezen: naar Afgerond">
+      {klant.status === 'koud' ? (
+        <button
+          type="button"
+          className={`${knop} kp-knop-stil`}
+          disabled={bezig}
+          onClick={() => void zet('lead', `${klant.naam} staat nu bij de leads`)}
+          title="We gaan ze benaderen: naar Leads (met opvolgen)"
+        >
+          Naar leads
+        </button>
+      ) : (
+        <button
+          type="button"
+          className={`${knop} kp-knop-stil`}
+          disabled={bezig}
+          onClick={() => void zet('koud', `${klant.naam} staat nu op de radar`)}
+          title="Nu niet benaderen, wel onthouden: naar Op de radar (telt niet mee bij Opvolgen)"
+        >
+          Op de radar
+        </button>
+      )}
+      <button
+        type="button"
+        className={`${knop} kp-knop-stil`}
+        disabled={bezig}
+        onClick={() => void zet('afgerond', `${klant.naam} staat nu onder Afgerond`)}
+        title="Wordt niets: naar Afgerond (blijft vindbaar)"
+      >
         Afgewezen
       </button>
-      {open && (
-        <CrmDialoog titel="Lead gewonnen" onSluit={() => setOpen(false)}>
-          <form className="kp-form" onSubmit={winnen} noValidate>
-            <p className="kp-uitleg">
-              <strong>{klant.naam}</strong> wordt een actieve klant. Meteen een project aanmaken? Laat het veld leeg als dat later komt.
-            </p>
-            <label className="ag-label">
-              Project (optioneel)
-              <input className="ag-veld" value={project} maxLength={120} placeholder="Bijv. Huisstijl 2027" onChange={(e) => setProject(e.target.value)} />
-            </label>
-            {fout && (
-              <p className="ag-fout" role="alert">
-                {fout}
-              </p>
-            )}
-            <div className="kp-form-acties">
-              <button type="button" className="db-knop" onClick={() => setOpen(false)}>
-                Annuleren
-              </button>
-              <button type="submit" className="db-knop db-knop-primair" disabled={bezig}>
-                {bezig ? 'Bezig…' : project.trim() ? 'Klant + project maken' : 'Maak actieve klant'}
-              </button>
-            </div>
-          </form>
-        </CrmDialoog>
-      )}
     </span>
   );
 }

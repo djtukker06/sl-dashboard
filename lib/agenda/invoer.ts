@@ -5,8 +5,10 @@ import {
   isDag,
   normTijd,
   plusDagen,
-  tijdNaarMinuten
+  tijdNaarMinuten,
+  weekdagIndex
 } from './datum';
+import { isHerhaling, minsteAfstandDagen, type Herhaling } from './herhaling';
 import type { AfspraakInvoer, TaakInvoer } from './types';
 
 // Handmatige validatie van de agenda-invoer (zoals lib/invoice/invoer.ts): de API-routes
@@ -136,16 +138,38 @@ export interface AfspraakRij {
   ends_at?: string;
   all_day?: boolean;
   client_id?: string | null;
+  /** Migratie 0034. Alleen meegestuurd als er iets met herhalen verandert. */
+  herhaling?: Herhaling | null;
+  herhaal_tot?: string | null;
+  herhaal_uitzonderingen?: string[];
+  herhaal_van?: string | null;
 }
 
 /** De bestaande afspraak terugvertaald naar invoervelden (voor PATCH: samenvoegen en herberekenen). */
-export function afspraakAlsInvoer(r: { starts_at: string; ends_at: string; all_day: boolean }): AfspraakInvoer {
+export function afspraakAlsInvoer(r: {
+  starts_at: string;
+  ends_at: string;
+  all_day: boolean;
+  herhaling?: string | null;
+  herhaal_tot?: string | null;
+}): AfspraakInvoer {
   const a = inAmsterdam(r.starts_at);
   const b = inAmsterdam(r.ends_at);
+  const herhaal: AfspraakInvoer = {
+    herhaling: isHerhaling(r.herhaling) ? r.herhaling : null,
+    herhaalTot: isHerhaling(r.herhaling) ? (r.herhaal_tot ?? null) : null
+  };
   if (r.all_day) {
-    return { datum: a.dag, eindDatum: plusDagen(b.dag, -1), heleDag: true, start: null, eind: null };
+    return { datum: a.dag, eindDatum: plusDagen(b.dag, -1), heleDag: true, start: null, eind: null, ...herhaal };
   }
-  return { datum: a.dag, heleDag: false, start: a.tijd, eind: b.tijd, duur: Math.round((Date.parse(r.ends_at) - Date.parse(r.starts_at)) / 60000) };
+  return {
+    datum: a.dag,
+    heleDag: false,
+    start: a.tijd,
+    eind: b.tijd,
+    duur: Math.round((Date.parse(r.ends_at) - Date.parse(r.starts_at)) / 60000),
+    ...herhaal
+  };
 }
 
 export function parseAfspraak(body: AfspraakInvoer, huidig: AfspraakInvoer | null): Resultaat<AfspraakRij> {
@@ -174,7 +198,7 @@ export function parseAfspraak(body: AfspraakInvoer, huidig: AfspraakInvoer | nul
     rij.client_id = k.waarde;
   }
 
-  const tijdVelden = ['datum', 'eindDatum', 'start', 'eind', 'duur', 'heleDag'] as const;
+  const tijdVelden = ['datum', 'eindDatum', 'start', 'eind', 'duur', 'heleDag', 'herhaling', 'herhaalTot'] as const;
   if (nieuw || tijdVelden.some((k) => k in body)) {
     // Bij wijzigen van alleen de datum (slepen naar een andere dag) blijven tijden en duur staan.
     const basis: AfspraakInvoer = huidig ?? {};
@@ -224,6 +248,30 @@ export function parseAfspraak(body: AfspraakInvoer, huidig: AfspraakInvoer | nul
       rij.all_day = false;
       rij.starts_at = begin.toISOString();
       rij.ends_at = einde.toISOString();
+    }
+
+    // Herhalen (migratie 0034). De kolommen staan alleen in de rij als het in de body staat,
+    // zodat afspraken zonder herhaling ook werken zolang de migratie nog niet is uitgevoerd.
+    const h = m.herhaling ?? null;
+    if (h !== null && !isHerhaling(h)) return { ok: false, fout: 'Ongeldige herhaling.' };
+    let tot: string | null = null;
+    if (h) {
+      if (m.herhaalTot !== null && m.herhaalTot !== undefined && m.herhaalTot !== '') {
+        if (!isDag(m.herhaalTot)) return { ok: false, fout: 'Ongeldige datum bij "herhalen tot".' };
+        if (dagenTussen(m.datum, m.herhaalTot) < 0) return { ok: false, fout: '"Herhalen tot" ligt vóór de eerste dag.' };
+        tot = m.herhaalTot;
+      }
+      if (h === 'werkdagen' && weekdagIndex(m.datum) >= 5) {
+        return { ok: false, fout: '"Elke werkdag" kan alleen op een werkdag beginnen.' };
+      }
+      const duurMs = Date.parse(rij.ends_at!) - Date.parse(rij.starts_at!);
+      if (duurMs > minsteAfstandDagen(h) * 86_400_000) {
+        return { ok: false, fout: 'De afspraak duurt langer dan de herhaling: kies een langere herhaling of een kortere afspraak.' };
+      }
+    }
+    if (('herhaling' in body || 'herhaalTot' in body) && (h || !nieuw)) {
+      rij.herhaling = h;
+      rij.herhaal_tot = tot;
     }
   }
   return { ok: true, waarde: rij };

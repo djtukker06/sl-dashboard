@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation';
 import { vereisTeamlidPagina } from '@/lib/auth/team';
 import { isDag, vandaag as vandaagNL } from '@/lib/agenda/datum';
 import { isUuid } from '@/lib/agenda/invoer';
+import { isAfspraakId } from '@/lib/agenda/herhaling';
 import { AgendaApp } from '@/components/agenda/AgendaApp';
 
 export const dynamic = 'force-dynamic';
@@ -15,6 +16,7 @@ export const metadata: Metadata = { title: 'Agenda & taken · Studio Levant' };
 //   ?dag=YYYY-MM-DD      week/maand rond die dag (vanaf het dashboard "Deze week")
 //   ?weergave=dag|week|maand  vaste weergave (zonder: week, op de telefoon één dag)
 //   ?taak=<id>           opent direct de taak-popup; ?afspraak=<id> het afsprakenpaneel
+//                        (bij een herhalende afspraak <id>~YYYY-MM-DD: dat voorkomen)
 //   ?lijst=uitgezet      opent de takenlijst op de tab "Uitgezet"
 //   ?project=<id>        takenlijst gefilterd op een project
 // Een oude link met ?wie=team of ?wie=<id> (teamweergave, bestaat niet meer) gaat naar
@@ -52,7 +54,7 @@ export default async function AgendaPage({
       startFilter={sp.lijst === 'uitgezet' ? 'uitgezet' : 'vandaag'}
       startProject={isUuid(sp.project) ? sp.project : null}
       openTaak={isUuid(sp.taak) ? sp.taak : null}
-      openAfspraak={isUuid(sp.afspraak) ? sp.afspraak : null}
+      openAfspraak={isAfspraakId(sp.afspraak) ? sp.afspraak : null}
     />
   );
 }

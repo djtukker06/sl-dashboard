@@ -26,7 +26,8 @@ async function bestandenStatus(lid: Teamlid): Promise<DriveStatus | null> {
 
 // Klantpagina: kop met naam (inline te hernoemen), status en Mailen/Bellen; kerncijfers
 // (omzet, facturen, open aanbetalingen, projecten — facturen alleen gelezen); voor een lead
-// bovenaan het opvolgen (volgende stap, datum, gewonnen/afgewezen); daaronder projecten,
+// bovenaan het opvolgen (volgende stap, datum, omzetten naar klant/afgewezen), voor iets op
+// de radar een korte balk met dezelfde knoppen; daaronder projecten,
 // open taken en de tijdlijn, en opzij contact, facturen & prijsopgaven en bestanden.
 export default async function KlantPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;

@@ -46,7 +46,7 @@ interface KlantDbRij {
 }
 
 function statusVan(s: unknown): KlantStatus {
-  return s === 'lead' || s === 'afgerond' ? s : 'actief';
+  return s === 'koud' || s === 'lead' || s === 'afgerond' ? s : 'actief';
 }
 
 function naarKlant(r: KlantDbRij): Klant {
@@ -69,6 +69,9 @@ export function crmFout(error: unknown): AgendaFout {
   if (kolomOntbreekt(error)) return new AgendaFout(503, CRM_NIET_INGERICHT, 'tabel_ontbreekt');
   return dbFout(error);
 }
+
+/** Melding als je "Op de radar" kiest vóór migratie 0033 (de check-constraint kent 'koud' dan nog niet). */
+export const KOUD_NA_0033 = '“Op de radar” werkt zodra migratie 0033 is uitgevoerd (supabase/UITVOEREN_0033.sql).';
 
 /** Melding als je "volgende stap" of "opvolgen op" opslaat vóór migratie 0025. */
 export const OPVOLGEN_NA_0025 = 'Opvolgen (volgende stap en datum) werkt zodra migratie 0025 is uitgevoerd (supabase/UITVOEREN_0025.sql).';
@@ -341,6 +344,30 @@ export async function klantPagina(bron: AgendaBron, id: string, jaar: number = n
   };
 }
 
+/**
+ * Klant bij een nieuw project op naam: bestaat er al een klant met die naam (hoofdletter-
+ * ongevoelig, dezelfde sleutel als de unieke index: lower(trim(company_name))), dan die;
+ * anders een nieuwe klant met status 'actief' (hij krijgt meteen werk). Botst het
+ * aanmaken toch (iemand anders was net eerder), dan de klant die er nu staat.
+ */
+export async function vindOfMaakKlant(bron: AgendaBron, naam: string): Promise<{ id: string; naam: string; nieuw: boolean }> {
+  const sleutel = naam.trim().toLowerCase();
+  const zoek = () => bron.sb.from('clients').select('id,company_name').eq('company_name_normalized', sleutel).limit(1).maybeSingle();
+  const bestaand = await zoek();
+  if (bestaand.error) throw crmFout(bestaand.error);
+  if (bestaand.data) return { id: bestaand.data.id as string, naam: bestaand.data.company_name as string, nieuw: false };
+
+  const { data, error } = await bron.sb.from('clients').insert({ company_name: naam, status: 'actief' }).select('id').single();
+  if (error) {
+    if (error.code === '23505') {
+      const nu = await zoek();
+      if (nu.data) return { id: nu.data.id as string, naam: nu.data.company_name as string, nieuw: false };
+    }
+    throw crmFout(error);
+  }
+  return { id: data.id as string, naam, nieuw: true };
+}
+
 export interface OpvolgRegel {
   id: string;
   naam: string;
@@ -350,8 +377,9 @@ export interface OpvolgRegel {
 }
 
 /**
- * Dashboardkaart "Opvolgen": klanten en leads (niet afgerond) met een opvolgdatum van
- * vandaag of eerder. null vóór migratie 0025 (of 0022): de kaart verschijnt dan niet.
+ * Dashboardkaart "Opvolgen": klanten en leads (niet afgerond, niet "op de radar") met een
+ * opvolgdatum van vandaag of eerder. null vóór migratie 0025 (of 0022): de kaart verschijnt
+ * dan niet. Vóór 0033 bestaat 'koud' nog niet; het filter is dan gewoon zonder effect.
  */
 export async function opvolgLijst(bron: AgendaBron, vandaag: string): Promise<OpvolgRegel[] | null> {
   if (!bron.team) return null;
@@ -359,7 +387,7 @@ export async function opvolgLijst(bron: AgendaBron, vandaag: string): Promise<Op
     .from('clients')
     .select('id,company_name,status,volgende_stap,opvolgen_op')
     .lte('opvolgen_op', vandaag)
-    .neq('status', 'afgerond')
+    .not('status', 'in', '(afgerond,koud)')
     .order('opvolgen_op')
     .limit(20);
   if (error) {

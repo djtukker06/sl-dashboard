@@ -45,7 +45,7 @@ function tekst(v: unknown, max: number, naam: string): Resultaat<string> {
 }
 
 export function isKlantStatus(v: unknown): v is KlantStatus {
-  return v === 'lead' || v === 'actief' || v === 'afgerond';
+  return v === 'koud' || v === 'lead' || v === 'actief' || v === 'afgerond';
 }
 
 /**
@@ -118,6 +118,17 @@ export function parseNotitie(v: unknown): Resultaat<string> {
   if (!t) return { ok: false, fout: 'Schrijf eerst een notitie.' };
   if (t.length > 2000) return { ok: false, fout: 'Een notitie is maximaal 2000 tekens.' };
   return { ok: true, waarde: t };
+}
+
+/**
+ * Klantnaam bij een nieuw project (een klant die nog niet bestaat wordt aangemaakt): zelfde
+ * regels als de bedrijfsnaam (spaties samengevoegd, 1–200 tekens). null = geen naam gegeven.
+ */
+export function parseKlantNaam(v: unknown): Resultaat<string | null> {
+  if (v === null || v === undefined || v === '') return { ok: true, waarde: null };
+  const n = tekst(v, 200, 'klantnaam');
+  if (!n.ok) return n;
+  return { ok: true, waarde: n.waarde || null };
 }
 
 /** Escapet % _ en \ voor een ilike-vergelijking op exacte tekst. */

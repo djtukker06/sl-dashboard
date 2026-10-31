@@ -1,6 +1,6 @@
 import { isUuid } from '@/lib/agenda/invoer';
 import { OPVOLG_KOLOMMEN, parseKlant } from '@/lib/crm/invoer';
-import { OPVOLGEN_NA_0025, crmFout, klantOphalen } from '@/lib/crm/repo';
+import { KOUD_NA_0033, OPVOLGEN_NA_0025, crmFout, klantOphalen } from '@/lib/crm/repo';
 import { KLANT_STATUS_LABEL, type KlantInvoer, type KlantStatus } from '@/lib/crm/types';
 import { kolomOntbreekt } from '@/lib/db/ontbreekt';
 import { CRM_NIET_INGERICHT } from '@/lib/agenda/repo';
@@ -41,6 +41,8 @@ export async function PATCH(request: Request, ctx: Ctx) {
     const { data, error } = await s.sb.from('clients').update(k.waarde).eq('id', id).select('id').maybeSingle();
     if (error) {
       if (error.code === '23505') return fout(409, 'Er bestaat al een klant met die naam.');
+      // Vóór 0033 kent de check-constraint de status 'koud' (Op de radar) nog niet.
+      if (error.code === '23514' && k.waarde.status === 'koud') return fout(503, KOUD_NA_0033, 'kolom_ontbreekt');
       if (kolomOntbreekt(error) && OPVOLG_KOLOMMEN.some((c) => c in k.waarde)) return fout(503, OPVOLGEN_NA_0025, 'kolom_ontbreekt');
       throw crmFout(error);
     }

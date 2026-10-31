@@ -12,6 +12,8 @@ import {
 } from '@/lib/agenda/repo';
 import type { ProjectInvoer } from '@/lib/agenda/types';
 import { kolomOntbreekt } from '@/lib/db/ontbreekt';
+import { parseKlantNaam } from '@/lib/crm/invoer';
+import { vindOfMaakKlant } from '@/lib/crm/repo';
 import { fout, foutAntwoord, json, leesBody, metSessie } from '@/lib/agenda/api';
 
 export const runtime = 'nodejs';
@@ -48,8 +50,11 @@ export async function GET(request: Request) {
   }
 }
 
-// POST /api/projecten  { naam, klantId?, status?, deadline?, notitie?, eigenaren? }
-//   → { project, klantWeerActief }
+// POST /api/projecten  { naam, klantId?, klantNaam?, status?, deadline?, notitie?, eigenaren? }
+//   → { project, klantWeerActief, klantAangemaakt }
+// klantNaam (zonder klantId): de klant met die naam (hoofdletterongevoelig) of, als die nog
+// niet bestaat, een nieuwe klant met status 'actief' (klantAangemaakt: { id, naam }; mislukt
+// het project daarna, dan wordt die nieuwe klant weer verwijderd).
 // Zonder status: de standaard van de database ('voorbereiding'; vóór 0023 'bezig', vóór
 // 0022 'actief'). Zonder eigenaren: jijzelf (vanaf 0022). Een nieuw (niet-afgerond) project
 // bij een afgeronde klant zet die klant terug op 'actief' (klantWeerActief: true).
@@ -58,12 +63,26 @@ export async function POST(request: Request) {
   if ('antwoord' in s) return s.antwoord;
   if (!s.bron.team) return fout(503, NIET_INGERICHT, 'tabel_ontbreekt');
 
-  const body = await leesBody<ProjectInvoer>(request);
+  const body = await leesBody<ProjectInvoer & { klantNaam?: unknown }>(request);
   if (!body) return fout(400, 'Ongeldige invoer.');
+  const kn = parseKlantNaam(body.klantNaam);
+  if (!kn.ok) return fout(400, kn.fout);
   const p = parseProject(body, true);
   if (!p.ok) return fout(400, p.fout);
 
+  // Alleen een klant die hier net is aangemaakt, wordt bij een fout weer opgeruimd.
+  let klantAangemaakt: { id: string; naam: string } | null = null;
+  const opruimen = async () => {
+    if (klantAangemaakt) await s.sb.from('clients').delete().eq('id', klantAangemaakt.id);
+  };
+
   try {
+    if (kn.waarde && !p.waarde.client_id) {
+      const k = await vindOfMaakKlant(s.bron, kn.waarde);
+      p.waarde.client_id = k.id;
+      if (k.nieuw) klantAangemaakt = { id: k.id, naam: k.naam };
+    }
+
     const { data, error } = await metStatusTerugval<{ id: string }>(p.waarde, (rij) =>
       s.sb
         .from('projects')
@@ -72,6 +91,7 @@ export async function POST(request: Request) {
         .single()
     );
     if (error) {
+      await opruimen();
       if (error.code === '23505') return fout(409, BESTAAT_AL);
       if (kolomOntbreekt(error) || error.code === '23514') {
         // Status gepland/bezig/afgerond of een deadline vóór migratie 0022.
@@ -79,7 +99,10 @@ export async function POST(request: Request) {
       }
       throw dbFout(error);
     }
-    if (!data) throw new AgendaFout(500, 'Het project kon niet worden aangemaakt.');
+    if (!data) {
+      await opruimen();
+      throw new AgendaFout(500, 'Het project kon niet worden aangemaakt.');
+    }
     const id = data.id as string;
 
     try {
@@ -88,13 +111,14 @@ export async function POST(request: Request) {
       const oudeModus = e instanceof AgendaFout && e.code === 'tabel_ontbreekt';
       if (!(oudeModus && p.eigenaren === undefined)) {
         await s.sb.from('projects').delete().eq('id', id);
+        await opruimen();
         throw e;
       }
     }
 
     // Afgeronde klant krijgt een nieuw project: weer actief (blijft verder ongemoeid).
     let klantWeerActief = false;
-    if (p.waarde.client_id && p.waarde.status !== 'afgerond') {
+    if (p.waarde.client_id && !klantAangemaakt && p.waarde.status !== 'afgerond') {
       const k = await s.sb
         .from('clients')
         .update({ status: 'actief' })
@@ -107,7 +131,7 @@ export async function POST(request: Request) {
 
     const project = await projectOphalen(s.bron, id);
     if (!project) throw new AgendaFout(500, 'Het project is aangemaakt maar kon niet worden gelezen.');
-    return json({ project, klantWeerActief }, 201);
+    return json({ project, klantWeerActief, klantAangemaakt }, 201);
   } catch (e) {
     return foutAntwoord(e);
   }

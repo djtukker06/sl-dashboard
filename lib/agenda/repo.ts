@@ -1,7 +1,8 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { kolomOntbreekt, tabelOntbreekt } from '@/lib/db/ontbreekt';
 import { projectStatusVan, projectStatusVoor0023, type ProjectRij } from './teaminvoer';
-import { bereikMomenten, normTijd, plusDagen } from './datum';
+import { bereikMomenten, inAmsterdam, isDag, normTijd, plusDagen } from './datum';
+import { isHerhaling, isStartdatum, splitsAfspraakId, verschuifNaar, voorkomenId, vouwUit } from './herhaling';
 import { verdeelDashboardTaken } from './dashboard';
 import type { Afspraak, Project, Subtaak, Taak, TaakDetail, TakenFilter, Tellingen } from './types';
 
@@ -70,6 +71,8 @@ const TAAK_TEAM =
 const AFSPRAAK_BASIS =
   'id,title,notes,location,starts_at,ends_at,all_day,client_id,created_by,client:clients(company_name)';
 const AFSPRAAK_TEAM = AFSPRAAK_BASIS + ',deelnemers:event_attendees(user_id)';
+/** Herhalen (migratie 0034). */
+export const HERHAAL_KOLOMMEN = ',herhaling,herhaal_tot,herhaal_uitzonderingen';
 
 /**
  * Kolommen voor een taak. Met `filterOpPersoon` komt er een tweede koppeling `wie` bij
@@ -80,9 +83,85 @@ export function taakKolommen(team: boolean, filterOpPersoon = false): string {
   return filterOpPersoon ? `${TAAK_TEAM},wie:task_assignees!inner(user_id)` : TAAK_TEAM;
 }
 
-export function afspraakKolommen(team: boolean, filterOpPersoon = false): string {
-  if (!team) return AFSPRAAK_BASIS;
-  return filterOpPersoon ? `${AFSPRAAK_TEAM},wie:event_attendees!inner(user_id)` : AFSPRAAK_TEAM;
+export function afspraakKolommen(team: boolean, filterOpPersoon = false, herhaling = false): string {
+  const h = herhaling ? HERHAAL_KOLOMMEN : '';
+  if (!team) return AFSPRAAK_BASIS + h;
+  return (filterOpPersoon ? `${AFSPRAAK_TEAM},wie:event_attendees!inner(user_id)` : AFSPRAAK_TEAM) + h;
+}
+
+// Of 0034 (herhalen) er is, onthouden we even per serverproces, zodat niet elke query eerst
+// mislukt zolang de migratie nog niet is uitgevoerd. Na een minuut kijken we opnieuw.
+let zonder0034Tot = 0;
+
+export const HERHALING_NA_0034 =
+  'Herhalende afspraken werken zodra migratie 0034 is uitgevoerd (supabase/UITVOEREN_0034.sql).';
+
+/** Is migratie 0034 (vermoedelijk) uitgevoerd? Na een mislukte query een minuut lang niet. */
+export function herhalingVermoedelijkKlaar(): boolean {
+  return Date.now() >= zonder0034Tot;
+}
+
+/** Na een schrijffout: kwam die doordat de kolommen van 0034 ontbreken? Onthoudt dat dan. */
+export function herhaalKolomOntbreekt(error: unknown): boolean {
+  if (!kolomOntbreekt(error) || tabelOntbreekt(error)) return false;
+  zonder0034Tot = Date.now() + 60_000;
+  return true;
+}
+
+/**
+ * Voert een afsprakenquery uit met de kolommen van 0034, en zonder (oude query) als die nog
+ * niet bestaan. `herhaling` in het resultaat: of de kolommen er zijn.
+ */
+export async function metHerhaalKolommen<T>(
+  q: (herhaling: boolean) => PromiseLike<{ data: T | null; error: unknown }>
+): Promise<{ data: T | null; herhaling: boolean }> {
+  if (herhalingVermoedelijkKlaar()) {
+    const n = await q(true);
+    if (!n.error) return { data: n.data, herhaling: true };
+    if (!herhaalKolomOntbreekt(n.error)) throw dbFout(n.error);
+  }
+  const r = await q(false);
+  if (r.error) throw dbFout(r.error);
+  return { data: r.data, herhaling: false };
+}
+
+/**
+ * Schrijft een afspraakrij (insert of update). Ontbreken de kolommen van 0034: zonder
+ * herhaling gewoon nogmaals zonder die kolommen, mét herhaling een nette 409.
+ * undefined = er bleef niets over om te schrijven.
+ */
+export async function schrijfAfspraak<T, R extends object>(
+  rij: R,
+  schrijf: (rij: R) => PromiseLike<{ data: T | null; error: unknown }>
+): Promise<T | null | undefined> {
+  const r = await schrijf(rij);
+  if (!r.error) return r.data;
+  const velden = rij as Record<string, unknown>;
+  const heeftHerhaal = ['herhaling', 'herhaal_tot', 'herhaal_uitzonderingen', 'herhaal_van'].some((k) => k in velden);
+  if (!heeftHerhaal || !herhaalKolomOntbreekt(r.error)) throw dbFout(r.error);
+  const u = velden.herhaal_uitzonderingen;
+  if (velden.herhaling || velden.herhaal_van || (Array.isArray(u) && u.length)) {
+    throw new AgendaFout(409, HERHALING_NA_0034);
+  }
+  const zonder: Record<string, unknown> = { ...velden };
+  for (const k of ['herhaling', 'herhaal_tot', 'herhaal_uitzonderingen', 'herhaal_van']) delete zonder[k];
+  if (!Object.keys(zonder).length) return undefined; // niets meer te schrijven
+  const n = await schrijf(zonder as R);
+  if (n.error) throw dbFout(n.error);
+  return n.data;
+}
+
+/**
+ * Filter op afspraken die [van, tot] raken: gewone afspraken op begin/eind, reeksen die vóór
+ * het eind beginnen en niet (lang) vóór het begin zijn afgelopen. De ruime marge bij
+ * herhaal_tot vangt voorkomens die eerder beginnen en doorlopen (vouwUit filtert precies).
+ */
+export function afsprakenInBereikFilter(van: string, tot: string, herhaling: boolean): string {
+  const { start, eind } = bereikMomenten(van, tot);
+  const gewoon = `and(starts_at.lt."${eind}",ends_at.gt."${start}")`;
+  if (!herhaling) return gewoon;
+  const grens = plusDagen(van, -400);
+  return `${gewoon},and(herhaling.not.is.null,starts_at.lt."${eind}",or(herhaal_tot.is.null,herhaal_tot.gte.${grens}))`;
 }
 
 type Join<T> = T | T[] | null;
@@ -123,6 +202,9 @@ export interface AfspraakDbRij {
   created_by?: string | null;
   client?: Join<{ company_name: string | null }>;
   deelnemers?: { user_id: string }[] | null;
+  herhaling?: string | null;
+  herhaal_tot?: string | null;
+  herhaal_uitzonderingen?: string[] | null;
 }
 
 export function naarTaak(r: TaakDbRij): Taak {
@@ -149,9 +231,15 @@ export function naarTaak(r: TaakDbRij): Taak {
   };
 }
 
+/**
+ * Een rij als afspraak. Bij een reeks: het EERSTE voorkomen (id "<rij-id>~<eerste dag>");
+ * gebruik naarAfspraken / vouwUit voor alle voorkomens in een bereik.
+ */
 export function naarAfspraak(r: AfspraakDbRij): Afspraak {
+  const herhaling = isHerhaling(r.herhaling) ? r.herhaling : null;
+  const eersteDag = inAmsterdam(r.starts_at).dag;
   return {
-    id: r.id,
+    id: herhaling ? voorkomenId(r.id, eersteDag) : r.id,
     titel: r.title,
     notitie: r.notes ?? '',
     locatie: r.location ?? '',
@@ -161,8 +249,23 @@ export function naarAfspraak(r: AfspraakDbRij): Afspraak {
     klantId: r.client_id,
     klantNaam: eerste(r.client)?.company_name ?? null,
     deelnemers: [...new Set((r.deelnemers ?? []).map((x) => x.user_id))],
-    aangemaaktDoor: r.created_by ?? null
+    aangemaaktDoor: r.created_by ?? null,
+    herhaling,
+    herhaalTot: herhaling && isDag(r.herhaal_tot) ? r.herhaal_tot : null,
+    reeksId: herhaling ? r.id : null,
+    voorkomen: herhaling ? eersteDag : null
   };
+}
+
+/** Rijen als losse afspraken in [van, tot]: reeksen uitgevouwen, gesorteerd op begin. */
+export function naarAfspraken(rijen: AfspraakDbRij[], van: string, tot: string): Afspraak[] {
+  const uit: Afspraak[] = [];
+  for (const r of rijen) {
+    const a = naarAfspraak(r);
+    if (a.herhaling) uit.push(...vouwUit(a, van, tot, r.herhaal_uitzonderingen ?? []));
+    else uit.push(a);
+  }
+  return uit.sort((a, b) => a.start.localeCompare(b.start));
 }
 
 /** Sorteert taken: datum (zonder datum achteraan), tijd (zonder tijd eerst), prioriteit, aanmaak. */
@@ -330,11 +433,32 @@ export async function taakOphalen(bron: AgendaBron, id: string): Promise<Taak | 
   return data ? naarTaak(data as unknown as TaakDbRij) : null;
 }
 
-/** Eén afspraak (of null). */
+/** De rij van een afspraak (met de kolommen van 0034 als die er zijn), of null. */
+export async function afspraakRij(bron: AgendaBron, rijId: string): Promise<{ rij: AfspraakDbRij | null; herhaling: boolean }> {
+  const { data, herhaling } = await metHerhaalKolommen((h) =>
+    bron.sb.from('calendar_events').select(afspraakKolommen(bron.team, false, h)).eq('id', rijId).maybeSingle()
+  );
+  return { rij: (data as unknown as AfspraakDbRij | null) ?? null, herhaling };
+}
+
+/**
+ * Eén afspraak (of null). `id` mag een voorkomen zijn ("<rij-id>~YYYY-MM-DD"): dan dat
+ * voorkomen, als het (nog) bij de reeks hoort. Een rij-id van een reeks: het eerste voorkomen.
+ */
 export async function afspraakOphalen(bron: AgendaBron, id: string): Promise<Afspraak | null> {
-  const { data, error } = await bron.sb.from('calendar_events').select(afspraakKolommen(bron.team)).eq('id', id).maybeSingle();
-  if (error) throw dbFout(error);
-  return data ? naarAfspraak(data as unknown as AfspraakDbRij) : null;
+  const delen = splitsAfspraakId(id);
+  if (!delen) return null;
+  const { rij } = await afspraakRij(bron, delen.id);
+  return rij ? afspraakUitRij(rij, delen.voorkomen) : null;
+}
+
+/** De afspraak bij een rij en (optioneel) de datum van een voorkomen; null als dat er niet (meer) is. */
+export function afspraakUitRij(rij: AfspraakDbRij, voorkomen: string | null): Afspraak | null {
+  const a = naarAfspraak(rij);
+  if (!a.herhaling || !voorkomen || voorkomen === a.voorkomen) return a;
+  if ((rij.herhaal_uitzonderingen ?? []).includes(voorkomen)) return null;
+  if (!isStartdatum(a.herhaling, a.voorkomen!, voorkomen, a.herhaalTot)) return null;
+  return { ...verschuifNaar(a, voorkomen), id: voorkomenId(rij.id, voorkomen), voorkomen };
 }
 
 /** Eén taak mét de subtaken zelf. */
@@ -437,22 +561,32 @@ export async function agendaBereik(
   bron: AgendaBron,
   van: string,
   tot: string
-): Promise<{ taken: Taak[]; afspraken: Afspraak[] }> {
-  const { start, eind } = bereikMomenten(van, tot);
+): Promise<{ taken: Taak[]; afspraken: Afspraak[]; herhaling: boolean }> {
   const persoon = persoonVoor(bron);
   let tq = bron.sb.from('tasks').select(taakKolommen(bron.team, !!persoon)).gte('due_date', van).lte('due_date', tot);
-  let aq = bron.sb.from('calendar_events').select(afspraakKolommen(bron.team, !!persoon)).lt('starts_at', eind).gt('ends_at', start);
-  if (persoon) {
-    tq = tq.eq('wie.user_id', persoon);
-    aq = aq.eq('wie.user_id', persoon);
-  }
-  const [t, a] = await Promise.all([tq.limit(2000), aq.order('starts_at').limit(2000)]);
+  if (persoon) tq = tq.eq('wie.user_id', persoon);
+  const [t, a] = await Promise.all([tq.limit(2000), afsprakenInBereik(bron, van, tot)]);
   if (t.error) throw dbFout(t.error);
-  if (a.error) throw dbFout(a.error);
   return {
     taken: ((t.data ?? []) as unknown as TaakDbRij[]).map(naarTaak).sort(sorteerTaken),
-    afspraken: ((a.data ?? []) as unknown as AfspraakDbRij[]).map(naarAfspraak)
+    afspraken: a.afspraken,
+    herhaling: a.herhaling
   };
+}
+
+/** Jouw afspraken die [van, tot] raken, herhalende uitgevouwen tot losse voorkomens. */
+export async function afsprakenInBereik(
+  bron: AgendaBron,
+  van: string,
+  tot: string
+): Promise<{ afspraken: Afspraak[]; herhaling: boolean }> {
+  const persoon = persoonVoor(bron);
+  const { data, herhaling } = await metHerhaalKolommen((h) => {
+    let aq = bron.sb.from('calendar_events').select(afspraakKolommen(bron.team, !!persoon, h)).or(afsprakenInBereikFilter(van, tot, h));
+    if (persoon) aq = aq.eq('wie.user_id', persoon);
+    return aq.order('starts_at').limit(2000);
+  });
+  return { afspraken: naarAfspraken((data ?? []) as unknown as AfspraakDbRij[], van, tot), herhaling };
 }
 
 /** Hoeveel taken het dashboard per extra groep ("Zonder deadline", "Later") meeneemt. */
@@ -480,24 +614,18 @@ export async function dashboardPlanning(bron: AgendaBron, vandaag: string): Prom
   // Drie queries tegelijk (waren er vijf): jouw taken die open zijn OF in deze 7 dagen
   // vallen (verdeeld in lib/agenda/dashboard.ts), jouw afspraken, en het aantal uitgezet.
   const tot = plusDagen(vandaag, 6);
-  const { start, eind } = bereikMomenten(vandaag, tot);
   const persoon = persoonVoor(bron);
   let tq = bron.sb
     .from('tasks')
     .select(taakKolommen(bron.team, !!persoon))
     .or(`completed_at.is.null,and(due_date.gte.${vandaag},due_date.lte.${tot})`);
-  let aq = bron.sb.from('calendar_events').select(afspraakKolommen(bron.team, !!persoon)).lt('starts_at', eind).gt('ends_at', start);
-  if (persoon) {
-    tq = tq.eq('wie.user_id', persoon);
-    aq = aq.eq('wie.user_id', persoon);
-  }
-  const [t, a, uit] = await Promise.all([tq.limit(1000), aq.order('starts_at').limit(2000), uitgezetAantal(bron)]);
+  if (persoon) tq = tq.eq('wie.user_id', persoon);
+  const [t, a, uit] = await Promise.all([tq.limit(1000), afsprakenInBereik(bron, vandaag, tot), uitgezetAantal(bron)]);
   if (t.error) throw dbFout(t.error);
-  if (a.error) throw dbFout(a.error);
   const taken = ((t.data ?? []) as unknown as TaakDbRij[]).map(naarTaak).sort(sorteerTaken);
   return {
     ...verdeelDashboardTaken(taken, vandaag, tot, DASHBOARD_EXTRA_MAX),
-    afspraken: ((a.data ?? []) as unknown as AfspraakDbRij[]).map(naarAfspraak),
+    afspraken: a.afspraken,
     uitgezet: uit
   };
 }

@@ -5,9 +5,9 @@ const LABELS: Record<string, string> = { ...KLANT_STATUS_LABEL, ...PROJECT_STATU
 const TITELS: Record<string, string> = PROJECT_STATUS_LABEL;
 
 /**
- * Statuslabel van een klant (lead/actief/afgerond) of project (voorbereiding/bezig/
+ * Statuslabel van een klant (koud = op de radar/lead/actief/afgerond) of project (voorbereiding/bezig/
  * wachten/afgerond; "Wachten" voluit als tooltip). Overal dezelfde kleuren (klanten.css):
- * blauw = nog niet begonnen (lead, voorbereiding), groen = loopt (actief, bezig),
+ * blauw = nog niet begonnen (koud, lead, voorbereiding), groen = loopt (actief, bezig),
  * oker = wacht op een ander, grijs = klaar. Kleur is nooit de enige drager: er staat
  * altijd een label bij.
  */

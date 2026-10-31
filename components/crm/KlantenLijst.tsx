@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { formatEuro } from '@/lib/format';
 import { korteDatum } from '@/lib/dashboard/tijd';
-import { KLANT_STATUS_LABEL, type KlantRegel, type KlantStatus } from '@/lib/crm/types';
+import { KLANT_STATUSSEN, KLANT_STATUS_LABEL, type KlantRegel, type KlantStatus } from '@/lib/crm/types';
 import {
   SORTERING_LABEL,
   geledenKort,
@@ -19,9 +19,16 @@ import { crmApi } from './CrmDialoog';
 import { LeadActies, OpvolgVelden } from './KlantActies';
 import { OpvolgBadge, StatusPil } from './StatusPil';
 
-const TABS: KlantStatus[] = ['lead', 'actief', 'afgerond'];
-const TAB_LABEL: Record<KlantStatus, string> = { lead: 'Leads', actief: 'Actief', afgerond: 'Afgerond' };
-const STANDAARD_SORTERING: Record<KlantStatus, KlantSortering> = { lead: 'opvolgen', actief: 'actief', afgerond: 'naam' };
+// Tabs in de volgorde van de klantreis: Op de radar (koud, 0033) → Leads → Actief → Afgerond.
+const TABS: KlantStatus[] = KLANT_STATUSSEN;
+const TAB_LABEL: Record<KlantStatus, string> = { koud: 'Op de radar', lead: 'Leads', actief: 'Actief', afgerond: 'Afgerond' };
+const STANDAARD_SORTERING: Record<KlantStatus, KlantSortering> = { koud: 'naam', lead: 'opvolgen', actief: 'actief', afgerond: 'naam' };
+const NIEUW_PLACEHOLDER: Record<KlantStatus, string> = {
+  koud: 'Op de radar zetten (naam + Enter)',
+  lead: 'Nieuwe lead (naam + Enter)',
+  actief: 'Nieuwe klant (naam + Enter)',
+  afgerond: 'Nieuwe lead (naam + Enter)'
+};
 const TAB_SLEUTEL = 'sl-klanten-tab';
 /** Event van de knop "+ Klant" in de kop: focus op het snelle invoerveld. */
 export const NIEUW_EVENT = 'kp:nieuwe-klant';
@@ -32,8 +39,10 @@ function typtIn(t: EventTarget | null): boolean {
 }
 
 /**
- * Het klantenoverzicht met drie tabs: Leads (opvolgen: volgende stap, datum, gewonnen/
- * afgewezen), Actief en Afgerond (afgeronde klanten blijven vindbaar; zoeken telt per tab).
+ * Het klantenoverzicht met vier tabs: Op de radar (niet vergeten, nu geen actie), Leads
+ * (opvolgen: volgende stap, datum), Actief en Afgerond (blijft vindbaar; zoeken telt per
+ * tab). Bij radar en leads zet één klik ze om naar klant (of radar ↔ leads, afgewezen),
+ * met "Ongedaan maken"; de lijst schuift meteen mee, de server volgt.
  * Zoeken (/), sorteren en snel toevoegen (n of "+ Klant": één veld + Enter) gebeuren
  * direct in de browser; de lijst is klein. Bedragen komen alleen-lezen uit de facturen.
  */
@@ -62,6 +71,8 @@ export function KlantenLijst({
   const [nieuw, setNieuw] = useState('');
   const [bezig, setBezig] = useState(false);
   const [vers, setVers] = useState<string | null>(null);
+  // Statuswijzigingen die al in beeld zijn maar nog niet terug van de server (optimistisch).
+  const [verschoven, setVerschoven] = useState<Record<string, KlantStatus>>({});
   const zoekVeld = useRef<HTMLInputElement>(null);
   const nieuwVeld = useRef<HTMLInputElement>(null);
   const moment = useMemo(() => new Date(nu), [nu]);
@@ -81,7 +92,7 @@ export function KlantenLijst({
     if (!startTab) {
       try {
         const t = localStorage.getItem(TAB_SLEUTEL);
-        if (t === 'lead' || t === 'actief' || t === 'afgerond') {
+        if (t === 'koud' || t === 'lead' || t === 'actief' || t === 'afgerond') {
           // eslint-disable-next-line react-hooks/set-state-in-effect
           setTab(t);
           setSortering(STANDAARD_SORTERING[t]);
@@ -117,24 +128,33 @@ export function KlantenLijst({
     };
   }, []);
 
-  const gevonden = useMemo(() => klanten.filter((k) => klantPast(k, q)), [klanten, q]);
+  const metStatus = useMemo(
+    () => klanten.map((k) => (verschoven[k.id] && verschoven[k.id] !== k.status ? { ...k, status: verschoven[k.id] } : k)),
+    [klanten, verschoven]
+  );
+  const gevonden = useMemo(() => metStatus.filter((k) => klantPast(k, q)), [metStatus, q]);
   const aantal = (t: KlantStatus) => gevonden.filter((k) => k.status === t).length;
-  const teLaat = klanten.filter((k) => k.status === 'lead' && (opvolgStand(k.opvolgenOp, vandaag) === 'telaat' || opvolgStand(k.opvolgenOp, vandaag) === 'vandaag')).length;
+  const teLaat = metStatus.filter((k) => k.status === 'lead' && (opvolgStand(k.opvolgenOp, vandaag) === 'telaat' || opvolgStand(k.opvolgenOp, vandaag) === 'vandaag')).length;
   const zichtbaar = useMemo(() => sorteerKlanten(gevonden.filter((k) => k.status === tab), sortering), [gevonden, tab, sortering]);
   const elders = TABS.filter((t) => t !== tab && aantal(t) > 0);
+
+  function verschuif(id: string, status: KlantStatus) {
+    setVerschoven((v) => ({ ...v, [id]: status }));
+    setVers(id);
+  }
 
   async function toevoegen(e: React.FormEvent) {
     e.preventDefault();
     const naam = nieuw.replace(/\s+/g, ' ').trim();
     if (!naam || bezig) return;
-    const status: KlantStatus = tab === 'actief' ? 'actief' : 'lead';
+    const status: KlantStatus = tab === 'actief' || tab === 'koud' ? tab : 'lead';
     setBezig(true);
     try {
       const { klant } = await crmApi<{ klant: { id: string } }>('/api/klanten', 'POST', { naam, status });
       setNieuw('');
       setVers(klant.id);
       if (tab === 'afgerond') setTab('lead');
-      toast(`${naam} toegevoegd als ${KLANT_STATUS_LABEL[status].toLowerCase()}`, { actie: { label: 'Openen', onClick: () => router.push(`/klanten/${klant.id}`) } });
+      toast(status === 'koud' ? `${naam} staat op de radar` : `${naam} toegevoegd als ${KLANT_STATUS_LABEL[status].toLowerCase()}`, { actie: { label: 'Openen', onClick: () => router.push(`/klanten/${klant.id}`) } });
       router.refresh();
     } catch (err) {
       toast(err instanceof Error ? err.message : 'Toevoegen mislukt.', { fout: true });
@@ -143,7 +163,7 @@ export function KlantenLijst({
     }
   }
 
-  const sorteerKnoppen: KlantSortering[] = tab === 'lead' ? ['opvolgen', 'naam', 'actief'] : ['naam', 'actief', 'omzet'];
+  const sorteerKnoppen: KlantSortering[] = tab === 'lead' ? ['opvolgen', 'naam', 'actief'] : tab === 'koud' ? ['naam', 'actief'] : ['naam', 'actief', 'omzet'];
 
   return (
     <div className="kl">
@@ -181,8 +201,8 @@ export function KlantenLijst({
             className="kl-nieuw-veld"
             value={nieuw}
             maxLength={200}
-            placeholder={tab === 'actief' ? 'Nieuwe klant (naam + Enter)' : 'Nieuwe lead (naam + Enter)'}
-            aria-label={tab === 'actief' ? 'Nieuwe klant toevoegen' : 'Nieuwe lead toevoegen'}
+            placeholder={NIEUW_PLACEHOLDER[tab]}
+            aria-label={tab === 'actief' ? 'Nieuwe klant toevoegen' : tab === 'koud' ? 'Bedrijf op de radar zetten' : 'Nieuwe lead toevoegen'}
             onChange={(e) => setNieuw(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === 'Escape') {
@@ -250,11 +270,11 @@ export function KlantenLijst({
             onTab={kiesTab}
             onNieuw={() => nieuwVeld.current?.focus()}
           />
-        ) : tab === 'lead' ? (
-          <ul className="kl-lijst kl-leads">
+        ) : tab === 'lead' || tab === 'koud' ? (
+          <ul className={`kl-lijst kl-leads${tab === 'koud' ? ' kl-radar' : ''}`}>
             {zichtbaar.map((k) => (
               <li key={k.id} className={vers === k.id ? 'is-nieuw' : undefined}>
-                <LeadKaart klant={k} opvolging={opvolging} vandaag={vandaag} moment={moment} />
+                <LeadKaart klant={k} opvolging={opvolging} vandaag={vandaag} moment={moment} onStatus={verschuif} />
               </li>
             ))}
           </ul>
@@ -316,6 +336,7 @@ function LegeStaat({
     );
   }
   const tekst: Record<KlantStatus, [string, string]> = {
+    koud: ['Nog niets op de radar', 'Bedrijven die je niet wilt vergeten, maar nu nog niet benadert. Typ de naam hierboven en druk op Enter.'],
     lead: ['Geen open leads', 'Komt er een aanvraag binnen? Typ de naam hierboven en druk op Enter; details vul je later aan.'],
     actief: ['Nog geen actieve klanten', 'Voeg een klant toe met het veld hierboven. Klanten die je bij een factuur aanmaakt, komen hier vanzelf.'],
     afgerond: ['Nog niets afgerond', 'Afgeronde klanten en afgewezen leads blijven hier vindbaar.']
@@ -326,7 +347,7 @@ function LegeStaat({
       <p className="kl-leeg-tekst">{tekst[tab][1]}</p>
       {tab !== 'afgerond' && (
         <button type="button" className="db-knop" onClick={onNieuw}>
-          {tab === 'lead' ? '+ Lead toevoegen' : '+ Klant toevoegen'}
+          {tab === 'lead' ? '+ Lead toevoegen' : tab === 'koud' ? '+ Op de radar zetten' : '+ Klant toevoegen'}
         </button>
       )}
     </div>
@@ -338,8 +359,25 @@ function Contact({ k }: { k: KlantRegel }) {
   return <span className="kl-sub">{delen.length ? delen.join(' · ') : 'Nog geen contactgegevens'}</span>;
 }
 
-function LeadKaart({ klant: k, opvolging, vandaag, moment }: { klant: KlantRegel; opvolging: boolean; vandaag: string; moment: Date }) {
-  const stand = opvolgStand(k.opvolgenOp, vandaag);
+/**
+ * Een lead of iets op de radar als kaart. Op de radar: geen opvolgdatum (telt bewust niet
+ * mee bij Opvolgen); een eerder ingevulde volgende stap staat er wel als notitie bij.
+ */
+function LeadKaart({
+  klant: k,
+  opvolging,
+  vandaag,
+  moment,
+  onStatus
+}: {
+  klant: KlantRegel;
+  opvolging: boolean;
+  vandaag: string;
+  moment: Date;
+  onStatus: (id: string, status: KlantStatus) => void;
+}) {
+  const radar = k.status === 'koud';
+  const stand = radar ? null : opvolgStand(k.opvolgenOp, vandaag);
   return (
     <article className={`kl-lead${stand === 'telaat' ? ' is-telaat' : stand === 'vandaag' ? ' is-vandaag' : ''}`}>
       <div className="kl-lead-hoofd">
@@ -356,12 +394,14 @@ function LeadKaart({ klant: k, opvolging, vandaag, moment }: { klant: KlantRegel
           )}
         </span>
       </div>
-      {opvolging ? (
+      {radar ? (
+        <span className="kl-radar-stap">{k.volgendeStap}</span>
+      ) : opvolging ? (
         <OpvolgVelden klantId={k.id} klantNaam={k.naam} volgendeStap={k.volgendeStap} opvolgenOp={k.opvolgenOp} vandaag={vandaag} />
       ) : (
         <span />
       )}
-      <LeadActies klant={k} opvolging={opvolging} klein />
+      <LeadActies klant={k} opvolging={opvolging} klein onStatus={onStatus} />
     </article>
   );
 }
