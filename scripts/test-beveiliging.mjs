@@ -175,6 +175,9 @@ await test("CSP: nonce, geen unsafe-inline/eval in script-src, frame-ancestors, 
   assert.equal(delen["object-src"], "object-src 'none'");
   assert.equal(delen["base-uri"], "base-uri 'none'");
   assert.ok(delen["connect-src"].includes("https://abcd.supabase.co") && delen["connect-src"].includes("wss://abcd.supabase.co"));
+  // Google Drive: alleen de upload-API (resumable sessie-URL), geen andere Google-API's.
+  assert.ok(delen["connect-src"].includes("https://www.googleapis.com/upload/drive/"));
+  assert.ok(!/https:\/\/www\.googleapis\.com(\s|$)/.test(delen["connect-src"]));
   assert.ok(delen["upgrade-insecure-requests"]);
   assert.ok(delen["style-src"].includes("https://fonts.googleapis.com") && delen["font-src"].includes("https://fonts.gstatic.com"));
 });
