@@ -262,6 +262,24 @@ a { color: inherit; }
 }
 .facturen-tabel a.bewerk-link { color: var(--cream-dim); font-weight: 600; }
 .facturen-tabel a.bewerk-link:hover { color: var(--cream); border-color: var(--cream-faint); }
+/* Downloadknop (PDF direct opslaan) naast "Aanpassen" en in de factuurlijst van een klant. */
+.download-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  margin-right: 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--cream-dim);
+  vertical-align: middle;
+}
+.facturen-tabel a.download-link { color: var(--cream-dim); }
+.download-link:hover,
+.facturen-tabel a.download-link:hover { color: var(--cream); border-color: var(--cream-faint); }
+.factuur-lijst li:has(.download-link) .factuur-meta { margin-left: auto; }
+.factuur-lijst a.download-link { margin: 0 0 0 16px; color: var(--cream-dim); }
 
 .klanten-grid-wrap { max-height: 578px; }
 .klanten-grid {

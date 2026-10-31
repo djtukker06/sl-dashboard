@@ -44,7 +44,8 @@ export async function GET(
 
   return new NextResponse(new Uint8Array(await bestand.arrayBuffer()), {
     headers: pdfHeaders(
-      veiligeBestandsnaam(invoice.name || '', `Factuur ${invoice.invoice_number}`)
+      veiligeBestandsnaam(invoice.name || '', `Factuur ${invoice.invoice_number}`),
+      new URL(request.url).searchParams.get('download') === '1'
     )
   });
 }

@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { PdfDownloadKnop } from './PdfDownloadKnop';
 import { useTransition } from 'react';
 import { deleteQuote } from '@/app/actions/quotes';
 import { formatDatumNL, formatEuro } from '@/lib/format';
@@ -56,6 +57,7 @@ export function QuotesTable({ quotes }: { quotes: QuoteRow[] }) {
                 <td>{formatDatumNL(new Date(p.issued_at))}</td>
                 <td className="bedrag">&euro; {formatEuro(p.total)}</td>
                 <td className="acties-col">
+                  <PdfDownloadKnop href={`/api/quotes/${p.id}/pdf`} label={`${omschrijving} downloaden`} />
                   <Link href={`/facturen/prijsopgaven/${p.id}/bewerken`} className="bewerk-link">
                     Aanpassen
                   </Link>
