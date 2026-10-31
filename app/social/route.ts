@@ -3,6 +3,7 @@ import path from 'node:path';
 import { NextResponse } from 'next/server';
 import { huidigTeamlid, tfaDoel } from '@/lib/auth/team';
 import { railHtml } from '@/lib/shell/rail';
+import { metVersie } from '@/lib/shell/versie';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -57,10 +58,13 @@ export async function GET(request: Request) {
   // Functies als vervanging: dan worden $-tekens in bv. een e-mailadres niet als patroon gelezen.
   const html = (await leesHtml())
     .replace(/<script\b(?![^>]*\bnonce=)/g, () => `<script${nonceAttr}`)
-    .replace('</head>', () => '<link rel="stylesheet" href="/shell/shell.css">\n</head>')
+    // Versie aan de losse bestanden (lib/shell/versie.ts): dan mag de browser ze lang bewaren.
+    .replace('href="/social/app.css"', () => `href="${metVersie('/social/app.css')}"`)
+    .replace('src="/social/app.js"', () => `src="${metVersie('/social/app.js')}"`)
+    .replace('</head>', () => `<link rel="stylesheet" href="${metVersie('/shell/shell.css')}">\n</head>`)
     .replace(
       '<body>',
-      () => `<body class="sl-met-rail">\n${rail}\n<script src="/shell/shell.js" defer${nonceAttr}></script>`
+      () => `<body class="sl-met-rail">\n${rail}\n<script src="${metVersie('/shell/shell.js')}" defer${nonceAttr}></script>`
     );
 
   return new Response(html, {

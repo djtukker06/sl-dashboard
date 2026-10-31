@@ -37,20 +37,23 @@ export function Rail({ account }: { account: RailAccount }) {
           </summary>
           <div className="sl-account-pop">
             <RailMeer items={items.filter((it) => !it.mobiel)} />
+            {/* Account, gebruikers en beveiliging staan binnen app/(app): client-navigatie (met
+                laadscherm, zonder volledige paginalading). RailMeer sluit het menu na de navigatie.
+                Agenda koppelen en wachtwoord wijzigen staan buiten de shell en blijven <a>. */}
             <p className="sl-account-naam">{account.naam}</p>
             <p className="sl-account-mail">{account.email}</p>
-            <a className="sl-account-link" href="/account">
+            <Link className="sl-account-link" href="/account">
               Account &amp; mail
-            </a>
+            </Link>
             {account.eigenaar && (
-              <a className="sl-account-link" href="/gebruikers">
+              <Link className="sl-account-link" href="/gebruikers">
                 Gebruikers
-              </a>
+              </Link>
             )}
             {account.eigenaar && (
-              <a className="sl-account-link" href="/beveiliging">
+              <Link className="sl-account-link" href="/beveiliging">
                 Beveiliging &amp; audit
-              </a>
+              </Link>
             )}
             <a className="sl-account-link" href="/agenda-koppelen">
               Agenda koppelen

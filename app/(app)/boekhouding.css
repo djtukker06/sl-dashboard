@@ -41,8 +41,7 @@
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 20px;
-  padding: 24px 40px 56px;
-  max-width: 1240px;
+  padding: 24px 40px 56px; /* zijmarge: --sl-uitlijn (app.css) */
 }
 .bh-tegel {
   display: grid;
@@ -85,7 +84,7 @@
    ========================================================== */
 .bh { --bh-bij: #a9c4a0; --bh-let-op: var(--sl-let-op, #d4b27a); }
 .bh-sr { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
-.bh-inhoud { display: grid; grid-template-columns: minmax(0, 1fr); gap: 22px; padding: 24px 40px 64px; max-width: 1320px; min-width: 0; }
+.bh-inhoud { display: grid; grid-template-columns: minmax(0, 1fr); gap: 22px; padding: 24px 40px 64px; min-width: 0; } /* zijmarge: --sl-uitlijn (app.css) */
 .bh-label { font-family: var(--sl-mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--sl-muted); }
 .bh-zacht { color: var(--sl-faint); }
 .bh-pil {
@@ -98,7 +97,7 @@
 /* ---------- demo-banner ---------- */
 .bh-demo {
   display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
-  margin: 18px 40px 0; padding: 12px 16px; max-width: 1240px;
+  margin: 18px 40px 0; padding: 12px 16px; /* zijmarge: --sl-uitlijn (app.css) */
   border: 1px solid color-mix(in srgb, var(--bh-let-op) 45%, transparent); border-radius: 6px;
   background: color-mix(in srgb, var(--bh-let-op) 9%, var(--sl-panel));
 }
@@ -249,7 +248,7 @@ button.bh-saldo:hover { border-color: #4a4847; background: var(--sl-raise); }
 .bh-verwijder .ag-paneel-acties { justify-content: flex-end; }
 
 /* ---------- instellingen ---------- */
-.bh-instellingen { max-width: 980px; gap: 34px; }
+.bh-instellingen { gap: 34px; } /* smalle kolom: --sl-smal (app.css) */
 .bh-sectie { display: grid; gap: 14px; }
 .bh-sectie-kop { display: grid; gap: 4px; }
 .bh-rekeningen { display: grid; gap: 14px; justify-items: start; }
@@ -333,7 +332,7 @@ button.bh-saldo:hover { border-color: #4a4847; background: var(--sl-raise); }
 /* ==========================================================
    Stap 2: subnavigatie Bank, afletteren, openstaand, import
    ========================================================== */
-.bh-subnav { display: flex; gap: 6px; flex-wrap: wrap; margin: 18px 40px 0; max-width: 1320px; }
+.bh-subnav { display: flex; gap: 6px; flex-wrap: wrap; margin: 18px 40px 0; } /* zijmarge: --sl-uitlijn (app.css) */
 .bh-subnav-item {
   display: inline-flex; align-items: center; gap: 8px; padding: 7px 13px; border: 1px solid transparent; border-radius: 999px;
   color: var(--sl-muted); font-size: 13px; text-decoration: none; transition: color .2s var(--sl-ease), border-color .2s var(--sl-ease);
@@ -739,7 +738,7 @@ a.bh-posten-rij:focus-visible { outline: none; box-shadow: var(--sl-focus); }
    Rapporten, jaarafsluiting, overzicht en instellingen (stap 4)
    ========================================================== */
 /* Overzicht: cijferrij boven de tegels */
-.bh-overzicht { display: grid; gap: 12px; padding: 24px 40px 0; max-width: 1240px; }
+.bh-overzicht { display: grid; gap: 12px; padding: 24px 40px 0; } /* zijmarge: --sl-uitlijn (app.css) */
 .bh-overzicht + .bh-tegels { padding-top: 20px; }
 .bh .bh-demo + .bh-overzicht { padding-top: 16px; }
 a.bh-saldo { color: inherit; text-decoration: none; transition: border-color .2s var(--sl-ease); }
@@ -796,7 +795,6 @@ a.bh-rek-tab { text-decoration: none; }
 .bh-rt-vennoten .bh-rt-tot td:first-child { color: var(--sl-text); }
 
 /* Jaarafsluiting */
-.bh-afs { max-width: 1180px; }
 .bh-afs-grid { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 22px; align-items: start; }
 .bh-afs-groot { margin: 0; font-size: 22px; font-weight: 700; letter-spacing: -0.01em; }
 .bh-afs-klaar { border-color: color-mix(in srgb, var(--bh-bij) 40%, var(--sl-line)); }

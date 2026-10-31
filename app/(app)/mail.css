@@ -845,7 +845,7 @@ input.ml-veld:focus { border: 0; }
 .ml-opsteller-weg { margin-left: auto; }
 
 /* ---------- niet gekoppeld ---------- */
-.ml-setup { display: grid; justify-items: start; gap: 14px; max-width: 640px; padding: 56px 40px; }
+.ml-setup { display: grid; justify-items: start; gap: 14px; padding: 56px 40px; } /* breedte en zijmarge: app.css (--sl-smal, --sl-uitlijn) */
 .ml-setup h2 { margin: 0; font-size: clamp(24px, 2.8vw, 34px); line-height: 1.15; font-weight: 700; text-transform: uppercase; }
 .ml-setup-tekst { margin: 0; font-size: 15px; line-height: 1.65; color: var(--sl-muted); }
 .ml-setup-klein { font-size: 13.5px; }

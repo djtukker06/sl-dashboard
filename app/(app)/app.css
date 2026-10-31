@@ -2,7 +2,7 @@
    Studio Levant — stijlen voor de React-pagina's in de shell
    (dashboard, mail, agenda). Tokens: public/shell/shell.css (--sl-*).
    Prefixen: sl-kop (modulekop), db- (dashboard).
-   Facturen gebruikt zijn eigen globals.css en blijft ongewijzigd.
+   Facturen gebruikt zijn eigen globals.css; de breedte komt ook daar uit dit bestand.
    ========================================================== */
 
 /* ---------- modulekop: 96px, op één lijn met het logo in de rail ---------- */
@@ -86,8 +86,7 @@
   display: grid;
   grid-template-columns: repeat(12, minmax(0, 1fr));
   gap: 24px;
-  padding: 32px 40px 56px;
-  max-width: 1440px;
+  padding: 32px 40px 56px; /* zijmarge: --sl-uitlijn (Inhoudsbreedte, verderop) */
 }
 .db-breed { grid-column: span 8; }
 .db-smal { grid-column: span 4; }
@@ -380,49 +379,46 @@
 .db-projtel-telaat { margin: 10px 0 0; font-size: 12.5px; color: var(--sl-danger); }
 
 /* ==========================================================
-   Inhoudsbreedte van de shell-pagina's (niet social: die heeft een eigen layout)
+   Inhoudsbreedte: één kolom voor alle pagina's
    ----------------------------------------------------------
-   Twee soorten pagina's:
-   - werkpagina's met veel kolommen (mail, agenda week/maand, projectenbord) vullen de
-     volle breedte naast de rail (--sl-inhoud: 100%, de standaard);
-   - lees-/overzichtspagina's (dashboard, klant- en projectpagina, klantenlijst, boekhouding,
-     bonnetjes, bestanden, account) staan in een gecentreerde container met een royale
-     max-width en gelijke marges links en rechts.
-   De modulekop (sl-kop) en de subnavigatie (bh-tabs, ug-tabs) blijven over de hele breedte
-   lopen (lijn en achtergrond), maar hun inhoud lijnt uit met de container eronder:
-   padding = max(gutter, (breedte − inhoud) / 2 + gutter).
-   Per pagina kiest .sl-main:has(<container>) de breedte, zodat geen pagina-component hoeft
-   te veranderen. Specificiteit .sl-main .x (0,2,0) wint van de losse modulebestanden.
+   Elke pagina — dashboard, mail, agenda, scratchpad, klanten, projecten (+ bord en detail),
+   bestanden, boekhouding (alle schermen), bonnetjes, facturen, account, beveiliging,
+   gebruikers, de laadschermen én social (public/social/app.css) — gebruikt dezelfde kolom:
+     --sl-inhoud  1440px  breedte van de kolom inclusief de gutter (≥ 1920px: 1600px)
+     --sl-gutter    40px  minimale zijmarge (≥ 1920px: 56px, telefoon ≤ 720px: 16px)
+     --sl-uitlijn         afstand van de rand van .sl-main tot de linker- en rechterlijn:
+                          max(gutter, (breedte − inhoud) / 2 + gutter)
+   Er zijn geen breedtes per pagina meer. Drie soorten blokken, allemaal op dezelfde lijnen:
+   1. banden over de hele breedte (lijn en achtergrond lopen door), inhoud op de lijnen:
+      modulekop (sl-kop), subnavigatie (bh-tabs, ug-tabs), filterbalk agenda
+      → padding-inline: var(--sl-uitlijn);
+   2. inhoudscontainers (dashboard-grid, lijsten, tabellen, formulieren, laadskelet)
+      → padding-inline: var(--sl-uitlijn), geen max-width;
+   3. losse vlakken en werkblokken met een eigen rand (demo-banner, back-upmelding, mail,
+      agenda, scratchpad) → margin-inline: var(--sl-uitlijn). Mail, agenda en scratchpad
+      vullen daarbinnen de volle hoogte; tot en met 960px lopen ze over de hele breedte.
+   Smalle formulieren (account, beveiliging, gebruikers, boekhoud-instellingen, facturen-
+   formulieren, setupmeldingen) houden binnen de kolom een smallere kolom (--sl-smal),
+   links op dezelfde lijn — nooit een eigen gecentreerde container.
+   Nieuwe pagina: zet de inhoud in een container uit lijst 2 (of .sl-inhoud). Selectors
+   .sl-main .x (0,2,0) winnen van de losse modulebestanden.
    ========================================================== */
 .sl-main {
   --sl-gutter: 40px;
-  --sl-inhoud: 100%;
+  --sl-inhoud: 1440px;
+  --sl-smal: 920px;
   --sl-uitlijn: max(var(--sl-gutter), calc((100% - var(--sl-inhoud)) / 2 + var(--sl-gutter)));
 }
-/* Overzichtspagina's met kaarten en tabellen: breed maar gecentreerd. */
-.sl-main:has(.db-grid),
-.sl-main:has(.bs),
-.sl-main:has(.ug-inhoud) { --sl-inhoud: 1440px; }
-/* Klant-, project- en klantenpagina, boekhouding-overzicht: iets smaller (leesbaarheid). */
-.sl-main:has(.kp:not(.kp-breed)),
-.sl-main:has(.bh-tegels) { --sl-inhoud: 1280px; }
-/* Boekhoudschermen (bank, btw, activa, rapporten, jaarafsluiting): breed (tabellen) maar
-   gecentreerd; instellingen smaller. */
-.sl-main:has(.bh-inhoud) { --sl-inhoud: 1320px; }
-.sl-main:has(.bh-instellingen) { --sl-inhoud: 1060px; }
-/* Scratchpad: lijst + notitie gecentreerd in dezelfde breedte als het dashboard, zodat de
-   kop (label, titel, knop) en de lijst eronder op één lijn staan zoals op de andere modules. */
-.sl-main:has(.sp),
-.sl-main:has(.sp-setup),
-.sl-main:has(.sp-laadscherm) { --sl-inhoud: 1440px; }
-/* Account: formulieren, smal en gecentreerd (inhoud 860px zoals voorheen). */
-.sl-main:has(.ac-inhoud) { --sl-inhoud: 940px; }
-/* Facturen: eigen .wrap (globals.css, 980px, padding 24px) staat al gecentreerd; de kop en
-   de subnavigatie lijnen daarmee uit. De facturenschermen zelf veranderen niet. */
-.sl-main:has(> .wrap) { --sl-inhoud: 980px; --sl-gutter: 24px; }
-/* Projectenbord: vier kolommen, volle breedte. */
-.sl-main:has(.kp-breed) { --sl-inhoud: 100%; }
 
+/* 1. Banden over de hele breedte. */
+.sl-main .sl-kop,
+.sl-main .bh-tabs,
+.sl-main .ug-tabs,
+.sl-main .ag-filterbalk,
+.sl-main .sl-overgang { padding-inline: var(--sl-uitlijn); }
+
+/* 2. Inhoudscontainers. */
+.sl-main .sl-inhoud,
 .sl-main .db-grid,
 .sl-main .bs,
 .sl-main .ug-inhoud,
@@ -430,38 +426,58 @@
 .sl-main .bh-tegels,
 .sl-main .bh-overzicht,
 .sl-main .bh-inhoud,
-.sl-main .ac-inhoud {
+.sl-main .ac-inhoud,
+.sl-main .wrap,
+.sl-main .sl-laden-inhoud,
+.sl-main .sp-setup,
+.sl-main .ag-setup,
+.sl-main .ml-setup {
   width: 100%;
-  max-width: var(--sl-inhoud);
-  margin-inline: auto;
-  padding-inline: var(--sl-gutter);
+  max-width: none;
+  margin-inline: 0;
+  padding-inline: var(--sl-uitlijn);
   box-sizing: border-box;
 }
-/* Demo-banner en de subnavigatie van Bank (boekingen · openstaand): zelfde kolom als de
-   inhoud eronder. */
+
+/* Smalle kolom binnen de container, links uitgelijnd. */
+.sl-main .ac-inhoud,
+.sl-main .bh-instellingen { grid-template-columns: minmax(0, var(--sl-smal)); }
+.sl-main .wrap:has(> .app-header) > *,
+.sl-main .sp-setup > *,
+.sl-main .ag-setup > *,
+.sl-main .ml-setup > * { max-width: var(--sl-smal); }
+
+/* 3. Vlakken en werkblokken met een eigen rand. */
 .sl-main .bh-demo,
-.sl-main .bh-subnav {
+.sl-main .bh-subnav,
+.sl-main .db-backup {
   max-width: none;
   margin-inline: var(--sl-uitlijn);
 }
-.sl-main .sl-kop,
-.sl-main .bh-tabs,
-.sl-main .ug-tabs { padding-inline: var(--sl-uitlijn); }
-/* Scratchpad: de twee panelen vullen de hoogte onder de kop; links en rechts dezelfde
-   marge als de kop, met een rand zodat het blok als één vlak leest. Smal (≤ 960px, één
-   paneel) blijft het over de volle breedte, de lijst heeft daar zelf zijn 16px. */
+.sl-main .db-backup { margin-block: 24px 0; }
+.sl-main .db-backup + .db-grid { padding-top: 16px; }
+.sl-main .ml,
+.sl-main .ag,
 .sl-main .sp {
   margin-inline: var(--sl-uitlijn);
   border-inline: 1px solid var(--sl-line);
+  box-sizing: border-box;
 }
+/* Agenda: de takenlijst begint binnen de rand, niet nog een gutter verder. */
+.sl-main .ag-links { padding-left: 20px; }
 @media (max-width: 960px) {
+  .sl-main .ml,
+  .sl-main .ag,
   .sl-main .sp { margin-inline: 0; border-inline: 0; }
+  .sl-main .ag-links { padding-left: var(--sl-gutter); }
 }
 
 @media (max-width: 720px) {
   .sl-main { --sl-gutter: 16px; }
-  /* Facturen houdt op smalle schermen zijn eigen 24px. */
-  .sl-main:has(> .wrap) { --sl-gutter: 24px; }
+}
+/* Grote monitoren: ruimere marges en een iets bredere kolom, op elke pagina gelijk. */
+@media (min-width: 1920px) {
+  .sl-main { --sl-gutter: 56px; --sl-inhoud: 1600px; }
 }
 
 /* ---------- dashboard: back-up mislukt / keep-alive stil (alleen eigenaar) ---------- */
@@ -704,20 +720,6 @@
   .sl-main .ug-tabs::after,
   .sl-tabrij::after { content: ""; flex: 0 0 12px; }
   .sl-main .bh-tab, .sl-main .ug-tab { display: inline-flex; align-items: center; min-height: 44px; padding-block: 0; }
-}
-
-/* ---------- grote monitoren (≥ 1920px): ruimere marges, iets bredere overzichten ---------- */
-@media (min-width: 1920px) {
-  .sl-main { --sl-gutter: 56px; }
-  .sl-main:has(.bs),
-  .sl-main:has(.ug-inhoud) { --sl-inhoud: 1600px; }
-  .sl-main:has(.kp:not(.kp-breed)),
-  .sl-main:has(.bh-tegels) { --sl-inhoud: 1400px; }
-  .sl-main:has(.bh-inhoud) { --sl-inhoud: 1480px; }
-  .sl-main:has(.kp-breed) { --sl-inhoud: 100%; }
-  .sl-main:has(> .wrap) { --sl-inhoud: 980px; --sl-gutter: 24px; }
-  .sl-main:has(.ac-inhoud) { --sl-inhoud: 940px; }
-  .sl-main:has(.bh-instellingen) { --sl-inhoud: 1060px; }
 }
 
 /* ==========================================================

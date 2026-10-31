@@ -9,7 +9,7 @@
 .ug-icoon { display: block; flex: 0 0 auto; }
 /* minmax(0, 1fr): anders groeit de impliciete kolom mee met de breedste inhoud (chiprij) en
    scrollt de pagina horizontaal op de telefoon. */
-.ug-inhoud { display: grid; grid-template-columns: minmax(0, 1fr); gap: 18px; padding: 24px 40px 56px; max-width: 1240px; }
+.ug-inhoud { display: grid; grid-template-columns: minmax(0, 1fr); gap: 18px; padding: 24px 40px 56px; } /* zijmarge: --sl-uitlijn (app.css) */
 
 /* ---------- tabs ---------- */
 .ug-tabs { display: flex; gap: 4px; padding: 0 40px; border-bottom: 1px solid var(--sl-line); }

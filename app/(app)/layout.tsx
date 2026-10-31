@@ -10,6 +10,7 @@ import { Welkomstanimatie } from '@/components/shell/Welkomstanimatie';
 import { ShellGedrag } from '@/components/shell/ShellGedrag';
 import { IntroScript } from '@/components/login/IntroScript';
 import { WELKOM_SCRIPT } from '@/lib/shell/welkom';
+import { metVersie } from '@/lib/shell/versie';
 import '../../public/shell/shell.css';
 import './app.css';
 import './agenda.css';
@@ -62,7 +63,7 @@ export default async function AppLayout({ children }: Readonly<{ children: React
         </TeamProvider>
       </main>
       <ShellGedrag />
-      <Script src="/shell/shell.js" strategy="afterInteractive" nonce={nonce} />
+      <Script src={metVersie('/shell/shell.js')} strategy="afterInteractive" nonce={nonce} />
     </div>
   );
 }

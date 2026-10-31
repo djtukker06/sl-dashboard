@@ -19,9 +19,8 @@
 }
 
 .kp {
-  display: grid; gap: 24px; padding: 24px 40px 56px; max-width: 1180px; align-content: start;
+  display: grid; gap: 24px; padding: 24px 40px 56px; align-content: start; /* zijmarge: --sl-uitlijn (app.css) */
 }
-.kp-breed { max-width: 1480px; }
 .kp-detail { grid-template-columns: minmax(0, 1fr) minmax(300px, 380px); align-items: start; }
 .kp-hoofd, .kp-zij { display: grid; gap: 24px; min-width: 0; }
 .kp-detail > .kp-leadbanner,

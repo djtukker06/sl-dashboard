@@ -4,7 +4,7 @@
    ========================================================== */
 
 .ac { min-height: var(--sl-scherm-h, 100dvh); background: var(--sl-bg); color: var(--sl-text); font-family: var(--sl-font); }
-.ac-inhoud { display: grid; gap: 20px; padding: 24px 40px 56px; max-width: 860px; }
+.ac-inhoud { display: grid; gap: 20px; padding: 24px 40px 56px; } /* breedte en zijmarge: app.css (--sl-smal, --sl-uitlijn) */
 .ac-blok {
   display: grid;
   gap: 18px;

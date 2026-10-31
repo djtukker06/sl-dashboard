@@ -675,6 +675,49 @@ textarea.code, #code {
 }
 
 /* ==========================================================
+   dashboard: zelfde inhoudsbreedte als de rest van de backoffice
+   Zie app/(app)/app.css ("Inhoudsbreedte"): één kolom van --sl-inhoud (1440px, ≥ 1920px:
+   1600px) met een gutter van 40px (≥ 1920px: 56px) naast de rail. De kop (Social + de
+   projectkop) en de inhoud staan op dezelfde linker- en rechterlijn als op elke andere
+   pagina: twee margekolommen van max(gutter, (breedte − inhoud) / 2 + gutter) om de
+   sidebar en main. De lijn onder de kop loopt door over de marges, zoals de modulekop.
+   "html body" zodat dit wint van de kolommen in public/shell/shell.css. Telefoon (≤ 720px):
+   ongewijzigd (één kolom, zie hieronder).
+   ========================================================== */
+@media (min-width: 721px) {
+  html body.sl-met-rail {
+    --sl-gutter: 40px;
+    --sl-inhoud: 1440px;
+    --sl-zijbalk: 272px;
+    /* De middelste kolom groeit eerst tot zijn maximum; de rest gaat gelijk naar de marges. */
+    grid-template-columns:
+      var(--sl-rail-w)
+      minmax(var(--sl-gutter), 1fr)
+      var(--sl-zijbalk)
+      minmax(0, calc(var(--sl-inhoud) - 2 * var(--sl-gutter) - var(--sl-zijbalk)))
+      minmax(var(--sl-gutter), 1fr);
+    background-image: linear-gradient(var(--line), var(--line));
+    background-repeat: no-repeat;
+    background-size: 100% 1px;
+    background-position: 0 calc(var(--head-h) - 1px);
+  }
+  html body.sl-met-rail > .sl-rail { grid-column: 1; grid-row: 1; }
+  html body.sl-met-rail > .sidebar { grid-column: 3; grid-row: 1; padding-left: 0; }
+  html body.sl-met-rail > main { grid-column: 4; grid-row: 1; }
+  /* Titel "Social", zoeken en de lijst op de linkerlijn; knoppen en inhoud tot de rechterlijn. */
+  html body.sl-met-rail .brand { margin-left: 0; padding-left: 0; }
+  html body.sl-met-rail .project-list { margin-left: 0; }
+  html body.sl-met-rail .project-head { padding-right: 0; }
+  html body.sl-met-rail .empty { padding-right: 0; }
+}
+@media (min-width: 721px) and (max-width: 860px) {
+  html body.sl-met-rail { --sl-zijbalk: 220px; }
+}
+@media (min-width: 1920px) {
+  html body.sl-met-rail { --sl-gutter: 56px; --sl-inhoud: 1600px; }
+}
+
+/* ==========================================================
    dashboard: aanraakschermen en telefoon
    Breakpoints gelijk aan de backoffice (app/(app)/app.css): 720 = telefoon met de tabbalk
    van de rail onderaan (public/shell/shell.css). Selectors met "html body" zodat ze winnen

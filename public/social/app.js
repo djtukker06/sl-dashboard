@@ -66,7 +66,7 @@ function toast(msg, isError = false) {
   el.classList.toggle("error", Boolean(isError));
   el.classList.remove("hidden");
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => el.classList.add("hidden"), 3000);
+  toastTimer = setTimeout(() => el.classList.add("hidden"), isError ? 7000 : 3000); // dashboard: foutmeldingen langer zichtbaar
 }
 
 function debounce(fn, ms) {
@@ -116,6 +116,14 @@ function formatDate(iso) {
 
 async function init() {
   bindEvents();
+  // dashboard: status en projectlijst tegelijk ophalen (scheelt een volledige API-rondgang bij
+  // het openen). De lijst wordt pas verwerkt ná de status, zodat formats en setupmelding gelijk
+  // blijven aan de volgorde van vroeger. De .catch voorkomt een "unhandled rejection" zolang de
+  // status nog loopt; loadProjects() krijgt de fout alsnog via het resultaat.
+  const projectsVooraf = api("GET", `${API_BASE}/projects`).then(
+    (data) => ({ data }),
+    (err) => ({ err })
+  );
   try {
     const status = await api("GET", `${API_BASE}/status`); // dashboard: API_BASE
     state.formats = status.formats || {};
@@ -142,7 +150,7 @@ async function init() {
   } catch (err) {
     toast(err.message, true);
   }
-  await loadProjects();
+  await loadProjects(projectsVooraf);
   const fromHash = hashId();
   if (fromHash && state.projects.some((p) => p.id === fromHash)) await openProject(fromHash);
   else if (state.projects.length) await openProject(state.projects[0].id);
@@ -180,9 +188,16 @@ async function checkKey() {
 
 // ---------------------------------------------------------------- sidebar
 
-async function loadProjects() {
+// vooraf: optioneel een al gestarte aanvraag ({ data } of { err }, zie init()).
+async function loadProjects(vooraf) {
   try {
-    state.projects = await api("GET", `${API_BASE}/projects`); // dashboard: API_BASE
+    if (vooraf) {
+      const r = await vooraf;
+      if (r.err) throw r.err;
+      state.projects = r.data;
+    } else {
+      state.projects = await api("GET", `${API_BASE}/projects`); // dashboard: API_BASE
+    }
     state.loadError = null; // dashboard:
   } catch (err) {
     // dashboard: fout bewaren; showEmpty() toont dan een melding i.p.v. het welkomstscherm
@@ -379,14 +394,25 @@ function renderAssets() {
   }
 }
 
-function readFileAsDataUrl(file) {
-  return new Promise((resolve, reject) => {
-    const r = new FileReader();
-    r.onload = () => resolve(r.result);
-    r.onerror = () => reject(new Error(`Kon ${file.name} niet lezen`));
-    r.readAsDataURL(file);
-  });
+// dashboard: alles werkt met Blobs en blob:-URL's, NIET met data:-URL's. De CSP van de
+// backoffice (lib/auth/csp-kern.ts) staat fetch() naar data: niet toe (connect-src), dus
+// het oude fetch(dataUrl) om een blob te maken liet elke upload mislukken.
+
+// Type van een gekozen bestand; sommige systemen geven HEIC (of alles) zonder type door.
+function imageType(file) {
+  const t = (file.type || "").toLowerCase();
+  if (t === "image/heic-sequence") return "image/heic";
+  if (t === "image/heif-sequence") return "image/heif";
+  if (t.startsWith("image/")) return t === "image/jpg" ? "image/jpeg" : t;
+  const ext = (file.name || "").toLowerCase().split(".").pop();
+  return (
+    { jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", webp: "image/webp", gif: "image/gif", heic: "image/heic", heif: "image/heif" }[ext] ||
+    ""
+  );
 }
+
+const isHeic = (type) => type === "image/heic" || type === "image/heif";
+const UPLOAD_TYPES = ["image/png", "image/jpeg", "image/webp", "image/gif"];
 
 function loadImage(src) {
   return new Promise((resolve, reject) => {
@@ -397,70 +423,140 @@ function loadImage(src) {
   });
 }
 
+// Leest een foto als bitmap (rechtop volgens EXIF); null als de browser hem niet kan lezen
+// (bv. HEIC in Chrome/Firefox). Safari leest HEIC zelf.
+async function decodeImage(file) {
+  if (typeof createImageBitmap === "function") {
+    try {
+      return await createImageBitmap(file, { imageOrientation: "from-image" });
+    } catch {
+      /* oudere browser of onleesbaar: via <img> proberen */
+    }
+  }
+  const url = URL.createObjectURL(file);
+  try {
+    return await loadImage(url);
+  } catch {
+    return null;
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
 function hasTransparency(ctx, w, h) {
   const data = ctx.getImageData(0, 0, w, h).data;
   for (let i = 3; i < data.length; i += 16) if (data[i] < 255) return true;
   return false;
 }
 
-// Verklein tot max 2000px; PNG blijft PNG bij transparantie of als hij klein is
-async function prepareImage(file) {
-  const original = await readFileAsDataUrl(file);
-  if (file.type === "image/gif") return original;
-  const img = await loadImage(original);
-  const max = 2000;
-  const scale = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight));
-  const isPng = file.type === "image/png";
-  if (isPng && scale === 1 && file.size < 1.5 * 1024 * 1024) return original;
-  const w = Math.round(img.naturalWidth * scale);
-  const h = Math.round(img.naturalHeight * scale);
-  const canvas = document.createElement("canvas");
-  canvas.width = w;
-  canvas.height = h;
-  const ctx = canvas.getContext("2d");
-  ctx.drawImage(img, 0, 0, w, h);
-  if (isPng && hasTransparency(ctx, w, h)) return canvas.toDataURL("image/png");
-  if (scale === 1 && file.type === "image/jpeg") return original;
-  return canvas.toDataURL("image/jpeg", 0.88);
+const canvasToBlob = (canvas, type, quality) =>
+  new Promise((resolve) => canvas.toBlob(resolve, type, quality));
+
+// Verklein tot max 2000px; PNG blijft PNG bij transparantie of als hij klein is.
+// Geeft { blob, type } terug, of null als de browser de foto niet kan lezen.
+async function prepareImage(file, type) {
+  if (type === "image/gif") return { blob: file, type };
+  const img = await decodeImage(file);
+  if (!img) return null;
+  try {
+    const iw = img.naturalWidth || img.width;
+    const ih = img.naturalHeight || img.height;
+    const max = 2000;
+    const scale = Math.min(1, max / Math.max(iw, ih));
+    const isPng = type === "image/png";
+    if (isPng && scale === 1 && file.size < 1.5 * 1024 * 1024) return { blob: file, type };
+    const w = Math.max(1, Math.round(iw * scale));
+    const h = Math.max(1, Math.round(ih * scale));
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    ctx.imageSmoothingQuality = "high";
+    ctx.drawImage(img, 0, 0, w, h);
+    if (isPng && hasTransparency(ctx, w, h)) {
+      const png = await canvasToBlob(canvas, "image/png");
+      if (png) return { blob: png, type: "image/png" };
+    }
+    // JPEG zonder verkleining: origineel houden (EXIF-rotatie doet de browser bij tonen ook)
+    if (scale === 1 && type === "image/jpeg") return { blob: file, type };
+    if (!isPng) {
+      ctx.globalCompositeOperation = "destination-over"; // transparante webp niet zwart maken
+      ctx.fillStyle = "#fff";
+      ctx.fillRect(0, 0, w, h);
+    }
+    const jpeg = await canvasToBlob(canvas, "image/jpeg", 0.88);
+    if (jpeg) return { blob: jpeg, type: "image/jpeg" };
+    // toBlob mislukt (zeer zelden): origineel als het een toegestaan type is
+    return UPLOAD_TYPES.includes(type) ? { blob: file, type } : null;
+  } finally {
+    if (typeof img.close === "function") img.close();
+  }
 }
 
-// dashboard: dataUrl uit prepareImage omzetten naar een blob voor de directe upload naar Storage
-async function dataUrlToBlob(dataUrl) {
-  const res = await fetch(dataUrl);
-  return res.blob();
+// Netwerkfouten (geen verbinding, geblokkeerd) in gewone taal.
+function uploadFout(err) {
+  if (err instanceof TypeError) return "Geen verbinding met de opslag. Controleer je internet en probeer het opnieuw.";
+  return err.message || "Uploaden mislukt. Probeer het opnieuw.";
 }
 
 // dashboard: uploaden in drie stappen (upload-URL vragen, bestand rechtstreeks naar
 // Supabase Storage, daarna aan het project koppelen); zo blijft het buiten de
 // 4,5 MB-limiet van Vercel. De respons van stap 3 is het project, zoals voorheen.
+// HEIC dat de browser niet kan lezen gaat naar /assets/heic (de server zet hem om).
+async function uploadOne(file, kind, projectId) {
+  const type = imageType(file);
+  if (!type) throw new Error("Alleen afbeeldingen (jpg, png, webp, gif, heic) zijn toegestaan.");
+  const assetsUrl = `${API_BASE}/projects/${encodeURIComponent(projectId)}/assets`;
+  const prepared = await prepareImage(file, type);
+  if (!prepared) {
+    if (!isHeic(type)) throw new Error("Deze afbeelding kon niet worden gelezen. Sla hem op als JPEG of PNG en probeer het opnieuw.");
+    if (file.size > 4.4 * 1024 * 1024) {
+      throw new Error("Deze iPhone-foto (HEIC) is te groot om om te zetten. Exporteer hem als JPEG of open de pagina in Safari.");
+    }
+    const q = `?kind=${encodeURIComponent(kind)}&name=${encodeURIComponent(file.name || "beeld")}`;
+    const res = await fetch(`${assetsUrl}/heic${q}`, { method: "POST", headers: { "Content-Type": "application/octet-stream" }, body: file });
+    if (sessionExpired(res)) throw new Error(SESSION_MSG);
+    const data = await res.json().catch(() => null);
+    if (!res.ok) throw new Error((data && data.error) || `Omzetten mislukt (${res.status})`);
+    return data;
+  }
+  const { blob, type: uploadType } = prepared;
+  if (!UPLOAD_TYPES.includes(uploadType)) throw new Error("Alleen afbeeldingen (jpg, png, webp, gif, heic) zijn toegestaan.");
+  if (blob.size > MAX_UPLOAD_BYTES) throw new Error("Afbeelding te groot (max 25 MB)");
+  const target = await api("POST", `${assetsUrl}/upload-url`, { name: file.name, contentType: uploadType });
+  const put = await fetch(target.signedUrl, { method: "PUT", headers: { "Content-Type": uploadType }, body: blob });
+  if (!put.ok) {
+    const detail = await put.json().catch(() => null);
+    const msg = (detail && (detail.message || detail.error)) || "";
+    if (put.status === 413 || /size|large/i.test(msg)) throw new Error("Afbeelding te groot voor de opslag (max 25 MB)");
+    throw new Error(`Uploaden naar de opslag mislukt (${put.status}). Probeer het opnieuw.`);
+  }
+  return api("POST", assetsUrl, { file: target.file, name: file.name, kind, note: "" });
+}
+
 async function uploadFiles(files, kind) {
-  const images = [...files].filter((f) => f.type.startsWith("image/"));
-  if (!images.length) return toast("Alleen afbeeldingen zijn toegestaan.", true);
+  const images = [...files].filter((f) => imageType(f));
+  if (!images.length) return toast("Alleen afbeeldingen (jpg, png, webp, gif, heic) zijn toegestaan.", true);
+  const overgeslagen = files.length - images.length;
   const projectId = state.project.id;
   toast(images.length > 1 ? `${images.length} afbeeldingen uploaden…` : "Afbeelding uploaden…");
+  let ok = 0;
+  const fouten = [];
   for (const file of images) {
     try {
-      const dataUrl = await prepareImage(file);
-      const blob = await dataUrlToBlob(dataUrl); // dashboard:
-      if (blob.size > MAX_UPLOAD_BYTES) throw new Error("Afbeelding te groot (max 25 MB)"); // dashboard:
-      const assetsUrl = `${API_BASE}/projects/${encodeURIComponent(projectId)}/assets`; // dashboard:
-      const target = await api("POST", `${assetsUrl}/upload-url`, { name: file.name, contentType: blob.type }); // dashboard:
-      const put = await fetch(target.signedUrl, { method: "PUT", headers: { "Content-Type": blob.type }, body: blob }); // dashboard:
-      if (!put.ok) throw new Error(`Uploaden mislukt (${put.status})`); // dashboard:
-      const p = await api("POST", assetsUrl, { // dashboard: koppelen in plaats van dataUrl posten
-        file: target.file,
-        name: file.name,
-        kind,
-        note: "",
-      });
+      const p = await uploadOne(file, kind, projectId);
+      ok++;
       if (state.project?.id === projectId) {
         setProject(p);
         renderAssets();
       }
     } catch (err) {
-      toast(`${file.name}: ${err.message}`, true);
+      fouten.push(`${file.name}: ${uploadFout(err)}`);
     }
   }
+  if (overgeslagen) fouten.push(`${overgeslagen} bestand(en) overgeslagen: geen afbeelding`);
+  if (fouten.length) toast(fouten.join(" · "), true);
+  else toast(ok > 1 ? `${ok} afbeeldingen toegevoegd` : "Afbeelding toegevoegd");
 }
 
 // ---------------------------------------------------------------- slides

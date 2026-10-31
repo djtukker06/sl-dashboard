@@ -443,7 +443,8 @@ input.ag-snel-veld {
   flex-direction: column;
   gap: 14px;
   min-height: 0;
-  /* Links op één lijn met de titel in de modulekop (--sl-gutter, app.css). */
+  /* Binnen de rand van het agendablok; tot en met 960px loopt het blok over de hele
+     breedte en ligt de lijst op de gutter (app.css, Inhoudsbreedte). */
   padding: 20px 20px 12px var(--sl-gutter, 24px);
   border-right: 1px solid var(--sl-line);
 }
@@ -528,7 +529,7 @@ input.ag-snel-veld {
   animation: ag-draai .8s linear infinite;
 }
 @keyframes ag-draai { to { transform: rotate(360deg); } }
-.ag-setup { padding: 48px 40px; max-width: 640px; }
+.ag-setup { padding: 48px 40px; } /* breedte en zijmarge: app.css (--sl-smal, --sl-uitlijn) */
 .ag-setup code { font-family: var(--sl-mono); font-size: 12px; color: var(--sl-text); }
 .ag-mobiel-tabs { display: none; }
 
