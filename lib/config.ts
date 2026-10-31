@@ -1,8 +1,8 @@
 export const bedrijf = {
   bedrijfsnaam: 'Studio Levant',
   eigenaren: 'Daniël Tukker & Bram Huiskes',
-  adresregel: 'Brink 21, Almelo',
-  postcode: '7603 ED',
+  adresregel: 'Stationsstraat 11',
+  postcode: '7607 GX Almelo',
   iban: 'NL92 RBRB 8848 5940 69',
   kvkNummer: '95422145',
   btwNummer: 'NL867124374B01',
