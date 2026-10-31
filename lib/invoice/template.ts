@@ -266,6 +266,9 @@ export const FACTUUR_TEMPLATE = `<!doctype html>
       <% if (factuur.restbetaling) { %><div class="aanbetaling">Deze factuur betreft het resterende bedrag (<%= factuur.restbetaling.percentage %>%) van de opdracht, na de aanbetaling van <%= 100 - factuur.restbetaling.percentage %>% op factuur <%= factuur.restbetaling.aanbetalingNummer %>.</div><% } %>
       <% if (factuur.btwVerlegdReden) { %><div class="btw-verlegd"><%= factuur.btwVerlegdReden %></div><% } %>
       <% if (factuur.soort === 'prijsopgave') { %>
+      <div>Na schriftelijk akkoord starten wij met de werkzaamheden.</div>
+      <div>De genoemde prijs is exclusief kosten voor hosting, domeinnaam, betaalde plugins/licenties en eventueel meerwerk of aanvullende functionaliteiten buiten de afgesproken scope.</div>
+      <div>Wij kijken uit naar een prettige samenwerking.</div>
       <div>Op deze prijsopgave zijn onze algemene voorwaarden van toepassing, te vinden op <a href="https://<%= bedrijf.algemeneVoorwaardenUrl %>"><%= bedrijf.algemeneVoorwaardenUrl %></a>.</div>
       <% } else { %>
       <div>Betaling van deze factuur dient binnen 14 dagen te worden voldaan aan <%= bedrijf.bedrijfsnaam %>.</div>
