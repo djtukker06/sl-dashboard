@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { BORD_STATUSSEN, opDeadline } from '@/lib/crm/projectstatus';
 import type { KlantPagina } from '@/lib/crm/repo';
+import { KLANT_STATUSSEN, KLANT_STATUS_LABEL, isProspect } from '@/lib/crm/types';
 import { korteDatum } from '@/lib/dashboard/tijd';
 import { formatEuro } from '@/lib/format';
 import type { DriveStatus } from '@/lib/drive/types';
@@ -34,15 +35,12 @@ export function KlantInhoud({ data, vandaag, drive }: { data: KlantPagina; vanda
           url={`/api/klanten/${klant.id}`}
           waarde={klant.status}
           label="Status van de klant"
-          opties={[
-            ['lead', 'Lead'],
-            ['actief', 'Actief'],
-            ['afgerond', 'Afgerond']
-          ]}
+          opties={KLANT_STATUSSEN.map((s): [string, string] => [s, KLANT_STATUS_LABEL[s]])}
           meldingen={{
             afgerond: 'Klant afgerond. Hij blijft vindbaar onder Klanten → Afgerond.',
             actief: 'Klant staat op Actief.',
-            lead: 'Klant staat op Lead.'
+            lead: 'Klant staat op Lead.',
+            koud: 'Staat op de radar: niet vergeten, telt niet mee bij Opvolgen.'
           }}
         />
       </ModuleKop>
@@ -63,6 +61,17 @@ export function KlantInhoud({ data, vandaag, drive }: { data: KlantPagina; vanda
             )}
           </section>
         )}
+        {klant.status === 'koud' && (
+          <section className="kp-leadbanner kp-radarbanner" aria-labelledby="kp-radar">
+            <div className="kp-leadbanner-kop">
+              <h2 id="kp-radar" className="kp-leadbanner-titel">
+                Op de radar
+              </h2>
+              <LeadActies klant={klant} opvolging={opvolging} />
+            </div>
+            <p className="kp-uitleg">Niet vergeten, nu nog geen actie: staat niet bij Opvolgen. Gaan we ze benaderen, zet ze dan bij de leads.</p>
+          </section>
+        )}
         {klant.status === 'afgerond' && (
           <div className="kp-afgerond-melding" role="note">
             <p>
@@ -73,7 +82,7 @@ export function KlantInhoud({ data, vandaag, drive }: { data: KlantPagina; vanda
           </div>
         )}
 
-        {(klant.status !== 'lead' || cijfers.aantalFacturen > 0 || projecten.length > 0) && (
+        {(!isProspect(klant.status) || cijfers.aantalFacturen > 0 || projecten.length > 0) && (
         <ul className="kp-kern" aria-label="Kerncijfers">
           <li className="kp-kern-vak">
             <span className="kp-kern-label">Omzet excl. btw</span>

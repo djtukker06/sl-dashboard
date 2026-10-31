@@ -83,7 +83,7 @@ export const MODULES: Module[] = [
     id: 'klanten',
     naam: 'Klanten & projecten',
     kort: 'Klanten',
-    beschrijving: 'Klanten (lead, actief, afgerond) met notities, en projecten met taken en voortgang',
+    beschrijving: 'Klanten (op de radar, lead, actief, afgerond) met notities, en projecten met taken en voortgang',
     href: '/klanten',
     paden: ['/klanten', '/projecten'],
     icoon: 'klanten',

@@ -9,7 +9,8 @@ import { Kaart } from './Kaart';
 const MAX = 5;
 
 // "Opvolgen": leads en klanten met een opvolgdatum van vandaag of eerder (gedeeld met het
-// team). Kost alleen ruimte als er iets is: zonder te-late opvolgingen, vóór migratie 0025
+// team; "Op de radar" (koud, 0033) bewust niet: dat vraagt nog geen actie, zie opvolgLijst).
+// Kost alleen ruimte als er iets is: zonder te-late opvolgingen, vóór migratie 0025
 // of bij een fout verschijnt de kaart niet (de rest van het dashboard merkt er niets van).
 export async function OpvolgenWidget({ lid }: { lid: Teamlid }) {
   if (lid.overgang) return null;

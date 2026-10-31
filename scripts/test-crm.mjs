@@ -198,22 +198,51 @@ test("nieuw project bij een afgeronde klant: alleen afgerond → actief", () => 
   assert.match(lees("components/crm/KlantInhoud.tsx"), /klant\.status === 'afgerond' &&[\s\S]*?<NieuwProject[^>]*klantAfgerond/);
   assert.match(lees("app/(app)/klanten/[id]/page.tsx"), /<KlantInhoud /);
 });
-test("klantenoverzicht: tabs Leads/Actief/Afgerond, zoeken over alle tabs, snel toevoegen", () => {
+test("klantenoverzicht: tabs Op de radar/Leads/Actief/Afgerond, zoeken over alle tabs, snel toevoegen", () => {
   const src = lees("components/crm/KlantenLijst.tsx");
-  assert.match(src, /const TABS: KlantStatus\[\] = \['lead', 'actief', 'afgerond'\]/);
-  assert.match(src, /klanten\.filter\(\(k\) => klantPast\(k, q\)\)/, "zoeken telt over alle tabs (afgerond blijft vindbaar)");
+  assert.match(src, /const TABS: KlantStatus\[\] = KLANT_STATUSSEN/);
+  assert.match(lees("lib/crm/types.ts"), /KLANT_STATUSSEN: KlantStatus\[\] = \['koud', 'lead', 'actief', 'afgerond'\]/);
+  assert.match(src, /metStatus\.filter\(\(k\) => klantPast\(k, q\)\)/, "zoeken telt over alle tabs (afgerond blijft vindbaar)");
   assert.match(src, /Wel in/, "lege zoekstaat wijst naar de andere tab");
   assert.match(src, /crmApi<\{ klant: \{ id: string \} \}>\('\/api\/klanten', 'POST', \{ naam, status \}\)/);
   assert.match(src, /e\.key === '\/'/);
   assert.match(lees("app/(app)/klanten/page.tsx"), /taakSneltoets=\{false\}/, "n = nieuwe klant, niet nieuwe taak");
   assert.ok(!fs.existsSync(path.join(ROOT, "components/crm/SnelKlant.tsx")), "geen popup meer voor een nieuwe klant");
 });
-test("leads: gewonnen (→ actief, optioneel project) en afgewezen (→ afgerond, ongedaan maken)", () => {
+test("leads en radar: omzetten naar klant, radar ↔ leads, afgewezen; alles met ongedaan maken", () => {
   const src = lees("components/crm/KlantActies.tsx");
-  assert.match(src, /status: 'actief'/);
-  assert.match(src, /agendaApi\.maakProject\(\{ naam, klantId: klant\.id/);
-  assert.match(src, /status: 'afgerond', \.\.\.\(opvolging \? \{ opvolgenOp: null \} : \{\}\)/, "vóór 0025 geen opvolgdatum meesturen");
+  assert.match(src, /zet\('actief'/);
+  assert.match(src, /Omzetten naar klant/);
+  assert.match(src, /zet\('koud'/);
+  assert.match(src, /zet\('lead'/);
+  assert.match(src, /zet\('afgerond'/);
+  assert.match(src, /const wisDatum = opvolging &&/, "vóór 0025 geen opvolgdatum meesturen");
   assert.match(src, /Ongedaan maken/);
+  assert.match(lees("components/crm/KlantenLijst.tsx"), /onStatus=\{verschuif\}/, "de lijst schuift meteen mee");
+});
+test("op de radar (0033): niet bij Opvolgen, factuur-trigger en nette melding vóór 0033", () => {
+  assert.ok(!ov.moetOpvolgen({ status: "koud", opvolgenOp: "2026-10-01" }, "2026-10-24"));
+  assert.equal(inv.isKlantStatus("koud"), true);
+  assert.match(lees("lib/crm/repo.ts"), /\.not\('status', 'in', '\(afgerond,koud\)'\)/);
+  const sql = lees("supabase/migrations/0033_crm_koude_leads.sql");
+  assert.match(sql, /check \(status in \('koud', 'lead', 'actief', 'afgerond'\)\)/);
+  assert.match(sql, /status in \('lead', 'koud'\)/);
+  assert.equal(lees("supabase/UITVOEREN_0033.sql"), sql);
+  for (const f of ["app/api/klanten/route.ts", "app/api/klanten/[id]/route.ts"]) {
+    assert.match(lees(f), /error\.code === '23514' && k\.waarde\.status === 'koud'\) return fout\(503, KOUD_NA_0033/);
+  }
+});
+test("nieuw project: onbekende klantnaam wordt een actieve klant (geen dubbelen)", () => {
+  const route = lees("app/api/projecten/route.ts");
+  assert.match(route, /vindOfMaakKlant\(s\.bron, kn\.waarde\)/);
+  assert.match(route, /await opruimen\(\)/);
+  const repo = lees("lib/crm/repo.ts");
+  assert.match(repo, /\.eq\('company_name_normalized', sleutel\)/);
+  assert.match(repo, /insert\(\{ company_name: naam, status: 'actief' \}\)/);
+  assert.match(lees("components/crm/ProjectKlantKiezer.tsx"), /\+ Nieuwe klant ‘\{naam\}’ aanmaken/);
+  assert.equal(inv.parseKlantNaam("  Bakkerij   de Vries ").waarde, "Bakkerij de Vries");
+  assert.equal(inv.parseKlantNaam("").waarde, null);
+  assert.equal(inv.parseKlantNaam("x".repeat(201)).ok, false);
 });
 test("bord: slepen, keuzelijst en Alt+pijl; weergave en filter onthouden", () => {
   const src = lees("components/crm/ProjectenBord.tsx");

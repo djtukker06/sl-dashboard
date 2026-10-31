@@ -10,9 +10,10 @@ import { KlantenLijst, NieuweKlantKnop } from '@/components/crm/KlantenLijst';
 export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'Klanten · Studio Levant' };
 
-// Klanten (gedeeld met het team) in drie tabs: Leads (opvolgen), Actief en Afgerond.
-// Zoeken, sorteren en snel toevoegen (één veld + Enter). Dezelfde klanten als in de facturen.
-//   ?tab=leads|actief|afgerond   kiest de tab (bv. vanaf de dashboardkaart "Opvolgen")
+// Klanten (gedeeld met het team) in vier tabs: Op de radar (koude leads, 0033), Leads
+// (opvolgen), Actief en Afgerond. Zoeken, sorteren en snel toevoegen (één veld + Enter).
+// Dezelfde klanten als in de facturen.
+//   ?tab=radar|leads|actief|afgerond   kiest de tab (bv. vanaf de dashboardkaart "Opvolgen")
 //   ?nieuw=1                     zet de cursor meteen in "Nieuwe klant"
 export default async function KlantenPage({ searchParams }: { searchParams: Promise<{ nieuw?: string; tab?: string }> }) {
   const lid = await vereisTeamlidPagina('/klanten');
@@ -26,7 +27,14 @@ export default async function KlantenPage({ searchParams }: { searchParams: Prom
     if (isNietIngericht(e)) return <CrmNietIngericht actief="klanten" />;
     throw e;
   }
-  const tab = sp.tab === 'leads' || sp.tab === 'lead' ? 'lead' : sp.tab === 'actief' || sp.tab === 'afgerond' ? sp.tab : undefined;
+  const tab =
+    sp.tab === 'leads' || sp.tab === 'lead'
+      ? 'lead'
+      : sp.tab === 'radar' || sp.tab === 'koud'
+        ? 'koud'
+        : sp.tab === 'actief' || sp.tab === 'afgerond'
+          ? sp.tab
+          : undefined;
 
   return (
     <CrmProviders taakSneltoets={false}>

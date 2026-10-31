@@ -2,12 +2,11 @@
 
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
-import { agendaApi } from '@/lib/agenda/client';
-import type { ProjectStatus } from '@/lib/agenda/types';
-import { KlantKiezer } from '@/components/agenda/KlantKiezer';
+import type { Project, ProjectStatus } from '@/lib/agenda/types';
 import { VoorWieKiezer } from '@/components/taken/VoorWieKiezer';
 import { useTeam } from '@/components/team/TeamProvider';
-import { CrmDialoog } from './CrmDialoog';
+import { CrmDialoog, crmApi } from './CrmDialoog';
+import { ProjectKlantKiezer, type ProjectKlant } from './ProjectKlantKiezer';
 
 type Klant = { id: string; naam: string } | null;
 
@@ -15,7 +14,9 @@ type Klant = { id: string; naam: string } | null;
  * "+ Project": naam, klant, status (standaard Voorbereiding), deadline (optioneel) en
  * eigenaar(s) (standaard jij). Na opslaan ga je naar de projectpagina. Een nieuw project
  * bij een afgeronde klant zet die klant weer op Actief (de server doet dat; de popup
- * zegt het vooraf).
+ * zegt het vooraf). Een klantnaam die nog niet bestaat ("+ Nieuwe klant ‘X’ aanmaken", of
+ * gewoon getypt en opslaan) wordt bij opslaan een nieuwe actieve klant met dit project; de
+ * server voorkomt dubbelen (hoofdletterongevoelig op naam).
  */
 export function NieuwProject({
   klant: vasteKlant = null,
@@ -33,7 +34,8 @@ export function NieuwProject({
   const { mijnId } = useTeam();
   const [open, setOpen] = useState(false);
   const [naam, setNaam] = useState('');
-  const [klant, setKlant] = useState<Klant>(vasteKlant);
+  const [klant, setKlant] = useState<ProjectKlant>(vasteKlant);
+  const [klantTekst, setKlantTekst] = useState('');
   const [status, setStatus] = useState<ProjectStatus>('voorbereiding');
   const [deadline, setDeadline] = useState('');
   const [eigenaren, setEigenaren] = useState<string[]>([mijnId]);
@@ -43,6 +45,7 @@ export function NieuwProject({
   function openen() {
     setNaam('');
     setKlant(vasteKlant);
+    setKlantTekst('');
     setStatus('voorbereiding');
     setDeadline('');
     setEigenaren([mijnId]);
@@ -59,9 +62,12 @@ export function NieuwProject({
     setBezig(true);
     setFout('');
     try {
-      const { project } = await agendaApi.maakProject({
+      // Getypt maar niet gekozen: die naam (bestaande klant of een nieuwe).
+      const gekozen = klant ?? (klantTekst.trim() ? { id: null, naam: klantTekst.replace(/\s+/g, ' ').trim() } : null);
+      const { project } = await crmApi<{ project: Project }>('/api/projecten', 'POST', {
         naam,
-        klantId: klant?.id ?? null,
+        klantId: gekozen?.id ?? null,
+        ...(gekozen && !gekozen.id ? { klantNaam: gekozen.naam } : {}),
         status,
         deadline: deadline || null,
         eigenaren
@@ -87,7 +93,7 @@ export function NieuwProject({
             </label>
             <div className="ag-label">
               <span>Klant (optioneel)</span>
-              <KlantKiezer waarde={klant} onChange={setKlant} />
+              <ProjectKlantKiezer waarde={klant} onChange={setKlant} onTekst={setKlantTekst} />
             </div>
             <div className="kp-form-rij">
               <div className="ag-label">
@@ -111,6 +117,11 @@ export function NieuwProject({
             </div>
             {klantAfgerond && klant?.id === vasteKlant?.id && (
               <p className="kp-uitleg">{vasteKlant?.naam} staat op afgerond; met dit project wordt de klant weer Actief.</p>
+            )}
+            {klant && klant.id === null && (
+              <p className="kp-uitleg">
+                <strong>{klant.naam}</strong> wordt bij opslaan een nieuwe klant (Actief) met dit project.
+              </p>
             )}
             {fout && (
               <p className="ag-fout" role="alert">

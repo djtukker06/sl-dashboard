@@ -6,8 +6,9 @@ import { useToast } from '@/components/agenda/Toast';
 import { crmApi } from './CrmDialoog';
 
 /**
- * Status die direct opslaat (de klant: lead/actief/afgerond). Standaard als knoppenrij
- * (alle keuzes zichtbaar, één klik); `lijst` geeft een keuzelijst.
+ * Status die direct opslaat (de klant: koud/lead/actief/afgerond; koud = Op de radar, 0033).
+ * Standaard als knoppenrij (alle keuzes zichtbaar, één klik); `lijst` geeft een keuzelijst.
+ * Mislukt het opslaan (bv. Op de radar vóór 0033), dan springt de keuze terug met de melding.
  */
 export function StatusKiezer({
   url,

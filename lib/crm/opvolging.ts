@@ -99,7 +99,10 @@ export function belangrijksteStatus(statussen: ProjectStatus[]): ProjectStatus |
   return beste;
 }
 
-/** Hoort deze klant op de dashboardkaart "Opvolgen"? (niet afgerond, datum vandaag of eerder) */
+/**
+ * Hoort deze klant op de dashboardkaart "Opvolgen"? (niet afgerond en niet "op de radar",
+ * datum vandaag of eerder). Op de radar (0033) vraagt bewust nog geen actie.
+ */
 export function moetOpvolgen(k: { status: string; opvolgenOp: string | null }, vandaag: string): boolean {
-  return k.status !== 'afgerond' && !!k.opvolgenOp && k.opvolgenOp <= vandaag;
+  return k.status !== 'afgerond' && k.status !== 'koud' && !!k.opvolgenOp && k.opvolgenOp <= vandaag;
 }

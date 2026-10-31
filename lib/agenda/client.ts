@@ -82,7 +82,9 @@ export const agendaApi = {
       };
       vandaag: string;
     }>('/api/dashboard'),
-  bereik: (van: string, tot: string) => api<{ tasks: Taak[]; events: Afspraak[] }>(`/api/agenda${qs({ van, tot })}`),
+  /** herhaling: of migratie 0034 (herhalende afspraken) er is. */
+  bereik: (van: string, tot: string) =>
+    api<{ tasks: Taak[]; events: Afspraak[]; herhaling?: boolean }>(`/api/agenda${qs({ van, tot })}`),
   taken: (filter: TakenFilter, opties: { project?: string | null } = {}) =>
     api<{ tasks: Taak[]; tellingen: Tellingen; vandaag: string }>(
       `/api/taken${qs({ filter, project: opties.project })}`
@@ -104,7 +106,9 @@ export const agendaApi = {
   maakAfspraak: (b: AfspraakInvoer) => api<{ event: Afspraak }>('/api/afspraken', { method: 'POST', body: body(b) }),
   wijzigAfspraak: (id: string, b: AfspraakInvoer) =>
     api<{ event: Afspraak }>(`/api/afspraken/${id}`, { method: 'PATCH', body: body(b) }),
-  verwijderAfspraak: (id: string) => api<{ ok: true }>(`/api/afspraken/${id}`, { method: 'DELETE' }),
+  /** Bij een voorkomen van een reeks: 'deze' slaat alleen dit voorkomen over, anders de hele reeks. */
+  verwijderAfspraak: (id: string, toepassen?: 'deze' | 'reeks') =>
+    api<{ ok: true }>(`/api/afspraken/${id}${qs({ toepassen })}`, { method: 'DELETE' }),
   project: (id: string) => api<{ project: Project }>(`/api/projecten/${id}`),
   projecten: (status: 'lopend' | 'afgerond' | 'alle' = 'lopend') =>
     api<{ projecten: Project[] }>(`/api/projecten${qs({ status })}`),

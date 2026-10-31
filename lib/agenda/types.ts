@@ -1,6 +1,8 @@
 // Vormen die de agenda-API teruggeeft en die de client (agenda, dashboard) gebruikt.
 // De database gebruikt Engelse kolomnamen (tasks, calendar_events); de app Nederlands.
 
+import type { Herhaling } from './herhaling';
+
 export type Prioriteit = 1 | 2 | 3; // 1 hoog, 2 normaal, 3 laag
 
 export interface Taak {
@@ -74,6 +76,7 @@ export interface Project {
 }
 
 export interface Afspraak {
+  /** Rij-id, of bij een herhalende afspraak "<reeks-id>~YYYY-MM-DD" (één voorkomen). */
   id: string;
   titel: string;
   notitie: string;
@@ -87,6 +90,14 @@ export interface Afspraak {
   /** Wie erbij hoort (user-id's). Leeg zolang migratie 0021 niet is uitgevoerd. */
   deelnemers: string[];
   aangemaaktDoor: string | null;
+  /** Herhaalregel van de reeks (migratie 0034); null = eenmalig. */
+  herhaling: Herhaling | null;
+  /** Laatste dag waarop de reeks nog een keer begint (inclusief), of null = altijd door. */
+  herhaalTot: string | null;
+  /** Rij-id van de reeks bij een voorkomen; null bij een eenmalige afspraak. */
+  reeksId: string | null;
+  /** Oorspronkelijke datum van dit voorkomen ('YYYY-MM-DD'); null bij een eenmalige afspraak. */
+  voorkomen: string | null;
 }
 
 /**
@@ -157,4 +168,10 @@ export interface AfspraakInvoer {
   klantId?: string | null;
   /** Wie erbij hoort (user-id's). Bij PATCH: vervangt de hele set. */
   deelnemers?: string[];
+  /** Herhalen (migratie 0034); null = niet. */
+  herhaling?: Herhaling | null;
+  /** 'YYYY-MM-DD' of null (geen einde). */
+  herhaalTot?: string | null;
+  /** Bij PATCH/DELETE van een voorkomen: alleen dit voorkomen of de hele reeks (standaard). */
+  toepassen?: 'deze' | 'reeks';
 }

@@ -3,9 +3,10 @@ import { createHash, randomBytes } from 'node:crypto';
 import type { Teamlid } from '@/lib/auth/team';
 import { createServiceRoleClient } from '@/lib/supabase/service-role';
 import { systeemClient } from '@/lib/supabase/systeem';
-import { tabelOntbreekt } from '@/lib/db/ontbreekt';
+import { kolomOntbreekt, tabelOntbreekt } from '@/lib/db/ontbreekt';
 import { normTijd, plusDagen, vandaag, type Dag } from './datum';
 import { clientVan, maakIcs, type FeedAfspraak, type FeedTaak } from './ics';
+import { isHerhaling } from './herhaling';
 import { FEED_KOLOMMEN, NIET_INGERICHT, naarFeedStatus, type FeedRij, type FeedStatus } from './feed-status';
 
 // Agenda-abonnement per teamlid (migratie 0029): een geheime link die Apple Agenda of Google
@@ -73,6 +74,9 @@ interface AfspraakRij {
   starts_at: string;
   ends_at: string;
   all_day: boolean;
+  herhaling?: string | null;
+  herhaal_tot?: string | null;
+  herhaal_uitzonderingen?: string[] | null;
 }
 
 /** De ICS-inhoud bij een token, of null (onbekend token of geen actief teamlid). */
@@ -96,7 +100,24 @@ export async function feedVoorToken(token: string, ua: string | null, basis: str
   const dag = vandaag(nu);
   const van = plusDagen(dag, -60);
   const tot = plusDagen(dag, 400);
-  const [takenRes, afsprakenRes] = await Promise.all([
+  const afspraakBasis = 'id,title,notes,location,starts_at,ends_at,all_day,wie:event_attendees!inner(user_id)';
+  const vanaf = new Date(nu.getTime() - 60 * 86_400_000).toISOString();
+  const totMoment = new Date(nu.getTime() + 400 * 86_400_000).toISOString();
+  // Met migratie 0034 ook herhalende afspraken die eerder begonnen en nog doorlopen (één
+  // VEVENT met RRULE); zonder die kolommen de oude query.
+  const afsprakenQuery = (herhaling: boolean) => {
+    const q = sb
+      .from('calendar_events')
+      .select(herhaling ? `${afspraakBasis},herhaling,herhaal_tot,herhaal_uitzonderingen` : afspraakBasis)
+      .eq('wie.user_id', userId)
+      .lte('starts_at', totMoment);
+    return (
+      herhaling
+        ? q.or(`ends_at.gte."${vanaf}",and(herhaling.not.is.null,or(herhaal_tot.is.null,herhaal_tot.gte.${van}))`)
+        : q.gte('ends_at', vanaf)
+    ).limit(2000);
+  };
+  const [takenRes, afsprakenEerst] = await Promise.all([
     sb
       .from('tasks')
       .select('id,title,notes,due_date,due_time,duration_minutes,priority,completed_at,wie:task_assignees!inner(user_id)')
@@ -105,14 +126,12 @@ export async function feedVoorToken(token: string, ua: string | null, basis: str
       .gte('due_date', van)
       .lte('due_date', tot)
       .limit(2000),
-    sb
-      .from('calendar_events')
-      .select('id,title,notes,location,starts_at,ends_at,all_day,wie:event_attendees!inner(user_id)')
-      .eq('wie.user_id', userId)
-      .gte('ends_at', new Date(nu.getTime() - 60 * 86_400_000).toISOString())
-      .lte('starts_at', new Date(nu.getTime() + 400 * 86_400_000).toISOString())
-      .limit(2000)
+    afsprakenQuery(true)
   ]);
+  const afsprakenRes =
+    afsprakenEerst.error && kolomOntbreekt(afsprakenEerst.error) && !tabelOntbreekt(afsprakenEerst.error)
+      ? await afsprakenQuery(false)
+      : afsprakenEerst;
   if (takenRes.error) throw takenRes.error;
   if (afsprakenRes.error) throw afsprakenRes.error;
 
@@ -133,7 +152,10 @@ export async function feedVoorToken(token: string, ua: string | null, basis: str
     locatie: a.location ?? '',
     start: a.starts_at,
     eind: a.ends_at,
-    heleDag: a.all_day
+    heleDag: a.all_day,
+    herhaling: isHerhaling(a.herhaling) ? a.herhaling : null,
+    herhaalTot: isHerhaling(a.herhaling) ? (a.herhaal_tot ?? null) : null,
+    uitzonderingen: a.herhaal_uitzonderingen ?? []
   }));
 
   // Bijhouden dat (en door welke app) de link is opgehaald: dat maakt het koppelen af.

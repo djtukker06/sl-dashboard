@@ -77,7 +77,7 @@ function naarSamenvatting(r: DbRij): NotitieSamenvatting {
     titel: r.titel ?? '',
     emoji: r.emoji,
     fragment: r.fragment ?? '',
-    klant: r.client_id ? { id: r.client_id, naam: klant?.company_name ?? 'Klant', lead: klant?.status === 'lead' } : null,
+    klant: r.client_id ? { id: r.client_id, naam: klant?.company_name ?? 'Klant', lead: klant?.status === 'lead' || klant?.status === 'koud' } : null,
     project: r.project_id ? { id: r.project_id, naam: project?.naam ?? 'Project' } : null,
     prive: r.prive,
     vastgepind: r.vastgepind,

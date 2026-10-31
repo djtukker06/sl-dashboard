@@ -4,7 +4,7 @@
    ag-label, ag-segment, ag-taak) en taken.css (tk-dialoog). Tokens: shell.css (--sl-*).
 
    Statuskleuren (overal hetzelfde, kleur nooit zonder label):
-     blauw  = nog niet begonnen   lead, voorbereiding
+     blauw  = nog niet begonnen   lead, voorbereiding (op de radar: blauw, gestippeld/zachter)
      groen  = loopt               actief, bezig
      oker   = wacht op een ander  wachten op goedkeuring, binnenkort
      grijs  = klaar               afgerond
@@ -97,6 +97,7 @@
 .kp-pil-lead, .kp-pil-voorbereiding, .kp-stip-lead, .kp-stip-voorbereiding { --kp-kleur: var(--kp-blauw); }
 .kp-pil-actief, .kp-pil-bezig, .kp-stip-actief, .kp-stip-bezig { --kp-kleur: var(--kp-groen); }
 .kp-pil-wachten, .kp-stip-wachten { --kp-kleur: var(--kp-oker); }
+.kp-pil-koud, .kp-stip-koud { --kp-kleur: color-mix(in srgb, var(--kp-blauw) 55%, var(--kp-grijs)); }
 .kp-pil-afgerond, .kp-stip-afgerond { --kp-kleur: var(--kp-grijs); }
 .kp-pil-afgerond { color: var(--sl-muted); }
 .kp-status { width: auto; padding: 7px 10px; font-size: 13px; }
@@ -304,6 +305,8 @@ details.kp-klaar > summary:focus-visible { outline: none; box-shadow: var(--sl-f
 .kp-leadbanner-kop { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; }
 .kp-leadbanner-titel { margin: 0; font-size: 15px; font-weight: 700; }
 .kp-leadacties { display: inline-flex; flex-wrap: wrap; gap: 6px; }
+/* Op de radar: zelfde balk, rustiger (geen actie nodig). */
+.kp-radarbanner { border-left-style: dashed; background: var(--sl-panel); }
 
 /* Volgende stap + opvolgdatum */
 .kp-opvolg { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; }
@@ -397,6 +400,7 @@ details.kp-klaar > summary:focus-visible { outline: none; box-shadow: var(--sl-f
 /* Status van de klant als knoppenrij in de kop */
 .kp-statusknoppen button.is-aan { position: relative; }
 .kp-statusknoppen button.kp-statusknop-lead { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--kp-blauw) 55%, transparent); color: var(--kp-blauw); }
+.kp-statusknoppen button.kp-statusknop-koud { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--kp-blauw) 35%, transparent); color: var(--sl-text); }
 .kp-statusknoppen button.kp-statusknop-actief { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--kp-groen) 55%, transparent); color: var(--kp-groen); }
 .kp-statusknoppen button.kp-statusknop-afgerond { color: var(--sl-text); }
 
@@ -555,6 +559,8 @@ details.kp-klaar > summary:focus-visible { outline: none; box-shadow: var(--sl-f
   background: var(--sl-panel);
 }
 .kl-lead.is-vandaag { border-left-color: var(--sl-sand); }
+.kl-radar .kl-lead { border-left-style: dashed; border-left-color: color-mix(in srgb, var(--kp-blauw) 55%, var(--sl-line)); }
+.kl-radar-stap { min-width: 0; font-size: 12.5px; color: var(--sl-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .kl-lead.is-telaat { border-left-color: var(--sl-danger); }
 .kl-lead-hoofd { display: grid; gap: 3px; min-width: 0; }
 .kl-lead-hoofd .kl-naam:hover { text-decoration: underline; text-underline-offset: 3px; }
@@ -785,7 +791,8 @@ select.pb-status:focus-visible { outline: none; box-shadow: var(--sl-focus); }
   .kp-detail { grid-template-columns: minmax(0, 1fr); }
   .pb-bord { grid-template-columns: repeat(4, minmax(260px, 1fr)); }
   .kl-lead { grid-template-columns: minmax(0, 1fr) auto; }
-  .kl-lead > .kp-opvolg { grid-column: 1 / -1; grid-row: 2; }
+  .kl-lead > .kp-opvolg, .kl-lead > .kl-radar-stap { grid-column: 1 / -1; grid-row: 2; }
+  .kl-lead > .kl-radar-stap:empty { display: none; }
 }
 @media (max-width: 860px) {
   .kp-kern { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -825,7 +832,7 @@ select.pb-status:focus-visible { outline: none; box-shadow: var(--sl-focus); }
   .kp-kern-vak { padding: 12px; }
   .kp-kern-n { font-size: 19px; }
   .kl-lead { grid-template-columns: minmax(0, 1fr); padding: 12px 14px; }
-  .kl-lead > .kp-opvolg { grid-row: auto; }
+  .kl-lead > .kp-opvolg, .kl-lead > .kl-radar-stap { grid-row: auto; }
   .kl-tab { padding: 10px 10px 12px; font-size: 13.5px; }
   .kl-tab-alarm-tekst, .kl-kbd { display: none; }
   .kl-lead .kp-opvolg { grid-template-columns: minmax(0, 1fr); }
@@ -920,3 +927,7 @@ select.pb-status:focus-visible { outline: none; box-shadow: var(--sl-focus); }
   .pb-kolom, .pb-kaart, .kp-stappen button, .kl-tab, .kl-rij { transition: none; }
   .kl-rij.is-nieuw, .kl-leads > li.is-nieuw > .kl-lead { animation: none; }
 }
+
+/* ---------- Nieuw project: klant kiezen of meteen aanmaken (ProjectKlantKiezer) ---------- */
+.kp-suggestie-nieuw { border-top: 1px solid var(--sl-line-soft); color: var(--kp-groen); font-weight: 600; }
+.kp-klant-nieuw { padding: 1px 6px; border-radius: 999px; background: color-mix(in srgb, var(--kp-groen) 14%, transparent); color: var(--kp-groen); font-family: var(--sl-mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; }
