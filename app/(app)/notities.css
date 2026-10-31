@@ -447,7 +447,7 @@
 .sp-niets .sp-fout { margin: 0; }
 .sp-niets .sp-kbd { margin-left: 6px; }
 .sp-laden { display: grid; gap: 14px; max-width: 760px; margin: 0 auto; padding: 92px 48px; }
-.sp-setup { max-width: 760px; padding: 32px var(--sl-uitlijn, 40px); }
+.sp-setup { padding: 32px var(--sl-uitlijn, 40px); } /* smalle kolom: --sl-smal (app.css) */
 
 /* ---------- grote laptop en monitor: iets bredere lijst, tekst blijft leesbaar ---------- */
 @media (min-width: 1440px) {

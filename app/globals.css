@@ -26,6 +26,8 @@ html, body {
 
 a { color: inherit; }
 
+/* Buiten de shell: 980px gecentreerd. Binnen de shell (facturen) volgt .wrap de gedeelde
+   inhoudsbreedte van app/(app)/app.css (--sl-uitlijn); deze max-width geldt daar niet. */
 .wrap {
   max-width: 980px;
   margin: 0 auto;

@@ -1,7 +1,6 @@
 'use client';
 
 import { useLayoutEffect, useRef } from 'react';
-import { gsap } from 'gsap';
 import { WELKOM_GELDIG_MS, WELKOM_SLEUTEL } from '@/lib/shell/welkom';
 
 // Welkomstanimatie direct na het inloggen (na de 2FA-code), GSAP, ~2 s. Alleen het beeldmerk,
@@ -15,8 +14,13 @@ import { WELKOM_GELDIG_MS, WELKOM_SLEUTEL } from '@/lib/shell/welkom';
 // Bij een volledige paginalading zet het inline script van de shell de klasse sl-welkom-aan al
 // vóór de eerste paint; bij een client-navigatie (inloggen zonder 2FA) doet useLayoutEffect
 // dat, ook vóór de paint. Klik of toets slaat hem over; reduced motion: geen animatie.
+// GSAP (~27 KB gzip) wordt pas geladen als de animatie echt speelt (dynamische import), zodat hij
+// niet in de bundel van elke ingelogde pagina zit. Tot hij binnen is staat het vlak er statisch
+// (net als vóór de hydratie) en loopt de CSS-noodfade nog.
 
 const STROKEN = 7;
+
+type GsapModule = typeof import('gsap');
 
 export function Welkomstanimatie() {
   const ref = useRef<HTMLDivElement>(null);
@@ -44,51 +48,61 @@ export function Welkomstanimatie() {
       return;
     }
     shell.classList.add('sl-welkom-aan');
-    laag.setAttribute('data-bezig', '');
 
     const main = shell.querySelector<HTMLElement>('.sl-main');
     const rail = shell.querySelector<HTMLElement>('.sl-rail');
     let klaar = false;
+    /** Gezet zodra GSAP geladen is en de timeline loopt. */
+    let g: GsapModule['gsap'] | null = null;
+    let ctx: ReturnType<GsapModule['gsap']['context']> | null = null;
 
-    const ctx = gsap.context(() => {
-      const tl = gsap.timeline({ defaults: { ease: 'power3.out' }, onComplete: () => afronden() });
-      const stroken = gsap.utils.toArray<HTMLElement>('.sl-welkom-strook');
+    function bouw(gsap: GsapModule['gsap']) {
+      g = gsap;
+      laag!.setAttribute('data-bezig', '');
+      ctx = gsap.context(() => {
+        const tl = gsap.timeline({ defaults: { ease: 'power3.out' }, onComplete: () => afronden() });
+        const stroken = gsap.utils.toArray<HTMLElement>('.sl-welkom-strook');
 
-      tl.set(laag, { autoAlpha: 1 })
-        // 1. stroken vlechten in, merk groeit, ring tekent
-        .fromTo('.sl-welkom-merk', { scale: 0.84 }, { scale: 1, duration: 1.15, ease: 'expo.out' }, 0)
-        .fromTo(
-          stroken,
-          { yPercent: (i: number) => (i % 2 ? -22 : 22), opacity: 0, filter: 'blur(6px)' },
-          { yPercent: 0, opacity: 1, filter: 'blur(0px)', duration: 0.85, ease: 'expo.out', stagger: { each: 0.055, from: 'center' } },
-          0.05
-        )
-        .fromTo('.sl-welkom-ring circle', { strokeDashoffset: 1 }, { strokeDashoffset: 0, duration: 1.05, ease: 'power2.inOut' }, 0.12)
-        .fromTo('.sl-welkom-ring', { rotation: -110, opacity: 0 }, { rotation: 0, opacity: 1, duration: 1.1, ease: 'power3.out' }, 0.1)
-        .fromTo('.sl-welkom-gloed', { opacity: 0, scale: 0.6 }, { opacity: 1, scale: 1, duration: 1, ease: 'power2.out' }, 0.2)
-        // 2. lichtbaan
-        .fromTo('.sl-welkom-glans', { backgroundPosition: '120% 0%', opacity: 0 }, { backgroundPosition: '-20% 0%', opacity: 0.85, duration: 0.6, ease: 'power2.inOut' }, 0.8)
-        .to('.sl-welkom-glans', { opacity: 0, duration: 0.2 }, 1.25)
-        // 3. uitzwellen en iris open
-        .to('.sl-welkom-merk', { scale: 1.14, opacity: 0, filter: 'blur(10px)', duration: 0.55, ease: 'power2.in' }, 1.32)
-        .to('.sl-welkom-ring', { scale: 1.9, opacity: 0, duration: 0.6, ease: 'power2.in' }, 1.32)
-        .to('.sl-welkom-gloed', { scale: 1.6, opacity: 0, duration: 0.6, ease: 'power2.in' }, 1.35)
-        .fromTo('.sl-welkom-bg', { '--gat': 0 }, { '--gat': 105, duration: 0.8, ease: 'power3.inOut' }, 1.45)
-        .to('.sl-welkom-skip', { opacity: 0, duration: 0.2 }, 1.3);
-      if (main) tl.fromTo(main, { opacity: 0, y: 16, scale: 0.985 }, { opacity: 1, y: 0, scale: 1, duration: 0.8, ease: 'power3.out', clearProps: 'transform' }, 1.55);
-      if (rail) tl.fromTo(rail, { opacity: 0 }, { opacity: 1, duration: 0.6, ease: 'power2.out' }, 1.65);
-    }, laag);
+        tl.set(laag, { autoAlpha: 1 })
+          // 1. stroken vlechten in, merk groeit, ring tekent
+          .fromTo('.sl-welkom-merk', { scale: 0.84 }, { scale: 1, duration: 1.15, ease: 'expo.out' }, 0)
+          .fromTo(
+            stroken,
+            { yPercent: (i: number) => (i % 2 ? -22 : 22), opacity: 0, filter: 'blur(6px)' },
+            { yPercent: 0, opacity: 1, filter: 'blur(0px)', duration: 0.85, ease: 'expo.out', stagger: { each: 0.055, from: 'center' } },
+            0.05
+          )
+          .fromTo('.sl-welkom-ring circle', { strokeDashoffset: 1 }, { strokeDashoffset: 0, duration: 1.05, ease: 'power2.inOut' }, 0.12)
+          .fromTo('.sl-welkom-ring', { rotation: -110, opacity: 0 }, { rotation: 0, opacity: 1, duration: 1.1, ease: 'power3.out' }, 0.1)
+          .fromTo('.sl-welkom-gloed', { opacity: 0, scale: 0.6 }, { opacity: 1, scale: 1, duration: 1, ease: 'power2.out' }, 0.2)
+          // 2. lichtbaan
+          .fromTo('.sl-welkom-glans', { backgroundPosition: '120% 0%', opacity: 0 }, { backgroundPosition: '-20% 0%', opacity: 0.85, duration: 0.6, ease: 'power2.inOut' }, 0.8)
+          .to('.sl-welkom-glans', { opacity: 0, duration: 0.2 }, 1.25)
+          // 3. uitzwellen en iris open
+          .to('.sl-welkom-merk', { scale: 1.14, opacity: 0, filter: 'blur(10px)', duration: 0.55, ease: 'power2.in' }, 1.32)
+          .to('.sl-welkom-ring', { scale: 1.9, opacity: 0, duration: 0.6, ease: 'power2.in' }, 1.32)
+          .to('.sl-welkom-gloed', { scale: 1.6, opacity: 0, duration: 0.6, ease: 'power2.in' }, 1.35)
+          .fromTo('.sl-welkom-bg', { '--gat': 0 }, { '--gat': 105, duration: 0.8, ease: 'power3.inOut' }, 1.45)
+          .to('.sl-welkom-skip', { opacity: 0, duration: 0.2 }, 1.3);
+        if (main) tl.fromTo(main, { opacity: 0, y: 16, scale: 0.985 }, { opacity: 1, y: 0, scale: 1, duration: 0.8, ease: 'power3.out', clearProps: 'transform' }, 1.55);
+        if (rail) tl.fromTo(rail, { opacity: 0 }, { opacity: 1, duration: 0.6, ease: 'power2.out' }, 1.65);
+      }, laag!);
+    }
 
+    /** Animatie terugdraaien en main en rail (buiten de laag) altijd zichtbaar achterlaten. */
+    function opruimen() {
+      ctx?.revert();
+      ctx = null;
+      if (g) for (const el of [main, rail]) if (el) g.set(el, { clearProps: 'opacity,transform' });
+      laag?.removeAttribute('data-bezig');
+    }
     function afronden() {
       if (klaar) return;
       klaar = true;
       spelen.current = false;
       weg();
-      ctx.revert();
-      // main en rail (buiten de laag) altijd zichtbaar achterlaten, ook bij overslaan.
-      for (const el of [main, rail]) if (el) gsap.set(el, { clearProps: 'opacity,transform' });
+      opruimen();
       shell?.classList.remove('sl-welkom-aan');
-      laag?.removeAttribute('data-bezig');
     }
     const opToets = (e: KeyboardEvent) => {
       if (e.key === 'Shift' || e.key === 'Control' || e.key === 'Alt' || e.key === 'Meta') return;
@@ -102,11 +116,22 @@ export function Welkomstanimatie() {
     window.addEventListener('keydown', opToets, true);
     laag.addEventListener('pointerdown', opKlik);
 
+    // Effect opgeruimd (unmount of de dubbele run in development) vóórdat GSAP binnen was: niet meer bouwen.
+    let geannuleerd = false;
+    import('gsap').then(
+      ({ gsap }) => {
+        if (!geannuleerd && !klaar) bouw(gsap);
+      },
+      () => {
+        // Laden mislukt (bv. netwerk): het vlak meteen weghalen in plaats van op de noodfade te wachten.
+        if (!geannuleerd) afronden();
+      }
+    );
+
     return () => {
+      geannuleerd = true;
       weg();
-      ctx.revert();
-      for (const el of [main, rail]) if (el) gsap.set(el, { clearProps: 'opacity,transform' });
-      laag.removeAttribute('data-bezig');
+      opruimen();
       if (!klaar) shell.classList.remove('sl-welkom-aan');
     };
   }, []);

@@ -61,7 +61,17 @@ const nextConfig: NextConfig = {
       {
         source: '/((?!brand/).*)',
         headers: [{ key: 'Cross-Origin-Resource-Policy', value: 'same-origin' }]
-      }
+      },
+      // Losse shell- en social-bestanden met een versie (?v=<commit>, lib/shell/versie.ts) lang
+      // in de browser bewaren: geen herbevestiging (en voor /social/app.* geen proxy- en
+      // databaserondgang) bij elke paginalading. Alleen MET ?v=: een kale URL houdt het
+      // standaardgedrag, zodat oude code nooit blijft hangen. "private": niet in gedeelde caches
+      // (social/app.* staat achter de sessiecontrole).
+      ...['/shell/:file(shell\\.js|shell\\.css)', '/social/:file(app\\.js|app\\.css)'].map((source) => ({
+        source,
+        has: [{ type: 'query' as const, key: 'v' }],
+        headers: [{ key: 'Cache-Control', value: 'private, max-age=31536000, immutable' }]
+      }))
     ];
   },
   // De facturenschermen staan sinds het dashboard onder /facturen. Oude bookmarks

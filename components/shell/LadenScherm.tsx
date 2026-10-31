@@ -15,8 +15,9 @@ import { useTeam } from '@/components/team/TeamProvider';
 
 // Laadscherm bij het wisselen van pagina (de loading.tsx-bestanden in app/(app)). Per pad
 // staat hier precies dezelfde kop als op de echte pagina — label, titel, subnavigatie en de
-// knoppen rechts — op dezelfde plek en met dezelfde container eronder (zodat .sl-main:has()
-// dezelfde breedte kiest en de kop niet verschuift). Alleen de inhoud is een skelet.
+// knoppen rechts — op dezelfde plek en met dezelfde container eronder (zelfde klasse, dus
+// dezelfde marges en verticale ruimte; de breedte is op elke pagina gelijk, zie app.css
+// "Inhoudsbreedte"). Alleen de inhoud is een skelet.
 // Wat pas met de gegevens bekend is (bv. de naam van een klant) is een grijs balkje in
 // hetzelfde formaat. De knoppen zijn hier stille kopieën: ze werken pas als de pagina er is.
 //
