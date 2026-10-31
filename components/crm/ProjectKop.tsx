@@ -5,10 +5,10 @@ import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { agendaApi } from '@/lib/agenda/client';
 import type { Project, ProjectInvoer } from '@/lib/agenda/types';
-import { KlantKiezer } from '@/components/agenda/KlantKiezer';
 import { useToast } from '@/components/agenda/Toast';
 import { VoorWieKiezer } from '@/components/taken/VoorWieKiezer';
 import { InlineTitel } from './InlineVeld';
+import { ProjectKlantKiezer } from './ProjectKlantKiezer';
 import { DeadlineBadge } from './ProjectRegels';
 import { Voortgang } from './StatusPil';
 
@@ -17,12 +17,12 @@ type Klant = { id: string; naam: string } | null;
 function useProjectWijzigen(projectId: string) {
   const router = useRouter();
   const toast = useToast();
-  return async (b: ProjectInvoer, melding?: string): Promise<boolean> => {
+  return async (b: ProjectInvoer & { klantNaam?: string }, melding?: string): Promise<Klant | false> => {
     try {
-      await agendaApi.wijzigProject(projectId, b);
-      if (melding) toast(melding);
+      const r = await agendaApi.wijzigProject(projectId, b);
+      if (melding) toast(r.klantAangemaakt ? `Nieuwe klant ${r.klantAangemaakt.naam} aangemaakt en gekoppeld` : melding);
       router.refresh();
-      return true;
+      return r.project.klantId ? { id: r.project.klantId, naam: r.project.klantNaam ?? 'Klant' } : null;
     } catch (e) {
       toast(e instanceof Error ? e.message : 'Niet gelukt.', { fout: true });
       return false;
@@ -33,7 +33,7 @@ function useProjectWijzigen(projectId: string) {
 /** De projectnaam als paginatitel, direct te hernoemen. */
 export function ProjectTitel({ id, naam }: { id: string; naam: string }) {
   const wijzig = useProjectWijzigen(id);
-  return <InlineTitel key={naam} waarde={naam} label="Projectnaam" max={120} onBewaar={(v) => wijzig({ naam: v }, 'Naam opgeslagen')} />;
+  return <InlineTitel key={naam} waarde={naam} label="Projectnaam" max={120} onBewaar={async (v) => (await wijzig({ naam: v }, 'Naam opgeslagen')) !== false} />;
 }
 
 /**
@@ -54,13 +54,19 @@ export function ProjectKop({ project, vandaag }: { project: Project; vandaag: st
         <dt>Klant</dt>
         <dd>
           {klantKiezen ? (
-            <KlantKiezer
+            // Bestaande klant kiezen of een nieuwe naam typen: die klant wordt dan aangemaakt
+            // (status actief) en staat daarna onder Klanten.
+            <ProjectKlantKiezer
               waarde={klant}
               onChange={async (k) => {
                 const oud = klant;
-                setKlant(k);
+                setKlant(k && k.id ? { id: k.id, naam: k.naam } : null);
                 setKlantKiezen(false);
-                if (!(await wijzig({ klantId: k?.id ?? null }, k ? `Gekoppeld aan ${k.naam}` : 'Klant losgekoppeld'))) setKlant(oud);
+                const r = await wijzig(
+                  k ? (k.id ? { klantId: k.id } : { klantNaam: k.naam }) : { klantId: null },
+                  k ? `Gekoppeld aan ${k.naam}` : 'Klant losgekoppeld'
+                );
+                setKlant(r === false ? oud : r);
               }}
             />
           ) : (
@@ -85,7 +91,7 @@ export function ProjectKop({ project, vandaag }: { project: Project; vandaag: st
               const oud = deadline;
               const d = e.target.value;
               setDeadline(d);
-              if (!(await wijzig({ deadline: d || null }))) setDeadline(oud);
+              if ((await wijzig({ deadline: d || null })) === false) setDeadline(oud);
             }}
           />
           <DeadlineBadge project={{ deadline: deadline || null, status: project.status }} vandaag={vandaag} />
@@ -113,7 +119,7 @@ export function ProjectKop({ project, vandaag }: { project: Project; vandaag: st
             onChange={async (ids) => {
               const oud = eigenaren;
               setEigenaren(ids);
-              if (!(await wijzig({ eigenaren: ids }))) setEigenaren(oud);
+              if ((await wijzig({ eigenaren: ids })) === false) setEigenaren(oud);
             }}
           />
         </dd>

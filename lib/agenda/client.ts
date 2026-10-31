@@ -113,8 +113,8 @@ export const agendaApi = {
   projecten: (status: 'lopend' | 'afgerond' | 'alle' = 'lopend') =>
     api<{ projecten: Project[] }>(`/api/projecten${qs({ status })}`),
   maakProject: (b: ProjectInvoer) => api<{ project: Project; klantWeerActief?: boolean }>('/api/projecten', { method: 'POST', body: body(b) }),
-  wijzigProject: (id: string, b: ProjectInvoer) =>
-    api<{ project: Project }>(`/api/projecten/${id}`, { method: 'PATCH', body: body(b) })
+  wijzigProject: (id: string, b: ProjectInvoer & { klantNaam?: string }) =>
+    api<{ project: Project; klantAangemaakt?: { id: string; naam: string } | null }>(`/api/projecten/${id}`, { method: 'PATCH', body: body(b) })
 };
 
 export interface KlantSuggestie {
