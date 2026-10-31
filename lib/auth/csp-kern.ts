@@ -8,8 +8,10 @@
 //   niet. Geen 'unsafe-inline' en (behalve in development) geen 'unsafe-eval'.
 // - style-src 'unsafe-inline': React-stijlattributen en de social-HTML gebruiken inline
 //   stijlen; CSS kan geen scripts starten. Google Fonts (Manrope) mag.
-// - connect-src: de eigen API en Supabase (uploads via signed URL's gaan rechtstreeks naar
-//   Supabase Storage).
+// - connect-src: de eigen API, Supabase (uploads via signed URL's gaan rechtstreeks naar
+//   Supabase Storage) en de upload-API van Google Drive: de server opent een resumable
+//   upload-sessie en de browser stuurt het bestand (factuur-/prijsopgave-PDF, bestanden)
+//   rechtstreeks naar die sessie-URL. Alleen het pad /upload/drive/, geen andere Google-API's.
 // - frame-src: eigen iframes (PDF-voorbeelden, social-slides), blob: en Supabase (signed URL
 //   van een bonnetje-PDF). frame-ancestors 'self': nooit in een frame van een ander domein.
 
@@ -33,7 +35,7 @@ export function bouwCsp(o: { nonce: string; supabaseUrl?: string; dev?: boolean 
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
     "img-src 'self' data: blob: https:",
     "font-src 'self' data: https://fonts.gstatic.com",
-    `connect-src 'self'${sbHttps}${sb ? ` ${sb.wss}` : ''}${o.dev ? ' ws: wss:' : ''}`,
+    `connect-src 'self'${sbHttps}${sb ? ` ${sb.wss}` : ''} https://www.googleapis.com/upload/drive/${o.dev ? ' ws: wss:' : ''}`,
     "media-src 'self' blob:",
     `frame-src 'self' blob: data:${sbHttps}`,
     "worker-src 'self' blob:",
