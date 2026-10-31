@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { agendaApi, useNu } from '@/lib/agenda/client';
 import { DAGNAMEN_KORT, dagDelen, inAmsterdam, korteDag, plusDagen, weekdagIndex, type Dag } from '@/lib/agenda/datum';
-import { afspraakRaakt, blokkenOpDag, indelen, isBalk, tijdvak } from '@/lib/agenda/weergave';
+import { afspraakRaakt, blokkenOpDag, isBalk, tijdvak } from '@/lib/agenda/weergave';
 import type { Afspraak, Taak } from '@/lib/agenda/types';
 import { Afvinker, TaakRij } from '@/components/agenda/TaakRij';
 import { useAfvinken } from '@/components/agenda/useAfvinken';
@@ -155,10 +155,19 @@ export function Planning({
   );
 }
 
-// ---------- Vandaag: tijdlijn ----------
+// ---------- Vandaag: compacte dagagenda ----------
 
-const UUR_PX = 34;
+/** Minuten sinds middernacht als "09:30" (1440 = "24:00"). */
+function hhmm(min: number): string {
+  return `${String(Math.floor(min / 60)).padStart(2, '0')}:${String(min % 60).padStart(2, '0')}`;
+}
 
+/**
+ * Vandaag: een compacte lijst op tijd (geen uurrooster van 07–20 uur meer, dat maakte de
+ * kaart ruim 450px hoog en liet rechts in de grid een leeg vak). Afspraken krijgen het
+ * zandkleurige accent; de lopende of eerstvolgende afspraak staat er met "Nu"/"Straks" bij,
+ * zodat meteen duidelijk is dat er vandaag een afspraak is.
+ */
 function VandaagKaart({
   vandaag,
   nu,
@@ -175,19 +184,23 @@ function VandaagKaart({
   onOpen: (id: string) => void;
 }) {
   const blokken = blokkenOpDag(vandaag, data.taken, data.afspraken);
-  const lanes = indelen(blokken);
   const balken = data.afspraken.filter((a) => isBalk(a) && afspraakRaakt(a, vandaag));
   const losse = data.taken.filter((t) => t.datum === vandaag && !t.tijd);
   const leeg = !blokken.length && !balken.length && !losse.length;
-
-  // Venster 07–20 uur, uitgerekt als er eerder of later iets staat.
-  const vanUur = Math.min(7, ...blokken.map((b) => Math.floor(b.start / 60)));
-  const totUur = Math.max(20, ...blokken.map((b) => Math.ceil(b.eind / 60)));
-  const uren = totUur - vanUur;
   const nuMin = nu ? inAmsterdam(nu).minuten : null;
 
+  const afspraken = blokken.filter((b) => b.soort === 'afspraak').length + balken.length;
+  // Lopende of eerstvolgende afspraak (op de server, zonder klok: de eerste van de dag).
+  const uitgelicht = blokken.find((b) => b.soort === 'afspraak' && (nuMin === null || b.eind > nuMin));
+  const label = afspraken ? `Vandaag · ${afspraken} ${afspraken === 1 ? 'afspraak' : 'afspraken'}` : 'Vandaag';
+
   return (
-    <Kaart label="Vandaag" href={`/agenda?dag=${vandaag}`} linkTekst="Agenda" className="db-breed db-vandaag">
+    <Kaart
+      label={label}
+      href={`/agenda?dag=${vandaag}`}
+      linkTekst="Agenda"
+      className={`db-breed db-vandaag${afspraken ? ' heeft-afspraak' : ''}`}
+    >
       {leeg ? (
         <KaartMelding
           titel="Nog niets gepland voor vandaag"
@@ -202,60 +215,49 @@ function VandaagKaart({
       ) : (
         <>
           {blokken.length > 0 && (
-            <div className="db-tijdlijn" style={{ height: uren * UUR_PX }}>
-              <div className="db-tijdlijn-uren" aria-hidden="true">
-                {Array.from({ length: uren + 1 }, (_, i) => (
-                  <span key={i} style={{ top: i * UUR_PX }}>
-                    {String(vanUur + i).padStart(2, '0')}:00
-                  </span>
-                ))}
-              </div>
-              <div className="db-tijdlijn-baan">
-                {blokken.map((b) => {
-                  const lane = lanes.get(`${b.soort}:${b.id}`) ?? { kolom: 0, kolommen: 1 };
-                  const top = ((b.start - vanUur * 60) / 60) * UUR_PX;
-                  const hoogte = Math.max(((b.eind - b.start) / 60) * UUR_PX, 22);
-                  const stijl: React.CSSProperties = {
-                    top,
-                    height: hoogte,
-                    left: `calc(${(lane.kolom / lane.kolommen) * 100}% + 2px)`,
-                    width: `calc(${100 / lane.kolommen}% - 4px)`
-                  };
-                  const voorbij = nuMin !== null && b.eind <= nuMin;
-                  const tekst = (
-                    <>
-                      <span className="ag-blok-titel">{b.item.titel}</span>
-                      <span className="ag-blok-tijd">
-                        {b.soort === 'afspraak' ? tijdvak(b.item) : b.item.tijd}
-                        {b.soort === 'afspraak' && b.item.locatie ? ` · ${b.item.locatie}` : ''}
-                        {b.item.klantNaam ? ` · ${b.item.klantNaam}` : ''}
-                      </span>
-                    </>
-                  );
-                  return (
-                    <div
-                      key={`${b.soort}:${b.id}`}
-                      className={`ag-blok ag-blok-${b.soort}${b.soort === 'taak' && b.item.afgerond ? ' is-af' : ''}${voorbij ? ' is-voorbij' : ''}${hoogte < 38 ? ' is-kort' : ''}`}
-                      style={stijl}
-                    >
-                      {b.soort === 'taak' && <Afvinker taak={b.item} onToggle={onToggle} klein />}
-                      {b.soort === 'taak' ? (
-                        <button type="button" className="ag-blok-tekst" onClick={() => onOpen(b.id)}>
+            <ul className="db-dag">
+              {blokken.map((b) => {
+                const voorbij = nuMin !== null && b.eind <= nuMin;
+                const bezig = nuMin !== null && b.start <= nuMin && nuMin < b.eind;
+                const isUit = uitgelicht === b;
+                const meta = [
+                  b.soort === 'afspraak' ? b.item.locatie : null,
+                  b.item.klantNaam
+                ].filter(Boolean).join(' · ');
+                const tekst = (
+                  <>
+                    <span className="db-dag-tijd">
+                      <span className="db-dag-van">{hhmm(b.start)}</span>
+                      {b.soort === 'afspraak' && <span className="db-dag-tot">{hhmm(b.eind)}</span>}
+                    </span>
+                    <span className="db-dag-hoofd">
+                      <span className="db-dag-titel">{b.item.titel}</span>
+                      {meta && <span className="db-dag-meta">{meta}</span>}
+                    </span>
+                    {isUit && <span className="db-dag-badge">{bezig ? 'Nu' : 'Straks'}</span>}
+                  </>
+                );
+                return (
+                  <li
+                    key={`${b.soort}:${b.id}`}
+                    className={`db-dag-item db-dag-${b.soort}${b.soort === 'taak' && b.item.afgerond ? ' is-af' : ''}${voorbij ? ' is-voorbij' : ''}${isUit ? ' is-uitgelicht' : ''}`}
+                  >
+                    {b.soort === 'taak' ? (
+                      <>
+                        <Afvinker taak={b.item} onToggle={onToggle} klein />
+                        <button type="button" className="db-dag-rij" onClick={() => onOpen(b.id)}>
                           {tekst}
                         </button>
-                      ) : (
-                        <Link className="ag-blok-tekst" href={`/agenda?dag=${vandaag}&afspraak=${b.id}`}>
-                          {tekst}
-                        </Link>
-                      )}
-                    </div>
-                  );
-                })}
-                {nuMin !== null && nuMin >= vanUur * 60 && nuMin <= totUur * 60 && (
-                  <div className="ag-nu" style={{ top: ((nuMin - vanUur * 60) / 60) * UUR_PX }} aria-hidden="true" />
-                )}
-              </div>
-            </div>
+                      </>
+                    ) : (
+                      <Link className="db-dag-rij" href={`/agenda?dag=${vandaag}&afspraak=${b.id}`}>
+                        {tekst}
+                      </Link>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
           )}
           {(balken.length > 0 || losse.length > 0) && (
             <div className="db-zonder-tijd">

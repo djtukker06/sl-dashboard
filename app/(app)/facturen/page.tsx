@@ -98,27 +98,6 @@ export default async function FacturenOverzichtPage({
 
   return (
     <div className="wrap">
-      <div className="topbar">
-        <Link href="/" className="wordmark">
-          Studio <span>Levant</span>
-        </Link>
-        <nav>
-          <Link href="/facturen/nieuwe-factuur">Nieuwe factuur</Link>
-          <Link href="/facturen/prijsopgaven">Prijsopgaven</Link>
-        </nav>
-      </div>
-
-      <div className="hero">
-        <h1>Factuur overzicht Studio Levant</h1>
-        <p>
-          Overzicht van alle facturen van Studio Levant. Maak hier een nieuwe factuur aan,
-          of bekijk en verwijder een bestaande.
-        </p>
-        <Link href="/facturen/nieuwe-factuur" className="btn-pil">
-          + Nieuwe factuur
-        </Link>
-      </div>
-
       {jaren.length > 1 && (
         <div className="jaar-keuze">
           {jaren.map((j) => (

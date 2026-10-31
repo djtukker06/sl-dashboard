@@ -1,24 +1,18 @@
 import type { Metadata } from 'next';
-import Link from 'next/link';
-import { BoekhoudingKop } from '@/components/boekhouding/BoekhoudingKop';
+import { FacturenKop } from '@/components/boekhouding/FacturenKop';
 
 export const metadata: Metadata = {
-  title: 'Factuur overzicht Studio Levant'
+  title: 'Facturen · Studio Levant'
 };
 
 // Facturen hoort bij de tab Boekhouding: dezelfde 96px-kop als de andere modules (label
-// "Boekhouding") met de subnavigatie Overzicht · Facturen · Bonnetjes. De schermen zelf
-// blijven ongewijzigd; de eigen tekst-wordmark wordt binnen de shell verborgen (zie app.css).
+// "Boekhouding") met de subnavigatie Overzicht · Facturen · Bonnetjes. Titel en knoppen per
+// scherm staan in FacturenKop; de schermen zelf hebben geen eigen wordmark of grote titel.
+// De kop staat in de layout, zodat hij bij wisselen tussen facturenschermen blijft staan.
 export default function FacturenLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <>
-      <BoekhoudingKop
-        titel={
-          <Link href="/facturen" className="sl-kop-link">
-            Facturen
-          </Link>
-        }
-      />
+      <FacturenKop />
       {children}
     </>
   );

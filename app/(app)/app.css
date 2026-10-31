@@ -43,10 +43,13 @@
 .sl-kop-link:hover { color: var(--sl-sand); }
 .sl-kop-link:focus-visible { outline: 2px solid var(--sl-focus); outline-offset: 3px; border-radius: 2px; }
 
-/* Facturen binnen de shell: de eigen tekst-wordmark is dubbel naast het rail-logo en de
-   modulekop; verbergen en de topbar-navigatie rechts laten staan. Inhoud blijft gelijk. */
-.sl-main .topbar .wordmark { display: none; }
-.sl-main .topbar { justify-content: flex-end; }
+/* Facturen binnen de shell: de schermen hebben geen eigen wordmark, topbar of grote titel
+   meer (FacturenKop in facturen/layout.tsx); de inhoud begint op dezelfde afstand onder de
+   kop als op de andere pagina's. De subkop van een formulier (← Overzicht · Nieuwe factuur)
+   staat dan direct bovenaan. */
+.sl-main > .wrap { padding-top: 32px; }
+.sl-main > .wrap > .app-header { padding-top: 0; }
+.sl-main > .wrap > .sl-laden-blok { padding-top: 0; }
 
 /* ---------- knoppen (zelfde vorm als .btn in social) ---------- */
 .db-knop {
@@ -155,12 +158,16 @@
 .db-skelet-groot { height: 34px; width: 55%; margin-bottom: 6px; }
 @keyframes db-glans { from { background-position: 100% 0; } to { background-position: -100% 0; } }
 
-/* Laadscherm bij het wisselen van tabblad (app/(app)/loading.tsx). */
-.sl-laden { min-height: 100vh; background: var(--sl-bg); }
-.sl-laden .sl-kop-tekst { display: grid; gap: 10px; min-width: 240px; }
-.sl-laden-label { width: 90px; height: 10px; }
-.sl-laden-titel { width: 220px; margin: 0; }
-.sl-laden-inhoud { display: grid; gap: 14px; max-width: 1240px; margin-inline: auto; padding: 32px var(--sl-gutter, 40px); }
+/* Laadscherm bij het wisselen van pagina (components/shell/LadenScherm.tsx): de echte kop
+   met alleen een skelet als inhoud. Balkjes in de kop zijn inline-block binnen de label- en
+   titelregel, zodat die regels (en dus de 96px-kop) precies even hoog blijven. */
+.sl-laden-label { display: inline-block; vertical-align: middle; width: 140px; height: 10px; }
+.sl-laden-titel { display: inline-block; vertical-align: middle; width: min(260px, 60vw); height: 0.9em; margin: 0; }
+.sl-laden-knop { pointer-events: none; cursor: default; }
+/* Inhoud zonder eigen container (mail, agenda, scratchpad): uitgelijnd met de kop. */
+.sl-laden-inhoud { padding: 32px var(--sl-uitlijn, 40px); }
+.sl-laden-blok { display: grid; gap: 14px; padding-block: 32px; grid-column: 1 / -1; }
+.sl-laden-inhoud > .sl-laden-blok { padding-block: 0; }
 
 /* ---------- facturen ---------- */
 .db-omzet { display: grid; gap: 4px; }
@@ -403,6 +410,11 @@
    gecentreerd; instellingen smaller. */
 .sl-main:has(.bh-inhoud) { --sl-inhoud: 1320px; }
 .sl-main:has(.bh-instellingen) { --sl-inhoud: 1060px; }
+/* Scratchpad: lijst + notitie gecentreerd in dezelfde breedte als het dashboard, zodat de
+   kop (label, titel, knop) en de lijst eronder op één lijn staan zoals op de andere modules. */
+.sl-main:has(.sp),
+.sl-main:has(.sp-setup),
+.sl-main:has(.sp-laadscherm) { --sl-inhoud: 1440px; }
 /* Account: formulieren, smal en gecentreerd (inhoud 860px zoals voorheen). */
 .sl-main:has(.ac-inhoud) { --sl-inhoud: 940px; }
 /* Facturen: eigen .wrap (globals.css, 980px, padding 24px) staat al gecentreerd; de kop en
@@ -435,6 +447,16 @@
 .sl-main .sl-kop,
 .sl-main .bh-tabs,
 .sl-main .ug-tabs { padding-inline: var(--sl-uitlijn); }
+/* Scratchpad: de twee panelen vullen de hoogte onder de kop; links en rechts dezelfde
+   marge als de kop, met een rand zodat het blok als één vlak leest. Smal (≤ 960px, één
+   paneel) blijft het over de volle breedte, de lijst heeft daar zelf zijn 16px. */
+.sl-main .sp {
+  margin-inline: var(--sl-uitlijn);
+  border-inline: 1px solid var(--sl-line);
+}
+@media (max-width: 960px) {
+  .sl-main .sp { margin-inline: 0; border-inline: 0; }
+}
 
 @media (max-width: 720px) {
   .sl-main { --sl-gutter: 16px; }

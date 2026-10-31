@@ -25,20 +25,11 @@ export default async function FactuurBewerkenPage({
 
   return (
     <div className="wrap">
-      <div className="topbar">
-        <Link href="/" className="wordmark">
-          Studio <span>Levant</span>
-        </Link>
-        <nav>
-          <Link href="/facturen/nieuwe-factuur">Nieuwe factuur</Link>
-        </nav>
-      </div>
-
       <header className="app-header">
         <Link href="/facturen" className="terug">
           &larr; Overzicht
         </Link>
-        <h1>Factuur {factuur.invoice_number} aanpassen</h1>
+        <h2>Factuur {factuur.invoice_number} aanpassen</h2>
         <span className="factuurnummer-preview">
           <a href={`/api/invoices/${id}/pdf`} target="_blank" rel="noreferrer">
             Huidige PDF bekijken

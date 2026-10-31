@@ -36,20 +36,11 @@ export default async function KlantDetailPage({
 
   return (
     <div className="wrap">
-      <div className="topbar">
-        <Link href="/" className="wordmark">
-          Studio <span>Levant</span>
-        </Link>
-        <nav>
-          <Link href="/facturen/nieuwe-factuur">Nieuwe factuur</Link>
-        </nav>
-      </div>
-
       <div className="app-header">
         <Link href="/facturen" className="terug">
           &larr; Alle klanten
         </Link>
-        <h1>{klant.company_name}</h1>
+        <h2>{klant.company_name}</h2>
         {/* Klanten & projecten: contact, status, notities, projecten en taken van deze klant. */}
         <Link href={`/klanten/${klant.id}`} className="terug">
           Klantpagina (contact, notities, projecten) &rarr;

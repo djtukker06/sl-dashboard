@@ -321,7 +321,7 @@ a { color: inherit; }
   margin-bottom: 28px;
   flex-wrap: wrap;
 }
-.app-header h1 { font-size: 22px; margin: 0; font-weight: 800; text-transform: uppercase; letter-spacing: 0.01em; }
+.app-header h1, .app-header h2 { font-size: 22px; margin: 0; font-weight: 800; text-transform: uppercase; letter-spacing: 0.01em; }
 .terug { color: var(--cream-dim); text-decoration: none; font-size: 13px; }
 .terug:hover { color: var(--cream); }
 .factuurnummer-preview { margin-left: auto; font-size: 13px; color: var(--cream-dim); font-variant-numeric: tabular-nums; }
