@@ -1,6 +1,6 @@
 /* ==========================================================
    Studio Levant — agenda & taken (ag-) en de planning-widgets
-   op het dashboard (db-snel, db-tijdlijn, db-week).
+   op het dashboard (db-snel, db-dag, db-week).
    Tokens: public/shell/shell.css (--sl-*). Knoppen/kaarten: app.css (db-).
    ========================================================== */
 
@@ -874,26 +874,65 @@ input.ag-snel-veld {
 .db-snel .ag-snel-rij { background: var(--sl-panel); padding-left: 18px; }
 .db-snel input.ag-snel-veld { font-size: 16px; padding: 12px 0; }
 .db-skelet-invoer { height: 58px; border-radius: var(--sl-r); }
-.db-tijdlijn { position: relative; display: grid; grid-template-columns: 48px minmax(0, 1fr); }
-.db-tijdlijn-uren { position: relative; }
-.db-tijdlijn-uren span {
-  position: absolute;
-  left: 0;
-  transform: translateY(-50%);
+/* Vandaag: compacte dagagenda (tijd · titel), afspraken met het zandkleurige accent. */
+.db-dag { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.db-dag-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 0 4px 0 10px;
+  border: 1px solid var(--sl-line-soft);
+  border-radius: var(--sl-r);
+  transition: background-color .2s var(--sl-ease), border-color .2s var(--sl-ease), opacity .2s var(--sl-ease);
+}
+.db-dag-afspraak { background: var(--sl-raise); border-left: 2px solid var(--sl-sand); }
+.db-dag-item:hover { background: var(--sl-hover); }
+.db-dag-item.is-voorbij { opacity: .55; }
+.db-dag-item.is-af .db-dag-titel { text-decoration: line-through; color: var(--sl-muted); }
+.db-dag-item.is-uitgelicht { border-color: var(--sl-sand); }
+.db-dag-rij {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+  padding: 9px 6px 9px 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  text-align: left;
+  color: inherit;
+  text-decoration: none;
+  cursor: pointer;
+  border-radius: 2px;
+}
+.db-dag-rij:focus-visible { outline: none; box-shadow: var(--sl-focus); }
+.db-dag-tijd { flex: 0 0 44px; display: grid; gap: 1px; font-family: var(--sl-mono); font-variant-numeric: tabular-nums; }
+.db-dag-van { font-size: 13px; color: var(--sl-text); }
+.db-dag-tot { font-size: 10px; color: var(--sl-faint); }
+.db-dag-hoofd { flex: 1; display: grid; gap: 2px; min-width: 0; }
+.db-dag-titel { font-size: 14px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.db-dag-afspraak .db-dag-titel { font-weight: 600; }
+.db-dag-rij:hover .db-dag-titel { text-decoration: underline; text-underline-offset: 3px; }
+.db-dag-meta { font-size: 12px; color: var(--sl-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.db-dag-badge {
+  flex: 0 0 auto;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--sl-sand);
+  color: var(--sl-dark);
   font-family: var(--sl-mono);
   font-size: 10px;
-  color: var(--sl-faint);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
-.db-tijdlijn-uren span:first-child { transform: none; }
-.db-tijdlijn-baan {
-  position: relative;
-  border-left: 1px solid var(--sl-line-soft);
-  background-image: repeating-linear-gradient(to bottom, var(--sl-line-soft) 0, var(--sl-line-soft) 1px, transparent 1px, transparent 34px);
-}
-.db-tijdlijn .ag-blok { cursor: default; touch-action: auto; user-select: auto; }
-.db-tijdlijn .ag-blok-tekst { flex: 1; }
-.db-tijdlijn .ag-blok-afspraak .ag-blok-tekst:hover .ag-blok-titel,
-.db-tijdlijn .ag-blok-taak .ag-blok-tekst:hover .ag-blok-titel { text-decoration: underline; text-underline-offset: 3px; }
+/* Kaartkop "Vandaag · 1 afspraak" in zand: opvallend zonder de kaart groter te maken. */
+.db-vandaag.heeft-afspraak .db-label { color: var(--sl-sand); }
+
+/* Rechterkolom vult de rijhoogte: de laatste kaart in de stapel rekt mee, zodat er naast een
+   hogere Vandaag- of Takenkaart geen leeg vak overblijft. */
+.db-grid > .db-stapel > .db-kaart:last-child { flex: 1; }
 .db-zonder-tijd { display: grid; gap: 8px; }
 .ag-balk-stip { flex: 0 0 auto; width: 14px; height: 14px; margin: 3px 2px 0; border-left: 2px solid var(--sl-sand); background: var(--sl-raise); border-radius: 2px; }
 

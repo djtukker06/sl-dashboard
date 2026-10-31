@@ -31,20 +31,11 @@ export default async function NieuwePrijsopgavePage() {
 
   return (
     <div className="wrap">
-      <div className="topbar">
-        <Link href="/" className="wordmark">
-          Studio <span>Levant</span>
-        </Link>
-        <nav>
-          <Link href="/facturen/prijsopgaven">Prijsopgaven</Link>
-        </nav>
-      </div>
-
       <header className="app-header">
         <Link href="/facturen/prijsopgaven" className="terug">
           &larr; Prijsopgaven
         </Link>
-        <h1>Nieuwe prijsopgave</h1>
+        <h2>Nieuwe prijsopgave</h2>
       </header>
 
       <InvoiceForm

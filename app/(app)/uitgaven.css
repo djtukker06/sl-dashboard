@@ -853,8 +853,6 @@ button.ug-kwartaal:hover { border-color: #4a4847; }
   .facturen-tabel .bewerk-link { display: inline-flex; align-items: center; min-height: 40px; padding-inline: 18px; }
   .facturen-tabel .verwijder-link { display: inline-grid; place-items: center; min-width: 44px; min-height: 40px; font-size: 22px; }
 
-  /* Kopregel en topbar-links boven de lijsten: grotere tikvlakken. */
+  /* Kopregel boven de lijsten: groter tikvlak. */
   .sl-kop-link { display: inline-flex; align-items: center; min-height: 40px; }
-  .topbar nav { flex-wrap: wrap; gap: 4px 16px; }
-  .topbar nav a { display: inline-flex; align-items: center; min-height: 40px; }
 }

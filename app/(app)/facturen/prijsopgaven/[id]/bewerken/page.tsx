@@ -31,20 +31,11 @@ export default async function PrijsopgaveBewerkenPage({
 
   return (
     <div className="wrap">
-      <div className="topbar">
-        <Link href="/" className="wordmark">
-          Studio <span>Levant</span>
-        </Link>
-        <nav>
-          <Link href="/facturen/prijsopgaven/nieuw">Nieuwe prijsopgave</Link>
-        </nav>
-      </div>
-
       <header className="app-header">
         <Link href="/facturen/prijsopgaven" className="terug">
           &larr; Prijsopgaven
         </Link>
-        <h1>{titel}</h1>
+        <h2>{titel}</h2>
         <span className="factuurnummer-preview">
           <a href={`/api/quotes/${id}/pdf`} target="_blank" rel="noreferrer">
             Huidige PDF bekijken
