@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import { ClientEditForm, type KlantRecord } from '@/components/ClientEditForm';
+import { PdfDownloadKnop } from '@/components/PdfDownloadKnop';
 import { formatDatumNL, formatEuro } from '@/lib/format';
 import { vereisTeamlidPagina } from '@/lib/auth/team';
 
@@ -65,6 +66,7 @@ export default async function KlantDetailPage({
               <span className="factuur-meta">
                 {formatDatumNL(new Date(factuur.issued_at))} &middot; &euro; {formatEuro(factuur.total)}
               </span>
+              <PdfDownloadKnop href={`/api/invoices/${factuur.id}/pdf`} label={`Factuur ${factuur.invoice_number} downloaden`} />
             </li>
           ))}
         </ul>

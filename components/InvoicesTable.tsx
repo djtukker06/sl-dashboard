@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { PdfDownloadKnop } from './PdfDownloadKnop';
 import { useTransition } from 'react';
 import { deleteInvoice } from '@/app/actions/invoices';
 import { formatDatumNL, formatEuro } from '@/lib/format';
@@ -93,6 +94,7 @@ export function InvoicesTable({
               <td>{formatDatumNL(new Date(f.issued_at))}</td>
               <td className="bedrag">&euro; {formatEuro(f.total)}</td>
               <td className="acties-col">
+                <PdfDownloadKnop href={`/api/invoices/${f.id}/pdf`} label={`Factuur ${f.invoice_number} downloaden`} />
                 <Link href={`/facturen/${f.id}/bewerken`} className="bewerk-link">
                   Aanpassen
                 </Link>

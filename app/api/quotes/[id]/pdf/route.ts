@@ -37,6 +37,9 @@ export async function GET(
   }
 
   return new NextResponse(new Uint8Array(await bestand.arrayBuffer()), {
-    headers: pdfHeaders(veiligeBestandsnaam(prijsopgave.name || '', 'Prijsopgave'))
+    headers: pdfHeaders(
+      veiligeBestandsnaam(prijsopgave.name || '', 'Prijsopgave'),
+      new URL(request.url).searchParams.get('download') === '1'
+    )
   });
 }

@@ -21,12 +21,13 @@ export function veiligeBestandsnaam(naam: string, terugval: string): string {
 }
 
 // "inline" houdt het gedrag zoals het was: de PDF opent gewoon in de browser, en bij
-// opslaan staat de juiste naam er al klaar.
-export function pdfHeaders(bestandsnaam: string): HeadersInit {
+// opslaan staat de juiste naam er al klaar. Met download (de downloadknop in de lijsten,
+// ?download=1) wordt het "attachment": de browser slaat de PDF direct op.
+export function pdfHeaders(bestandsnaam: string, download = false): HeadersInit {
   const asciiNaam = bestandsnaam.replace(/[^ -~]/g, '_');
   return {
     'Content-Type': 'application/pdf',
-    'Content-Disposition': `inline; filename="${asciiNaam}"; filename*=UTF-8''${encodeURIComponent(bestandsnaam)}`,
+    'Content-Disposition': `${download ? 'attachment' : 'inline'}; filename="${asciiNaam}"; filename*=UTF-8''${encodeURIComponent(bestandsnaam)}`,
     'Cache-Control': 'private, no-store'
   };
 }
