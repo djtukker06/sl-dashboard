@@ -53,7 +53,6 @@ export interface TaakDetail extends Taak {
  * 'actief' → 'bezig', 'gearchiveerd' → 'afgerond' (vóór 0022).
  */
 export type ProjectStatus = 'voorbereiding' | 'bezig' | 'wachten' | 'afgerond';
-export const PROJECT_STATUSSEN: ProjectStatus[] = ['voorbereiding', 'bezig', 'wachten', 'afgerond'];
 
 export interface Project {
   id: string;

@@ -24,8 +24,12 @@ export function QuotesTable({ quotes }: { quotes: QuoteRow[] }) {
 
   function handleDelete(id: string, omschrijving: string) {
     if (!confirm(`${omschrijving} definitief verwijderen?`)) return;
-    startTransition(() => {
-      deleteQuote(id);
+    startTransition(async () => {
+      try {
+        await deleteQuote(id);
+      } catch {
+        alert('Verwijderen is mislukt. Probeer het opnieuw.');
+      }
     });
   }
 

@@ -20,7 +20,8 @@ export async function POST(request: Request) {
   if ('antwoord' in toegang) return toegang.antwoord;
   const lid = toegang.lid;
 
-  const body: FactuurInvoerBody = await request.json();
+  // Geen of kapotte JSON: een leeg verzoek, dat de controle hieronder met een 400 weigert.
+  const body: FactuurInvoerBody = (await request.json().catch(() => null)) ?? {};
   const parsed = parsePrijsopgaveInvoer(body);
   if (!parsed.ok) {
     return NextResponse.json({ error: parsed.fout }, { status: 400 });

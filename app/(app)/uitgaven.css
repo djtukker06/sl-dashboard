@@ -33,18 +33,6 @@
 .ug-tab:hover { color: var(--sl-text); }
 .ug-tab.is-aan { color: var(--sl-text); }
 .ug-tab.is-aan::after { content: ""; position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; background: var(--sl-sand); }
-.ug-tab-teller {
-  min-width: 18px;
-  padding: 1px 5px;
-  border-radius: 999px;
-  background: var(--sl-sand);
-  color: var(--sl-dark);
-  font-size: 10px;
-  font-weight: 700;
-  line-height: 16px;
-  text-align: center;
-  letter-spacing: 0;
-}
 
 /* ---------- dropzone ---------- */
 .ug-drop {
@@ -108,11 +96,8 @@
 /* ---------- periode & filters ---------- */
 .ug-balk { display: grid; gap: 12px; }
 .ug-periode { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
-.ug-schuif, .ug-eigen { display: inline-flex; align-items: center; gap: 6px; }
-.ug-eigen .ag-veld { width: auto; padding: 7px 9px; }
-.ug-eigen > span { font-size: 13px; color: var(--sl-muted); }
+.ug-schuif { display: inline-flex; align-items: center; gap: 6px; }
 .ug-periode-label { min-width: 120px; text-align: center; font-size: 15px; font-weight: 700; text-transform: capitalize; }
-.ug-filters { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
 .ug-zoek {
   flex: 1 1 260px;
   display: flex;
@@ -132,65 +117,9 @@
 .ug-zoek input::placeholder { color: var(--sl-faint); }
 .ug-filter { width: auto; max-width: 220px; padding: 8px 10px; font-size: 13px; }
 
-/* ---------- totalen ---------- */
-.ug-totalen {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  margin: 0;
-  border-top: 1px solid var(--sl-line-soft);
-  border-bottom: 1px solid var(--sl-line-soft);
-}
-.ug-totalen > div { padding: 14px 0; }
-.ug-totalen > div + div { padding-left: 18px; border-left: 1px solid var(--sl-line-soft); }
-.ug-totalen dt { font-family: var(--sl-mono); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--sl-muted); }
-.ug-totalen dd { margin: 4px 0 0; font-size: 22px; font-weight: 500; font-variant-numeric: tabular-nums; }
-.ug-totalen-noot { margin-top: -10px; }
-
 /* ---------- lijst ---------- */
-.ug-lijst { display: grid; gap: 22px; }
 .ug-groep { display: grid; gap: 4px; }
 .ug-groep .ag-groep-kop { text-transform: uppercase; }
-.ug-rijen { list-style: none; margin: 0 -10px; padding: 0; display: grid; }
-.ug-rij {
-  display: grid;
-  grid-template-columns: 64px minmax(0, 1fr) auto auto;
-  align-items: center;
-  gap: 14px;
-  width: 100%;
-  padding: 10px;
-  border: 0;
-  border-radius: var(--sl-r);
-  background: transparent;
-  color: var(--sl-text);
-  font-family: var(--sl-font);
-  text-align: left;
-  cursor: pointer;
-  transition: background-color .2s var(--sl-ease);
-}
-.ug-rij:hover, .ug-rij.is-open { background: var(--sl-raise); }
-.ug-rij:focus-visible { outline: none; box-shadow: var(--sl-focus); }
-.ug-rij-datum { font-family: var(--sl-mono); font-size: 11px; letter-spacing: 0.04em; color: var(--sl-muted); white-space: nowrap; }
-.ug-rij-hoofd { display: grid; gap: 3px; min-width: 0; }
-.ug-rij-titel { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 14px; font-weight: 500; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.ug-rij-meta { font-size: 12.5px; color: var(--sl-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ug-onbekend { font-style: normal; color: var(--sl-faint); }
-.ug-rij-status {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 3px 9px;
-  border: 1px solid var(--sl-line);
-  border-radius: 999px;
-  font-family: var(--sl-mono);
-  font-size: 9.5px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--sl-sand);
-  white-space: nowrap;
-}
-.ug-rij-bedrag { display: grid; justify-items: end; gap: 2px; font-size: 14px; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.ug-rij-btw { font-family: var(--sl-mono); font-size: 10px; color: var(--sl-faint); }
-.ug-rij.is-concept .ug-rij-titel { color: var(--sl-text); }
 .ug-leeg { padding: 28px 0; }
 
 /* ---------- paneel ---------- */
@@ -324,7 +253,6 @@
 .ag-label.is-ai .ag-veld { border-left: 2px solid color-mix(in srgb, var(--sl-sand) 70%, transparent); }
 .ug-label-tekst { display: inline-block; }
 
-.ug-veld-groot { font-size: 17px; font-weight: 500; }
 .ug-bedrag { display: flex; align-items: center; gap: 0; position: relative; }
 .ug-bedrag-valuta { position: absolute; left: 11px; font-size: 14px; color: var(--sl-muted); pointer-events: none; }
 .ag-label .ug-bedrag .ag-veld { padding-left: 28px; font-variant-numeric: tabular-nums; }
@@ -398,7 +326,6 @@ button.ug-kwartaal:hover { border-color: #4a4847; }
 }
 .ug-dialoog-kop { display: flex; align-items: center; justify-content: space-between; padding: 14px 14px 14px 22px; border-bottom: 1px solid var(--sl-line); }
 .ug-dialoog-inhoud { display: grid; gap: 14px; padding: 20px 22px 24px; }
-.ug-dialoog-titel { margin: 0; font-size: 20px; font-weight: 700; text-transform: capitalize; }
 .ug-dialoog-uitleg { margin: 0; line-height: 1.6; }
 .ug-dialoog-uitleg code { font-family: var(--sl-mono); font-size: 11px; color: var(--sl-text); }
 .ug-dialoog-knoppen { display: flex; flex-wrap: wrap; gap: 10px; }
@@ -407,9 +334,6 @@ button.ug-kwartaal:hover { border-color: #4a4847; }
 
 /* ---------- dashboard ---------- */
 .db-stapel { display: flex; flex-direction: column; gap: 24px; min-width: 0; }
-.ug-widget-concept { color: var(--sl-sand); text-decoration: none; }
-.ug-widget-concept::after { content: " controleren →"; font-size: 12px; color: var(--sl-muted); font-weight: 400; }
-.ug-widget-concept:hover::after { color: var(--sl-text); }
 .ug-knop-fout { align-self: center; font-size: 12px; color: var(--sl-danger); }
 
 /* ---------- mail: bijlage opslaan als uitgave ---------- */
@@ -447,15 +371,7 @@ button.ug-kwartaal:hover { border-color: #4a4847; }
   .ug-drop-icoon { display: none; }
   .ug-drop-knoppen { width: 100%; }
   .ug-drop-knoppen .ug-knop-groot { flex: 1 1 auto; justify-content: center; }
-  .ug-totalen { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .ug-totalen > div:nth-child(3) { padding-left: 0; border-left: 0; border-top: 1px solid var(--sl-line-soft); }
-  .ug-totalen > div:nth-child(4) { border-top: 1px solid var(--sl-line-soft); }
   .ug-filter { flex: 1 1 140px; max-width: none; }
-  .ug-rij { grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; }
-  .ug-rij-datum { grid-column: 1; grid-row: 1; }
-  .ug-rij-hoofd { grid-column: 1; grid-row: 2; }
-  .ug-rij-status { grid-column: 2; grid-row: 1; justify-self: end; }
-  .ug-rij-bedrag { grid-column: 2; grid-row: 2; }
   .ug-kwartalen { grid-template-columns: minmax(0, 1fr); }
   .ug-balk { grid-template-columns: minmax(0, 1fr) 96px; }
   .ug-balk-spoor { grid-column: 1 / -1; grid-row: 2; }
@@ -601,7 +517,7 @@ button.ug-kwartaal:hover { border-color: #4a4847; }
 .ug-lrijen { list-style: none; margin: 4px -10px 0; padding: 0; display: grid; }
 .ug-lrij {
   display: grid;
-  grid-template-columns: 96px minmax(0, 1fr) 120px 110px 28px;
+  grid-template-columns: 96px minmax(0, 1fr) 120px 110px;
   align-items: center;
   gap: 14px;
   width: 100%;
@@ -623,7 +539,6 @@ button.ug-kwartaal:hover { border-color: #4a4847; }
 .ug-lrij-omschrijving { font-size: 12.5px; color: var(--sl-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-height: 1em; }
 .ug-lrij-soort { font-size: 12.5px; color: var(--sl-muted); }
 .ug-lrij-bedrag { font-size: 14px; font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
-.ug-lrij-door { display: flex; justify-content: flex-end; }
 
 /* ---------- "Meer"-menu ---------- */
 .ug-meer { position: relative; }
@@ -670,7 +585,6 @@ button.ug-kwartaal:hover { border-color: #4a4847; }
 .ug-paneel-info .ug-door { flex: 1 1 200px; min-width: 0; }
 .ug-paneel-camera { display: inline-flex; align-items: center; gap: 5px; }
 .ug-door { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin: 0; font-size: 13px; color: var(--sl-muted); }
-.ug-door .sl-persoon-naam { color: var(--sl-text); }
 .ug-gegevens { border-top: 1px solid var(--sl-line-soft); padding-top: 12px; }
 .ug-gegevens > summary {
   display: flex;
@@ -690,9 +604,17 @@ button.ug-kwartaal:hover { border-color: #4a4847; }
 .ug-gegevens-velden:disabled { opacity: .55; }
 
 /* ---------- recente uploads (dashboard, /boekhouding) ---------- */
-.ug-recent { grid-template-columns: auto minmax(0, 1fr) auto; }
+/* Vaste kolommen (icoon · naam · bedrag): elke naam begint op hetzelfde punt, ook als de
+   meta-regel lang is. Als flexrij kromp het icoon bij lange meta, waardoor namen versprongen. */
+.ug-recent { display: grid; grid-template-columns: 30px minmax(0, 1fr) auto; }
 .ug-recent-icoon { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 4px; background: var(--sl-bg); color: var(--sl-muted); }
-.ug-recent-rechts { display: inline-flex; align-items: center; gap: 10px; flex: none; }
+/* Datum en soort: naast elkaar met een punt ertussen; past het niet, dan komt de soort onder
+   de datum (de rij wordt iets hoger). De punt staat vóór elk stuk en valt aan het begin van een
+   regel buiten het afgeknipte vlak, zodat een nieuwe regel nooit met "·" begint. */
+.ug-recent-meta { white-space: normal; text-overflow: clip; }
+.ug-recent-meta-in { display: flex; flex-wrap: wrap; margin-left: -1.4em; }
+.ug-recent-meta-in > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ug-recent-meta-in > span::before { content: "·"; display: inline-block; width: 1.4em; text-align: center; }
 .ug-widget-voet { margin: 10px 0 0; }
 
 @media (max-width: 720px) {
@@ -708,7 +630,6 @@ button.ug-kwartaal:hover { border-color: #4a4847; }
   .ug-lrij-hoofd { grid-column: 1; grid-row: 1; }
   .ug-lrij-bedrag { grid-column: 2; grid-row: 1; }
   .ug-lrij-datum { grid-column: 1; grid-row: 2; }
-  .ug-lrij-door { grid-column: 2; grid-row: 2; }
   .ug-lrij-soort { display: none; }
   .ug-sneltoetsen { display: none; }
   .ug-meer-menu { right: auto; left: 0; }
@@ -743,7 +664,6 @@ button.ug-kwartaal:hover { border-color: #4a4847; }
   .ug-drop-knoppen .ug-knop-groot { min-height: 48px; }
   /* Weergave-schakelaar rechts naast de chips i.p.v. eronder verloren. */
   .ug-weergave { margin-left: auto; }
-  .ug-lrij-door { justify-content: flex-end; }
   /* Export: knoppen over de volle breedte, periode-schuif centreert. */
   .ug-dialoog { width: calc(100vw - 24px); }
   .ug-dialoog-kop { padding: 10px 10px 10px 18px; }

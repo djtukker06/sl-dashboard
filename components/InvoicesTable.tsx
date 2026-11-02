@@ -34,8 +34,12 @@ export function InvoicesTable({
 
   function handleDelete(id: string, factuurnummer: string) {
     if (!confirm(`Factuur ${factuurnummer} definitief verwijderen?`)) return;
-    startTransition(() => {
-      deleteInvoice(id);
+    startTransition(async () => {
+      try {
+        await deleteInvoice(id);
+      } catch {
+        alert('Verwijderen is mislukt. Probeer het opnieuw.');
+      }
     });
   }
 

@@ -23,11 +23,16 @@ export async function deleteQuote(id: string) {
     .eq('id', id)
     .single();
 
+  // Eerst de rij; mislukt dat, dan blijft de prijsopgave mét PDF staan.
+  const { error } = await service.from('quotes').delete().eq('id', id);
+  if (error) {
+    console.error('[prijsopgaven] verwijderen mislukt', error.code ?? '');
+    throw new Error('Verwijderen is mislukt. Probeer het opnieuw.');
+  }
+
   if (prijsopgave?.pdf_path) {
     await service.storage.from('invoices').remove([prijsopgave.pdf_path]);
   }
-
-  await service.from('quotes').delete().eq('id', id);
   await logAudit('verwijderd_prijsopgave', { lid, doel: id });
 
   revalidatePath('/facturen/prijsopgaven');

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { setCanvas } from "@/lib/social/brand-guard";
 import { getFormat, isFormat } from "@/lib/social/formats";
 import { checkProjectId, readBody, requireUser, route } from "@/lib/social/http";
+import { ruimLinksOp } from "@/lib/social/links";
 import { getProject, readSlides, refreshChrome, saveProject, softDeleteProject, versionCount } from "@/lib/social/repo";
 import { logAudit } from "@/lib/audit";
 import { teamlidUitContext } from "@/lib/auth/team";
@@ -27,8 +28,13 @@ export const PUT = route(async (request: Request, { params }: Ctx) => {
   const p = await getProject(id);
   const { name, brief, links, caption, slides, format, brandChrome } = await readBody(request);
   if (typeof name === "string") p.name = name.slice(0, 120);
+  // linkInfo wordt alleen door de server gezet (POST /links), nooit vanuit de briefing.
+  if (brief && typeof brief === "object") delete (brief as Record<string, unknown>).linkInfo;
   if (brief && typeof brief === "object") p.brief = { ...p.brief, ...(brief as Record<string, unknown>) };
-  if (Array.isArray(links)) p.links = links.map(String);
+  if (Array.isArray(links)) {
+    p.links = [...new Set(links.map((l) => String(l).trim()).filter(Boolean))];
+    ruimLinksOp(p); // info en beelden van weggehaalde links
+  }
   if (typeof caption === "string") p.caption = caption;
   if (
     Array.isArray(slides) &&

@@ -434,13 +434,6 @@ export async function tfaSessie(): Promise<TfaSessie | null> {
   return null;
 }
 
-/** Voor server actions: gooit bij geen toegang (de actie doet dan niets). */
-export async function vereisTeamlidActie(): Promise<Teamlid> {
-  const lid = await vereisTeamlid();
-  if (!lid) throw new Error('Geen toegang.');
-  return lid;
-}
-
 const GEEN_CACHE = { 'Cache-Control': 'private, no-store' } as const;
 
 /** Het weigerantwoord voor een API-route bij een status die geen 'lid' is. */

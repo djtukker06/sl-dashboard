@@ -11,10 +11,6 @@ export type Centen = number;
 /** Grootste bedrag dat we accepteren (€ 99.999.999,99), ruim binnen Number.MAX_SAFE_INTEGER. */
 export const MAX_CENTEN = 9_999_999_999;
 
-export function isCenten(v: unknown): v is Centen {
-  return typeof v === 'number' && Number.isSafeInteger(v);
-}
-
 /** Gooit als een waarde geen hele centen zijn (programmeerfout, nooit stil doorrekenen). */
 export function moetCenten(v: number, wat = 'bedrag'): Centen {
   if (!Number.isSafeInteger(v)) throw new Error(`${wat} is geen geheel aantal centen: ${v}`);

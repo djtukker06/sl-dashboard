@@ -638,7 +638,6 @@ function Kaartje({
       </span>
       <span className="ug-kaart-voet">
         <span className="ug-kaart-bedrag">{u.totaal === null ? '' : euro(u.totaal, u.valuta)}</span>
-        <Persoon id={u.aangemaaktDoor} compact voorvoegsel="geüpload door" />
       </span>
     </button>
   );
@@ -681,9 +680,6 @@ function Rij({ u, uitlezen, open, onOpen }: { u: Uitgave; uitlezen: boolean; ope
       </span>
       <span className="ug-lrij-soort">{soortLabel(u.soort)}</span>
       <span className="ug-lrij-bedrag">{u.totaal === null ? '—' : euro(u.totaal, u.valuta)}</span>
-      <span className="ug-lrij-door">
-        <Persoon id={u.aangemaaktDoor} compact voorvoegsel="geüpload door" />
-      </span>
     </button>
   );
 }
@@ -723,7 +719,10 @@ function ExportDialoog({ vandaag, onSluit }: { vandaag: string; onSluit: () => v
     setBezig('csv');
     setFout('');
     try {
-      const res = await fetch(`/api/uitgaven/export?formaat=csv&van=${params.van}&tot=${params.tot}`, { cache: 'no-store' });
+      // Geen verbinding: fetch gooit dan een Engelstalige TypeError; toon onze eigen melding.
+      const res = await fetch(`/api/uitgaven/export?formaat=csv&van=${params.van}&tot=${params.tot}`, { cache: 'no-store' }).catch(() => {
+        throw new Error('Geen verbinding. Controleer je internet en probeer het opnieuw.');
+      });
       if (!res.ok) {
         const d = await res.json().catch(() => null);
         throw new Error((d && d.error) || 'Exporteren mislukt.');

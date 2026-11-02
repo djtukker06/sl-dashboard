@@ -8,7 +8,7 @@ import { RecenteBonnetjes } from '@/components/uitgaven/RecenteBonnetjes';
 import { Kaart, KaartMelding } from './Kaart';
 import { OpnieuwKnop } from './OpnieuwKnop';
 
-// "Laatste bonnetjes": de vier nieuwste uploads van het hele team, met wie ze uploadde.
+// "Laatste bonnetjes": de vier nieuwste uploads van het hele team.
 // Leest met de gebruikerscliënt (RLS), ná de teamlidcontrole van de dashboardpagina.
 export async function UitgavenWidget() {
   const sb = await createClient();

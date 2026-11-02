@@ -117,8 +117,6 @@ export interface Vergrendeling {
   boekjaren: number[];
 }
 
-export const GEEN_VERGRENDELING: Vergrendeling = { aangiften: [], boekjaren: [] };
-
 /** null als de datum in een open periode valt, anders de reden (voor de melding). */
 export function vergrendeldReden(d: Datum, v: Vergrendeling): string | null {
   const j = jaarVan(d);

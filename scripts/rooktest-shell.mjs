@@ -159,6 +159,8 @@ function bestandenIn(map, filter) {
   const uit = [];
   (function loop(dir) {
     for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+      // Onbedoelde kopieën ("Rail 2.tsx", "fixtures 2") tellen niet mee.
+      if (/ 2(\.[^.]+)?$/.test(e.name)) continue;
       const p = path.join(dir, e.name);
       if (e.isDirectory()) loop(p);
       else if (filter(e.name)) uit.push(path.relative(ROOT, p));
@@ -272,29 +274,10 @@ console.log("Boekhouding en Account & mail");
   check(!fs.existsSync(path.join(ROOT, "app/(app)/uitgaven")), "app/(app)/uitgaven bestaat niet meer");
   check(fs.existsSync(path.join(ROOT, "app/(app)/boekhouding/page.tsx")) && fs.existsSync(path.join(ROOT, "app/(app)/boekhouding/bonnetjes/page.tsx")), "/boekhouding en /boekhouding/bonnetjes bestaan");
   check(/source: '\/uitgaven', destination: '\/boekhouding\/bonnetjes'/.test(lees("next.config.ts")), "next.config.ts: /uitgaven → /boekhouding/bonnetjes");
-  check(/BoekhoudingKop/.test(lees("app/(app)/facturen/layout.tsx")), "facturen-layout toont de Boekhouding-kop met subnavigatie");
+  check(/<FacturenKop \/>/.test(lees("app/(app)/facturen/layout.tsx")) && /<BoekhoudingKop\b/.test(lees("components/boekhouding/FacturenKop.tsx")), "facturen-layout toont de Boekhouding-kop met subnavigatie");
 
-  // Facturen inhoudelijk ongewijzigd t.o.v. stap 1 (alleen de layout mag anders, en op de
-  // facturen-klantpagina staat alleen een extra link naar Klanten & projecten).
-  const { spawnSync } = await import("node:child_process");
-  const KLANT = "app/(app)/facturen/klanten/[clientId]/page.tsx";
-  const diff = spawnSync(
-    "git",
-    ["diff", "--name-only", "4765da6", "--", "components/InvoiceForm.tsx", "components/InvoicesTable.tsx", "components/QuotesTable.tsx", "lib/invoice", "app/(app)/facturen", ":(exclude)app/(app)/facturen/layout.tsx", `:(exclude)${KLANT}`],
-    { cwd: ROOT, encoding: "utf8" }
-  );
-  if (diff.status === 0) {
-    check(diff.stdout.trim() === "", "facturenschermen, -componenten en lib/invoice ongewijzigd", diff.stdout.trim().replace(/\n/g, ", "));
-    const k = spawnSync("git", ["diff", "-U0", "4765da6", "--", KLANT], { cwd: ROOT, encoding: "utf8" });
-    const regels = k.stdout.split("\n").filter((r) => /^[+-](?![+-])/.test(r));
-    const weg = regels.filter((r) => r.startsWith("-"));
-    const erbij = regels.filter((r) => r.startsWith("+")).join("\n");
-    check(
-      weg.length === 0 && /href=\{`\/klanten\/\$\{klant\.id\}`\}/.test(erbij) && !/supabase|from\(|await /.test(erbij),
-      "facturen-klantpagina: alleen een link naar de klantpagina toegevoegd",
-      regels.join(" | ")
-    );
-  } else console.log("  (git niet beschikbaar: facturen-diff overgeslagen)");
+  // (De oude git-diff-controles "facturen ongewijzigd sinds stap 1" zijn weg: facturen is
+  // sindsdien bewust aangepast, o.a. FacturenKop, PDF-download en de privacymodus.)
 
   const kern = lees("lib/mail/kluis-kern.ts");
   check(/'aes-256-gcm'/.test(kern) && /setAAD\(/.test(kern) && /randomBytes\(12\)/.test(kern), "kluis: AES-256-GCM, AAD en een nieuwe IV per keer");
@@ -364,7 +347,9 @@ console.log("Taken op naam");
   check(/wie:task_assignees!inner\(user_id\)/.test(repo) && /wie:event_attendees!inner\(user_id\)/.test(repo), "'mijn' lijsten filteren op toewijzing/deelname");
   {
     const dp = repo.slice(repo.indexOf("export async function dashboardPlanning"), repo.indexOf("export async function dashboardPlanning") + 1600);
-    check(/const persoon = persoonVoor\(bron\)/.test(dp) && /tq = tq\.eq\('wie\.user_id', persoon\)/.test(dp) && /aq = aq\.eq\('wie\.user_id', persoon\)/.test(dp) && /export function persoonVoor\(bron: AgendaBron\)/.test(repo), "dashboard toont alleen je eigen taken en afspraken");
+    // De afspraken komen via afsprakenInBereik (ook herhalende), die zelf op persoon filtert.
+    const ab = repo.slice(repo.indexOf("export async function afsprakenInBereik"), repo.indexOf("export async function afsprakenInBereik") + 800);
+    check(/const persoon = persoonVoor\(bron\)/.test(dp) && /tq = tq\.eq\('wie\.user_id', persoon\)/.test(dp) && /afsprakenInBereik\(bron, vandaag, tot\)/.test(dp) && /const persoon = persoonVoor\(bron\)/.test(ab) && /aq = aq\.eq\('wie\.user_id', persoon\)/.test(ab) && /export function persoonVoor\(bron: AgendaBron\)/.test(repo), "dashboard toont alleen je eigen taken en afspraken");
   }
   check(/rpc\('taak_betrokken'/.test(repo) && /rpc\('afspraak_betrokken'/.test(repo), "rechtencontrole gebruikt dezelfde functies als de RLS");
   check(/bronVan\(lid\)/.test(lees("components/dashboard/PlanningWidgets.tsx")), "dashboardplanning per ingelogd teamlid");
@@ -648,10 +633,6 @@ console.log("Boekhouding: bank & boekingen (0027)");
   check(/export const DELETE = bkRoute\([\s\S]*?\{ alleenEigenaar: true \}\s*\);/.test(agRoute), "aangifte intrekken alleen door de eigenaar (route)");
   // aangifteVoorKwartaal = de eigen boekingen + de correcties van eerdere kwartalen (kern/aangifte.ts).
   check(/aangifteVoorKwartaal\(journaalVan\(data\), data\.aangiften/.test(lees("lib/boekhouding/acties.ts")), "bij indienen rekent de server de aangifte zelf uit");
-  // Facturen ongewijzigd sinds de start van de boekhouding (commit 7df4ae9).
-  // (app/actions/wachtwoord.ts hoort niet bij facturen: verplicht eigen wachtwoord, 0028.)
-  const fdiff = spawnSync("git", ["diff", "--name-only", "7df4ae9", "--", "lib/invoice", "app/actions", ":(exclude)app/actions/wachtwoord.ts", "app/api/invoices", "app/api/quotes", "app/(app)/facturen", "components/InvoiceForm.tsx", "components/InvoicesTable.tsx", "components/QuotesTable.tsx", "components/RestfactuurKnop.tsx"], { cwd: ROOT, encoding: "utf8" });
-  if (fdiff.status === 0) check(fdiff.stdout.trim() === "", "facturen-code ongewijzigd sinds de start van de boekhouding", fdiff.stdout.trim().replace(/\n/g, ", "));
 }
 
 if (ALLEEN_STATISCH) eindig();

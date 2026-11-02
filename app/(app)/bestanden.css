@@ -27,8 +27,10 @@
 .bs-kruimel [aria-current] { padding: 4px 6px; color: var(--sl-text); font-weight: 700; }
 .bs-kruimel-scheiding { color: var(--sl-faint); }
 .bs-balk-acties { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-.bs-zoek { position: relative; display: flex; align-items: center; }
-.bs-zoek svg { position: absolute; left: 10px; color: var(--sl-faint); pointer-events: none; }
+/* .bs-zoek is een <label>: globals.css zet labels op flex-direction:column, waardoor het
+   vergrootglas bovenin stond. Hier expliciet een rij, en het icoon op de verticale middellijn. */
+.bs-zoek { position: relative; display: flex; flex-direction: row; align-items: center; gap: 0; }
+.bs-zoek svg { position: absolute; top: 50%; left: 10px; transform: translateY(-50%); display: block; color: var(--sl-faint); pointer-events: none; }
 .bs-zoek input { width: 240px; padding-left: 32px; }
 .bs-weergave button { display: inline-flex; align-items: center; justify-content: center; padding: 6px 10px; }
 

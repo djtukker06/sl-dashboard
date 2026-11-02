@@ -87,6 +87,7 @@ export function InvoiceForm({
     setBezig(true);
     setFout(null);
 
+    // Geen verbinding: fetch gooit dan zelf. Zonder deze vangst bleef de knop op "bezig" staan.
     const res = await fetch(bewerken ? `${apiBasis}/${factuurId}` : apiBasis, {
       method: bewerken ? 'PUT' : 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -106,7 +107,13 @@ export function InvoiceForm({
         aanbetalingPercentage,
         regels
       })
-    });
+    }).catch(() => null);
+
+    if (!res) {
+      setFout('Geen verbinding met de server. Controleer je internet en probeer het opnieuw.');
+      setBezig(false);
+      return;
+    }
 
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));

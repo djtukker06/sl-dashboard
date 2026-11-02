@@ -17,6 +17,8 @@ const state = {
   reviseFile: null,
   reviseDraft: null, // {file, feedback} na een mislukte aanpassing
   loadError: null, // dashboard: {message, setup} als de projecten niet geladen konden worden
+  linksBezig: new Set(), // dashboard: links die nu worden opgehaald
+  linksPromise: null, // dashboard: lopende ophaalronde (generate() wacht erop)
 };
 
 // ---------------------------------------------------------------- helpers
@@ -302,6 +304,7 @@ async function reloadProject() {
   try {
     state.project = await api("GET", projectUrl());
     renderAssets();
+    renderLinks();
     renderSlides();
     $("#caption").value = state.project.caption || "";
     syncListEntry();
@@ -331,6 +334,7 @@ function fillProject() {
   $("#postFeedback").value = "";
   $("#saveState").textContent = "";
   renderAssets();
+  renderLinks();
   renderSlides();
 }
 
@@ -350,7 +354,11 @@ function readBrief() {
 const saveBrief = debounce(async () => {
   if (!state.project) return;
   try {
+    const voor = (state.project.assets || []).length;
     setProject(await api("PUT", projectUrl(), readBrief()));
+    // dashboard: een weggehaalde link neemt zijn opgehaalde foto's mee
+    if ((state.project.assets || []).length !== voor) renderAssets();
+    renderLinks();
     $("#saveState").textContent = "Opgeslagen";
   } catch (err) {
     $("#saveState").textContent = "";
@@ -374,6 +382,118 @@ async function saveMeta(fields) {
   } catch (err) {
     toast(err.message, true);
   }
+}
+
+// ---------------------------------------------------------------- links (dashboard)
+// De server haalt de pagina's van de links op (POST /links): titel, beschrijving en tekst
+// gaan mee naar de generatie, de foto's komen als beeldmateriaal in de eigen opslag.
+
+const MAX_LINKS = 5; // zelfde als MAX_LINKS in lib/social/links-kern.ts
+
+function linkInfo(url) {
+  const lijst = state.project?.brief?.linkInfo;
+  return Array.isArray(lijst) ? lijst.find((l) => l && l.url === url) : undefined;
+}
+
+function hostVan(url) {
+  try {
+    return new URL(/^[a-z][a-z0-9+.-]*:/i.test(url) ? url : `https://${url}`).hostname.replace(/^www\./, "");
+  } catch {
+    return url;
+  }
+}
+
+/** Links die nog niet zijn opgehaald (en ook niet nu bezig zijn). */
+function linksTeHalen() {
+  return (state.project?.links || [])
+    .slice(0, MAX_LINKS)
+    .filter((url) => !linkInfo(url) && !state.linksBezig.has(url));
+}
+
+function renderLinks() {
+  const box = $("#linkCards");
+  const p = state.project;
+  if (!box || !p) return;
+  const assets = new Set((p.assets || []).map((a) => a.file));
+  const links = p.links || [];
+  const kaarten = links.slice(0, MAX_LINKS).map((url) => {
+    const info = linkInfo(url);
+    const bezig = state.linksBezig.has(url);
+    let thumb = `<div class="link-thumb leeg"></div>`;
+    let titel = escapeHtml(hostVan(url));
+    let tekst = "";
+    let status;
+    let knop = "";
+    if (bezig) {
+      thumb = `<div class="link-thumb leeg"><div class="spinner"></div></div>`;
+      status = `<span class="link-status">Pagina ophalen…</span>`;
+    } else if (!info) {
+      status = `<span class="link-status">Nog niet opgehaald</span>`;
+      knop = `<button type="button" class="btn small" data-link-act="ophalen">Ophalen</button>`;
+    } else if (info.status === "ok") {
+      const beelden = (info.beelden || []).filter((f) => assets.has(f));
+      if (beelden.length) {
+        thumb = `<img class="link-thumb" src="${FILES_BASE}/projects/${encodeURIComponent(p.id)}/assets/${encodeURIComponent(beelden[0])}" alt="" loading="lazy">`;
+      }
+      titel = escapeHtml(info.titel || hostVan(url));
+      tekst = info.beschrijving ? `<p class="link-desc">${escapeHtml(info.beschrijving)}</p>` : "";
+      const fotos = beelden.length === 1 ? "1 foto bij Beeldmateriaal" : beelden.length ? `${beelden.length} foto's bij Beeldmateriaal` : "geen foto's gevonden";
+      status = `<span class="link-status ok">Opgehaald · ${escapeHtml(info.site || hostVan(url))} · ${fotos}</span>`;
+      knop = `<button type="button" class="btn small ghost" data-link-act="ophalen" title="Pagina opnieuw ophalen">Opnieuw</button>`;
+    } else {
+      status = `<span class="link-status fout">Mislukt: ${escapeHtml(info.fout || "onbekende fout")}</span>`;
+      knop = `<button type="button" class="btn small" data-link-act="ophalen">Opnieuw</button>`;
+    }
+    return `<div class="link-card${bezig ? " bezig" : ""}" data-url="${escapeHtml(url)}">
+      ${thumb}
+      <div class="link-body">
+        <strong class="link-title" title="${escapeHtml(url)}">${titel}</strong>
+        ${tekst}
+        ${status}
+      </div>
+      ${knop}
+    </div>`;
+  });
+  if (links.length > MAX_LINKS) {
+    kaarten.push(`<p class="hint">Alleen de eerste ${MAX_LINKS} links worden opgehaald.</p>`);
+  }
+  box.innerHTML = kaarten.join("");
+}
+
+/**
+ * Haalt links op (standaard: alle die nog niet zijn opgehaald). Geeft een promise die altijd
+ * slaagt; fouten per link staan op de kaart, een algemene fout in een melding.
+ */
+function fetchLinks(urls) {
+  if (!state.project) return Promise.resolve();
+  const vorige = state.linksPromise || Promise.resolve();
+  const ronde = vorige.then(async () => {
+    if (!state.project) return;
+    await saveBrief.flush();
+    const projectId = state.project.id;
+    const doel = (urls || linksTeHalen()).filter((u) => (state.project.links || []).includes(u));
+    if (!doel.length) return;
+    doel.forEach((u) => state.linksBezig.add(u));
+    renderLinks();
+    try {
+      const p = await api("POST", `${API_BASE}/projects/${encodeURIComponent(projectId)}/links`, { urls: doel });
+      if (state.project?.id !== projectId) return;
+      setProject(p);
+      renderAssets();
+      const mislukt = doel.filter((u) => linkInfo(u)?.status === "fout").length;
+      if (mislukt) toast(mislukt === 1 ? "Eén link kon niet worden opgehaald." : `${mislukt} links konden niet worden opgehaald.`, true);
+    } catch (err) {
+      toast(err.message, true);
+    } finally {
+      doel.forEach((u) => state.linksBezig.delete(u));
+      renderLinks();
+    }
+  });
+  const lopend = ronde.finally(() => {
+    if (state.linksPromise === lopend) state.linksPromise = null;
+  });
+  state.linksPromise = lopend;
+  return ronde;
 }
 
 // ---------------------------------------------------------------- beeldmateriaal
@@ -810,6 +930,13 @@ async function generate() {
   if (!state.project || state.generating) return;
   if (state.project.slides.length && !confirm("De huidige slides worden vervangen. De vorige versie blijft terug te zetten. Doorgaan?")) return;
   await saveBrief.flush();
+  // dashboard: eerst de links ophalen, zodat pagina-inhoud en foto's meegaan
+  if (state.linksPromise || linksTeHalen().length) {
+    $("#saveState").textContent = "Links ophalen…";
+    await (linksTeHalen().length ? fetchLinks() : state.linksPromise);
+    $("#saveState").textContent = "";
+    if (!state.project) return;
+  }
   await streamGeneration(projectUrl("/generate"), {});
 }
 
@@ -1168,6 +1295,13 @@ function bindEvents() {
     if (e.target.closest(".thumb") || e.target.type === "file" || e.target.id === "brandChrome") return;
     $("#saveState").textContent = "Opslaan…";
     saveBrief();
+  });
+  // dashboard: links ophalen zodra het linkveld wordt verlaten, of met de knop op een kaart
+  form.elements.links.addEventListener("change", () => fetchLinks());
+  $("#linkCards").addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-link-act]");
+    if (!btn) return;
+    fetchLinks([btn.closest(".link-card").dataset.url]);
   });
   $("#caption").addEventListener("input", saveCaption);
   $("#copyCaption").addEventListener("click", async () => {

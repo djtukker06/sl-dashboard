@@ -15,6 +15,9 @@
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
+/* De reset hierboven haalt ook de margin:auto weg waarmee de browser een modale <dialog>
+   centreert; zonder deze regel staat zo'n dialoog linksboven. */
+dialog:modal { margin: auto; }
 
 html, body {
   margin: 0;
@@ -87,27 +90,6 @@ a { color: inherit; }
   line-height: 1.6;
   margin: 0 0 28px;
 }
-
-.btn-pil {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  background: var(--cream);
-  color: var(--bg-page);
-  font-weight: 700;
-  font-size: 13px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  text-decoration: none;
-  padding: 14px 24px;
-  border-radius: 999px;
-  border: none;
-  cursor: pointer;
-  font-family: inherit;
-  transition: transform 0.15s ease, background 0.15s ease;
-}
-.btn-pil:hover { background: #fff; transform: translateY(-1px); }
-.btn-pil:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
 
 /* Stats */
 .jaar-keuze {

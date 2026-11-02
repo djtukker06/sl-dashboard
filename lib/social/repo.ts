@@ -10,7 +10,8 @@ import { BUCKET, HttpError, db, NIET_INGERICHT, BUCKET_NIET_INGERICHT } from "./
 import { safe } from "./ids";
 import { logFout } from "@/lib/log";
 
-export type Asset = { file: string; kind: "beeld" | "inspiratie"; note: string };
+/** `bron`: de link waarvan het beeld is opgehaald (lib/social/links.ts); leeg bij uploads. */
+export type Asset = { file: string; kind: "beeld" | "inspiratie"; note: string; bron?: string };
 export type FeedbackEntry = { at: string; mode: string; feedback: string };
 
 /** Exact de vorm van het oude project.json (camelCase). */

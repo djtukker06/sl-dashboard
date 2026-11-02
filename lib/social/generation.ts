@@ -10,6 +10,7 @@ import { enforceBrand, setCanvas } from "./brand-guard";
 import { getFormat } from "./formats";
 import { HttpError, readBody } from "./http";
 import { id } from "./ids";
+import { haalLinkOp, nogOpTeHalen, verwerkResultaten } from "./links";
 import { checkSlide, getBrand, getProject, readSlides, refreshChrome, saveProject, snapshot } from "./repo";
 
 const TIME_LIMIT_MS = 285_000;
@@ -36,7 +37,7 @@ export async function runGeneration(
   // server.js:386: met feedback is het "revise-all", anders "new".
   const mode: Mode = modeArg ?? (body.feedback ? "revise-all" : "new");
 
-  const p = await getProject(projectId);
+  let p = await getProject(projectId);
   if (!hasApiKey()) throw new HttpError(400, "Er is nog geen API-key ingesteld (zie Instellingen).");
   const feedback = String(body.feedback || "").trim();
   if (mode !== "new" && !feedback) throw new HttpError(400, "Schrijf eerst wat er anders moet.");
@@ -82,6 +83,16 @@ export async function runGeneration(
       let text = "";
       let seen = 0;
       try {
+        // dashboard: links die nog niet zijn opgehaald (bv. net ingetypt) eerst ophalen, zodat
+        // de pagina-inhoud en foto's meegaan. De frontend doet dit normaal al vooraf.
+        const teHalen = mode === "new" ? nogOpTeHalen(p) : [];
+        if (teHalen.length) {
+          send({ type: "status", message: "Links worden opgehaald…" });
+          const resultaten = await Promise.all(teHalen.map((u) => haalLinkOp(p.id, u, abort.signal)));
+          const vers = await getProject(p.id);
+          verwerkResultaten(vers, resultaten);
+          p = await saveProject(vers);
+        }
         send({ type: "status", message: "Claude denkt na over het ontwerp…" });
         text = await generate({
           brand,

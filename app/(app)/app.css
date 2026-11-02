@@ -207,7 +207,9 @@
   transition: background-color .2s var(--sl-ease);
 }
 .db-rij:hover { background: var(--sl-raise); }
-.db-rij-hoofd { display: grid; gap: 2px; min-width: 0; }
+/* De hoofdkolom vult de ruimte; iconen en bedragen krimpen niet mee, zodat titels in elke
+   rij op hetzelfde punt beginnen. */
+.db-rij-hoofd { display: grid; gap: 2px; min-width: 0; flex: 1 1 auto; }
 .db-rij-titel { font-size: 14px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .db-rij-meta {
   font-family: var(--sl-mono);
@@ -219,7 +221,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.db-rij-bedrag { font-size: 13.5px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.db-rij-bedrag { flex: none; font-size: 13.5px; font-variant-numeric: tabular-nums; white-space: nowrap; }
 
 /* ---------- social ---------- */
 /* Compact: elke rij heeft een vaste hoogte (miniatuur + naam + meta), en de lijst toont er
@@ -883,3 +885,10 @@ html[data-privacy] .ug-voorbeeld :is(iframe, img) {
   .sl-rail-foot { flex-direction: row; gap: 0; }
   .sl-privacy-knop, .sl-privacy-regel kbd { display: none; }
 }
+
+/* ---------- zoekvelden: vergrootglas altijd op de verticale middellijn ---------- */
+/* Een inline <svg> lijnt standaard uit op de basislijn van de tekst en zakt dan een paar
+   pixels. Als flex-item met display:block en zonder krimpen staat het precies in het midden.
+   Zoekvelden die een <label> zijn, krijgen expliciet een rij (globals.css zet labels op column). */
+.ml-zoek > svg, .ug-zoek > svg, .kl-zoek > svg, .sp-zoek > svg, .bh-zoek > svg { display: block; flex: none; }
+.ug-zoek, .bh-zoek { flex-direction: row; }

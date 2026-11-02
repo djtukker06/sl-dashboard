@@ -8,7 +8,6 @@ import { UitgavenFout } from '@/lib/uitgaven/api';
 import { laatsteUitgaven } from '@/lib/uitgaven/repo';
 import type { Uitgave } from '@/lib/uitgaven/model';
 import { BoekhoudingKop } from '@/components/boekhouding/BoekhoudingKop';
-import { Persoon } from '@/components/team/Persoon';
 import { BonnetjeKnop } from '@/components/uitgaven/BonnetjeKnop';
 import { RecenteBonnetjes } from '@/components/uitgaven/RecenteBonnetjes';
 import { UgIcoon } from '@/components/uitgaven/Iconen';
@@ -91,10 +90,7 @@ export default async function BoekhoudingPage() {
                             {r.datum ? ` · ${korteDatum(r.datum)}` : ''}
                           </span>
                         </span>
-                        <span className="ug-recent-rechts">
-                          <span className="db-rij-bedrag">€ {formatEuro(r.totaal)}</span>
-                          <Persoon id={r.door} compact voorvoegsel="gemaakt door" />
-                        </span>
+                        <span className="db-rij-bedrag">€ {formatEuro(r.totaal)}</span>
                       </Link>
                     </li>
                   ))}

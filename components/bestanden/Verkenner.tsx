@@ -189,7 +189,8 @@ export function Verkenner({ start, status, compact = false }: { start: Verkenner
   }
 
   const beschermd = new Set(inhoud?.beschermd ?? []);
-  const inZoek = !compact && zoekterm.trim().length >= 2 && resultaten !== null;
+  const zoektNu = !compact && zoekterm.trim().length >= 2;
+  const inZoek = zoektNu && resultaten !== null;
   const lijst = (inZoek ? resultaten : null) ?? inhoud?.items ?? [];
 
   const sleepProps = uploadDoel
@@ -338,7 +339,9 @@ export function Verkenner({ start, status, compact = false }: { start: Verkenner
             Map nu aanmaken
           </button>
         </div>
-      ) : zoeken && !inZoek ? (
+      ) : zoeken && zoektNu && !inZoek ? (
+        // Alleen zolang er gezocht wordt: wist je het zoekveld terwijl een zoekopdracht nog
+        // loopt, dan blijft `zoeken` aan staan (die opdracht is afgebroken), maar hoort de map te staan.
         <p className="kp-leeg">Zoeken…</p>
       ) : lijst.length === 0 ? (
         <div className="bs-leeg">

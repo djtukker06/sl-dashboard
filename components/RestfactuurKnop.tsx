@@ -19,7 +19,13 @@ export function RestfactuurKnop({
 
   async function maakRestfactuur() {
     setBezig(true);
-    const res = await fetch(`/api/invoices/${factuurId}/restfactuur`, { method: 'POST' });
+    // Geen verbinding: fetch gooit zelf; dan niet eeuwig op "Bezig…" blijven staan.
+    const res = await fetch(`/api/invoices/${factuurId}/restfactuur`, { method: 'POST' }).catch(() => null);
+    if (!res) {
+      alert('Geen verbinding met de server. Probeer het opnieuw.');
+      setBezig(false);
+      return;
+    }
     const data = await res.json().catch(() => ({}));
 
     if (!res.ok) {
