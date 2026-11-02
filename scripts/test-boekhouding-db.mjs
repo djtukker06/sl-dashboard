@@ -44,7 +44,8 @@ try {
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const lees = (p) => fs.readFileSync(path.join(ROOT, p), "utf8");
-const MIGRATIES = fs.readdirSync(path.join(ROOT, "supabase", "migrations")).filter((f) => /^\d{4}_.*\.sql$/.test(f)).sort();
+// Geen spaties in de naam: "0015_x 2.sql" zijn onbedoelde kopieën (Finder) en geen migraties.
+const MIGRATIES = fs.readdirSync(path.join(ROOT, "supabase", "migrations")).filter((f) => /^\d{4}_[^ ]*\.sql$/.test(f)).sort();
 
 // Het nagebootste Supabase-fundament uit test-rls.mjs (één bron).
 const rls = lees("scripts/test-rls.mjs");

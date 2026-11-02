@@ -156,7 +156,7 @@
 .tk-wie-chip-klein { min-height: 28px; font-size: 12.5px; }
 .tk-wie-chip-klein .tk-wie-avatar { width: 20px; height: 20px; font-size: 9px; }
 .tk-wie-chip:focus-visible, .tk-wie-alle:focus-visible, .tk-snel-knop:focus-visible, .tk-mini:focus-visible,
-.tk-sub-veld:focus-visible, .ag-keuze-knop:focus-visible, .db-rij-knop:focus-visible {
+.tk-sub-veld:focus-visible, .ag-keuze-knop:focus-visible {
   outline: none;
   box-shadow: var(--sl-focus);
 }
@@ -266,12 +266,10 @@
 .ag-keuze-knop:hover { background: var(--sl-hover); }
 
 /* ---------- dashboard ---------- */
-.db-rij-knop { width: 100%; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; justify-content: flex-start; gap: 12px; }
 .db-rij-meta.is-gevaar { color: var(--sl-danger); }
 .db-uitgezet-link { margin: 4px 0 0; }
 .db-uitgezet-link a { color: var(--sl-muted); text-decoration: none; }
 .db-uitgezet-link a:hover { color: var(--sl-text); }
-.db-tijdlijn button.ag-blok-tekst { border: 0; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; padding: 0; }
 
 /* ---------- mobiel ---------- */
 @media (max-width: 720px) {

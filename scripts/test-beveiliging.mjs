@@ -209,6 +209,8 @@ await test("foutSamenvatting: alleen naam/code/status/melding, nooit het hele ob
 function bestanden(dir, filter = /\.(ts|tsx|mjs|js)$/) {
   const uit = [];
   for (const d of fs.readdirSync(path.join(ROOT, dir), { withFileTypes: true })) {
+    // Onbedoelde kopieën ("route 2.ts", "fixtures 2") tellen niet mee.
+    if (/ 2(\.[^.]+)?$/.test(d.name)) continue;
     const rel = path.join(dir, d.name);
     if (d.isDirectory()) {
       if (["node_modules", ".next", ".git"].includes(d.name)) continue;

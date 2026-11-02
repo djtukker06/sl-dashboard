@@ -287,14 +287,6 @@ export function knip(r: Raster, x: number, y: number, w: number, h: number): Ras
 
 // ---------- publieke functies ----------
 
-/** Decodeert een HEIC/HEIF of JPEG naar RGBA (rechtop). Andere formaten: null. */
-export async function decodeer(inhoud: Uint8Array): Promise<Raster | null> {
-  const type = snuffelType(inhoud.subarray(0, 16));
-  if (isHeicType(type)) return decodeerHeic(inhoud);
-  if (type === 'image/jpeg') return decodeerJpeg(inhoud);
-  return null;
-}
-
 /**
  * HEIC/HEIF → JPEG om op te slaan (vervangt het origineel, zodat elke browser hem kan
  * tonen en Claude hem kan lezen). Max. 2400 px, of 4000 px voor een lange smalle bon.

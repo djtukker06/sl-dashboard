@@ -28,7 +28,8 @@ export async function PUT(
   if (!isUuid(id)) {
     return NextResponse.json({ error: 'Niet gevonden.' }, { status: 404 });
   }
-  const body: FactuurInvoerBody = await request.json();
+  // Geen of kapotte JSON: een leeg verzoek, dat de controle hieronder met een 400 weigert.
+  const body: FactuurInvoerBody = (await request.json().catch(() => null)) ?? {};
 
   const parsed = parseFactuurInvoer(body);
   if (!parsed.ok) {
@@ -177,10 +178,6 @@ export async function DELETE(
     return NextResponse.json({ error: 'Factuur niet gevonden.' }, { status: 404 });
   }
 
-  if (invoice.pdf_path) {
-    await service.storage.from('invoices').remove([invoice.pdf_path]);
-  }
-
   // Het factuurnummer komt door verwijderen weer vrij: het voorstel voor een nieuwe
   // factuur is "hoogste bestaande nummer + 1" (zie migratie 0005). Verwijder je de
   // laatste factuur, dan wordt dat nummer dus opnieuw voorgesteld.
@@ -189,6 +186,11 @@ export async function DELETE(
   if (deleteError) {
     console.error('[facturen] verwijderen mislukt', deleteError.code ?? '');
     return NextResponse.json({ error: 'Verwijderen is mislukt. Probeer het opnieuw.' }, { status: 500 });
+  }
+
+  // Pas ná het verwijderen van de rij: mislukt dat, dan blijft de factuur mét PDF staan.
+  if (invoice.pdf_path) {
+    await service.storage.from('invoices').remove([invoice.pdf_path]);
   }
 
   await logAudit('verwijderd_factuur', { lid, doel: id }, request);

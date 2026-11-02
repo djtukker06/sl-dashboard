@@ -98,7 +98,6 @@ export const LEGE_INHOUD: TiptapKnoop = { type: 'doc', content: [{ type: 'paragr
 // in de tekst staat alleen de eigen route /api/notities/<notitie-id>/bestanden/<bestand-id>.
 
 export const MAX_BIJLAGE_BYTES = 25 * 1024 * 1024;
-export const MAX_BIJLAGE_MB = 25;
 
 /** Een geüploade bijlage, zoals de API hem teruggeeft. */
 export interface Bijlage {

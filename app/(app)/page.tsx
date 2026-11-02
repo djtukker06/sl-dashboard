@@ -25,8 +25,8 @@ export const metadata: Metadata = { title: 'Dashboard · Studio Levant' };
 // server-component in <Suspense>, zodat één trage of kapotte bron de rest niet blokkeert.
 //   - persoonlijk: begroeting, jouw afspraken en taken, wat je uitdeelde, jouw mailbox;
 //   - gedeeld met het team: op te volgen leads/klanten (alleen als er iets is), projecten
-//     (tellers per status), facturen, bonnetjes en posts
-//     (met wie ze maakte), en de Scratchpad (vastgepinde en laatst bewerkte notities).
+//     (tellers per status), facturen, bonnetjes, posts (met wie ze maakte) en de
+//     Scratchpad (vastgepinde en laatst bewerkte notities).
 export default async function DashboardPage() {
   // Elke pagina controleert zelf sessie + teamlidmaatschap (de social-widget leest daarna
   // met de service-role, met dit teamlid als bewijs).

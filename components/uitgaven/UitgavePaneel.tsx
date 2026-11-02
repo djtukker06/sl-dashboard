@@ -3,7 +3,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useToast } from '@/components/agenda/Toast';
 import { KlantKiezer } from '@/components/agenda/KlantKiezer';
-import { Persoon } from '@/components/team/Persoon';
 import { bestandUrl, euro, uitgavenApi, UitgavenApiFout, uploadBonnetje } from '@/lib/uitgaven/client';
 import {
   BTW_TARIEVEN,
@@ -512,9 +511,7 @@ export function UitgavePaneel({
 
             <div className="ug-paneel-info">
               <p className="ug-door">
-                Geüpload {uitgave.aangemaaktDoor ? 'door ' : ''}
-                <Persoon id={uitgave.aangemaaktDoor} />
-                {` · ${korteDatumNL(uitgave.aangemaakt.slice(0, 10))}`}
+                {`Geüpload ${korteDatumNL(uitgave.aangemaakt.slice(0, 10))}`}
                 {uitgave.bronInfo && <span className="ug-bron"> · {uitgave.bronInfo}</span>}
               </p>
               {huidig && (

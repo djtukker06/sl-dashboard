@@ -81,7 +81,6 @@ export const uitgavenApi = {
     api<{ uitgave: Uitgave }>('/api/uitgaven/uit-mail', { method: 'POST', body: body(b) })
 };
 
-export const csvExportUrl = (params: Record<string, string | undefined>) => `/api/uitgaven/export?${qs({ ...params, formaat: 'csv' })}`;
 export const bestandUrl = (uitgaveId: string, bestandId: string, download = false) =>
   `/api/uitgaven/${uitgaveId}/bestanden/${bestandId}${download ? '?download=1' : ''}`;
 

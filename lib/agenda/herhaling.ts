@@ -188,9 +188,3 @@ export function rrule(h: Herhaling, eerste: Dag, until: string | null): string {
   }
   return until ? `${regel};UNTIL=${until}` : regel;
 }
-
-// ---------- tekst ----------
-
-export function herhalingLabel(h: Herhaling | null): string {
-  return HERHALINGEN.find((x) => x.waarde === h)?.label ?? 'Niet';
-}

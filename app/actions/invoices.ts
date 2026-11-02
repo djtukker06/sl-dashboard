@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { isUuid, vereisTeamlid } from '@/lib/auth/team';
 import { createServiceRoleClient } from '@/lib/supabase/service-role';
+import { logAudit } from '@/lib/audit';
 
 export async function deleteInvoice(id: string) {
   // Sessie + teamlidmaatschap vóór de service-role (lib/auth/team.ts).
@@ -22,12 +23,18 @@ export async function deleteInvoice(id: string) {
     .eq('id', id)
     .single();
 
+  // Eerst de rij; mislukt dat, dan blijft de factuur mét PDF staan (net als de API-route).
+  // Het factuurnummer komt daarna weer vrij als voorstel (zie migratie 0005).
+  const { error } = await service.from('invoices').delete().eq('id', id);
+  if (error) {
+    console.error('[facturen] verwijderen mislukt', error.code ?? '');
+    throw new Error('Verwijderen is mislukt. Probeer het opnieuw.');
+  }
+
   if (invoice?.pdf_path) {
     await service.storage.from('invoices').remove([invoice.pdf_path]);
   }
-
-  // Factuurnummer wordt bewust niet vrijgegeven — de teller blijft doortellen.
-  await service.from('invoices').delete().eq('id', id);
+  await logAudit('verwijderd_factuur', { lid, doel: id });
 
   revalidatePath('/facturen');
 }

@@ -10,7 +10,6 @@ import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
 //     Een ciphertext die naar het record van een ander (of een andere mailbox) wordt
 //     gekopieerd, is daar dus onbruikbaar. Het voorvoegsel zegt welke AAD hoort.
 
-export const KLUIS_VERSIE = 'v1';
 export type KluisVersie = 'v1' | 'v2';
 
 /** De versie van een opgeslagen waarde, of null bij een onbekend formaat. */

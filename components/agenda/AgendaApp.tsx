@@ -231,9 +231,17 @@ function Agenda({
   const herlaad = useCallback(() => setTeller((t) => t + 1), []);
 
   // ---------- lokale bewerkingen (optimistisch) ----------
+  // De laatst getoonde lijsten. Afvinken roept pasTaakAan twee keer aan (direct, en met het
+  // antwoord van de server) via de versie van het klikmoment; met de staat van toen zou de
+  // teller op de tab dan twee keer verspringen. Daarom de vorige stand altijd hier vandaan.
+  const getoond = useRef({ lijst, bereik });
+  useEffect(() => {
+    getoond.current = { lijst, bereik };
+  }, [lijst, bereik]);
   const pasTaakAan = useCallback(
     (t: Taak) => {
-      const oud = lijst?.taken.find((x) => x.id === t.id) ?? bereik?.taken.find((x) => x.id === t.id);
+      const { lijst: l0, bereik: b0 } = getoond.current;
+      const oud = l0?.taken.find((x) => x.id === t.id) ?? b0?.taken.find((x) => x.id === t.id);
       setBereik((b) => (b ? { ...b, taken: b.taken.map((x) => (x.id === t.id ? { ...x, ...t } : x)) } : b));
       setLijst((l) => {
         if (!l) return l;
@@ -253,7 +261,7 @@ function Agenda({
         return { ...l, tellingen, taken: l.taken.map((x) => (x.id === t.id ? { ...x, ...t } : x)) };
       });
     },
-    [lijst, bereik, vandaag, overgang, mijnId]
+    [vandaag, overgang, mijnId]
   );
   const toggle = useAfvinken(pasTaakAan);
 

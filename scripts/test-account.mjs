@@ -123,6 +123,12 @@ test("interne adressen geweigerd", () => {
   }
   assert.ok(netwerk.isPubliekAdres("172.32.0.1"));
 });
+test("IPv4 in IPv6 in hex-vorm en 6to4 geweigerd", () => {
+  for (const ip of ["::ffff:7f00:1", "::ffff:a9fe:a9fe", "::7f00:1", "::ffff:a00:1", "2002:7f00:1::", "2002:a9fe:a9fe::1"]) {
+    assert.equal(netwerk.isPubliekAdres(ip), false, ip);
+  }
+  for (const ip of ["::ffff:808:808", "2002:808:808::1"]) assert.ok(netwerk.isPubliekAdres(ip), ip);
+});
 test("hostnamen", () => {
   assert.ok(netwerk.isHostnaam("mail.privateemail.com"));
   for (const h of ["localhost", "127.0.0.1", "mail.privateemail.com:993", "-x.nl", "http://a.nl", ""]) assert.equal(netwerk.isHostnaam(h), false, h);

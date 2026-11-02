@@ -80,7 +80,6 @@
 }
 .ac-status strong { font-weight: 700; word-break: break-all; }
 .ac-status-stip { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--sl-faint); transform: translateY(-1px); }
-.ac-status.is-eigen .ac-status-stip { background: #a9b38f; }
 .ac-status.is-standaard .ac-status-stip { background: var(--sl-sand); }
 .ac-waarschuwing {
   margin: 0;

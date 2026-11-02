@@ -39,7 +39,6 @@ export function koppelBronVoor(b: Boeking): KoppelBron | null {
 }
 
 export type Ouderdom = '0-30' | '31-60' | '60+';
-export const OUDERDOM: Ouderdom[] = ['0-30', '31-60', '60+'];
 
 export function ouderdomVan(dagen: number): Ouderdom {
   return dagen <= 30 ? '0-30' : dagen <= 60 ? '31-60' : '60+';

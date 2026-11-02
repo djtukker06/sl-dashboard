@@ -89,6 +89,3 @@ export const ACTIVA_KIESBAAR = new Set<string>(['0200', '0210']);
 
 /** Vanaf dit bedrag (excl. btw) stellen we voor een aanschaf te activeren (€ 450). */
 export const DREMPEL_ACTIVEREN: number = 45_000;
-
-/** Bewaartermijn administratie (art. 52 AWR). */
-export const BEWAARTERMIJN_JAREN = 7;

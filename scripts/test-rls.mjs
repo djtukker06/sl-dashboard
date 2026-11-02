@@ -81,7 +81,7 @@ try {
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const lees = (p) => fs.readFileSync(path.join(ROOT, p), "utf8");
-const MIGRATIES = fs.readdirSync(path.join(ROOT, "supabase", "migrations")).filter((f) => /^\d{4}_.*\.sql$/.test(f)).sort();
+const MIGRATIES = fs.readdirSync(path.join(ROOT, "supabase", "migrations")).filter((f) => /^\d{4}_[^ ]*\.sql$/.test(f)).sort();
 
 let goed = 0;
 let fouten = 0;

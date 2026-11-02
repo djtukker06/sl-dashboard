@@ -34,6 +34,21 @@ function v4Publiek(ip: string): boolean {
   });
 }
 
+/** Het IPv4-adres in ::ffff:a.b.c.d-, ::a.b.c.d- of 6to4-vorm (in hex), anders null. */
+function ingebedIpv4(ip: string): string | null {
+  let canoniek: string;
+  try {
+    canoniek = new URL(`http://[${ip}]/`).hostname.slice(1, -1);
+  } catch {
+    return null;
+  }
+  const m = /^::(?:ffff:)?([0-9a-f]{1,4}):([0-9a-f]{1,4})$/.exec(canoniek) || /^2002:([0-9a-f]{1,4}):([0-9a-f]{1,4})(?::|$)/.exec(canoniek);
+  if (!m) return null;
+  const hoog = parseInt(m[1], 16);
+  const laag = parseInt(m[2], 16);
+  return `${hoog >> 8}.${hoog & 255}.${laag >> 8}.${laag & 255}`;
+}
+
 /** Is dit IP-adres een openbaar internetadres? (v4 en v6) */
 export function isPubliekAdres(ip: string): boolean {
   const soort = isIP(ip);
@@ -43,6 +58,10 @@ export function isPubliekAdres(ip: string): boolean {
   // IPv4 binnen IPv6 (::ffff:10.0.0.1, ::10.0.0.1): de v4-regels.
   const v4 = /(?:^|:)(\d{1,3}(?:\.\d{1,3}){3})$/.exec(a);
   if (v4) return v4Publiek(v4[1]);
+  // Dezelfde vormen in hex, zoals de URL-parser en DNS ze geven (::ffff:7f00:1, ::7f00:1),
+  // en 6to4 (2002:7f00:1::): ook daar gelden de v4-regels voor het ingebedde adres.
+  const ingebed = ingebedIpv4(a);
+  if (ingebed && !v4Publiek(ingebed)) return false;
   if (a === '::' || a === '::1') return false;
   const eerste = parseInt(a.split(':')[0] || '0', 16);
   if ((eerste & 0xfe00) === 0xfc00) return false; // fc00::/7 unique local

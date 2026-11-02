@@ -1,6 +1,6 @@
 /* ==========================================================
    Studio Levant — agenda & taken (ag-) en de planning-widgets
-   op het dashboard (db-snel, db-dag, db-week).
+   op het dashboard (db-dag, db-week).
    Tokens: public/shell/shell.css (--sl-*). Knoppen/kaarten: app.css (db-).
    ========================================================== */
 
@@ -37,8 +37,6 @@
   animation: ag-in .18s var(--sl-ease);
 }
 .ag-chip-zacht { color: var(--sl-muted); border-style: dashed; padding-right: 9px; background: transparent; }
-.ag-chip-datum, .ag-chip-tijd { border-color: #5a5755; }
-.ag-chip-prioriteit { border-color: color-mix(in srgb, var(--sl-danger) 55%, transparent); color: var(--sl-danger); }
 .ag-chip-klant { color: var(--sl-text); }
 .ag-chip-mini { padding: 1px 7px; font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--sl-muted); background: transparent; animation: none; }
 .ag-chip-x {
@@ -148,7 +146,7 @@ textarea.ag-veld { resize: vertical; }
 .ag-veld:focus-visible, .ag-segment button:focus-visible, .ag-icoonknop:focus-visible, .ag-link-knop:focus-visible,
 .ag-chip-x:focus-visible, .ag-vink:focus-visible, .ag-taak-hoofd:focus-visible, .ag-tab:focus-visible, .ag-blok:focus-visible,
 .ag-balk:focus-visible, .ag-maand-item:focus-visible, .ag-maand-nr:focus-visible, .ag-maand-meer:focus-visible,
-.ag-week-dag:focus-visible, .ag-suggestie:focus-visible, .ag-snel-soort:focus-visible, .ag-mini-taak-titel:focus-visible,
+.ag-week-dag:focus-visible, .ag-suggestie:focus-visible, .ag-mini-taak-titel:focus-visible,
 .db-week-dag:focus-visible, .ag-toast button:focus-visible, .ag-mobiel-tabs button:focus-visible {
   outline: none;
   box-shadow: var(--sl-focus);
@@ -170,57 +168,6 @@ kbd {
 
 @keyframes ag-in { from { opacity: 0; transform: translateY(2px); } }
 
-/* ---------- snelinvoer ---------- */
-.ag-snel { position: relative; display: grid; gap: 8px; }
-.ag-snel-rij {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 6px 6px 14px;
-  border: 1px solid var(--sl-line);
-  border-radius: var(--sl-r);
-  background: var(--sl-bg);
-  transition: border-color .2s var(--sl-ease), box-shadow .2s var(--sl-ease);
-}
-.ag-snel-rij:hover { border-color: #4a4847; }
-.ag-snel-rij:focus-within { border-color: var(--sl-sand); box-shadow: 0 0 0 3px rgba(227, 222, 219, .06); }
-.ag-snel-plus { color: var(--sl-muted); font-size: 20px; font-weight: 300; line-height: 1; }
-.ag-snel-rij:focus-within .ag-snel-plus { color: var(--sl-sand); }
-input.ag-snel-veld {
-  flex: 1;
-  min-width: 0;
-  padding: 10px 0;
-  border: 0;
-  background: transparent;
-  color: var(--sl-text);
-  font-family: var(--sl-font);
-  font-size: 15px;
-  outline: none;
-}
-.ag-snel-veld::placeholder { color: var(--sl-faint); }
-.ag-snel-compact input.ag-snel-veld { font-size: 14px; padding: 7px 0; }
-.ag-snel-compact .ag-snel-rij { padding-left: 12px; }
-.ag-snel-soort {
-  flex: 0 0 auto;
-  padding: 5px 9px;
-  border: 1px solid var(--sl-line);
-  border-radius: 999px;
-  background: transparent;
-  color: var(--sl-muted);
-  font-family: var(--sl-mono);
-  font-size: 10px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  cursor: pointer;
-}
-.ag-snel-soort:hover { color: var(--sl-text); border-color: #5a5755; }
-.ag-snel-knop { flex: 0 0 auto; }
-.ag-snel-compact .ag-snel-knop { padding: 6px 11px; font-size: 12.5px; }
-.ag-snel-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-height: 22px; padding: 0 2px; }
-.ag-snel-hint { font-size: 12.5px; line-height: 1.5; color: var(--sl-faint); }
-.ag-snel-hint b { font-weight: 500; color: var(--sl-muted); }
-.ag-snel-fout { font-size: 13px; color: var(--sl-danger); }
-
 .ag-suggesties {
   list-style: none;
   margin: 0;
@@ -237,7 +184,6 @@ input.ag-snel-veld {
   max-height: 260px;
   overflow: auto;
 }
-.ag-snel-suggesties { top: 52px; left: 14px; right: auto; min-width: 260px; }
 .ag-suggestie {
   display: grid;
   gap: 2px;
@@ -867,13 +813,8 @@ input.ag-snel-veld {
   animation: ag-in .16s var(--sl-ease);
 }
 .ag-popover-titel { margin: 0; }
-.ag-popover .ag-snel-suggesties { top: 46px; }
 
 /* ---------- dashboard: planning ---------- */
-.db-snel { grid-column: 1 / -1; }
-.db-snel .ag-snel-rij { background: var(--sl-panel); padding-left: 18px; }
-.db-snel input.ag-snel-veld { font-size: 16px; padding: 12px 0; }
-.db-skelet-invoer { height: 58px; border-radius: var(--sl-r); }
 /* Vandaag: compacte dagagenda (tijd · titel), afspraken met het zandkleurige accent. */
 .db-dag { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
 .db-dag-item {
@@ -1034,7 +975,6 @@ input.ag-snel-veld {
   }
   .ag-maand-meer { width: 100%; padding: 0; font-size: 9px; letter-spacing: 0; text-align: center; }
 
-  .ag-snel-suggesties { left: 0; right: 0; min-width: 0; }
   .ag-paneel { width: 100%; border-left: 0; }
   .ag-paneel-kop { padding-left: 16px; padding-right: 8px; }
   .ag-paneel-inhoud { padding: 18px 16px 24px; }
@@ -1049,7 +989,6 @@ input.ag-snel-veld {
     -webkit-line-clamp: 3;
     -webkit-box-orient: vertical;
   }
-  .ag-snel-knop { padding: 7px 10px; }
   .ag-setup { padding: 32px var(--sl-gutter, 16px); }
 }
 
@@ -1089,7 +1028,6 @@ input.ag-snel-veld {
   .db > .sl-kop .sl-kop-acties > .ug-camera-knop .ug-camera-label { display: none; }
   .db-grid .db-kaart-kop { padding-left: 16px; padding-right: 16px; }
   .db-grid .db-kaart-inhoud { padding: 16px; }
-  .db-tijdlijn { grid-template-columns: 42px minmax(0, 1fr); }
 }
 
 @media (prefers-reduced-motion: reduce) {

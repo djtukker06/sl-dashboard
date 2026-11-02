@@ -432,6 +432,41 @@ label.toggle input { width: 16px; height: 16px; margin: 1px 0 0; padding: 0; fle
 }
 .thumb:hover button, .thumb button:focus-visible { opacity: 1; }
 .thumb button:hover { background: var(--sand); color: var(--dark); }
+
+/* dashboard: opgehaalde links (kaartje per link met beeld, titel en status) */
+.link-cards { display: grid; gap: 8px; }
+.link-cards:empty { display: none; }
+.link-card {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 8px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--r);
+  background: var(--panel);
+}
+.link-thumb {
+  width: 56px; height: 56px; border-radius: 3px; object-fit: cover; display: block;
+  background: var(--raise); border: 1px solid var(--line-soft);
+}
+.link-thumb.leeg { display: grid; place-items: center; }
+.link-body { display: grid; gap: 2px; min-width: 0; }
+.link-title {
+  font-size: 13px; font-weight: 600; color: var(--text);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.link-desc {
+  margin: 0; color: var(--muted); font-size: 12px; line-height: 1.45;
+  display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.link-status {
+  font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.04em; color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.link-status.ok { color: var(--text); }
+.link-status.fout { color: var(--danger); }
+.link-card .btn.small { white-space: nowrap; }
 .generate-bar {
   position: sticky;
   bottom: 0;

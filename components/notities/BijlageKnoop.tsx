@@ -1,7 +1,7 @@
 'use client';
 
 import { mergeAttributes, Node, NodeViewWrapper, ReactNodeViewRenderer, type NodeViewProps } from '@tiptap/react';
-import { leesbareGrootte } from '@/lib/notities/kern';
+import { isBijlageUrl, leesbareGrootte } from '@/lib/notities/kern';
 
 // Een los bestand in een notitie (PDF, Word, Excel, zip …): een kaartje met naam, grootte en
 // Openen/Downloaden. Foto's zijn een gewone afbeelding (extension-image). De src is altijd de
@@ -16,6 +16,8 @@ function extensie(naam: string): string {
 function BijlageKaart({ node, selected }: NodeViewProps) {
   const { src, naam, grootte } = node.attrs as { src: string; naam: string; grootte: number };
   const ext = extensie(naam);
+  // Geplakte HTML kan een vreemde src meebrengen (de server gooit die bij opslaan weg): dan geen links.
+  const veilig = isBijlageUrl(src);
   return (
     <NodeViewWrapper className={`sp-bijlage${selected ? ' is-gekozen' : ''}`} data-drag-handle="">
       <span className={`sp-bijlage-icoon${ext.length > 4 ? ' is-lang' : ''}`} aria-hidden="true">
@@ -27,14 +29,18 @@ function BijlageKaart({ node, selected }: NodeViewProps) {
         </span>
         <span className="sp-bijlage-meta">{leesbareGrootte(grootte)}</span>
       </span>
-      <a className="sp-bijlage-knop" href={src} target="_blank" rel="noopener noreferrer" contentEditable={false}>
-        Openen
-      </a>
-      <a className="sp-bijlage-knop" href={`${src}?download=1`} aria-label={`${naam} downloaden`} contentEditable={false}>
-        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-          <path d="M12 4v11M7 10l5 5 5-5M5 20h14" />
-        </svg>
-      </a>
+      {veilig && (
+        <>
+          <a className="sp-bijlage-knop" href={src} target="_blank" rel="noopener noreferrer" contentEditable={false}>
+            Openen
+          </a>
+          <a className="sp-bijlage-knop" href={`${src}?download=1`} aria-label={`${naam} downloaden`} contentEditable={false}>
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M12 4v11M7 10l5 5 5-5M5 20h14" />
+            </svg>
+          </a>
+        </>
+      )}
     </NodeViewWrapper>
   );
 }
