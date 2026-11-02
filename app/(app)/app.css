@@ -845,17 +845,13 @@
 @media (min-width: 721px) { .sl-alleen-mobiel { display: none !important; } }
 
 /* ---------- privacymodus: cijfers verbergen (components/shell/Privacymodus.tsx) ----------
-   Elementen met een bedrag krijgen data-sl-bedrag en worden vaag; even aanwijzen (of focus)
-   toont ze. Ook bedragvelden, bonnetjes en pdf-voorbeelden. */
+   Elementen met een bedrag krijgen data-sl-bedrag en worden vaag; pas als de modus uit staat,
+   zijn ze weer leesbaar (ook niet bij aanwijzen). Ook bedragvelden, bonnetjes en pdf-voorbeelden. */
 html[data-privacy] [data-sl-bedrag],
-html[data-privacy] .sl-main input[inputmode="decimal"]:not(:focus),
+html[data-privacy] .sl-main input[inputmode="decimal"],
 html[data-privacy] .ug-voorbeeld :is(iframe, img) {
   filter: blur(7px);
   transition: filter .15s var(--sl-ease);
-}
-html[data-privacy] [data-sl-bedrag]:hover,
-html[data-privacy] .ug-voorbeeld:hover :is(iframe, img) {
-  filter: none;
 }
 
 .sl-rail-foot { flex-direction: column; align-items: center; gap: 10px; }
