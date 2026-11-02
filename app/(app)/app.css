@@ -843,3 +843,47 @@
    inhoud weg te laten: beide varianten moeten dezelfde informatie geven. */
 @media (max-width: 720px) { .sl-niet-mobiel { display: none !important; } }
 @media (min-width: 721px) { .sl-alleen-mobiel { display: none !important; } }
+
+/* ---------- privacymodus: cijfers verbergen (components/shell/Privacymodus.tsx) ----------
+   Elementen met een bedrag krijgen data-sl-bedrag en worden vaag; even aanwijzen (of focus)
+   toont ze. Ook bedragvelden, bonnetjes en pdf-voorbeelden. */
+html[data-privacy] [data-sl-bedrag],
+html[data-privacy] .sl-main input[inputmode="decimal"]:not(:focus),
+html[data-privacy] .ug-voorbeeld :is(iframe, img) {
+  filter: blur(7px);
+  transition: filter .15s var(--sl-ease);
+}
+html[data-privacy] [data-sl-bedrag]:hover,
+html[data-privacy] .ug-voorbeeld:hover :is(iframe, img) {
+  filter: none;
+}
+
+.sl-rail-foot { flex-direction: column; align-items: center; gap: 10px; }
+.sl-privacy-knop {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--sl-r);
+  background: none;
+  color: var(--sl-muted);
+  cursor: pointer;
+  transition: color .2s var(--sl-ease), background-color .2s var(--sl-ease);
+}
+.sl-privacy-knop:hover { color: var(--sl-text); background: var(--sl-panel); }
+.sl-privacy-knop[aria-pressed="true"] { color: var(--sl-sand); border-color: var(--sl-line); background: var(--sl-raise); }
+.sl-privacy-regel { display: flex; align-items: center; gap: 10px; }
+.sl-privacy-regel[aria-pressed="true"] { color: var(--sl-sand); }
+.sl-privacy-regel kbd {
+  margin-left: auto;
+  font-family: var(--sl-mono);
+  font-size: 10.5px;
+  color: var(--sl-muted);
+}
+@media (max-width: 720px) {
+  /* Op de telefoon is de rail een tabbalk: daar staat de schakelaar in het menu "Meer". */
+  .sl-rail-foot { flex-direction: row; gap: 0; }
+  .sl-privacy-knop, .sl-privacy-regel kbd { display: none; }
+}

@@ -29,7 +29,8 @@ export const viewport: Viewport = {
 export default async function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   await headers();
   return (
-    <html lang="nl">
+    // suppressHydrationWarning: het shell-script zet data-privacy vóór de hydratie (lib/shell/privacy.ts).
+    <html lang="nl" suppressHydrationWarning>
       <body>{children}</body>
     </html>
   );
