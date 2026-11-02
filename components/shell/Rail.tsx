@@ -1,6 +1,7 @@
 import type { CSSProperties } from 'react';
 import Link from 'next/link';
 import { avatarStijl, LOGO_SRC, railItems, type RailAccount } from '@/lib/shell/rail';
+import { PrivacyKnop } from './Privacymodus';
 import { RailMeer } from './RailMeer';
 import { RailNav } from './RailNav';
 
@@ -23,6 +24,7 @@ export function Rail({ account }: { account: RailAccount }) {
       </Link>
       <RailNav items={items} />
       <div className="sl-rail-foot">
+        <PrivacyKnop />
         <details className="sl-account">
           {/* Op de telefoon heet dit vak "Meer": het menu bevat dan ook de modules die niet in
               de tabbalk passen (RailMeer) en opent als blad van onderen (shell.css). */}
@@ -42,6 +44,7 @@ export function Rail({ account }: { account: RailAccount }) {
                 Agenda koppelen en wachtwoord wijzigen staan buiten de shell en blijven <a>. */}
             <p className="sl-account-naam">{account.naam}</p>
             <p className="sl-account-mail">{account.email}</p>
+            <PrivacyKnop menu />
             <Link className="sl-account-link" href="/account">
               Account &amp; mail
             </Link>
