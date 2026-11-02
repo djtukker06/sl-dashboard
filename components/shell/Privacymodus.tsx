@@ -5,7 +5,7 @@ import { BEDRAG_RE, PRIVACY_ATTR, PRIVACY_SLEUTEL } from '@/lib/shell/privacy';
 
 // Privacymodus ("cijfers verbergen", zie lib/shell/privacy.ts). Zolang hij aan staat, zoekt
 // deze component in de pagina naar tekst met een bedrag en zet op het element eromheen
-// data-sl-bedrag; app.css vervaagt die elementen (even aanwijzen = even zien). Zo hoeft geen
+// data-sl-bedrag; app.css vervaagt die elementen tot de modus weer uit staat. Zo hoeft geen
 // enkel scherm zelf iets te weten van de privacymodus, ook nieuwe schermen niet.
 // Aan/uit: de oog-knop in de rail, "Cijfers verbergen" in het accountmenu of ⌥⇧P.
 
