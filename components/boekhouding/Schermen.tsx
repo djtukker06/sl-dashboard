@@ -294,6 +294,8 @@ export async function OpenstaandScherm({ repo }: { repo: BoekhoudRepo }) {
         totCred={ouderdomTotalen(uOpen)}
         controles={controles}
         teVerwerken={boekingen.filter((b) => b.status === 'te_verwerken').length}
+        vandaag={vandaag}
+        rekeningen={stam.rekeningen.filter((r) => r.actief).map((r) => ({ id: r.id, naam: r.naam, standaard: r.standaard }))}
       />
     </div>
   );

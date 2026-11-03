@@ -972,3 +972,15 @@ a.bh-rek-tab { text-decoration: none; }
 }
 .bh-betaal-nu .bh-veld { flex: 0 1 200px; }
 .bh-betaal-nu .bh-koppel-noot { flex: 1 0 100%; margin: 0; }
+
+/* Boeken en koppelen in één keer: "Betaald boeken" bij Openstaand en de koppelkeuze bij een nieuwe boeking */
+.bh-open-betaald { grid-column: 1 / -1; justify-self: start; font-size: 13px; }
+.bh-open-betaald-form {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 10px;
+}
+.bh-open-betaald-form .bh-veld { flex: 0 1 180px; }
+.bh-invoer-koppel { margin-top: 14px; max-width: 560px; }
