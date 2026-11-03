@@ -343,28 +343,25 @@ export function InvoiceForm({
             }}
           />
           <label>
-            T.a.v. (naam eigenaar/contactpersoon){optioneel}
+            T.a.v. (naam eigenaar/contactpersoon) (optioneel)
             <input
               type="text"
-              required={isFactuur}
               value={klantTav}
               onChange={(e) => setKlantTav(e.target.value)}
             />
           </label>
           <label>
-            Adres (straat + huisnummer, plaats){optioneel}
+            Adres (straat + huisnummer, plaats) (optioneel)
             <input
               type="text"
-              required={isFactuur}
               value={klantAdres}
               onChange={(e) => setKlantAdres(e.target.value)}
             />
           </label>
           <label>
-            Postcode{optioneel}
+            Postcode (optioneel)
             <input
               type="text"
-              required={isFactuur}
               value={klantPostcode}
               onChange={(e) => setKlantPostcode(e.target.value)}
             />
