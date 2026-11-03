@@ -4,7 +4,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { formatCenten, formatHeleEuro, type Centen } from '@/lib/boekhouding/kern/geld';
-import { korteDatum, kwartaalLabel, langeDatum, type Datum, type Kwartaal } from '@/lib/boekhouding/kern/periode';
+import { korteDatum, kwartaalLabel, langeDatum, plusDagen, type Datum, type Kwartaal } from '@/lib/boekhouding/kern/periode';
 import {
   MET_BTW,
   RUBRIEK_GROEPEN,
@@ -52,6 +52,10 @@ export interface AangifteView {
   aangifte: Aangifte | null;
   afwijking: Afwijking | null;
   betaald: Centen;
+  /** Eerstvolgende ingeplande betaling (datum na vandaag), of null. */
+  ingepland: Datum | null;
+  /** Actieve bankrekeningen, voor "Betalen / inplannen". */
+  rekeningen: { id: string; naam: string; standaard: boolean }[];
   posten: Record<string, PostRij>;
   controles: BtwControle[];
   betalingen: { id: string; boekingId: string; datum: Datum; omschrijving: string; bank: string; bedrag: Centen }[];
@@ -83,8 +87,12 @@ export function AangifteApp({ view: v }: { view: AangifteView }) {
   const [intrekken, setIntrekken] = useState(false);
   const [kenmerk, setKenmerk] = useState('');
   const [opmerking, setOpmerking] = useState('');
+  const [betaalDatum, setBetaalDatum] = useState(v.vandaag);
+  const [betaalRekening, setBetaalRekening] = useState(() => (v.rekeningen.find((r) => r.standaard) ?? v.rekeningen[0])?.id ?? '');
 
   const ingediend = v.aangifte;
+  // Alles wat al aan deze aangifte hangt, ook ingeplande betalingen.
+  const gekoppeld = v.betalingen.reduce((t, b) => t + b.bedrag, 0);
   // Wat er op het formulier staat: bij een ingediende aangifte wat is ingediend.
   const formulier = ingediend?.snapshot ?? v.huidig;
   const totaal = ingediend ? ingediend.teBetalen : teBetalenCenten(v.huidig);
@@ -114,6 +122,7 @@ export function AangifteApp({ view: v }: { view: AangifteView }) {
   const indienen = () => actie(() => bkApi(basis, { method: 'POST', body: { kenmerk: kenmerk || null, opmerking: opmerking || null, verwacht: teBetalenCenten(v.huidig) } }));
   const trekIn = () => actie(() => bkApi(basis, { method: 'DELETE' }));
   const koppel = (boekingId: string) => actie(() => bkApi(`${basis}/betaling`, { method: 'POST', body: { boekingId } }));
+  const betaal = () => actie(() => bkApi(`${basis}/betalen`, { method: 'POST', body: { datum: betaalDatum, rekeningId: betaalRekening || null } }));
   const ontkoppel = (id: string) => actie(() => bkApi(`${basis}/betaling?id=${id}`, { method: 'DELETE' }));
   const zetRubriek = (bron: 'factuur', id: string, btwCode: string) => actie(() => bkApi('/api/boekhouding/bron-extra', { method: 'POST', body: { bron, bronId: id, btwCode } }));
 
@@ -309,6 +318,7 @@ export function AangifteApp({ view: v }: { view: AangifteView }) {
                   <div className="bh-betaal-voortgang">
                     <span>
                       {formatCenten(Math.abs(v.betaald))} van {formatCenten(Math.abs(ingediend.teBetalen))} {ingediend.teBetalen > 0 ? 'betaald' : 'ontvangen'}
+                      {v.ingepland && ` · ingepland op ${langeDatum(v.ingepland)}`}
                     </span>
                     <span className="bh-ouderdom-balk" aria-hidden="true">
                       <span className="bh-ouderdom-deel is-vers" style={{ flexGrow: Math.min(1, Math.abs(v.betaald) / Math.abs(ingediend.teBetalen)) }} />
@@ -322,7 +332,7 @@ export function AangifteApp({ view: v }: { view: AangifteView }) {
                           <span className="bh-koppel-tekst">
                             <span className="bh-koppel-titel">{b.omschrijving}</span>
                             <span className="bh-koppel-sub">
-                              {b.bank} · {korteDatum(b.datum)}
+                              {b.bank} · {b.datum > v.vandaag ? `ingepland op ${korteDatum(b.datum)}` : korteDatum(b.datum)}
                             </span>
                           </span>
                           <span className="bh-koppel-bedrag">{formatCenten(Math.abs(b.bedrag))}</span>
@@ -333,7 +343,34 @@ export function AangifteApp({ view: v }: { view: AangifteView }) {
                       ))}
                     </ul>
                   )}
+                  {v.status !== 'betaald' && Math.abs(gekoppeld) < Math.abs(ingediend.teBetalen) && (
+                    <div className="bh-betaal-nu">
+                      <label className="bh-veld">
+                        <span className="bh-label">{ingediend.teBetalen > 0 ? 'Betaaldatum' : 'Datum ontvangen'}</span>
+                        <input type="date" className="ag-veld" value={betaalDatum} min={plusDagen(v.tot, 1)} onChange={(e) => setBetaalDatum(e.target.value)} />
+                      </label>
+                      {v.rekeningen.length > 1 && (
+                        <label className="bh-veld">
+                          <span className="bh-label">Rekening</span>
+                          <select className="ag-veld" value={betaalRekening} onChange={(e) => setBetaalRekening(e.target.value)}>
+                            {v.rekeningen.map((r) => (
+                              <option key={r.id} value={r.id}>
+                                {r.naam}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      )}
+                      <button type="button" className="db-knop db-knop-primair" onClick={betaal} disabled={bezig || !betaalDatum}>
+                        {betaalDatum > v.vandaag ? 'Inplannen' : ingediend.teBetalen > 0 ? 'Betaald' : 'Ontvangen'} · {formatCenten(Math.abs(ingediend.teBetalen) - Math.abs(gekoppeld))}
+                      </button>
+                      <p className="bh-koppel-noot">
+                        Boekt de {ingediend.teBetalen > 0 ? 'betaling aan' : 'teruggaaf van'} de Belastingdienst bij Bank &amp; boekingen en koppelt hem aan deze aangifte. Een datum in de toekomst plant hem in: vanaf die dag telt hij als betaald.
+                      </p>
+                    </div>
+                  )}
                   {v.status !== 'betaald' &&
+                    Math.abs(gekoppeld) < Math.abs(ingediend.teBetalen) &&
                     (v.betaalSuggesties.length ? (
                       <ul className="bh-koppel-lijst">
                         {v.betaalSuggesties.map((s) => (
@@ -354,8 +391,8 @@ export function AangifteApp({ view: v }: { view: AangifteView }) {
                       </ul>
                     ) : (
                       <p className="bh-koppel-noot">
-                        Nog geen betaling gevonden. Boek de {ingediend.teBetalen > 0 ? 'betaling aan' : 'teruggaaf van'} de Belastingdienst bij Bank &amp; boekingen met de soort
-                        &ldquo;Btw-aangifte&rdquo; en koppel hem hier.
+                        Staat de betaling al op de bank (bv. uit een afschrift)? Boek hem bij Bank &amp; boekingen met de soort of categorie
+                        &ldquo;Btw-aangifte&rdquo;; hij verschijnt dan hier om te koppelen.
                       </p>
                     ))}
                 </>

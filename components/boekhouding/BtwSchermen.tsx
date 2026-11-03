@@ -30,7 +30,8 @@ function startVan(d: BoekhoudData, vandaag: string): string {
 }
 
 function kwartalen(d: BoekhoudData, posten: JournaalPost[], vandaag: string): KwartaalRij[] {
-  return kwartaalOverzicht({ posten, aangiften: d.aangiften, betalingen: d.aangifteBetalingen, vanaf: startVan(d, vandaag), vandaag });
+  const betaalDatum = new Map(d.boekingen.map((b) => [b.id, b.datum]));
+  return kwartaalOverzicht({ posten, aangiften: d.aangiften, betalingen: d.aangifteBetalingen, betaalDatum, vanaf: startVan(d, vandaag), vandaag });
 }
 
 const bedragLabel = (c: number) => (c > 0 ? 'te betalen' : c < 0 ? 'terug te ontvangen' : 'niets te betalen');
@@ -87,6 +88,7 @@ export async function BtwScherm({ repo }: { repo: BoekhoudRepo }) {
                   </span>
                   <span className="bh-kw-status">
                     <span className={`bh-pil ${STATUS_LABEL[r.status].klasse}`}>{STATUS_LABEL[r.status].label}</span>
+                    {r.status === 'ingediend' && r.ingepland && <span className="bh-pil is-zacht">betaling ingepland {korteDatum(r.ingepland)}</span>}
                     {r.afwijking && r.afwijking.advies !== 'geen' && <span className="bh-pil is-let-op">gewijzigd na indiening</span>}
                   </span>
                   <span className="bh-kw-deadline">{r.aangifte ? `ingediend ${korteDatum(r.aangifte.ingediendOp.slice(0, 10))}` : `uiterlijk ${korteDatum(r.deadline)}`}</span>
@@ -139,6 +141,7 @@ export async function AangifteScherm({ repo, jaar, kwartaal, eigenaar }: { repo:
       aangifte: data.aangiften.find((a) => a.jaar === jaar && a.kwartaal === kwartaal) ?? null,
       teBetalen: 0,
       betaald: 0,
+      ingepland: null,
       afwijking: null,
       correcties: [],
       correctieIn: null
@@ -194,6 +197,8 @@ export async function AangifteScherm({ repo, jaar, kwartaal, eigenaar }: { repo:
     aangifte,
     afwijking: rij.afwijking,
     betaald: rij.betaald,
+    ingepland: rij.ingepland,
+    rekeningen: data.stam.rekeningen.filter((r) => r.actief).map((r) => ({ id: r.id, naam: r.naam, standaard: r.standaard })),
     posten: postRijen,
     controles: btwControles({ jaar, kwartaal, vandaag, boekingen: data.boekingen, facturen: data.facturen, uitgaven: data.uitgaven, koppelingen: data.koppelingen, bronExtra: data.bronExtra, kwartalen: rijen }),
     betalingen,

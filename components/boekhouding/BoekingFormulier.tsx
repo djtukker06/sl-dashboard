@@ -108,11 +108,14 @@ export function formulierNaarBody(f: Formulier) {
   };
 }
 
+/** Keuze in de categorielijst die de soort omzet naar 'Btw-aangifte'. */
+const BTW_KEUZE = '__btw';
+
 /** Een wijziging van het formulier, met de automatische vervolgstappen (richting, btw, categorie). */
 export function pasAan(stam: Stamdata, f: Formulier, w: Partial<Formulier>): Formulier {
   const n = { ...f, ...w };
   if (w.soort && w.soort !== f.soort) {
-    n.richting = standaardRichting(w.soort);
+    n.richting = w.richting ?? standaardRichting(w.soort);
     n.grootboek = standaardCategorie(w.soort) ?? '';
     n.btwHandmatig = '';
     if (!zonderBtw(w.soort) && !BTW_KEUZES[w.soort === 'inkomst' ? 'inkomst' : 'uitgave'].includes(n.btwCode)) n.btwCode = '21';
@@ -311,7 +314,13 @@ export function BoekingFormulier({
           </label>
           <label className="bh-veld bh-veld-categorie">
             <span className="bh-label">Categorie</span>
-            <select className="ag-veld" value={f.grootboek} onChange={(e) => zet({ grootboek: e.target.value })} aria-invalid={Boolean(fout('grootboek'))}>
+            <select
+              className="ag-veld"
+              value={f.grootboek}
+              // "Btw-aangifte" is geen kostencategorie maar een eigen soort: kiezen zet de soort om.
+              onChange={(e) => zet(e.target.value === BTW_KEUZE ? { soort: 'btw', richting: f.soort === 'inkomst' ? 'bij' : 'af' } : { grootboek: e.target.value })}
+              aria-invalid={Boolean(fout('grootboek'))}
+            >
               {f.soort === 'uitgave' ? (
                 <>
                   <optgroup label="Kosten">
@@ -320,6 +329,9 @@ export function BoekingFormulier({
                         {g.naam}
                       </option>
                     ))}
+                  </optgroup>
+                  <optgroup label="Belastingen">
+                    <option value={BTW_KEUZE}>Btw-aangifte (betaling aan de Belastingdienst)</option>
                   </optgroup>
                   <optgroup label="Investering (activeren)">
                     {activa.map((g) => (
@@ -330,11 +342,14 @@ export function BoekingFormulier({
                   </optgroup>
                 </>
               ) : (
-                categorieen.map((g) => (
-                  <option key={g.code} value={g.code}>
-                    {g.naam}
-                  </option>
-                ))
+                <>
+                  {categorieen.map((g) => (
+                    <option key={g.code} value={g.code}>
+                      {g.naam}
+                    </option>
+                  ))}
+                  <option value={BTW_KEUZE}>Btw-teruggaaf (van de Belastingdienst)</option>
+                </>
               )}
             </select>
           </label>

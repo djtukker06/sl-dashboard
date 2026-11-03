@@ -63,7 +63,7 @@ export async function overzichtData(repo: BoekhoudRepo) {
   const posten = journaalVan(data);
   const saldi = saldoPerRekening(data.boekingen, data.stam.rekeningen);
   const rekeningen = data.stam.rekeningen.filter((r) => r.actief).map((r) => ({ naam: r.naam, saldo: saldi.get(r.id) ?? 0 }));
-  const rijen = kwartaalOverzicht({ posten, aangiften: data.aangiften, betalingen: data.aangifteBetalingen, vanaf: administratieStart(data, vandaag), vandaag });
+  const rijen = kwartaalOverzicht({ posten, aangiften: data.aangiften, betalingen: data.aangifteBetalingen, betaalDatum: new Map(data.boekingen.map((b) => [b.id, b.datum])), vanaf: administratieStart(data, vandaag), vandaag });
   const btw = volgendeAangifte(rijen);
   const start = administratieBegin(data.stam);
   const deb = factuurPosten(vanafStart(data.facturen, start), data.koppelingen, vandaag).filter((p) => p.open > 0);
