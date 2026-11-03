@@ -961,3 +961,14 @@ a.bh-rek-tab { text-decoration: none; }
   .bh, .bh-kaart { background: #fff !important; color: #000 !important; border-color: #ccc !important; }
   .bh-rubriek-uitleg, .bh-kaart-sub, .bh-label { color: #444 !important; }
 }
+
+/* Btw-aangifte: betalen of inplannen met één knop (AangifteApp) */
+.bh-betaal-nu {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 12px;
+  margin-top: 14px;
+}
+.bh-betaal-nu .bh-veld { flex: 0 1 200px; }
+.bh-betaal-nu .bh-koppel-noot { flex: 1 0 100%; margin: 0; }

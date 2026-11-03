@@ -18,7 +18,7 @@ import {
   type ImportBoeking,
   type Kolommapping
 } from './kern/bankimport';
-import { isFactuurBalansrekening, kiesbareCategorieen, kiesbareFactuurRekeningen } from './model';
+import { isFactuurBalansrekening, kiesbareCategorieen, kiesbareFactuurRekeningen, parseBoekingInvoer, vergrendelFout } from './model';
 import { BoekhoudFout, journaalVan, laadAlles, type BoekhoudRepo } from './repo/types';
 import { aangifteVoorKwartaal, betalingFout, naarSnapshot, teBetalenCenten } from './kern/aangifte';
 import { activumAlsInvoer, activumVergrendelFout, parseActivumInvoer, type ActivumWaarde } from './kern/afschrijving';
@@ -281,6 +281,54 @@ export async function aangifteBetalingActie(request: Request, repo: BoekhoudRepo
   if (f) return fout(400, f, 'koppeling_ongeldig');
   const betaling = await repo.aangifteBetalingKoppelen({ boekingId: b.id, aangifteId: a.id, bedrag });
   return json({ betaling }, 201);
+}
+
+/**
+ * Btw betalen (of de teruggaaf ontvangen) met één knop: maakt de bankregel (soort btw,
+ * Belastingdienst) voor het openstaande bedrag op de gekozen datum en koppelt hem meteen.
+ * Een datum na vandaag = ingepland: de regel staat dan al bij Bank & boekingen, en telt op
+ * het kwartaal pas vanaf die datum als betaald (kern/aangifte.ts, kwartaalOverzicht).
+ */
+export async function aangifteBetaalActie(request: Request, repo: BoekhoudRepo, kw: { jaar: number; kwartaal: Kwartaal }): Promise<Response> {
+  const body = await leesJson(request);
+  const data = await laadAlles(repo);
+  const a = data.aangiften.find((x) => x.jaar === kw.jaar && x.kwartaal === kw.kwartaal);
+  if (!a) return fout(404, 'Dit kwartaal is niet ingediend.');
+  if (a.teBetalen === 0) return fout(400, 'Bij deze aangifte hoeft niets te worden betaald of ontvangen.');
+  const gekoppeld = data.aangifteBetalingen.filter((x) => x.aangifteId === a.id).reduce((t, x) => t + x.bedrag, 0);
+  const open = Math.abs(a.teBetalen) - Math.abs(gekoppeld);
+  if (open <= 0) return fout(409, 'Deze aangifte is al helemaal betaald (of ingepland).', 'bestaat_al');
+  const { tot } = kwartaalGrenzen(kw.jaar, kw.kwartaal);
+  if (typeof body.datum === 'string' && body.datum <= tot) {
+    return json({ error: `Kies een datum na het einde van het kwartaal (${tot}).`, veld: 'datum' }, 400);
+  }
+  const vandaag = vandaagNL();
+  const p = parseBoekingInvoer(
+    {
+      rekeningId: body.rekeningId,
+      datum: body.datum,
+      omschrijving: `Btw-aangifte ${kwartaalLabel(kw.jaar, kw.kwartaal)}`,
+      tegenpartij: 'Belastingdienst',
+      soort: 'btw',
+      richting: a.teBetalen > 0 ? 'af' : 'bij',
+      bedragCenten: open,
+      status: 'geboekt'
+    },
+    data.stam,
+    { vandaag }
+  );
+  if (!p.ok) return json({ error: p.fout, veld: p.veld }, 400);
+  const slot = vergrendelFout(null, p.waarde, data.stam.vergrendeling);
+  if (slot) return fout(409, slot, 'periode_vergrendeld');
+  const boeking = await repo.boekingToevoegen(p.waarde);
+  try {
+    const betaling = await repo.aangifteBetalingKoppelen({ boekingId: boeking.id, aangifteId: a.id, bedrag: a.teBetalen > 0 ? open : -open });
+    return json({ boeking, betaling, ingepland: boeking.datum > vandaag }, 201);
+  } catch (e) {
+    // Zonder koppeling geen losse bankregel achterlaten.
+    await repo.boekingVerwijderen(boeking.id, 'Koppelen aan de btw-aangifte mislukt').catch(() => {});
+    throw e;
+  }
 }
 
 export async function aangifteBetalingLosActie(request: Request, repo: BoekhoudRepo): Promise<Response> {

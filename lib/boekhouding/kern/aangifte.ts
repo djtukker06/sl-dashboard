@@ -382,7 +382,10 @@ export interface KwartaalRij {
   aangifte: Aangifte | null;
   /** Bij een ingediende aangifte: het ingediende saldo; anders de huidige berekening (formulier, centen). */
   teBetalen: Centen;
+  /** Betaald t/m vandaag (betalingen met een latere datum tellen pas op die datum mee). */
   betaald: Centen;
+  /** Eerstvolgende ingeplande betaling (bankregel met een datum na vandaag), of null. */
+  ingepland: Datum | null;
   /** Afwijking na indiening (alleen bij ingediend), t.o.v. wat er geldt (incl. latere correcties). */
   afwijking: Afwijking | null;
   /** Niet ingediend: de correcties van eerdere kwartalen die in deze aangifte horen; ingediend: die erin zijn meegenomen. */
@@ -422,6 +425,8 @@ export function kwartaalOverzicht(o: {
   posten: readonly JournaalPost[];
   aangiften: readonly Aangifte[];
   betalingen: readonly AangifteBetaling[];
+  /** Datum van de bankregel per boeking-id: een betaling na vandaag is "ingepland". */
+  betaalDatum?: ReadonlyMap<string, Datum>;
   vanaf: Datum;
   vandaag: Datum;
 }): KwartaalRij[] {
@@ -430,7 +435,10 @@ export function kwartaalOverzicht(o: {
     const deadline = aangifteDeadline(jaar, kwartaal);
     const aangifte = o.aangiften.find((a) => a.jaar === jaar && a.kwartaal === kwartaal) ?? null;
     const { eigen, formulier, correcties } = aangifteVoorKwartaal(o.posten, o.aangiften, jaar, kwartaal);
-    const betaald = aangifte ? o.betalingen.filter((b) => b.aangifteId === aangifte.id).reduce((t, b) => t + b.bedrag, 0) : 0;
+    const eigenBetalingen = aangifte ? o.betalingen.filter((b) => b.aangifteId === aangifte.id) : [];
+    const later = (b: AangifteBetaling) => (o.betaalDatum?.get(b.boekingId) ?? '') > o.vandaag;
+    const betaald = eigenBetalingen.filter((b) => !later(b)).reduce((t, b) => t + b.bedrag, 0);
+    const ingepland = eigenBetalingen.filter(later).map((b) => o.betaalDatum!.get(b.boekingId)!).sort()[0] ?? null;
     const eff = aangifte ? effectiefIngediend(aangifte, o.aangiften) : null;
     const ingediendIn = aangifte ? gecorrigeerdIn(aangifte, o.aangiften) : null;
     return {
@@ -443,6 +451,7 @@ export function kwartaalOverzicht(o: {
       aangifte,
       teBetalen: aangifte ? aangifte.teBetalen : teBetalenCenten(formulier),
       betaald,
+      ingepland,
       afwijking: eff ? vergelijkMetIngediend(eff, eigen) : null,
       correcties,
       correctieIn: ingediendIn ? { ...ingediendIn, ingediend: true } : null
