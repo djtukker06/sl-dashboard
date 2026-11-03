@@ -49,13 +49,9 @@ export function renderInvoiceHtml(factuur: FactuurVoorRender): string {
   const soort = factuur.soort ?? 'factuur';
   const { bedrijfsnaam, tav, adres, postcode } = factuur.klant;
 
-  // Op een factuur staan altijd alle vier de regels (de velden zijn daar verplicht).
-  // Op een prijsopgave alleen wat is ingevuld; is er niets ingevuld, dan vervalt het
-  // hele "Aan:"-blok.
-  const aanRegels =
-    soort === 'factuur'
-      ? [bedrijfsnaam, `t.a.v. ${tav}`, adres, postcode]
-      : [bedrijfsnaam, tav ? `t.a.v. ${tav}` : '', adres, postcode].filter((r) => r !== '');
+  // Alleen wat is ingevuld, zonder lege regels ertussen (t.a.v., adres en postcode zijn
+  // optioneel). Is er niets ingevuld (kan bij een prijsopgave), dan vervalt het hele "Aan:"-blok.
+  const aanRegels = [bedrijfsnaam, tav ? `t.a.v. ${tav}` : '', adres, postcode].filter((r) => r.trim() !== '');
 
   return ejs.render(FACTUUR_TEMPLATE, {
     factuur: {
