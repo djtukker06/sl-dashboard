@@ -20,6 +20,8 @@ import {
 } from './kern/bankimport';
 import { isFactuurBalansrekening, kiesbareCategorieen, kiesbareFactuurRekeningen, parseBoekingInvoer, vergrendelFout } from './model';
 import { BoekhoudFout, journaalVan, laadAlles, type BoekhoudRepo } from './repo/types';
+import type { Boeking } from './model';
+import type { Koppeling } from './kern/bronnen';
 import { aangifteVoorKwartaal, betalingFout, naarSnapshot, teBetalenCenten } from './kern/aangifte';
 import { activumAlsInvoer, activumVergrendelFout, parseActivumInvoer, type ActivumWaarde } from './kern/afschrijving';
 import { activumBronFout, herkomstVan } from './kern/activeren';
@@ -125,31 +127,125 @@ export async function importActie(request: Request, repo: BoekhoudRepo): Promise
     overgeslagen: telling.overgeslagen + telling.buitenBereik
   });}
 
+type Geladen = Awaited<ReturnType<typeof laadAlles>>;
+
+/**
+ * Koppelt een bankregel aan een factuur of bonnetje (na alle controles). Geeft de koppeling,
+ * of een foutantwoord. Gedeeld door "koppelen" en "boeken + koppelen in één keer".
+ */
+async function koppelBoeking(
+  repo: BoekhoudRepo,
+  data: Geladen,
+  boeking: Boeking,
+  bron: unknown,
+  bronId: unknown,
+  bedragRuw: unknown
+): Promise<{ koppeling: Koppeling } | { antwoord: Response }> {
+  if (!isKoppelBron(bron) || !isUuid(bronId)) return { antwoord: fout(400, 'Kies een factuur of bonnetje.') };
+  if (data.activa.some((a) => a.boekingId === boeking.id)) {
+    return { antwoord: fout(409, 'Deze bankregel is geactiveerd. Verwijder eerst het activum en activeer daarna het bonnetje (daar komen de kosten dan vandaan).', 'geactiveerd') };
+  }
+  const vandaag = vandaagNL();
+  const post =
+    bron === 'factuur'
+      ? factuurPosten(data.facturen.filter((f) => f.id === bronId), data.koppelingen, vandaag)[0]
+      : uitgavePosten(data.uitgaven.filter((u) => u.id === bronId), data.koppelingen, vandaag)[0];
+  if (!post) return { antwoord: fout(404, bron === 'factuur' ? 'Deze factuur bestaat niet (meer).' : 'Dit bonnetje bestaat niet (meer) of telt (nog) niet mee.') };
+  let bedrag: number | null;
+  if (bedragRuw === undefined || bedragRuw === null || bedragRuw === '') bedrag = standaardBedrag(restVanBoeking(boeking, data.koppelingen), post.open);
+  else bedrag = typeof bedragRuw === 'number' ? bedragRuw : naarCenten(bedragRuw);
+  if (bedrag === null || !Number.isSafeInteger(bedrag)) return { antwoord: json({ error: 'Ongeldig bedrag.', veld: 'bedrag' }, 400) };
+  const f = koppelFout(boeking, { bron, id: bronId, totaal: post.totaal, open: post.open }, bedrag, data.koppelingen, data.stam.vergrendeling);
+  if (f) return { antwoord: koppelVergrendelFout(boeking, data.stam.vergrendeling) ? fout(409, f, 'periode_vergrendeld') : fout(400, f, 'koppeling_ongeldig') };
+  const koppeling = await repo.koppelingToevoegen({ boekingId: boeking.id, bron, bronId, bedrag });
+  return { koppeling };
+}
+
 /** Een bankregel afletteren tegen een factuur of bonnetje (deelbetaling kan). */
 export async function koppelActie(request: Request, repo: BoekhoudRepo): Promise<Response> {
   const body = await leesJson(request);
   if (!isUuid(body.boekingId)) return fout(400, 'Kies een bankregel.');
-  if (!isKoppelBron(body.bron) || !isUuid(body.bronId)) return fout(400, 'Kies een factuur of bonnetje.');
   const data = await laadAlles(repo);
   const boeking = data.boekingen.find((b) => b.id === body.boekingId);
   if (!boeking) return fout(404, 'Deze boeking bestaat niet (meer).');
-  if (data.activa.some((a) => a.boekingId === boeking.id)) {
-    return fout(409, 'Deze bankregel is geactiveerd. Verwijder eerst het activum en activeer daarna het bonnetje (daar komen de kosten dan vandaan).', 'geactiveerd');
+  const k = await koppelBoeking(repo, data, boeking, body.bron, body.bronId, body.bedrag);
+  if ('antwoord' in k) return k.antwoord;
+  return json({ koppeling: k.koppeling }, 201);}
+
+/**
+ * Boeken en koppelen in één keer: maakt de bankregel en koppelt hem meteen aan de factuur of
+ * het bonnetje (de regel is dan alleen de betaling; omzet/kosten en btw komen uit het document).
+ * Mislukt het koppelen, dan wordt de net gemaakte regel weer verwijderd.
+ *   body: de velden van een boeking + koppel: { bron, bronId, bedrag? }
+ */
+export async function boekEnKoppelActie(body: Record<string, unknown>, repo: BoekhoudRepo): Promise<Response> {
+  const koppel = (body.koppel ?? {}) as Record<string, unknown>;
+  if (!isKoppelBron(koppel.bron) || !isUuid(koppel.bronId)) return fout(400, 'Kies een factuur of bonnetje.');
+  const data = await laadAlles(repo);
+  const p = parseBoekingInvoer(body, data.stam, { vandaag: vandaagNL() });
+  if (!p.ok) return json({ error: p.fout, veld: p.veld }, 400);
+  if (p.waarde.soort !== (koppel.bron === 'factuur' ? 'inkomst' : 'uitgave')) {
+    return fout(400, koppel.bron === 'factuur' ? 'Een factuur koppel je aan een inkomst.' : 'Een bonnetje of inkoopfactuur koppel je aan een uitgave.');
   }
+  const slot = vergrendelFout(null, p.waarde, data.stam.vergrendeling);
+  if (slot) return fout(409, slot, 'periode_vergrendeld');
+  const boeking = await repo.boekingToevoegen(p.waarde);
+  let k: Awaited<ReturnType<typeof koppelBoeking>>;
+  try {
+    k = await koppelBoeking(repo, data, boeking, koppel.bron, koppel.bronId, koppel.bedrag);
+  } catch (e) {
+    await repo.boekingVerwijderen(boeking.id, 'Koppelen mislukt').catch(() => {});
+    throw e;
+  }
+  if ('antwoord' in k) {
+    await repo.boekingVerwijderen(boeking.id, 'Koppelen mislukt').catch(() => {});
+    return k.antwoord;
+  }
+  return json({ boeking, koppeling: k.koppeling }, 201);
+}
+
+/**
+ * "Betaald boeken" vanuit een open factuur of bonnetje: de bankregel wordt uit het document
+ * opgebouwd (omschrijving, tegenpartij, openstaand bedrag) op de gekozen datum en rekening.
+ *   body: { bron, bronId, datum, rekeningId?, bedrag? }
+ */
+export async function documentBetaaldActie(request: Request, repo: BoekhoudRepo): Promise<Response> {
+  const body = await leesJson(request);
+  if (!isKoppelBron(body.bron) || !isUuid(body.bronId)) return fout(400, 'Kies een factuur of bonnetje.');
+  const data = await laadAlles(repo);
   const vandaag = vandaagNL();
-  const post =
-    body.bron === 'factuur'
-      ? factuurPosten(data.facturen.filter((f) => f.id === body.bronId), data.koppelingen, vandaag)[0]
-      : uitgavePosten(data.uitgaven.filter((u) => u.id === body.bronId), data.koppelingen, vandaag)[0];
-  if (!post) return fout(404, body.bron === 'factuur' ? 'Deze factuur bestaat niet (meer).' : 'Dit bonnetje bestaat niet (meer) of telt (nog) niet mee.');
-  let bedrag: number | null;
-  if (body.bedrag === undefined || body.bedrag === null || body.bedrag === '') bedrag = standaardBedrag(restVanBoeking(boeking, data.koppelingen), post.open);
-  else bedrag = typeof body.bedrag === 'number' ? body.bedrag : naarCenten(body.bedrag);
-  if (bedrag === null || !Number.isSafeInteger(bedrag)) return json({ error: 'Ongeldig bedrag.', veld: 'bedrag' }, 400);
-  const f = koppelFout(boeking, { bron: body.bron, id: body.bronId, totaal: post.totaal, open: post.open }, bedrag, data.koppelingen, data.stam.vergrendeling);
-  if (f) return koppelVergrendelFout(boeking, data.stam.vergrendeling) ? fout(409, f, 'periode_vergrendeld') : fout(400, f, 'koppeling_ongeldig');
-  const koppeling = await repo.koppelingToevoegen({ boekingId: boeking.id, bron: body.bron, bronId: body.bronId, bedrag });
-  return json({ koppeling }, 201);}
+  const factuur = body.bron === 'factuur';
+  const post = factuur
+    ? factuurPosten(data.facturen.filter((f) => f.id === body.bronId), data.koppelingen, vandaag)[0]
+    : uitgavePosten(data.uitgaven.filter((u) => u.id === body.bronId), data.koppelingen, vandaag)[0];
+  if (!post) return fout(404, factuur ? 'Deze factuur bestaat niet (meer).' : 'Dit bonnetje bestaat niet (meer) of telt (nog) niet mee.');
+  if (post.open === 0) return fout(409, factuur ? 'Deze factuur is al betaald.' : 'Dit bonnetje is al betaald.', 'bestaat_al');
+  const gevraagd = body.bedrag === undefined || body.bedrag === null || body.bedrag === '' ? null : typeof body.bedrag === 'number' ? body.bedrag : naarCenten(body.bedrag);
+  if (gevraagd !== null && (!Number.isSafeInteger(gevraagd) || gevraagd <= 0 || gevraagd > Math.abs(post.open))) {
+    return json({ error: `Vul een bedrag in tussen € 0 en het openstaande bedrag.`, veld: 'bedrag' }, 400);
+  }
+  const bedrag = gevraagd ?? Math.abs(post.open);
+  // Een creditfactuur of terugbetaling (negatief open bedrag) loopt de andere kant op.
+  const omgekeerd = post.open < 0;
+  const doc = post.doc as { nummer?: string; klant?: string; leverancier?: string; omschrijving?: string };
+  return boekEnKoppelActie(
+    {
+      rekeningId: body.rekeningId,
+      datum: body.datum,
+      omschrijving: factuur ? `Factuur ${doc.nummer}${doc.klant ? ` · ${doc.klant}` : ''}` : doc.leverancier || doc.omschrijving || 'Bonnetje',
+      tegenpartij: factuur ? doc.klant : doc.leverancier,
+      soort: factuur ? 'inkomst' : 'uitgave',
+      richting: factuur ? (omgekeerd ? 'af' : 'bij') : omgekeerd ? 'bij' : 'af',
+      bedragCenten: bedrag,
+      // Gekoppeld komen omzet/kosten en btw uit het document; de regel zelf heeft geen btw.
+      btwCode: 'geen',
+      status: 'geboekt',
+      // Bedrag van de koppeling: de hele nieuwe regel (standaardBedrag kiest het teken).
+      koppel: { bron: body.bron, bronId: body.bronId }
+    },
+    repo
+  );
+}
 
 /** Ontkoppelen: de betaling staat weer los. */
 export async function ontkoppelActie(request: Request, repo: BoekhoudRepo): Promise<Response> {

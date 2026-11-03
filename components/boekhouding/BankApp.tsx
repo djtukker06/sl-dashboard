@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { DREMPEL_ACTIVEREN } from '@/lib/boekhouding/kern/constanten';
-import { formatCenten } from '@/lib/boekhouding/kern/geld';
+import { centenNaarInvoer, formatCenten } from '@/lib/boekhouding/kern/geld';
 import { BTW_LABELS } from '@/lib/boekhouding/kern/btw';
 import { aangifteDeadline, isVergrendeld, jaarVan, korteDatum, kwartaalLabel, kwartaalVan, type Datum, type Kwartaal } from '@/lib/boekhouding/kern/periode';
 import {
@@ -93,6 +93,27 @@ export function BankApp({
   const gekoppeld = useMemo(() => new Set(perBoeking.keys()), [perBoeking]);
   const fPosten = useMemo(() => factuurPosten(facturen, koppel, vandaag), [facturen, koppel, vandaag]);
   const uPosten = useMemo(() => uitgavePosten(uitgaven, koppel, vandaag), [uitgaven, koppel, vandaag]);
+  // Nieuwe boeking meteen koppelen aan een open factuur (inkomst) of bonnetje (uitgave).
+  const [koppelDoc, setKoppelDoc] = useState('');
+  const koppelBron: KoppelBron | null = form.soort === 'inkomst' ? 'factuur' : form.soort === 'uitgave' ? 'uitgave' : null;
+  const openDocs = useMemo(
+    () =>
+      koppelBron === 'factuur'
+        ? fPosten.filter((p) => p.open > 0).map((p) => ({ id: p.doc.id, titel: `Factuur ${p.doc.nummer} · ${p.doc.klant}`, tegenpartij: p.doc.klant, datum: p.doc.datum, open: p.open }))
+        : koppelBron === 'uitgave'
+          ? uPosten.filter((p) => p.open > 0).map((p) => ({ id: p.doc.id, titel: p.doc.leverancier || p.doc.omschrijving || 'Bonnetje', tegenpartij: p.doc.leverancier, datum: (p.doc.datum ?? '') as Datum, open: p.open }))
+          : [],
+    [koppelBron, fPosten, uPosten]
+  );
+  const gekozenDoc = openDocs.find((d) => d.id === koppelDoc) ?? null;
+
+  function kiesDoc(id: string) {
+    setKoppelDoc(id);
+    const d = openDocs.find((x) => x.id === id);
+    if (!d) return;
+    // Omschrijving, tegenpartij en bedrag uit het document (gekoppeld komen btw en categorie daar ook vandaan).
+    setForm((f) => ({ ...f, omschrijving: f.omschrijving || d.titel, tegenpartij: f.tegenpartij || d.tegenpartij, bedrag: centenNaarInvoer(d.open), btwCode: 'geen', btwGekozen: true, isExcl: false }));
+  }
   const factuurVan = useMemo(() => new Map(facturen.map((f) => [f.id, f])), [facturen]);
   const uitgaveVan = useMemo(() => new Map(uitgaven.map((u) => [u.id, u])), [uitgaven]);
   const koppelLabel = (k: Koppeling) => {
@@ -221,10 +242,18 @@ export function BankApp({
     setBezig(true);
     setFouten({});
     try {
-      const { boeking } = await bkApi<{ boeking: Boeking }>('/api/boekhouding/boekingen', { method: 'POST', body: formulierNaarBody(form) });
+      const metKoppel = gekozenDoc && koppelBron ? { koppel: { bron: koppelBron, bronId: gekozenDoc.id } } : {};
+      const { boeking, koppeling } = await bkApi<{ boeking: Boeking; koppeling?: Koppeling }>('/api/boekhouding/boekingen', { method: 'POST', body: { ...formulierNaarBody(form), ...metKoppel } });
       setLijst((l) => [...l, boeking]);
+      if (koppeling) setKoppel((k) => [...k, koppeling]);
+      setKoppelDoc('');
       const r = berekenBoeking(boeking);
-      setMelding({ tekst: `Geboekt: ${boeking.omschrijving} — ${formatCenten(r.btw.bank)} · ${kwartaalLabel(r.jaar, r.kwartaal)}`, soort: 'ok' });
+      setMelding({
+        tekst: koppeling
+          ? `Geboekt en gekoppeld aan ${gekozenDoc?.titel}: ${formatCenten(r.btw.bank)}`
+          : `Geboekt: ${boeking.omschrijving} — ${formatCenten(r.btw.bank)} · ${kwartaalLabel(r.jaar, r.kwartaal)}`,
+        soort: 'ok'
+      });
       // Volgende regel: bank, datum en soort blijven staan (snel achter elkaar invoeren).
       setForm(leegFormulier(stam, vandaag, { rekeningId: form.rekeningId, datum: form.datum, soort: form.soort, richting: form.richting, grootboek: form.grootboek, btwCode: form.btwCode, vennootId: form.vennootId }));
       omschrijvingRef.current?.querySelector<HTMLInputElement>('.bh-veld-omschrijving input')?.focus();
@@ -326,6 +355,20 @@ export function BankApp({
           <div ref={omschrijvingRef}>
             <BoekingFormulier stam={stam} waarde={form} onWijzig={wijzigSnel} layout="rij" suggesties={suggesties} fouten={fouten} />
           </div>
+          {koppelBron && openDocs.length > 0 && (
+            <label className="bh-veld bh-invoer-koppel">
+              <span className="bh-label">{koppelBron === 'factuur' ? 'Betaling van factuur (optioneel)' : 'Betaling van bonnetje of inkoopfactuur (optioneel)'}</span>
+              <select className="ag-veld" value={koppelDoc} onChange={(e) => kiesDoc(e.target.value)}>
+                <option value="">Niet koppelen</option>
+                {openDocs.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.titel} · {d.datum ? korteDatum(d.datum) : 'zonder datum'} · open {formatCenten(d.open)}
+                  </option>
+                ))}
+              </select>
+              {gekozenDoc && <span className="bh-kaart-sub">Wordt meteen gekoppeld: omzet of kosten en btw komen uit het document, deze regel is de betaling.</span>}
+            </label>
+          )}
           <div className="bh-invoer-voet">
             <Uitkomst u={uitrekening} />
             <button type="submit" className="db-knop db-knop-primair bh-boek-knop" disabled={bezig || Boolean(uitrekening.slot)}>

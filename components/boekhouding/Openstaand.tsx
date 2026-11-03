@@ -41,6 +41,50 @@ export interface Controle {
   totaal?: Centen;
 }
 
+type BankKeuze = { id: string; naam: string; standaard: boolean };
+type BetaaldInvoer = { datum: Datum; rekeningId: string };
+
+/** "Betaald boeken": datum en rekening kiezen; maakt de bankregel en koppelt hem meteen. */
+function BetaaldBoeken({ r, vandaag, rekeningen, bezig, onBoek }: { r: OpenRij; vandaag: Datum; rekeningen: BankKeuze[]; bezig: string | null; onBoek: (r: OpenRij, i: BetaaldInvoer) => void }) {
+  const [open, setOpen] = useState(false);
+  const [datum, setDatum] = useState<Datum>(vandaag);
+  const [rekeningId, setRekeningId] = useState(() => (rekeningen.find((x) => x.standaard) ?? rekeningen[0])?.id ?? '');
+  const ontvangen = r.bron === 'factuur' ? r.open > 0 : r.open < 0;
+  if (!open) {
+    return (
+      <button type="button" className="ag-link-knop bh-open-betaald" onClick={() => setOpen(true)} disabled={bezig !== null}>
+        {ontvangen ? 'Ontvangen boeken' : 'Betaald boeken'}
+      </button>
+    );
+  }
+  return (
+    <div className="bh-open-betaald-form">
+      <label className="bh-veld">
+        <span className="bh-label">{ontvangen ? 'Ontvangen op' : 'Betaald op'}</span>
+        <input type="date" className="ag-veld" value={datum} max={vandaag} onChange={(e) => setDatum(e.target.value)} />
+      </label>
+      {rekeningen.length > 1 && (
+        <label className="bh-veld">
+          <span className="bh-label">Rekening</span>
+          <select className="ag-veld" value={rekeningId} onChange={(e) => setRekeningId(e.target.value)}>
+            {rekeningen.map((x) => (
+              <option key={x.id} value={x.id}>
+                {x.naam}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+      <button type="button" className="db-knop db-knop-primair" disabled={bezig !== null || !datum} onClick={() => onBoek(r, { datum, rekeningId })}>
+        {bezig === `${r.id}:betaald` ? 'Bezig…' : `Boeken · ${formatCenten(Math.abs(r.open))}`}
+      </button>
+      <button type="button" className="db-knop" onClick={() => setOpen(false)} disabled={bezig !== null}>
+        Annuleren
+      </button>
+    </div>
+  );
+}
+
 const OUDERDOM_LABEL: Record<Ouderdom, string> = { '0-30': '0–30 dagen', '31-60': '31–60 dagen', '60+': 'ouder dan 60 dagen' };
 
 function Ouderdomsbalk({ t }: { t: OuderdomTotaal }) {
@@ -67,7 +111,29 @@ function Ouderdomsbalk({ t }: { t: OuderdomTotaal }) {
   );
 }
 
-function OpenLijst({ titel, sub, rijen, totaal, leeg, onKoppel, bezig }: { titel: string; sub: string; rijen: OpenRij[]; totaal: OuderdomTotaal; leeg: string; onKoppel: (r: OpenRij, s: OpenRij['suggesties'][number]) => void; bezig: string | null }) {
+function OpenLijst({
+  titel,
+  sub,
+  rijen,
+  totaal,
+  leeg,
+  onKoppel,
+  onBoek,
+  vandaag,
+  rekeningen,
+  bezig
+}: {
+  titel: string;
+  sub: string;
+  rijen: OpenRij[];
+  totaal: OuderdomTotaal;
+  leeg: string;
+  onKoppel: (r: OpenRij, s: OpenRij['suggesties'][number]) => void;
+  onBoek: (r: OpenRij, i: BetaaldInvoer) => void;
+  vandaag: Datum;
+  rekeningen: BankKeuze[];
+  bezig: string | null;
+}) {
   return (
     <section className="bh-kaart bh-open" aria-label={titel}>
       <header className="bh-kaart-kop bh-open-kop">
@@ -115,6 +181,7 @@ function OpenLijst({ titel, sub, rijen, totaal, leeg, onKoppel, bezig }: { titel
                     </button>
                   </div>
                 ))}
+                <BetaaldBoeken r={r} vandaag={vandaag} rekeningen={rekeningen} bezig={bezig} onBoek={onBoek} />
               </li>
             ))}
           </ul>
@@ -132,7 +199,9 @@ export function OpenstaandApp({
   totDeb,
   totCred,
   controles,
-  teVerwerken
+  teVerwerken,
+  vandaag,
+  rekeningen
 }: {
   debiteuren: OpenRij[];
   crediteuren: OpenRij[];
@@ -140,6 +209,8 @@ export function OpenstaandApp({
   totCred: OuderdomTotaal;
   controles: Controle[];
   teVerwerken: number;
+  vandaag: Datum;
+  rekeningen: BankKeuze[];
 }) {
   const router = useRouter();
   const [bezig, setBezig] = useState<string | null>(null);
@@ -152,6 +223,20 @@ export function OpenstaandApp({
     try {
       await bkApi('/api/boekhouding/koppelingen', { method: 'POST', body: { boekingId: s.boekingId, bron: r.bron, bronId: r.id, bedrag: s.bedrag } });
       setMelding({ tekst: `Gekoppeld: ${r.titel} — ${formatCenten(s.bedrag)}`, soort: 'ok' });
+      router.refresh();
+    } catch (e) {
+      setMelding({ tekst: (e as Error).message, soort: 'fout' });
+    } finally {
+      setBezig(null);
+    }
+  }
+
+  async function boekBetaald(r: OpenRij, i: BetaaldInvoer) {
+    setBezig(`${r.id}:betaald`);
+    setMelding(null);
+    try {
+      await bkApi('/api/boekhouding/koppelingen/betaald', { method: 'POST', body: { bron: r.bron, bronId: r.id, datum: i.datum, rekeningId: i.rekeningId || null } });
+      setMelding({ tekst: `Geboekt en gekoppeld: ${r.titel} — ${formatCenten(Math.abs(r.open))}`, soort: 'ok' });
       router.refresh();
     } catch (e) {
       setMelding({ tekst: (e as Error).message, soort: 'fout' });
@@ -201,6 +286,9 @@ export function OpenstaandApp({
           totaal={totDeb}
           leeg="Alle facturen zijn betaald."
           onKoppel={koppel}
+          onBoek={boekBetaald}
+          vandaag={vandaag}
+          rekeningen={rekeningen}
           bezig={bezig}
         />
         <OpenLijst
@@ -210,6 +298,9 @@ export function OpenstaandApp({
           totaal={totCred}
           leeg="Er staan geen inkoopfacturen open."
           onKoppel={koppel}
+          onBoek={boekBetaald}
+          vandaag={vandaag}
+          rekeningen={rekeningen}
           bezig={bezig}
         />
       </div>
