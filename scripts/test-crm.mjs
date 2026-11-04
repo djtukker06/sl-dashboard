@@ -72,8 +72,12 @@ test("klant: lege contactpersoon/adres/postcode → null (zoals de facturen)", (
 test("klant: postcode in hoofdletters", () => assert.equal(inv.parseKlant({ postcode: "1234 ab" }, false).waarde.postal_code, "1234 AB"));
 test("klant: ongeldig e-mailadres", () => assert.equal(inv.parseKlant({ email: "geen-mail" }, false).ok, false));
 test("klant: e-mail leegmaken mag", () => assert.equal(inv.parseKlant({ email: "" }, false).waarde.email, ""));
-test("klant: telefoon alleen cijfers en + ( ) -", () => {
+test("klant: telefoon vrij invullen, gekopieerde tekens opgeschoond", () => {
   assert.equal(inv.parseKlant({ telefoon: "+31 (0)6-12 34 56 78" }, false).ok, true);
+  assert.equal(inv.parseKlant({ telefoon: "+31 6 12345678" }, false).waarde.telefoon, "+31 6 12345678");
+  assert.equal(inv.parseKlant({ telefoon: "\u202a+31\u00a06\u201112\u00a034\u00a056\u00a078\u202c" }, false).waarde.telefoon, "+31 6-12 34 56 78");
+  assert.equal(inv.parseKlant({ telefoon: "020 123 45 67 / toestel 12" }, false).ok, true);
+  assert.equal(inv.parseKlant({ telefoon: "" }, false).waarde.telefoon, "");
   assert.equal(inv.parseKlant({ telefoon: "bel me" }, false).ok, false);
   assert.equal(inv.parseKlant({ telefoon: "1".repeat(41) }, false).ok, false);
 });

@@ -154,7 +154,7 @@ export function BeveiligingAccount({ data }: { data: BeveiligingAccountData }) {
           </button>
         </form>
       </div>
-      <p className="ag-uitleg">Na 12 uur zonder activiteit (en sowieso na 14 dagen) log je automatisch uit.</p>
+      <p className="ag-uitleg">Na 3 dagen zonder activiteit (en sowieso na 14 dagen) log je automatisch uit.</p>
     </section>
   );
 }

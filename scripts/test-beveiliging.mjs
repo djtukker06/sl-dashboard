@@ -132,13 +132,14 @@ await test("sessie: heen en terug, geknoei en verkeerde sleutel falen", async ()
   for (const v of ["", null, undefined, "v1.1.2", "x".repeat(500), w + "a"]) assert.equal(await sessie.leesSessieWaarde(k, v), null, String(v));
   assert.equal(await sessie.leesSessieWaarde(k, await sessie.maakSessieWaarde(k, { start: 10, laatst: 5 })), null, "laatst < start");
 });
-await test("sessie: 12 uur inactief of 14 dagen = verlopen; ververs na 5 min; geen cookie = nieuw", () => {
+await test("sessie: 3 dagen inactief of 14 dagen = verlopen; ververs na 5 min; geen cookie = nieuw", () => {
   const nu = 2_000_000_000_000;
   const u = 3_600_000;
   assert.deepEqual(sessie.sessieBeslissing(null, nu), { soort: "nieuw" });
   assert.deepEqual(sessie.sessieBeslissing({ start: nu - u, laatst: nu - 60_000 }, nu), { soort: "ok", verversen: false });
   assert.deepEqual(sessie.sessieBeslissing({ start: nu - u, laatst: nu - 6 * 60_000 }, nu), { soort: "ok", verversen: true });
-  assert.deepEqual(sessie.sessieBeslissing({ start: nu - 13 * u, laatst: nu - 12 * u - 1000 }, nu), { soort: "verlopen", reden: "inactief" });
+  assert.deepEqual(sessie.sessieBeslissing({ start: nu - 73 * u, laatst: nu - 72 * u - 1000 }, nu), { soort: "verlopen", reden: "inactief" });
+  assert.deepEqual(sessie.sessieBeslissing({ start: nu - 50 * u, laatst: nu - 48 * u }, nu), { soort: "ok", verversen: true }, "2 dagen weg: nog ingelogd");
   assert.deepEqual(sessie.sessieBeslissing({ start: nu - 14 * 24 * u - 1000, laatst: nu - 1000 }, nu), { soort: "verlopen", reden: "max" });
   assert.deepEqual(sessie.sessieBeslissing({ start: nu + 10 * u, laatst: nu + 10 * u }, nu), { soort: "nieuw" });
 });

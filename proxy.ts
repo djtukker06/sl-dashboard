@@ -25,7 +25,7 @@ import {
 //      getClaims() (handtekening lokaal tegen de JWKS van Supabase; zonder asymmetrische
 //      sleutel valt Supabase zelf terug op een controle bij de Auth-server);
 //   3. geen sessie: API's en bestanden krijgen een 401 (JSON), pagina's gaan naar /login;
-//   4. sessiebeleid (lib/auth/sessie-kern.ts): 12 uur niets gedaan of 14 dagen ingelogd →
+//   4. sessiebeleid (lib/auth/sessie-kern.ts): 3 dagen niets gedaan of 14 dagen ingelogd →
 //      uitloggen (Supabase gratis kent geen time-box of inactiviteits-timeout). Ontbreekt de
 //      sessiecookie en is het inlogmoment (amr) niet recent: ook uitloggen;
 //   5. wel een sessie maar geen actief teamlid (migratie 0021): uitloggen, pagina's naar

@@ -67,7 +67,7 @@ export async function signIn(formData: FormData) {
   }
 
   await registreerPoging([limieten[0].sleutel, alarmInloggen(email).sleutel], true);
-  // Nieuwe sessie: het sessiebeleid (12 uur inactief / 14 dagen) begint opnieuw.
+  // Nieuwe sessie: het sessiebeleid (3 dagen inactief / 14 dagen) begint opnieuw.
   const cookie = await verseSessieCookie();
   const jar = await cookies();
   if (cookie) jar.set(cookie);

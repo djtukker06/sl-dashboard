@@ -34,7 +34,19 @@ function isEchteDatum(s: string): boolean {
 }
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const TELEFOON = /^[0-9+()\-.\s]*$/;
+/**
+ * Telefoonnummer opschonen: gekopieerde nummers (Contacten, WhatsApp, een website) bevatten
+ * vaak onzichtbare richtingstekens (U+202A/U+202C), harde spaties of "nette" streepjes.
+ * Die halen we weg of maken we gewoon; verder is het nummer vrije tekst (+, spaties,
+ * haakjes, "/", "toestel 12", ...). Het moet wel minstens één cijfer bevatten.
+ */
+export function schoonTelefoon(v: string): string {
+  return v
+    .replace(/[\p{Cf}\p{Cc}]/gu, '')
+    .replace(/[\u2010-\u2015\u2212]/g, '-')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
 
 function tekst(v: unknown, max: number, naam: string): Resultaat<string> {
   if (v === null || v === undefined) return { ok: true, waarde: '' };
@@ -75,9 +87,9 @@ export function parseKlant(body: KlantInvoer, nieuw: boolean): Resultaat<KlantRi
     rij.email = e.waarde.toLowerCase();
   }
   if ('telefoon' in body) {
-    const t = tekst(body.telefoon, 40, 'telefoon');
+    const t = tekst(typeof body.telefoon === 'string' ? schoonTelefoon(body.telefoon) : body.telefoon, 40, 'telefoon');
     if (!t.ok) return t;
-    if (!TELEFOON.test(t.waarde)) return { ok: false, fout: 'Een telefoonnummer bevat alleen cijfers, spaties en + ( ) -.' };
+    if (t.waarde && !/\d/.test(t.waarde)) return { ok: false, fout: 'Dat telefoonnummer bevat geen cijfers.' };
     rij.telefoon = t.waarde;
   }
   if ('adres' in body) {
