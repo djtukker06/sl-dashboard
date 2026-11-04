@@ -178,7 +178,7 @@ onder **Project Settings → Environment Variables** (Production én Preview):
 | `BACKUP_ENCRYPTION_KEY` | voor back-ups | 32 bytes, base64 (`openssl rand -base64 32`). Versleutelt elke back-up (AES-256-GCM). Zonder sleutel geen back-up (de run wordt "mislukt"). **Ook in je wachtwoordmanager bewaren**: zonder deze sleutel zijn de back-ups onbruikbaar. Alleen Production |
 | `CRON_SECRET` | voor keep-alive en back-ups | Geheim (min. 16 tekens, `openssl rand -base64 32`). Vercel Cron stuurt het zelf mee naar `/api/cron/*`; zonder waarde geven die routes 503. Zelfde waarde als het GitHub-secret `SL_CRON_SECRET` |
 | `MFA_AFDWINGEN` | nee | Leeg = 2FA verplicht (standaard). Alleen `uit` zet het verplicht **instellen** tijdelijk uit (noodgeval); wie al een apparaat heeft, vult nog steeds zijn code in |
-| `SESSIE_GEHEIM` | nee | Eigen sleutel voor de sessiecookie (12 uur inactief / 14 dagen max). Leeg = afgeleid van `SUPABASE_SERVICE_ROLE_KEY` |
+| `SESSIE_GEHEIM` | nee | Eigen sleutel voor de sessiecookie (3 dagen inactief / 14 dagen max). Leeg = afgeleid van `SUPABASE_SERVICE_ROLE_KEY` |
 | `AUDIT_PEPPER` | nee | Peper voor de hashes van IP- en e-mailadressen (audit-log, pogingenlimiet). Leeg = afgeleid van `SUPABASE_SERVICE_ROLE_KEY` |
 | `TEAM_VEREIST` | nee | Leeg = ontbreekt `team_members`, dan een storing (fail closed). Alleen `0` zet de overgangsmodus van vóór 0021 terug |
 
@@ -354,7 +354,7 @@ Auth MFA: Google Authenticator, 1Password, Bitwarden, …).
   minuten, wachtwoord vergeten 3 per uur. Tabel `inlog_pogingen`, alleen hashes.
 - **Wachtwoorden:** minstens 12 tekens en niet bekend uit datalekken (Have I Been Pwned,
   k-anonimiteit).
-- **Sessie:** automatisch uitloggen na 12 uur zonder activiteit of na 14 dagen (cookie `sl_sessie`,
+- **Sessie:** automatisch uitloggen na 3 dagen zonder activiteit of na 14 dagen (cookie `sl_sessie`,
   httpOnly en ondertekend). Ontbreekt de cookie, dan alleen een nieuwe als het inlogmoment
   (`amr` in het token) van de laatste 10 minuten is; anders uitloggen.
 - **Headers:** CSP met nonce per verzoek (`proxy.ts`, `lib/auth/csp-kern.ts`), HSTS, COOP, CORP,

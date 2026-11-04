@@ -12,7 +12,8 @@
 //     ook na een lange afwezigheid waarin de browser de cookie al had weggegooid.
 
 export const SESSIE_COOKIE = 'sl_sessie';
-export const INACTIEF_MS = 12 * 60 * 60 * 1000;
+/** 3 dagen: een avond, nacht of weekend weg en je bent nog ingelogd. */
+export const INACTIEF_MS = 3 * 24 * 60 * 60 * 1000;
 export const MAX_MS = 14 * 24 * 60 * 60 * 1000;
 export const VERVERS_MS = 5 * 60 * 1000;
 /** Speling tussen inloggen (amr-tijdstip) en de eerste keer dat de proxy de cookie mist. */
