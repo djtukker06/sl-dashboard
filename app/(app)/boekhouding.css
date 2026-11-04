@@ -173,6 +173,7 @@ button.bh-saldo:hover { border-color: #4a4847; background: var(--sl-raise); }
 .bh-uitkomst-cijfers dd { margin: 0; font-size: 15px; font-variant-numeric: tabular-nums; }
 .bh-uitkomst-cijfers .is-nadruk dd { font-weight: 700; color: var(--sl-sand); }
 .bh-uitkomst-noot { margin: 0; font-size: 12.5px; line-height: 1.5; color: var(--sl-muted); }
+.bh-via-doc { font-size: 13px; color: var(--sl-muted); padding: 8px 0; }
 .bh-uitkomst-noot.is-slot { color: var(--sl-danger); }
 .bh-uitkomst-noot.is-let-op { color: var(--bh-let-op); }
 

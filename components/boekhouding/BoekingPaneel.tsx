@@ -147,7 +147,15 @@ export function BoekingPaneel({
                 <Link href={`/boekhouding/activa?activeer=boeking:${boeking.id}`}>Activeren →</Link>
               </p>
             ) : null}
-            <BoekingFormulier stam={stam} waarde={form} onWijzig={setForm} layout="paneel" fouten={fouten} alleenLezen={Boolean(slot)} />
+            <BoekingFormulier
+              stam={stam}
+              waarde={form}
+              onWijzig={setForm}
+              layout="paneel"
+              fouten={fouten}
+              alleenLezen={Boolean(slot)}
+              viaDocument={gekoppeld ? (koppel?.bron === 'factuur' ? 'de factuur' : 'het bonnetje') : undefined}
+            />
             {slot && (
               <label className="bh-veld">
                 <span className="bh-label">Notities</span>
