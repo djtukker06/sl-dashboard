@@ -209,7 +209,8 @@ export function BoekingFormulier({
   layout,
   suggesties,
   fouten,
-  alleenLezen
+  alleenLezen,
+  viaDocument
 }: {
   stam: Stamdata;
   waarde: Formulier;
@@ -218,6 +219,8 @@ export function BoekingFormulier({
   suggesties?: string[];
   fouten?: Record<string, string>;
   alleenLezen?: boolean;
+  /** Gekoppeld aan een factuur of bonnetje: btw en categorie komen daaruit ("het bonnetje"). */
+  viaDocument?: string;
 }) {
   const id = useId();
   const f = waarde;
@@ -227,7 +230,8 @@ export function BoekingFormulier({
   const kosten = categorieen.filter((g) => g.soort !== 'activa');
   const activa = categorieen.filter((g) => g.soort === 'activa');
   const kant = f.soort === 'inkomst' ? 'inkomst' : 'uitgave';
-  const metBtw = !zonderBtw(f.soort);
+  // Bij een gekoppelde regel zegt de eigen btw-code ('geen') niets: niet tonen.
+  const metBtw = !zonderBtw(f.soort) && !viaDocument;
   const fout = (veld: string) => fouten?.[veld];
 
   return (
@@ -354,6 +358,11 @@ export function BoekingFormulier({
             </select>
           </label>
         </>
+      ) : viaDocument ? (
+        <div className="bh-veld bh-veld-btw bh-veld-breed">
+          <span className="bh-label">Btw en categorie</span>
+          <span className="bh-via-doc">Uit {viaDocument}</span>
+        </div>
       ) : f.soort === 'prive' ? (
         <>
           <div className="bh-veld bh-veld-btw">
