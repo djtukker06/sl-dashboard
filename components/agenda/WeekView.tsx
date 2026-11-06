@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { DAGNAMEN_KORT, dagDelen, inAmsterdam, minutenNaarTijd, plusDagen, weekdagIndex, type Dag } from '@/lib/agenda/datum';
 import { afspraakRaakt, blokkenOpDag, indelen, isBalk, tijdvak, type Blok } from '@/lib/agenda/weergave';
+import { korteLocatie, vergaderlinkVan } from '@/lib/agenda/vergaderlink';
 import { magAfspraakWijzigen, magTaakWijzigen } from '@/lib/agenda/rechten';
 import type { Afspraak, Taak } from '@/lib/agenda/types';
 import { useTeam } from '@/components/team/TeamProvider';
@@ -305,7 +306,7 @@ export function WeekView({
                         {b.soort === 'taak' && <Afvinker taak={b.item} onToggle={onToggle} klein />}
                         <span className="ag-blok-tekst">
                           <span className="ag-blok-titel">
-                            {b.soort === 'afspraak' && b.item.google?.meetLink && <VideoIcoon />}
+                            {b.soort === 'afspraak' && vergaderlinkVan(b.item) && <VideoIcoon />}
                             {b.item.titel}
                           </span>
                           <span className="ag-blok-tijd">
@@ -314,7 +315,7 @@ export function WeekView({
                               : b.soort === 'afspraak'
                                 ? tijdvak(b.item)
                                 : b.item.tijd}
-                            {b.soort === 'afspraak' && b.item.locatie ? ` · ${b.item.locatie}` : ''}
+                            {b.soort === 'afspraak' && b.item.locatie ? ` · ${korteLocatie(b.item.locatie)}` : ''}
                           </span>
                         </span>
                       </div>

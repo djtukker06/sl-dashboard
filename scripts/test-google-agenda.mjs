@@ -15,6 +15,7 @@ register(
 const K = await import("../lib/google-agenda/kern.ts");
 const { parseAfspraak } = await import("../lib/agenda/invoer.ts");
 const { maakIcs } = await import("../lib/agenda/ics.ts");
+const V = await import("../lib/agenda/vergaderlink.ts");
 
 let n = 0;
 const test = (naam, fn) => {
@@ -241,6 +242,30 @@ test("agenda-link: Google-afspraak met eigen UID, agendanaam en Google-link", ()
   assert.match(plat, /CATEGORIES:Werk/);
   assert.match(plat, /Openen in Google Agenda: https:\/\/www.google.com\/calendar\/event\?eid=xyz/);
   assert.doesNotMatch(plat, /Afspraak in Studio Levant/);
+});
+
+test("vergaderlinks herkennen: Teams, Meet, Zoom, Webex …", () => {
+  const teams = "https://teams.microsoft.com/l/meetup-join/19%3ameeting_abc%40thread.v2/0?context=%7b%22Tid%22%7d";
+  assert.deepEqual(V.vindVergaderlink(teams), { url: teams, dienst: "Teams" });
+  assert.equal(V.vindVergaderlink("https://teams.live.com/meet/9384?p=abc").dienst, "Teams");
+  assert.equal(V.vindVergaderlink("https://meet.google.com/abc-defg-hij").dienst, "Google Meet");
+  assert.equal(V.vindVergaderlink("Bel in via https://us02web.zoom.us/j/8123456789?pwd=xyz.").url, "https://us02web.zoom.us/j/8123456789?pwd=xyz");
+  assert.equal(V.vindVergaderlink("https://studiolevant.webex.com/meet/bram").dienst, "Webex");
+  assert.equal(V.vindVergaderlink("https://whereby.com/studio-levant").dienst, "Whereby");
+  // Geen vergaderlink: gewone sites, http, nep-domeinen, Teams-site zonder vergadering.
+  for (const t of ["https://studio-levant.nl", "http://meet.google.com/abc-defg-hij", "https://teams.microsoft.com.evil.nl/l/meetup-join/x", "https://teams.microsoft.com/", "Stationsstraat 11, Almelo", "", null]) {
+    assert.equal(V.vindVergaderlink(t), null, String(t));
+  }
+  // Locatie eerst, dan de notitie; de Meet-link van Google zelf gaat voor.
+  assert.equal(V.vindVergaderlink("Studio", "Of online: https://meet.google.com/aaa-bbbb-ccc").dienst, "Google Meet");
+  assert.equal(
+    V.vergaderlinkVan({ locatie: "https://us02web.zoom.us/j/1", notitie: "", google: { meetLink: "https://meet.google.com/x", vergaderDienst: "Google Meet" } }).dienst,
+    "Google Meet"
+  );
+  assert.equal(V.vergaderlinkVan({ locatie: "https://us02web.zoom.us/j/1", notitie: "" }).dienst, "Zoom");
+  assert.equal(V.korteLocatie(teams), "Teams");
+  assert.equal(V.korteLocatie(`Stationsstraat 11 · ${teams}`), "Stationsstraat 11 · Teams");
+  assert.equal(V.korteLocatie("Studio"), "Studio");
 });
 
 console.log(`\n${n} tests geslaagd`);

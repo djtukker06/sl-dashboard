@@ -6,6 +6,7 @@ import { amsterdamNaarMoment, inAmsterdam, langeDag, minutenNaarTijd, plusDagen,
 import { magAfspraakWijzigen, namenLijst } from '@/lib/agenda/rechten';
 import { HERHALINGEN, isHerhaling, type Herhaling } from '@/lib/agenda/herhaling';
 import { dagenVanAfspraak } from '@/lib/agenda/weergave';
+import { vergaderlinkVan, vindVergaderlink } from '@/lib/agenda/vergaderlink';
 import type { Afspraak, Taak } from '@/lib/agenda/types';
 import { googleApi } from '@/lib/google-agenda/client';
 import type { GoogleAgenda } from '@/lib/google-agenda/types';
@@ -333,6 +334,11 @@ function AfspraakFormulier({
   const [deelnemers, setDeelnemers] = useState<string[]>(afspraak.deelnemers.length ? afspraak.deelnemers : [mijnId]);
   const mag = nieuw || (g ? g.schrijfbaar : magAfspraakWijzigen(afspraak, mijnId, overgang));
   const magVerwijderen = g ? g.verwijderbaar : mag;
+  // Vergaderlink (Teams, Meet, Zoom, …): de knop bovenaan hoort bij de opgeslagen afspraak;
+  // een link die je nu typt of plakt, meldt het veld meteen ("Teams-link herkend").
+  const opgeslagenLink = nieuw ? null : vergaderlinkVan(afspraak);
+  const getypt = mag ? vindVergaderlink(locatie, notitie) : null;
+  const nieuweLink = getypt && getypt.url !== opgeslagenLink?.url ? getypt : null;
   // De herhaling van een reeks uit Google pas je in Google zelf aan.
   const herhaaltInGoogle = !!g?.herhaalt;
   const { bezig, fout, doe } = useOpslaan();
@@ -462,16 +468,16 @@ function AfspraakFormulier({
             </select>
           </label>
         )}
-        {g?.meetLink && (
+        {opgeslagenLink && (
           <div className="ag-meet">
-            <a className="db-knop db-knop-primair ag-meet-knop" href={g.meetLink} target="_blank" rel="noopener noreferrer">
+            <a className="db-knop db-knop-primair ag-meet-knop" href={opgeslagenLink.url} target="_blank" rel="noopener noreferrer">
               <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
                 <rect x="3" y="6.5" width="12" height="11" rx="2" fill="none" stroke="currentColor" strokeWidth="1.6" />
                 <path d="m15 10.5 5-3v9l-5-3" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
               </svg>
-              Deelnemen{g.vergaderDienst ? ` met ${g.vergaderDienst}` : ''}
+              Deelnemen met {opgeslagenLink.dienst}
             </a>
-            <span className="ag-meet-link">{g.meetLink.replace(/^https?:\/\//, '')}</span>
+            <span className="ag-meet-link">{opgeslagenLink.url.replace(/^https?:\/\//, '')}</span>
           </div>
         )}
         <fieldset className="tk-velden" disabled={!mag}>
@@ -601,18 +607,24 @@ function AfspraakFormulier({
         )}
 
         <label className="ag-label">
-          Locatie
+          Locatie of vergaderlink
           <input
             className="ag-veld"
             type="text"
             value={locatie}
             maxLength={300}
-            placeholder="Adres, ‘Studio’ of een videolink"
+            placeholder="Adres, ‘Studio’ of een Teams-, Meet- of Zoomlink"
+            aria-describedby={nieuweLink ? 'ag-vergaderlink' : undefined}
             onChange={(ev) => setLocatie(ev.target.value)}
           />
         </label>
+        {nieuweLink && (
+          <p className="ag-uitleg ag-herkend" id="ag-vergaderlink">
+            {nieuweLink.dienst}-link herkend: de afspraak krijgt een knop &lsquo;Deelnemen met {nieuweLink.dienst}&rsquo;.
+          </p>
+        )}
 
-        {inGoogle && !g?.meetLink && mag && (
+        {inGoogle && !g?.meetLink && !nieuweLink && mag && (
           <label className="ag-schakel">
             <input type="checkbox" checked={meet} onChange={(ev) => setMeet(ev.target.checked)} />
             <span>Google Meet-link toevoegen</span>
