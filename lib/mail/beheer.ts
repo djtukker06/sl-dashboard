@@ -4,6 +4,7 @@ import type { Teamlid } from '@/lib/auth/team';
 import { createServiceRoleClient } from '@/lib/supabase/service-role';
 import { tabelOntbreekt } from '@/lib/db/ontbreekt';
 import { logAudit } from '@/lib/audit';
+import { bedrijf } from '@/lib/config';
 import { teamProfielen } from '@/lib/team/profielen';
 import { valideerMailbox, type MailboxInvoer } from '@/lib/account/types';
 import { eigenMailboxRij, type MailboxRij } from './config';
@@ -203,8 +204,11 @@ export async function koppelMailbox(lid: Teamlid, o: Record<string, unknown>, re
   }
 
   // Afzendernaam en handtekening: niet meegestuurd = de bewaarde waarde houden; bij een
-  // nieuwe koppeling je profielnaam en geen handtekening.
-  if (!('fromName' in o) || (!bestaand && !invoer.fromName)) invoer.fromName = bestaand?.from_name || lid.profiel.naam;
+  // nieuwe koppeling geen handtekening en als naam: je eigen naam alleen voor je eigen adres
+  // (waarmee je inlogt), anders de bedrijfsnaam (info@ is "Studio Levant", niet degene die
+  // de inbox toevallig koppelde).
+  const standaardNaam = invoer.email === lid.email.toLowerCase() ? lid.profiel.naam : bedrijf.bedrijfsnaam;
+  if (!('fromName' in o) || (!bestaand && !invoer.fromName)) invoer.fromName = bestaand?.from_name || standaardNaam;
   if (!('handtekening' in o)) invoer.handtekening = bestaand?.handtekening ?? '';
   if (!invoer.wachtwoord) {
     // Het opgeslagen wachtwoord alleen hergebruiken als de HELE verbinding gelijk blijft;

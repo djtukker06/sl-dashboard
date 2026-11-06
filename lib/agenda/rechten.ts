@@ -9,7 +9,9 @@ export function magTaakWijzigen(t: Pick<Taak, 'aangemaaktDoor' | 'toegewezen'>, 
   return overgang || t.aangemaaktDoor === mijnId || t.toegewezen.includes(mijnId);
 }
 
-export function magAfspraakWijzigen(a: Pick<Afspraak, 'aangemaaktDoor' | 'deelnemers'>, mijnId: string, overgang: boolean): boolean {
+export function magAfspraakWijzigen(a: Pick<Afspraak, 'aangemaaktDoor' | 'deelnemers' | 'google'>, mijnId: string, overgang: boolean): boolean {
+  // Uit Google Agenda: wat Google toestaat (schrijfbare agenda, en jij organiseert).
+  if (a.google) return a.google.schrijfbaar;
   return overgang || a.aangemaaktDoor === mijnId || a.deelnemers.includes(mijnId);
 }
 

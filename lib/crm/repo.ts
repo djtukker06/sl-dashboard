@@ -30,6 +30,7 @@ import type { Klant, KlantNotitie, KlantRegel, KlantStatus } from './types';
 
 const KLANT_KOLOMMEN = 'id,company_name,contact_name,email,telefoon,address,postal_code,status,created_at';
 const OPVOLG = ',volgende_stap,opvolgen_op';
+const WEBSITE = ',website';
 
 interface KlantDbRij {
   id: string;
@@ -43,6 +44,7 @@ interface KlantDbRij {
   created_at?: string | null;
   volgende_stap?: string | null;
   opvolgen_op?: string | null;
+  website?: string | null;
 }
 
 function statusVan(s: unknown): KlantStatus {
@@ -58,6 +60,7 @@ function naarKlant(r: KlantDbRij): Klant {
     telefoon: r.telefoon ?? '',
     adres: r.address ?? '',
     postcode: r.postal_code ?? '',
+    website: r.website ?? '',
     status: statusVan(r.status),
     volgendeStap: r.volgende_stap ?? '',
     opvolgenOp: r.opvolgen_op ?? null
@@ -69,6 +72,9 @@ export function crmFout(error: unknown): AgendaFout {
   if (kolomOntbreekt(error)) return new AgendaFout(503, CRM_NIET_INGERICHT, 'tabel_ontbreekt');
   return dbFout(error);
 }
+
+/** Melding als je een website invult vóór migratie 0035 (de kolom bestaat dan nog niet). */
+export const WEBSITE_NA_0035 = 'Een website opslaan werkt zodra migratie 0035 is uitgevoerd (supabase/UITVOEREN_0035.sql).';
 
 /** Melding als je "Op de radar" kiest vóór migratie 0033 (de check-constraint kent 'koud' dan nog niet). */
 export const KOUD_NA_0033 = '“Op de radar” werkt zodra migratie 0033 is uitgevoerd (supabase/UITVOEREN_0033.sql).';
@@ -203,9 +209,9 @@ export async function klantOphalen(bron: AgendaBron, id: string): Promise<Klant 
 async function klantRijOphalen(bron: AgendaBron, id: string): Promise<{ rij: KlantDbRij | null; opvolging: boolean }> {
   const { data, set } = await metTerugval<KlantDbRij>(
     (kol) => bron.sb.from('clients').select(kol).eq('id', id).maybeSingle() as unknown as Antwoord<KlantDbRij>,
-    [KLANT_KOLOMMEN + OPVOLG, KLANT_KOLOMMEN]
+    [KLANT_KOLOMMEN + OPVOLG + WEBSITE, KLANT_KOLOMMEN + OPVOLG, KLANT_KOLOMMEN]
   );
-  return { rij: data, opvolging: set === 0 };
+  return { rij: data, opvolging: set <= 1 };
 }
 
 export interface FactuurRegel {

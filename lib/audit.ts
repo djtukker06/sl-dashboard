@@ -33,6 +33,8 @@ export type AuditActie =
   | 'export_social'
   | 'drive_gekoppeld'
   | 'drive_ontkoppeld'
+  | 'google_agenda_gekoppeld'
+  | 'google_agenda_ontkoppeld'
   | 'audit_bekeken'
   | `verwijderd_${string}`
   | `backup_${string}`

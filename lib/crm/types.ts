@@ -25,6 +25,8 @@ export interface Klant {
   telefoon: string;
   adres: string;
   postcode: string;
+  /** Website (0035; '' als leeg of vóór 0035), zoals getypt: "studio-levant.nl". */
+  website: string;
   status: KlantStatus;
   /** Korte "volgende stap" (0025; '' vóór 0025 of als niets gepland). */
   volgendeStap: string;
@@ -75,6 +77,7 @@ export interface KlantInvoer {
   telefoon?: string;
   adres?: string;
   postcode?: string;
+  website?: string;
   status?: KlantStatus;
   volgendeStap?: string;
   opvolgenOp?: string | null;

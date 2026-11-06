@@ -97,6 +97,42 @@ export interface Afspraak {
   reeksId: string | null;
   /** Oorspronkelijke datum van dit voorkomen ('YYYY-MM-DD'); null bij een eenmalige afspraak. */
   voorkomen: string | null;
+  /** Afspraak uit een gekoppelde Google-agenda (migratie 0035); ontbreekt bij eigen afspraken. */
+  google?: GoogleInfo;
+}
+
+/** Wat een afspraak uit Google extra heeft (lib/google-agenda). */
+export interface GoogleInfo {
+  /** Rij-id van de agenda (google_agendas.id). */
+  agendaId: string;
+  agendaNaam: string;
+  /** Hex-kleur: de eigen kleur van de afspraak in Google, anders die van de agenda. */
+  kleur: string;
+  /** Het id bij Google (bij een voorkomen dat van het voorkomen). */
+  eventId: string;
+  /** Herhaalt in Google (de regel zelf passen we daar aan, niet hier). */
+  herhaalt: boolean;
+  /** Google Meet-link (of de videolink van een andere vergaderdienst). */
+  meetLink: string | null;
+  /** Naam van de vergaderdienst ("Google Meet", "Zoom"), of null. */
+  vergaderDienst: string | null;
+  /** De afspraak openen in Google Agenda. */
+  link: string | null;
+  /** Wie de afspraak organiseert (naam of e-mail); null als jij dat bent. */
+  organisator: string | null;
+  gasten: GoogleGast[];
+  /** Titel, tijd enz. wijzigen (schrijfbare agenda en jij organiseert, of gasten mogen wijzigen). */
+  schrijfbaar: boolean;
+  /** Verwijderen uit je agenda (schrijfbare agenda). */
+  verwijderbaar: boolean;
+}
+
+export interface GoogleGast {
+  email: string;
+  naam: string;
+  status: 'accepted' | 'declined' | 'tentative' | 'needsAction';
+  /** Dat ben jij (het gekoppelde account). */
+  ik: boolean;
 }
 
 /**
@@ -173,4 +209,6 @@ export interface AfspraakInvoer {
   herhaalTot?: string | null;
   /** Bij PATCH/DELETE van een voorkomen: alleen dit voorkomen of de hele reeks (standaard). */
   toepassen?: 'deze' | 'reeks';
+  /** Alleen bij een afspraak in Google: een Google Meet-link (laten) aanmaken. */
+  meet?: boolean;
 }

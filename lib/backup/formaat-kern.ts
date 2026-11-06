@@ -188,6 +188,9 @@ export const TABELLEN: TabelDef[] = [
   { naam: 'team_members', pk: ['user_id'] },
   // Agenda-abonnementen (0029): alleen de hash van het token.
   { naam: 'agenda_feeds', pk: ['user_id'] },
+  // Google Agenda (0035): het refresh token staat er versleuteld in (zoals drive_koppeling).
+  { naam: 'google_agenda_accounts', pk: ['id'] },
+  { naam: 'google_agendas', pk: ['id'] },
   { naam: 'clients', pk: ['id'], zonder: ['company_name_normalized'] },
   { naam: 'client_notes', pk: ['id'] },
   { naam: 'projects', pk: ['id'] },

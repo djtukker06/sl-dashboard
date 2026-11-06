@@ -7,6 +7,7 @@ import { kolomOntbreekt, tabelOntbreekt } from '@/lib/db/ontbreekt';
 import { normTijd, plusDagen, vandaag, type Dag } from './datum';
 import { clientVan, maakIcs, type FeedAfspraak, type FeedTaak } from './ics';
 import { isHerhaling } from './herhaling';
+import { googleVoorFeed } from '@/lib/google-agenda/afspraken';
 import { FEED_KOLOMMEN, NIET_INGERICHT, naarFeedStatus, type FeedRij, type FeedStatus } from './feed-status';
 
 // Agenda-abonnement per teamlid (migratie 0029): een geheime link die Apple Agenda of Google
@@ -163,6 +164,9 @@ export async function feedVoorToken(token: string, ua: string | null, basis: str
   if (!(feed as { eerst_opgehaald_op: string | null }).eerst_opgehaald_op) opgehaald.eerst_opgehaald_op = nu.toISOString();
   await sb.from('agenda_feeds').update(opgehaald).eq('user_id', userId);
 
+  // Afspraken uit gekoppelde Google-agenda's met "ook in de agenda-link" aan (0035; best effort).
+  const google = await googleVoorFeed(sb, userId, nu).catch(() => []);
+
   const naam = ((profielRes.data as { naam?: string } | null)?.naam ?? '').trim() || 'Agenda';
-  return maakIcs({ naam, taken, afspraken, link: basis ? `${basis}/agenda` : null, nu });
+  return maakIcs({ naam, taken, afspraken: [...afspraken, ...google], link: basis ? `${basis}/agenda` : null, nu });
 }

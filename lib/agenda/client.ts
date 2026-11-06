@@ -35,7 +35,8 @@ export class ApiFout extends Error {
   }
 }
 
-async function api<T>(url: string, init?: RequestInit): Promise<T> {
+/** fetch naar een eigen API-route: JSON heen en terug, 401 → inloggen, fout → ApiFout. */
+export async function api<T>(url: string, init?: RequestInit): Promise<T> {
   let res: Response;
   try {
     res = await fetch(url, {

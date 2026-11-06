@@ -10,6 +10,21 @@ import type { Selectie } from './ItemPaneel';
 import { Afvinker } from './TaakRij';
 
 const UUR = 48; // px per uur
+
+/** Kleur van een afspraak uit Google (CSS-variabele; eigen afspraken houden het zand). */
+export function kleurStijl(a: Afspraak): React.CSSProperties | undefined {
+  return a.google ? ({ '--ag-kleur': a.google.kleur } as React.CSSProperties) : undefined;
+}
+
+/** Klein camera-icoon bij een afspraak met een videolink (Google Meet e.d.). */
+export function VideoIcoon() {
+  return (
+    <svg className="ag-video" viewBox="0 0 24 24" width="11" height="11" aria-label="Met videogesprek" role="img">
+      <rect x="3" y="6.5" width="12" height="11" rx="2" fill="none" stroke="currentColor" strokeWidth="2" />
+      <path d="m15 10.5 5-3v9l-5-3" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
+    </svg>
+  );
+}
 const STAP = 15; // slepen in stappen van 15 minuten
 
 export type Verplaatsing =
@@ -196,9 +211,10 @@ export function WeekView({
                 <button
                   key={a.id}
                   type="button"
-                  className="ag-balk"
+                  className={`ag-balk${a.google ? ' is-google' : ''}`}
+                  style={kleurStijl(a)}
                   onClick={() => onOpen({ soort: 'afspraak', item: a })}
-                  title={`${a.titel} · ${tijdvak(a)}`}
+                  title={`${a.titel} · ${tijdvak(a)}${a.google ? ` · ${a.google.agendaNaam}` : ''}`}
                 >
                   {a.titel}
                 </button>
@@ -251,6 +267,7 @@ export function WeekView({
                     const start = b.start + (sleept ? sleep.minDelta : 0);
                     const hoogte = Math.max(((b.eind - b.start) / 60) * UUR, 20);
                     const stijl: React.CSSProperties = {
+                      ...(b.soort === 'afspraak' ? kleurStijl(b.item) : {}),
                       top: (start / 60) * UUR,
                       height: hoogte,
                       left: sleept ? 2 : `calc(${(lane.kolom / lane.kolommen) * 100}% + 2px)`,
@@ -260,12 +277,12 @@ export function WeekView({
                     const kort = hoogte < 38;
                     const label =
                       b.soort === 'afspraak'
-                        ? `${b.item.titel}, ${tijdvak(b.item)}`
+                        ? `${b.item.titel}, ${tijdvak(b.item)}${b.item.google ? ` (${b.item.google.agendaNaam})` : ''}`
                         : `Taak ${b.item.titel}, ${b.item.tijd}`;
                     return (
                       <div
                         key={`${b.soort}:${b.id}`}
-                        className={`ag-blok ag-blok-${b.soort}${b.soort === 'taak' && b.item.afgerond ? ' is-af' : ''}${sleept ? ' is-sleep' : ''}${kort ? ' is-kort' : ''}`}
+                        className={`ag-blok ag-blok-${b.soort}${b.soort === 'afspraak' && b.item.google ? ' is-google' : ''}${b.soort === 'taak' && b.item.afgerond ? ' is-af' : ''}${sleept ? ' is-sleep' : ''}${kort ? ' is-kort' : ''}`}
                         style={stijl}
                         role="button"
                         tabIndex={0}
@@ -287,7 +304,10 @@ export function WeekView({
                       >
                         {b.soort === 'taak' && <Afvinker taak={b.item} onToggle={onToggle} klein />}
                         <span className="ag-blok-tekst">
-                          <span className="ag-blok-titel">{b.item.titel}</span>
+                          <span className="ag-blok-titel">
+                            {b.soort === 'afspraak' && b.item.google?.meetLink && <VideoIcoon />}
+                            {b.item.titel}
+                          </span>
                           <span className="ag-blok-tijd">
                             {sleept
                               ? minutenNaarTijd(start)

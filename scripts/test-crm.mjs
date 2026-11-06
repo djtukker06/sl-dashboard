@@ -72,6 +72,19 @@ test("klant: lege contactpersoon/adres/postcode → null (zoals de facturen)", (
 test("klant: postcode in hoofdletters", () => assert.equal(inv.parseKlant({ postcode: "1234 ab" }, false).waarde.postal_code, "1234 AB"));
 test("klant: ongeldig e-mailadres", () => assert.equal(inv.parseKlant({ email: "geen-mail" }, false).ok, false));
 test("klant: e-mail leegmaken mag", () => assert.equal(inv.parseKlant({ email: "" }, false).waarde.email, ""));
+test("klant: website (0035) zoals getypt, link met https://", () => {
+  assert.equal(inv.parseKlant({ website: " studio-levant.nl/ " }, false).waarde.website, "studio-levant.nl");
+  assert.equal(inv.parseKlant({ website: "https://www.voorbeeld.nl/contact" }, false).waarde.website, "https://www.voorbeeld.nl/contact");
+  assert.equal(inv.parseKlant({ website: "" }, false).waarde.website, null);
+  assert.equal(inv.websiteLink("studio-levant.nl"), "https://studio-levant.nl");
+  assert.equal(inv.websiteLink("http://oud.nl"), "http://oud.nl");
+});
+test("klant: website weigert geen-domein en andere protocollen", () => {
+  for (const w of ["javascript:alert(1)", "mailto:a@b.nl", "geen website", "localhost", "https://user:pw@x.nl", "ftp://x.nl", 5]) {
+    assert.equal(inv.parseKlant({ website: w }, false).ok, false, String(w));
+  }
+  assert.equal(inv.websiteLink("javascript:alert(1)"), "");
+});
 test("klant: telefoon vrij invullen, gekopieerde tekens opgeschoond", () => {
   assert.equal(inv.parseKlant({ telefoon: "+31 (0)6-12 34 56 78" }, false).ok, true);
   assert.equal(inv.parseKlant({ telefoon: "+31 6 12345678" }, false).waarde.telefoon, "+31 6 12345678");

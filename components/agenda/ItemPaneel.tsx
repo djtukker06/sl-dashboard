@@ -7,6 +7,9 @@ import { magAfspraakWijzigen, namenLijst } from '@/lib/agenda/rechten';
 import { HERHALINGEN, isHerhaling, type Herhaling } from '@/lib/agenda/herhaling';
 import { dagenVanAfspraak } from '@/lib/agenda/weergave';
 import type { Afspraak, Taak } from '@/lib/agenda/types';
+import { googleApi } from '@/lib/google-agenda/client';
+import type { GoogleAgenda } from '@/lib/google-agenda/types';
+import { perGebruiker } from '@/lib/mail/client';
 import { Persoon } from '@/components/team/Persoon';
 import { useTeam } from '@/components/team/TeamProvider';
 import { VoorWieKiezer } from '@/components/taken/VoorWieKiezer';
@@ -44,7 +47,8 @@ export function ItemPaneel({
   onSluit,
   onOpgeslagen,
   onVerwijderd,
-  herhalingKlaar = true
+  herhalingKlaar = true,
+  googleAgendas = []
 }: {
   selectie: Extract<Selectie, { soort: 'afspraak' }>;
   onSluit: () => void;
@@ -52,6 +56,8 @@ export function ItemPaneel({
   onVerwijderd: (s: Selectie) => void;
   /** false zolang migratie 0034 (herhalen) niet is uitgevoerd: dan staat "Herhalen" uit. */
   herhalingKlaar?: boolean;
+  /** Je gekoppelde Google-agenda's (0035): kiezen waar een nieuwe afspraak komt. */
+  googleAgendas?: GoogleAgenda[];
 }) {
   const paneel = useRef<HTMLElement>(null);
 
@@ -86,6 +92,7 @@ export function ItemPaneel({
           afspraak={selectie.item}
           nieuw={!!selectie.nieuw}
           herhalingKlaar={herhalingKlaar}
+          googleAgendas={googleAgendas}
           onSluit={onSluit}
           onOpgeslagen={(a) => onOpgeslagen({ soort: 'afspraak', item: a })}
           onVerwijderd={() => onVerwijderd(selectie)}
@@ -95,10 +102,13 @@ export function ItemPaneel({
   );
 }
 
-function Kop({ label, onSluit }: { label: string; onSluit: () => void }) {
+function Kop({ label, kleur, onSluit }: { label: string; kleur?: string; onSluit: () => void }) {
   return (
     <header className="ag-paneel-kop">
-      <p className="db-label">{label}</p>
+      <p className="db-label ag-paneel-label">
+        {kleur && <span className="ag-kal-stip" style={{ '--ag-kleur': kleur } as React.CSSProperties} aria-hidden="true" />}
+        {label}
+      </p>
       <button type="button" className="ag-icoonknop" aria-label="Sluiten (Esc)" title="Sluiten (Esc)" onClick={onSluit}>
         <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
           <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
@@ -112,6 +122,7 @@ function Voet({
   bezig,
   nieuw,
   mag,
+  magVerwijderen = mag,
   reeks,
   vraagOpslaan,
   onKiesOpslaan,
@@ -121,6 +132,8 @@ function Voet({
   bezig: boolean;
   nieuw: boolean;
   mag: boolean;
+  /** Verwijderen mag ook als wijzigen niet mag (een Google-afspraak waar je gast bent). */
+  magVerwijderen?: boolean;
   /** Een voorkomen van een herhalende afspraak: dan "alleen deze" of "hele reeks". */
   reeks: boolean;
   /** Vraag bij opslaan op welke voorkomens de wijziging slaat (null = niet vragen). */
@@ -130,7 +143,7 @@ function Voet({
   onSluit: () => void;
 }) {
   const [zeker, setZeker] = useState(false);
-  if (!mag) {
+  if (!mag && !magVerwijderen) {
     return (
       <footer className="ag-paneel-voet">
         <span />
@@ -195,11 +208,13 @@ function Voet({
       {!zeker && (
         <span className="ag-paneel-acties">
           <button type="button" className="db-knop" onClick={onSluit}>
-            Annuleren
+            {mag ? 'Annuleren' : 'Sluiten'}
           </button>
-          <button type="submit" className="db-knop db-knop-primair" disabled={bezig}>
-            {bezig ? 'Bezig…' : nieuw ? 'Afspraak toevoegen' : 'Opslaan'}
-          </button>
+          {mag && (
+            <button type="submit" className="db-knop db-knop-primair" disabled={bezig}>
+              {bezig ? 'Bezig…' : nieuw ? 'Afspraak toevoegen' : 'Opslaan'}
+            </button>
+          )}
         </span>
       )}
     </footer>
@@ -233,10 +248,51 @@ function useOpslaan() {
   return { bezig, fout, doe };
 }
 
+/** Laatst gekozen agenda voor een nieuwe afspraak ('' = Studio Levant), per gebruiker. */
+const BRON_SLEUTEL = 'sl-agenda-nieuw-in';
+
+function leesBron(agendas: GoogleAgenda[]): string {
+  try {
+    const id = localStorage.getItem(perGebruiker(BRON_SLEUTEL)) ?? '';
+    return agendas.some((a) => a.id === id && a.schrijfbaar) ? id : '';
+  } catch {
+    return '';
+  }
+}
+
+function bewaarBron(id: string) {
+  try {
+    localStorage.setItem(perGebruiker(BRON_SLEUTEL), id);
+  } catch {
+    /* geen opslag */
+  }
+}
+
+const GAST_STATUS: Record<string, string> = { accepted: 'komt', declined: 'komt niet', tentative: 'misschien', needsAction: 'nog geen antwoord' };
+
+/** Tekst met klikbare http(s)-links (een beschrijving uit Google die je niet mag wijzigen). */
+function MetLinks({ tekst }: { tekst: string }) {
+  const delen = tekst.split(/(https?:\/\/[^\s<>()]+[^\s<>().,;:!?'"])/g);
+  return (
+    <p className="ag-beschrijving">
+      {delen.map((d, i) =>
+        i % 2 ? (
+          <a key={i} href={d} target="_blank" rel="noopener noreferrer">
+            {d}
+          </a>
+        ) : (
+          d
+        )
+      )}
+    </p>
+  );
+}
+
 function AfspraakFormulier({
   afspraak,
   nieuw,
   herhalingKlaar,
+  googleAgendas,
   onSluit,
   onOpgeslagen,
   onVerwijderd
@@ -244,10 +300,18 @@ function AfspraakFormulier({
   afspraak: Afspraak;
   nieuw: boolean;
   herhalingKlaar: boolean;
+  googleAgendas: GoogleAgenda[];
   onSluit: () => void;
   onOpgeslagen: (a: Afspraak) => void;
   onVerwijderd: () => void;
 }) {
+  const g = afspraak.google;
+  const schrijfbareAgendas = googleAgendas.filter((a) => a.schrijfbaar);
+  // Waar de afspraak staat: '' = Studio Levant (dashboard), anders het id van de Google-agenda.
+  const [bron, setBron] = useState(() => g?.agendaId ?? (nieuw ? leesBron(schrijfbareAgendas) : ''));
+  const inGoogle = bron !== '';
+  const bronAgenda = googleAgendas.find((a) => a.id === bron);
+  const [meet, setMeet] = useState(false);
   const s = inAmsterdam(afspraak.start);
   const e = inAmsterdam(afspraak.eind);
   const { laatste } = dagenVanAfspraak(afspraak);
@@ -267,7 +331,10 @@ function AfspraakFormulier({
   const [vraagOpslaan, setVraagOpslaan] = useState(false);
   const { mijnId, overgang, perId } = useTeam();
   const [deelnemers, setDeelnemers] = useState<string[]>(afspraak.deelnemers.length ? afspraak.deelnemers : [mijnId]);
-  const mag = nieuw || magAfspraakWijzigen(afspraak, mijnId, overgang);
+  const mag = nieuw || (g ? g.schrijfbaar : magAfspraakWijzigen(afspraak, mijnId, overgang));
+  const magVerwijderen = g ? g.verwijderbaar : mag;
+  // De herhaling van een reeks uit Google pas je in Google zelf aan.
+  const herhaaltInGoogle = !!g?.herhaalt;
   const { bezig, fout, doe } = useOpslaan();
   // Telefoon: een bestaande afspraak openen zonder dat het toetsenbord meteen opent.
   const smal = useSmal();
@@ -292,6 +359,29 @@ function AfspraakFormulier({
       herhalingKlaar || herhaling
         ? { ...basis, herhaling: herhaling || null, herhaalTot: herhaling ? herhaalTot || null : null, toepassen }
         : { ...basis, toepassen };
+    if (inGoogle) {
+      // Naar Google: geen klant of deelnemers (die kent Google niet); de herhaling van een
+      // bestaande reeks blijft zoals hij in Google staat.
+      const tijd = heleDag ? { heleDag: true, datum, eindDatum: eindDatum || datum } : { heleDag: false, datum, start, eind };
+      const gb = {
+        titel,
+        notitie,
+        locatie,
+        ...tijd,
+        toepassen,
+        ...(herhaaltInGoogle ? {} : { herhaling: herhaling || null, herhaalTot: herhaling ? herhaalTot || null : null })
+      };
+      const naam = bronAgenda?.naam ?? 'Google Agenda';
+      const r = await doe(
+        () => (nieuw ? googleApi.maak(bron, { ...gb, meet }) : googleApi.wijzig(afspraak.id, { ...gb, meet })),
+        nieuw ? `Afspraak toegevoegd aan ${naam}` : toepassen === 'deze' ? 'Alleen deze afspraak opgeslagen' : reeks ? 'Reeks opgeslagen' : 'Opgeslagen in Google'
+      );
+      if (r) {
+        if (nieuw) bewaarBron(bron);
+        onOpgeslagen(r.event);
+      }
+      return;
+    }
     const metWie = overgang ? b : { ...b, deelnemers };
     // Een afspraak zonder jou erop staat alleen in de agenda van de anderen: zeg dat erbij.
     const voorAnder = !overgang && !deelnemers.includes(mijnId);
@@ -310,12 +400,15 @@ function AfspraakFormulier({
               ? 'Reeks opgeslagen'
               : 'Afspraak opgeslagen'
     );
-    if (r) onOpgeslagen(r.event);
+    if (r) {
+      if (nieuw) bewaarBron('');
+      onOpgeslagen(r.event);
+    }
   }
 
   async function verwijder(toepassen?: 'deze' | 'reeks') {
     const r = await doe(
-      () => agendaApi.verwijderAfspraak(afspraak.id, toepassen),
+      () => (g ? googleApi.verwijder(afspraak.id, toepassen) : agendaApi.verwijderAfspraak(afspraak.id, toepassen)),
       toepassen === 'deze' ? 'Deze afspraak verwijderd (de reeks blijft)' : toepassen === 'reeks' ? 'Reeks verwijderd' : 'Afspraak verwijderd'
     );
     if (r) onVerwijderd();
@@ -329,13 +422,57 @@ function AfspraakFormulier({
         if (ev.key === 'Enter' && (ev.metaKey || ev.ctrlKey)) void opslaan();
       }}
     >
-      <Kop label={nieuw ? 'Nieuwe afspraak' : 'Afspraak'} onSluit={onSluit} />
+      <Kop
+        label={g ? g.agendaNaam : nieuw ? 'Nieuwe afspraak' : 'Afspraak'}
+        kleur={g?.kleur ?? (nieuw && bronAgenda ? bronAgenda.kleur : undefined)}
+        onSluit={onSluit}
+      />
       <div className="ag-paneel-inhoud">
-        {!mag && (
+        {!mag && g && (
+          <p className="tk-melding" role="note">
+            {g.organisator
+              ? `${g.organisator} organiseert deze afspraak; alleen die kan hem wijzigen.`
+              : 'Deze Google-agenda kun je alleen bekijken.'}
+            {magVerwijderen ? ' Verwijderen uit je agenda kan wel.' : ''}
+          </p>
+        )}
+        {!mag && !g && (
           <p className="tk-melding" role="note">
             Alleen {afspraak.aangemaaktDoor ? <Persoon id={afspraak.aangemaaktDoor} /> : 'de maker'} en de deelnemers kunnen deze
             afspraak wijzigen.
           </p>
+        )}
+        {nieuw && schrijfbareAgendas.length > 0 && (
+          <label className="ag-label ag-bron">
+            Agenda
+            <select
+              className="ag-veld"
+              value={bron}
+              onChange={(ev) => {
+                setBron(ev.target.value);
+                if (!ev.target.value) setMeet(false);
+              }}
+            >
+              <option value="">Studio Levant (dashboard)</option>
+              {schrijfbareAgendas.map((a) => (
+                <option key={a.id} value={a.id}>
+                  Google · {a.naam}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        {g?.meetLink && (
+          <div className="ag-meet">
+            <a className="db-knop db-knop-primair ag-meet-knop" href={g.meetLink} target="_blank" rel="noopener noreferrer">
+              <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+                <rect x="3" y="6.5" width="12" height="11" rx="2" fill="none" stroke="currentColor" strokeWidth="1.6" />
+                <path d="m15 10.5 5-3v9l-5-3" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
+              </svg>
+              Deelnemen{g.vergaderDienst ? ` met ${g.vergaderDienst}` : ''}
+            </a>
+            <span className="ag-meet-link">{g.meetLink.replace(/^https?:\/\//, '')}</span>
+          </div>
         )}
         <fieldset className="tk-velden" disabled={!mag}>
         <label className="ag-titelveld">
@@ -360,7 +497,7 @@ function AfspraakFormulier({
           <span>Hele dag</span>
         </label>
 
-        {!overgang && (
+        {!overgang && !inGoogle && (
           <div className="ag-label">
             <span>Wie</span>
             <VoorWieKiezer waarde={deelnemers} onChange={setDeelnemers} uitgeschakeld={!mag} label="Wie" />
@@ -416,6 +553,10 @@ function AfspraakFormulier({
           </>
         )}
 
+        {herhaaltInGoogle ? (
+          <p className="ag-uitleg">Herhalende afspraak uit Google. De herhaling zelf pas je aan in Google Agenda; bij opslaan en verwijderen kies je: alleen deze of de hele reeks.</p>
+        ) : (
+        <>
         <div className="ag-velden-2">
           <label className="ag-label">
             Herhalen
@@ -456,6 +597,8 @@ function AfspraakFormulier({
             {reeks && !regelGewijzigd ? ' Bij opslaan kies je: alleen deze of de hele reeks.' : ''}
           </p>
         ) : null}
+        </>
+        )}
 
         <label className="ag-label">
           Locatie
@@ -469,13 +612,30 @@ function AfspraakFormulier({
           />
         </label>
 
-        <div className="ag-label">
-          Klant
-          <KlantKiezer waarde={klant} onChange={setKlant} />
-        </div>
+        {inGoogle && !g?.meetLink && mag && (
+          <label className="ag-schakel">
+            <input type="checkbox" checked={meet} onChange={(ev) => setMeet(ev.target.checked)} />
+            <span>Google Meet-link toevoegen</span>
+          </label>
+        )}
 
+        {!inGoogle && (
+          <div className="ag-label">
+            Klant
+            <KlantKiezer waarde={klant} onChange={setKlant} />
+          </div>
+        )}
+
+        {!mag && g ? (
+          notitie.trim() ? (
+            <div className="ag-label">
+              Beschrijving
+              <MetLinks tekst={notitie} />
+            </div>
+          ) : null
+        ) : (
         <label className="ag-label">
-          Notitie
+          {inGoogle ? 'Beschrijving' : 'Notitie'}
           <textarea
             className="ag-veld"
             rows={5}
@@ -485,7 +645,36 @@ function AfspraakFormulier({
             onChange={(ev) => setNotitie(ev.target.value)}
           />
         </label>
+        )}
         </fieldset>
+        {g && g.gasten.length > 0 && (
+          <div className="ag-label">
+            Gasten ({g.gasten.length})
+            <ul className="ag-gasten">
+              {g.gasten.map((gast) => (
+                <li key={gast.email} className={`ag-gast is-${gast.status}`}>
+                  <span className="ag-gast-naam" title={gast.email}>
+                    {gast.naam || gast.email}
+                    {gast.ik ? ' (jij)' : ''}
+                  </span>
+                  <span className="ag-gast-status">{GAST_STATUS[gast.status]}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {g && (
+          <p className="tk-meta">
+            {g.organisator ? <>Georganiseerd door {g.organisator} · </> : null}
+            {g.link ? (
+              <a href={g.link} target="_blank" rel="noopener noreferrer">
+                Openen in Google Agenda
+              </a>
+            ) : (
+              'Uit Google Agenda'
+            )}
+          </p>
+        )}
         {!nieuw && afspraak.aangemaaktDoor && (
           <p className="tk-meta">
             Ingepland door <Persoon id={afspraak.aangemaaktDoor} />
@@ -501,6 +690,7 @@ function AfspraakFormulier({
         bezig={bezig}
         nieuw={nieuw}
         mag={mag}
+        magVerwijderen={magVerwijderen}
         reeks={reeks}
         vraagOpslaan={vraagOpslaan}
         onKiesOpslaan={(t) => (t ? void opslaan(undefined, t) : setVraagOpslaan(false))}
