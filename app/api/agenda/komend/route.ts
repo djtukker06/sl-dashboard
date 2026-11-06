@@ -3,6 +3,7 @@ import { afsprakenInBereik } from '@/lib/agenda/repo';
 import { foutAntwoord, json, metSessie } from '@/lib/agenda/api';
 import { metGoogleAfspraken } from '@/lib/google-agenda/afspraken';
 import { createServiceRoleClient } from '@/lib/supabase/service-role';
+import { herinneringSleutel } from '@/lib/agenda/meldingen-kern';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -29,7 +30,10 @@ export async function GET(request: Request) {
         eind: a.eind,
         locatie: a.locatie,
         notitie: a.notitie.slice(0, 2000),
-        google: a.google ? { meetLink: a.google.meetLink, vergaderDienst: a.google.vergaderDienst, agendaNaam: a.google.agendaNaam } : undefined
+        google: a.google
+          ? { meetLink: a.google.meetLink, vergaderDienst: a.google.vergaderDienst, agendaNaam: a.google.agendaNaam, kleur: a.google.kleur }
+          : undefined,
+        herinnering: herinneringSleutel(a)
       }));
     return json({ afspraken });
   } catch (e) {

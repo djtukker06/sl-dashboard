@@ -2,13 +2,13 @@
 
 import { useSyncExternalStore } from 'react';
 import { perGebruiker } from '@/lib/mail/client';
-import { teMelden, type KomendeAfspraak, type Melding } from './meldingen-kern';
+import { herinneringSleutel, teMelden, type KomendeAfspraak, type Melding } from './meldingen-kern';
 
 // Meldingen vóór een afspraak (10 en 1 minuut vooraf): de instelling (per gebruiker, in deze
 // browser), de toestemming van de browser en de twee geluiden. Het plannen en tonen gebeurt in
 // components/agenda/AfspraakMeldingen (in de shell, dus op elke pagina van het dashboard).
 
-export { teMelden, type KomendeAfspraak, type Melding };
+export { herinneringSleutel, teMelden, type KomendeAfspraak, type Melding };
 
 const SLEUTEL = 'sl-afspraak-meldingen';
 const EVENT = 'sl-meldingen-instelling';
@@ -66,6 +66,37 @@ export async function zetMeldingen(aan: boolean): Promise<Toestemming> {
   if (aan) ontgrendelGeluid();
   window.dispatchEvent(new Event(EVENT));
   return t;
+}
+
+// ---------- herinnering per afspraak ----------
+// Standaard krijgt elke afspraak een herinnering; in het afspraakpaneel zet je hem per
+// afspraak (bij een reeks: voor de hele reeks) uit. Net als de meldingen zelf per gebruiker
+// in deze browser: hier komen de meldingen ook binnen.
+
+const UIT_SLEUTEL = 'sl-herinnering-uit';
+
+export function herinneringenUit(): Set<string> {
+  try {
+    return new Set(JSON.parse(localStorage.getItem(perGebruiker(UIT_SLEUTEL)) ?? '[]') as string[]);
+  } catch {
+    return new Set();
+  }
+}
+
+export function heeftHerinnering(sleutel: string): boolean {
+  return !herinneringenUit().has(sleutel);
+}
+
+export function zetHerinnering(sleutel: string, aan: boolean) {
+  const uit = herinneringenUit();
+  if (aan) uit.delete(sleutel);
+  else uit.add(sleutel);
+  try {
+    localStorage.setItem(perGebruiker(UIT_SLEUTEL), JSON.stringify([...uit].slice(-500)));
+  } catch {
+    /* geen opslag */
+  }
+  window.dispatchEvent(new Event(EVENT));
 }
 
 // ---------- geluid ----------

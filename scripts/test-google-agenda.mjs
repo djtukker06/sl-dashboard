@@ -270,7 +270,7 @@ test("vergaderlinks herkennen: Teams, Meet, Zoom, Webex …", () => {
 });
 
 test("meldingen: 10 minuten en 1 minuut vooraf, elk één keer", () => {
-  const a = { id: "a1", titel: "Overleg", start: "2026-11-06T09:00:00.000Z", eind: "2026-11-06T10:00:00.000Z", locatie: "", notitie: "" };
+  const a = { id: "a1", titel: "Overleg", start: "2026-11-06T09:00:00.000Z", eind: "2026-11-06T10:00:00.000Z", locatie: "", notitie: "", herinnering: "a1" };
   const t = (iso) => Date.parse(iso);
   const leeg = new Set();
   assert.deepEqual(M.teMelden([a], t("2026-11-06T08:49:00Z"), leeg), [], "11 min vooraf: nog niets");
@@ -291,6 +291,13 @@ test("meldingen: 10 minuten en 1 minuut vooraf, elk één keer", () => {
   // Verschoven afspraak: nieuwe sleutel, dus opnieuw melden.
   const verschoven = { ...a, start: "2026-11-06T09:30:00.000Z" };
   assert.equal(M.teMelden([verschoven], t("2026-11-06T09:20:00Z"), new Set([tien[0].sleutel])).length, 1);
+  // Herinnering voor deze afspraak (of reeks) uitgezet: niets.
+  assert.deepEqual(M.teMelden([a], t("2026-11-06T08:50:00Z"), leeg, new Set(["a1"])), []);
+  // Sleutel: eigen afspraak, voorkomen van een reeks, Google-reeks.
+  assert.equal(M.herinneringSleutel({ id: "u1", reeksId: null }), "u1");
+  assert.equal(M.herinneringSleutel({ id: "u1~2026-11-06", reeksId: "u1" }), "u1");
+  assert.equal(M.herinneringSleutel({ id: `g.${AG}.r_2026`, reeksId: "r", google: { agendaId: AG } }), `g.${AG}.r`);
+  assert.equal(M.herinneringSleutel({ id: `g.${AG}.los`, reeksId: null, google: { agendaId: AG } }), `g.${AG}.los`);
   // Volgende controle: precies op het meldmoment (max. 30 s).
   assert.equal(M.volgendeControle([a], t("2026-11-06T08:49:50Z")), 10_050);
   assert.equal(M.volgendeControle([a], t("2026-11-06T07:00:00Z")), 30_000);

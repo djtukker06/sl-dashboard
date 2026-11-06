@@ -947,6 +947,7 @@ label.ag-kal-feed { align-items: flex-start; font-size: 13px; }
 
 /* Vergaderlink herkend in het paneel (Teams, Meet, Zoom, …). */
 .ag-herkend { color: var(--sl-text); }
+.ag-herinnering { display: grid; gap: 14px; }
 .ag-herkend::before { content: "✓ "; color: #33b679; }
 
 /* ---------- dashboard: planning ---------- */
@@ -1194,3 +1195,55 @@ label.ag-kal-feed { align-items: flex-start; font-size: 13px; }
 .db-deelnemen:focus-visible { outline: 2px solid var(--sl-focus, var(--sl-sand)); outline-offset: 2px; }
 .db-rij-met-knop { display: flex; align-items: center; gap: 8px; padding-right: 10px; }
 .db-rij-met-knop .db-rij { flex: 1; min-width: 0; }
+
+/* Herinnering vóór een afspraak (AfspraakMeldingen): kaart rechtsboven, zoals Google Agenda.
+   Het kleurstreepje is de kleur van de agenda; bij 1 minuut vooraf een zachte gloed. */
+.ag-meldingen {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 300;
+  display: grid;
+  gap: 10px;
+  width: min(400px, calc(100vw - 32px));
+}
+.ag-melding {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 12px;
+  padding: 14px 10px 14px 16px;
+  border: 1px solid var(--sl-line);
+  border-radius: 10px;
+  background: var(--sl-panel);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, .5), inset 3px 0 0 var(--ag-kleur);
+  animation: ag-melding-in .28s var(--sl-ease);
+}
+.ag-melding.is-dringend { box-shadow: 0 18px 48px rgba(0, 0, 0, .5), 0 0 0 1px color-mix(in srgb, var(--ag-kleur) 45%, transparent), inset 3px 0 0 var(--ag-kleur); }
+.ag-melding-icoon {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--ag-kleur) 18%, transparent);
+  color: var(--ag-kleur);
+}
+.ag-melding.is-dringend .ag-melding-icoon { animation: ag-bel 1.6s var(--sl-ease) 2; }
+.ag-melding-tekst { display: grid; gap: 2px; min-width: 0; }
+.ag-melding-tekst p { margin: 0; }
+.ag-melding-wanneer { font-family: var(--sl-mono); font-size: 10.5px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--sl-muted); }
+.ag-melding-aftel { color: var(--sl-text); }
+.ag-melding-titel { font-size: 15px; font-weight: 600; line-height: 1.35; overflow-wrap: anywhere; }
+.ag-melding-waar { font-size: 12.5px; color: var(--sl-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ag-melding-acties { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin-top: 10px; }
+.ag-melding-acties .db-knop { padding: 6px 12px; font-size: 12.5px; text-decoration: none; white-space: nowrap; }
+.ag-melding-sluit { align-self: start; margin-top: -4px; color: var(--sl-muted); }
+@keyframes ag-melding-in { from { opacity: 0; transform: translateY(-8px) scale(.98); } to { opacity: 1; transform: none; } }
+@keyframes ag-bel { 0%, 100% { transform: rotate(0); } 15% { transform: rotate(14deg); } 30% { transform: rotate(-12deg); } 45% { transform: rotate(8deg); } 60% { transform: rotate(-4deg); } }
+@media (max-width: 720px) {
+  .ag-meldingen { top: calc(8px + env(safe-area-inset-top, 0px)); right: 8px; left: 8px; width: auto; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ag-melding, .ag-melding.is-dringend .ag-melding-icoon { animation: none; }
+}

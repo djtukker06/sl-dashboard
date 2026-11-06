@@ -13,7 +13,19 @@ export interface KomendeAfspraak {
   eind: string;
   locatie: string;
   notitie: string;
-  google?: { meetLink: string | null; vergaderDienst: string | null; agendaNaam: string };
+  google?: { meetLink: string | null; vergaderDienst: string | null; agendaNaam: string; kleur: string };
+  /** Sleutel voor "herinnering aan/uit" (herinneringSleutel): bij een reeks die van de reeks. */
+  herinnering: string;
+}
+
+/**
+ * Sleutel waaronder je "geen herinnering" voor een afspraak bewaart. Bij een herhalende
+ * afspraak die van de reeks (dus geldt de keuze voor alle keren): eigen afspraak "<uuid>",
+ * uit Google "g.<agenda>.<reeks-event-id>".
+ */
+export function herinneringSleutel(a: { id: string; reeksId: string | null; google?: { agendaId: string } }): string {
+  if (!a.reeksId) return a.id;
+  return a.google ? `g.${a.google.agendaId}.${a.reeksId}` : a.reeksId;
 }
 
 export interface Melding {
@@ -29,9 +41,10 @@ export function meldingSleutel(a: Pick<KomendeAfspraak, 'id' | 'start'>, minuten
   return `${a.id}|${a.start}|${minuten}`;
 }
 
-export function teMelden(afspraken: KomendeAfspraak[], nu: number, gehad: Set<string>): Melding[] {
+export function teMelden(afspraken: KomendeAfspraak[], nu: number, gehad: Set<string>, zonder: Set<string> = new Set()): Melding[] {
   const uit: Melding[] = [];
   for (const a of afspraken) {
+    if (zonder.has(a.herinnering)) continue;
     const start = Date.parse(a.start);
     if (Number.isNaN(start)) continue;
     const tien = meldingSleutel(a, 10);
