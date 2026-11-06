@@ -181,6 +181,8 @@ await test("CSP: nonce, geen unsafe-inline/eval in script-src, frame-ancestors, 
   assert.ok(!/https:\/\/www\.googleapis\.com(\s|$)/.test(delen["connect-src"]));
   assert.ok(delen["upgrade-insecure-requests"]);
   assert.ok(delen["style-src"].includes("https://fonts.googleapis.com") && delen["font-src"].includes("https://fonts.gstatic.com"));
+  // Formulieren: alleen de eigen site en (voor Drive/Agenda koppelen) het inlogscherm van Google.
+  assert.equal(delen["form-action"], "form-action 'self' https://accounts.google.com");
 });
 await test("CSP: development mag eval (React-debug), geen upgrade-insecure; rare URL genegeerd", () => {
   const c = csp.bouwCsp({ nonce: "abc", supabaseUrl: "javascript:alert(1)", dev: true });
