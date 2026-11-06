@@ -166,7 +166,9 @@ const CLIP_SEC = 3;
 let clip: Promise<AudioBuffer | null> | null = null;
 
 function laadClip(c: AudioContext): Promise<AudioBuffer | null> {
-  clip ??= fetch(CLIP, { cache: 'force-cache' })
+  // no-cache: elke paginalading even controleren of de clip veranderd is (ETag; meestal 304),
+  // zodat een nieuwe clip meteen klinkt. Daarna blijft hij gedecodeerd in het geheugen.
+  clip ??= fetch(CLIP, { cache: 'no-cache' })
     .then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(new Error(`HTTP ${r.status}`))))
     .then((b) => c.decodeAudioData(b))
     .catch(() => {
