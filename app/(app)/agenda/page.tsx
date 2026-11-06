@@ -5,6 +5,8 @@ import { vereisTeamlidPagina } from '@/lib/auth/team';
 import { isDag, vandaag as vandaagNL } from '@/lib/agenda/datum';
 import { isUuid } from '@/lib/agenda/invoer';
 import { isAfspraakId } from '@/lib/agenda/herhaling';
+import { isGoogleAfspraakId } from '@/lib/google-agenda/kern';
+import { KOPPEL_MELDING } from '@/lib/google-agenda/types';
 import { AgendaApp } from '@/components/agenda/AgendaApp';
 
 export const dynamic = 'force-dynamic';
@@ -19,6 +21,8 @@ export const metadata: Metadata = { title: 'Agenda & taken · Studio Levant' };
 //                        (bij een herhalende afspraak <id>~YYYY-MM-DD: dat voorkomen)
 //   ?lijst=uitgezet      opent de takenlijst op de tab "Uitgezet"
 //   ?project=<id>        takenlijst gefilterd op een project
+//   ?google=<uitkomst>   terug van het koppelen met Google Agenda: melding tonen
+//                        (bij afspraken uit Google is ?afspraak=g.<agenda>.<event>)
 // Een oude link met ?wie=team of ?wie=<id> (teamweergave, bestaat niet meer) gaat naar
 // dezelfde pagina zonder die parameter.
 export default async function AgendaPage({
@@ -54,7 +58,8 @@ export default async function AgendaPage({
       startFilter={sp.lijst === 'uitgezet' ? 'uitgezet' : 'vandaag'}
       startProject={isUuid(sp.project) ? sp.project : null}
       openTaak={isUuid(sp.taak) ? sp.taak : null}
-      openAfspraak={isAfspraakId(sp.afspraak) ? sp.afspraak : null}
+      openAfspraak={isAfspraakId(sp.afspraak) || isGoogleAfspraakId(sp.afspraak) ? sp.afspraak! : null}
+      googleUitkomst={sp.google && sp.google in KOPPEL_MELDING ? sp.google : null}
     />
   );
 }

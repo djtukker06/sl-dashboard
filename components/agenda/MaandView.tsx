@@ -5,7 +5,7 @@ import { DAGNAMEN_KORT, dagDelen, inAmsterdam, type Dag } from '@/lib/agenda/dat
 import { isBalk, itemsOpDag } from '@/lib/agenda/weergave';
 import type { Afspraak, Taak } from '@/lib/agenda/types';
 import type { Selectie } from './ItemPaneel';
-import type { Verplaatsing } from './WeekView';
+import { kleurStijl, type Verplaatsing } from './WeekView';
 
 const MAX = 3;
 const SLEEP_TYPE = 'application/x-sl-item';
@@ -104,16 +104,17 @@ export function MaandView({
                     <li key={`${x.soort}:${x.item.id}`}>
                       <button
                         type="button"
-                        draggable={!af}
+                        draggable={!af && !(x.soort === 'afspraak' && x.item.google && !x.item.google.schrijfbaar)}
                         onDragStart={(e) => {
                           e.dataTransfer.setData(SLEEP_TYPE, `${x.soort}:${x.item.id}`);
                           e.dataTransfer.effectAllowed = 'move';
                         }}
-                        className={`ag-maand-item ag-maand-${x.soort}${af ? ' is-af' : ''}${x.soort === 'afspraak' && isBalk(x.item) ? ' is-balk' : ''}`}
+                        className={`ag-maand-item ag-maand-${x.soort}${af ? ' is-af' : ''}${x.soort === 'afspraak' && isBalk(x.item) ? ' is-balk' : ''}${x.soort === 'afspraak' && x.item.google ? ' is-google' : ''}`}
+                        style={x.soort === 'afspraak' ? kleurStijl(x.item) : undefined}
                         onClick={() =>
                           onOpen(x.soort === 'taak' ? { soort: 'taak', item: x.item } : { soort: 'afspraak', item: x.item })
                         }
-                        title={x.item.titel}
+                        title={x.soort === 'afspraak' && x.item.google ? `${x.item.titel} · ${x.item.google.agendaNaam}` : x.item.titel}
                       >
                         {tijd && <span className="ag-maand-tijd">{tijd}</span>}
                         <span className="ag-maand-titel">{x.item.titel}</span>

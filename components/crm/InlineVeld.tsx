@@ -21,7 +21,7 @@ export function InlineVeld({
   onBewaar: (nieuw: string) => Promise<boolean>;
   /** Tekst als het veld leeg is, bv. "+ Telefoon toevoegen". */
   leeg: string;
-  type?: 'text' | 'email' | 'tel';
+  type?: 'text' | 'email' | 'tel' | 'url';
   max?: number;
   /** Hoe de waarde getoond wordt (bv. als mail- of tel-link). */
   weergave?: (w: string) => React.ReactNode;

@@ -97,6 +97,7 @@ bestand staat een controletabel (elke regel `ok`) en wie er toegang heeft.
 | `0024_drive.sql` | Google Drive (module Bestanden): `drive_koppeling` (één rij: Google-account, versleuteld refresh token, rootmap; RLS aan, **geen policies en geen rechten** voor `anon`/`authenticated`, alleen de server), `drive_mappen` (cache van map-id's; teamleden lezen, alleen de server schrijft), `drive_bestanden` (wie wat uploadde; teamleden), `drive_kopieen` (welke factuur/prijsopgave/bonnetje al in Drive staat; teamleden lezen, alleen de server schrijft). Alleen nieuwe tabellen |
 | `0025_crm_opvolging.sql` | opvolgen: `clients.volgende_stap` (max. 200 tekens) en `clients.opvolgen_op` (datum), `client_notes.soort` (`notitie`/`status`, bestaande notities worden `notitie`) en index `clients_opvolgen_idx`. Alleen kolommen; RLS en facturen ongewijzigd. De app werkt ook vóór 0025 (opvolgen verborgen) |
 | `0026_beveiliging_mailboxen_backups.sql` | **mailboxen** (meerdere inboxen per teamlid, naam/kleur/volgorde, `prive`/`team`; bestaande `user_mailboxes` één keer overgezet; RLS aan, geen policies, alleen de server), **2FA in RLS** (`is_teamlid()`: wie een geverifieerde factor heeft, ziet alleen data met een aal2-sessie; wie geen factor heeft valt niet buiten tenzij "streng"), `app_instellingen` (noodstop `tfa_rls`, `tfa_rls_streng`), `toegang_status()`, `is_eigenaar()`, **audit_log** (alleen de eigenaar leest; niemand wijzigt of wist, trigger; `audit_opruimen()` na 400 dagen), `inlog_pogingen` (alleen hashes, alleen de server), **backup_runs**, `backup_bestanden`, **heartbeat** (alleen de eigenaar leest) en `backup_tabellen()`. Alleen toevoegend; facturen ongewijzigd. De app werkt ook vóór 0026 |
+| `0035_google_agenda_en_website.sql` | Google Agenda per teamlid: `google_agenda_accounts` (Google-account + versleuteld refresh token) en `google_agendas` (naam, kleur, tonen, in de agenda-link); RLS aan, **geen policies en geen rechten** voor `anon`/`authenticated`, alleen de server. Plus `clients.website` (max. 300 tekens). Uitvoeren: `supabase/UITVOEREN_0035.sql`. De app werkt ook vóór 0035 (koppelen en website verborgen/met melding) |
 | `0023_projectstatus.sql` | projectenbord: status `voorbereiding`/`bezig`/`wachten`/`afgerond` (`gepland` → `voorbereiding`, standaard `voorbereiding`), kolom `status_sinds` met trigger (zet "nu" bij elke statuswijziging; bestaande projecten krijgen hun laatste wijziging), indexen op status + status_sinds en deadline. RLS ongewijzigd |
 
 **Uitvoeren:** Supabase-dashboard → je project → **SQL Editor** → *New query* → plak het hele
@@ -172,7 +173,7 @@ onder **Project Settings → Environment Variables** (Production én Preview):
 | `MAIL_ENV_USER_ID` | nee | User-id (uuid) van het account dat de standaard-mailbox krijgt, als dat niet het account met het adres uit `MAIL_USER` is. Leeg = de oudste actieve eigenaar |
 | `MAIL_IMAP_HOST`, `MAIL_IMAP_PORT`, `MAIL_SMTP_HOST`, `MAIL_SMTP_PORT` | nee | Standaard `mail.privateemail.com`, 993 en 465 |
 | `MAIL_FROM_NAME`, `MAIL_HANDTEKENING` | nee | Afzendernaam (standaard "Studio Levant") en handtekening (`\n` = nieuwe regel) |
-| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | voor Bestanden | OAuth-client (type "Web application") uit Google Cloud Console, voor de koppeling met de Google Drive van Studio Levant (zie "Google Drive"). Het secret is geheim |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | voor Bestanden en Google Agenda | OAuth-client (type "Web application") uit Google Cloud Console, voor de koppeling met de Google Drive van Studio Levant (zie "Google Drive") en met de Google-agenda's van elk teamlid (zie "Google Agenda"). Het secret is geheim |
 | `DRIVE_ENCRYPTION_KEY` | nee | Eigen sleutel (32 bytes, base64) voor het Drive-refresh token. Leeg = `MAIL_ENCRYPTION_KEY` wordt gebruikt. Wijzigen = Drive opnieuw koppelen |
 | `CHROME_PATH` | nee, alleen lokaal | Eigen Chrome/Chromium voor social-exports tijdens `npm run dev` |
 | `BACKUP_ENCRYPTION_KEY` | voor back-ups | 32 bytes, base64 (`openssl rand -base64 32`). Versleutelt elke back-up (AES-256-GCM). Zonder sleutel geen back-up (de run wordt "mislukt"). **Ook in je wachtwoordmanager bewaren**: zonder deze sleutel zijn de back-ups onbruikbaar. Alleen Production |
@@ -511,6 +512,62 @@ Twee dagelijkse gebruikers, dus vooral: weinig rondgangen per klik.
   zonder toewijzing, subtaken of projecten).
 - Tests: `node scripts/test-taken.mjs` (toewijzing, subtaken, projecten, rechten) en
   `node scripts/test-snelinvoer.mjs` (herkenning, ook zomer-/wintertijd rond 25 okt 2026).
+
+## Google Agenda (per teamlid)
+
+Elk teamlid koppelt in **Agenda → Agenda's → Google Agenda koppelen** zijn eigen
+Google-account(s). De afspraken uit die agenda's staan in zijn agenda in het dashboard (en op
+het dashboard bij Vandaag/Deze week), elk in de kleur van zijn agenda. **Alleen hij ziet ze**;
+het team niet.
+
+- **Tonen en verbergen:** de rij gekleurde knopjes boven de agenda (Studio Levant + je eigen
+  Google-agenda's) is ook de legenda: één klik verbergt of toont een agenda. Onder
+  **Agenda's** staan alle agenda's per account (ook feestdagen of gedeelde agenda's, standaard
+  uit), met per agenda **⋯**: kleur kiezen en **Ook in je agenda-link** (dan staan die
+  afspraken ook in Apple Agenda op iPhone/Mac via de agenda-link uit `/agenda-koppelen`).
+  Zet dat uit als je telefoon die Google-agenda al zelf toont (anders staat alles dubbel).
+  Meerdere accounts kan (**+ Nog een Google-account**); **Vernieuwen** haalt nieuwe of
+  verwijderde agenda's op (gebeurt ook vanzelf, elke 12 uur), **Ontkoppelen** trekt de
+  toestemming bij Google in.
+- **Twee kanten op:** een afspraak uit Google openen toont titel, tijd, locatie, beschrijving
+  (als platte tekst; ongewijzigde velden worden niet teruggeschreven, dus de opmaak in Google
+  blijft), gasten met hun antwoord, de organisator, **Deelnemen met Google Meet** en "Openen in
+  Google Agenda". Wijzigen, slepen en verwijderen gaat rechtstreeks naar Google (gasten krijgen
+  dan een mail van Google, zoals in Google Agenda zelf). Bij **+ Afspraak** kies je bovenaan in
+  welke agenda (Studio Levant of een Google-agenda, de laatste keuze wordt onthouden), met
+  optioneel **Google Meet-link toevoegen**. Ben je gast (een ander organiseert), dan kun je
+  alleen bekijken en uit je agenda verwijderen; een alleen-lezen agenda alleen bekijken.
+- **Herhalende afspraken:** bij een voorkomen van een reeks (eigen of uit Google) vraagt het
+  paneel bij opslaan en verwijderen **Alleen deze** of **Hele reeks**. Slepen verplaatst alleen
+  dat voorkomen. De herhaalregel van een reeks uit Google pas je in Google zelf aan.
+- **Niet dubbel, geen kringloop:** een agenda die je via een link (ICS) in Google hebt
+  toegevoegd (bijvoorbeeld de agenda-link van Studio Levant zelf) staat standaard uit en gaat
+  nooit terug in de agenda-link. Afgeslagen afspraken en "werklocatie" tonen we niet.
+- **Opslag en beveiliging:** de afspraken zelf staan niet in de database; ze komen elke keer
+  rechtstreeks uit Google (30 s in het geheugen van de server). Per account staat alleen het
+  refresh token, versleuteld (AES-256-GCM, dezelfde sleutel als Drive, eigen AAD
+  `google-agenda`), in `google_agenda_accounts` (alleen de server, altijd gefilterd op jouw
+  user-id). Scopes: `calendar.calendarlist.readonly` en `calendar.events` (geen agenda's
+  aanmaken of delen). Koppelen heeft dezelfde CSRF-bescherming als Drive (state + ondertekende
+  cookie, `lib/drive/state.ts`). Code: `lib/google-agenda/`, routes `app/api/google-agenda/`.
+
+**Eenmalig in Google Cloud** (hetzelfde project en dezelfde OAuth-client als Drive):
+
+1. *APIs & Services → Library* → **Google Calendar API** → *Enable*.
+2. *Google Auth Platform → Data access* → scopes toevoegen:
+   `https://www.googleapis.com/auth/calendar.calendarlist.readonly`,
+   `https://www.googleapis.com/auth/calendar.events`, `openid` en `.../auth/userinfo.email`.
+3. *Clients →* de bestaande web-client → *Authorized redirect URIs* toevoegen:
+   - `http://localhost:3000/api/google-agenda/callback` (lokaal)
+   - `${NEXT_PUBLIC_SITE_URL}/api/google-agenda/callback` (productie)
+4. *Audience:* de app staat al op **In production** (zie Drive), anders verloopt de toegang na
+   7 dagen. Iedereen ziet bij het koppelen eenmalig "Google heeft deze app niet geverifieerd"
+   (geen probleem voor eigen gebruik, tot 100 accounts).
+5. Voer `supabase/UITVOEREN_0035.sql` uit in de SQL Editor.
+
+Tests: `node --experimental-strip-types scripts/test-google-agenda.mjs` (omzetten van/naar
+Google, hele dagen, reeksen, rechten, links, standaardinstellingen, agenda-link) en
+`node scripts/test-rls.mjs` (0035: niemand behalve de server leest of wijzigt de tabellen).
 
 ## Klanten & projecten
 

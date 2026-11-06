@@ -814,6 +814,131 @@ kbd {
 }
 .ag-popover-titel { margin: 0; }
 
+/* ---------- Google Agenda: kleuren en agenda's (0035) ---------- */
+/* Een afspraak uit Google krijgt de kleur van zijn agenda (--ag-kleur, inline); eigen
+   afspraken houden het zand. */
+.ag-blok-afspraak.is-google { border-left-color: var(--ag-kleur); background: color-mix(in srgb, var(--ag-kleur) 18%, var(--sl-raise)); }
+.ag-blok-afspraak.is-google:hover { background: color-mix(in srgb, var(--ag-kleur) 28%, var(--sl-raise)); }
+.ag-balk.is-google { border-left-color: var(--ag-kleur); background: color-mix(in srgb, var(--ag-kleur) 18%, var(--sl-raise)); }
+.ag-balk.is-google:hover { background: color-mix(in srgb, var(--ag-kleur) 28%, var(--sl-raise)); }
+.ag-maand-afspraak.is-google { box-shadow: inset 2px 0 0 var(--ag-kleur); background: color-mix(in srgb, var(--ag-kleur) 14%, var(--sl-raise)); }
+.ag-video { display: inline-block; flex: none; margin-right: 4px; vertical-align: -1px; opacity: .85; }
+
+.ag-balk-rechts { display: flex; align-items: center; gap: 8px; }
+.ag-kal { position: relative; }
+.ag-kal-knop { position: relative; display: inline-flex; align-items: center; gap: 7px; }
+.ag-kal-let { position: absolute; top: 3px; right: 3px; width: 7px; height: 7px; border-radius: 50%; background: var(--sl-danger); }
+.ag-popover.ag-kal-venster {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 96;
+  width: min(360px, calc(100vw - 32px));
+  max-height: min(72vh, 600px);
+  overflow-y: auto;
+  gap: 12px;
+}
+.ag-kal-lijst { list-style: none; margin: 0; padding: 0; display: grid; gap: 1px; }
+.ag-kal-item { display: grid; }
+.ag-kal-regel-rij { display: flex; align-items: center; gap: 2px; min-width: 0; }
+label.ag-kal-regel {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+  padding: 6px 6px;
+  border-radius: var(--sl-r);
+  cursor: pointer;
+}
+.ag-kal-regel:hover { background: var(--sl-hover); }
+.ag-kal-regel input { flex: none; width: 15px; height: 15px; margin: 0; accent-color: var(--sl-sand); }
+.ag-kal-stip { flex: none; width: 10px; height: 10px; border-radius: 3px; background: var(--ag-kleur); }
+.ag-kal-naam { display: grid; min-width: 0; font-size: 13.5px; line-height: 1.3; }
+.ag-kal-naam, .ag-kal-naam small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ag-kal-naam small { font-size: 11px; color: var(--sl-muted); }
+.ag-kal-meer { flex: none; color: var(--sl-muted); }
+.ag-kal-details { display: grid; gap: 10px; padding: 4px 6px 10px 31px; }
+.ag-kal-kleuren { display: flex; flex-wrap: wrap; gap: 7px; }
+.ag-kal-kleur {
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--ag-kleur);
+  cursor: pointer;
+}
+.ag-kal-kleur[aria-checked="true"] { box-shadow: 0 0 0 2px var(--sl-panel), 0 0 0 3.5px var(--sl-text); }
+.ag-kal-kleur:focus-visible { outline: 2px solid var(--sl-focus, var(--sl-sand)); outline-offset: 3px; }
+label.ag-kal-feed { align-items: flex-start; font-size: 13px; }
+.ag-kal-feed input { margin-top: 1px; }
+.ag-kal-feed small { display: block; margin-top: 2px; font-size: 11px; line-height: 1.4; color: var(--sl-muted); }
+.ag-kal-account { display: grid; gap: 4px; padding-top: 10px; border-top: 1px solid var(--sl-line-soft); }
+.ag-kal-account-kop { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 0 6px; font-size: 12px; color: var(--sl-muted); }
+.ag-kal-account-naam { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ag-kal-account-acties { display: flex; flex: none; gap: 12px; }
+.ag-kal-account-acties .ag-link-knop { font-size: 12px; }
+.ag-kal-melding { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin: 2px 6px; font-size: 12px; color: var(--sl-danger); }
+.ag-kal-voet { display: grid; gap: 8px; padding-top: 12px; border-top: 1px solid var(--sl-line-soft); }
+.ag-kal-koppel { margin: 0; }
+.ag-kal-koppel .db-knop { display: inline-flex; align-items: center; gap: 8px; }
+.ag-kal-uitleg { margin: 0; padding: 0 6px; font-size: 12px; line-height: 1.5; color: var(--sl-muted); }
+.ag-kal-uitleg code { font-family: var(--sl-mono); font-size: 11px; }
+
+/* De rij gekleurde knopjes boven de agenda: tonen/verbergen met één klik (en de legenda). */
+.ag-kal-rij {
+  display: flex;
+  gap: 6px;
+  padding: 8px var(--sl-gutter, 24px) 8px 24px;
+  border-bottom: 1px solid var(--sl-line);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.ag-kal-rij::-webkit-scrollbar { display: none; }
+.ag-kal-chip {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 7px;
+  max-width: 220px;
+  height: 26px;
+  padding: 0 11px 0 9px;
+  border: 1px solid var(--sl-line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--sl-muted);
+  font: 500 12px/1 var(--sl-font);
+  cursor: pointer;
+  transition: background .15s var(--sl-ease), color .15s var(--sl-ease), border-color .15s var(--sl-ease);
+}
+.ag-kal-chip:hover { color: var(--sl-text); }
+.ag-kal-chip.is-aan {
+  border-color: color-mix(in srgb, var(--ag-kleur) 50%, var(--sl-line));
+  background: color-mix(in srgb, var(--ag-kleur) 12%, transparent);
+  color: var(--sl-text);
+}
+.ag-kal-chip:not(.is-aan) .ag-kal-stip { background: transparent; box-shadow: inset 0 0 0 1.5px var(--ag-kleur); }
+.ag-kal-chip.is-fout { border-style: dashed; }
+.ag-kal-chip-naam { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ag-kal-chip:focus-visible { outline: 2px solid var(--sl-focus, var(--sl-sand)); outline-offset: 2px; }
+
+/* Paneel van een afspraak uit Google: kleur in de kop, Meet-knop, gasten. */
+.ag-paneel-label { display: flex; align-items: center; gap: 8px; }
+.ag-bron { margin-bottom: 2px; }
+.ag-meet { display: grid; gap: 6px; margin: 0 0 4px; }
+.ag-meet-knop { display: inline-flex; align-items: center; gap: 8px; justify-self: start; text-decoration: none; }
+.ag-meet-link { font-family: var(--sl-mono); font-size: 11px; color: var(--sl-muted); overflow-wrap: anywhere; }
+.ag-beschrijving, .ag-gasten { text-transform: none; letter-spacing: 0; font-family: var(--sl-font); }
+.ag-beschrijving { margin: 4px 0 0; font-size: 13.5px; line-height: 1.55; color: var(--sl-text); white-space: pre-wrap; overflow-wrap: anywhere; }
+.ag-beschrijving a { color: var(--sl-sand); }
+.ag-gasten { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 5px; font-size: 13px; }
+.ag-gast { display: flex; justify-content: space-between; gap: 12px; color: var(--sl-text); }
+.ag-gast-naam { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ag-gast-status { flex: none; font-size: 11.5px; color: var(--sl-muted); }
+.ag-gast.is-declined .ag-gast-naam { color: var(--sl-muted); text-decoration: line-through; }
+
 /* ---------- dashboard: planning ---------- */
 /* Vandaag: compacte dagagenda (tijd · titel), afspraken met het zandkleurige accent. */
 .db-dag { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
@@ -946,6 +1071,11 @@ kbd {
   .ag-titel { flex: 1; min-width: 0; font-size: 16px; margin-left: 4px; }
   .ag-titel-week { display: none; }
   .ag-balk-boven .ag-segment { flex: 1 1 100%; }
+  .ag-balk-rechts { flex: 1 1 100%; }
+  .ag-balk-rechts .ag-segment { flex: 1 1 auto; }
+  .ag-popover.ag-kal-venster { position: fixed; top: 112px; right: 12px; left: 12px; width: auto; max-height: calc(100dvh - 124px - var(--sl-onder, 0px)); }
+  .ag-kal-rij { padding: 6px var(--sl-gutter, 12px); }
+  .ag-maand-afspraak.is-google { background: var(--ag-kleur); box-shadow: none; }
   .ag-week { --ag-gutter: 44px; }
   .ag-week-gutter-label { padding-right: 4px; font-size: 8.5px; text-align: right; }
   .ag-week-dag { padding: 8px 2px; }

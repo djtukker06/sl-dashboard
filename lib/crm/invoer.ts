@@ -19,6 +19,8 @@ export interface KlantRij {
   volgende_stap?: string | null;
   /** 0025: 'YYYY-MM-DD' of null */
   opvolgen_op?: string | null;
+  /** 0035 */
+  website?: string | null;
 }
 
 /** Velden die pas na migratie 0025 bestaan (om vóór 0025 een nette melding te geven). */
@@ -34,6 +36,35 @@ function isEchteDatum(s: string): boolean {
 }
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/**
+ * Website opschonen: "studio-levant.nl", "www.studio-levant.nl/contact" of een volledige
+ * http(s)-link. Zonder protocol bewaren we het zoals getypt (nettere weergave); de link op de
+ * pagina krijgt dan https:// ervoor (websiteLink). Alles wat geen domeinnaam is, of een ander
+ * protocol heeft (javascript:, mailto:), weigeren we. Leeg → ''.
+ */
+export function schoonWebsite(v: string): { ok: true; waarde: string } | { ok: false } {
+  const t = v.replace(/[\p{Cf}\p{Cc}]/gu, '').trim().replace(/\/+$/, '');
+  if (!t) return { ok: true, waarde: '' };
+  if (/\s/.test(t) || t.length > 300) return { ok: false };
+  const metProtocol = /^[a-z][a-z0-9+.-]*:/i.test(t);
+  let url: URL;
+  try {
+    url = new URL(metProtocol ? t : `https://${t}`);
+  } catch {
+    return { ok: false };
+  }
+  if (url.protocol !== 'https:' && url.protocol !== 'http:') return { ok: false };
+  if (url.username || url.password || !/^[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}$/i.test(url.hostname)) return { ok: false };
+  return { ok: true, waarde: t };
+}
+
+/** De klikbare link bij een opgeslagen website ('' als hij niet bruikbaar is). */
+export function websiteLink(w: string): string {
+  const s = schoonWebsite(w);
+  if (!s.ok || !s.waarde) return '';
+  return /^https?:\/\//i.test(s.waarde) ? s.waarde : `https://${s.waarde}`;
+}
 /**
  * Telefoonnummer opschonen: gekopieerde nummers (Contacten, WhatsApp, een website) bevatten
  * vaak onzichtbare richtingstekens (U+202A/U+202C), harde spaties of "nette" streepjes.
@@ -101,6 +132,12 @@ export function parseKlant(body: KlantInvoer, nieuw: boolean): Resultaat<KlantRi
     const p = tekst(body.postcode, 20, 'postcode');
     if (!p.ok) return p;
     rij.postal_code = p.waarde ? p.waarde.toUpperCase() : null;
+  }
+  if ('website' in body) {
+    if (body.website !== null && body.website !== undefined && typeof body.website !== 'string') return { ok: false, fout: 'Ongeldige website.' };
+    const w = schoonWebsite(body.website ?? '');
+    if (!w.ok) return { ok: false, fout: 'Dat is geen geldige website (bijvoorbeeld studio-levant.nl).' };
+    rij.website = w.waarde || null;
   }
   if ('volgendeStap' in body) {
     const v = tekst(body.volgendeStap, 200, 'volgende stap');

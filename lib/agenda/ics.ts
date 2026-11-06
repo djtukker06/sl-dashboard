@@ -32,6 +32,11 @@ export interface FeedAfspraak {
   herhaalTot?: Dag | null;
   /** Datums van voorkomens die niet (meer) in de reeks staan. */
   uitzonderingen?: Dag[];
+  /** Afspraak uit Google Agenda (migratie 0035): eigen UID, de agendanaam als categorie en
+   *  de link naar Google in plaats van naar Studio Levant. */
+  uid?: string;
+  categorie?: string;
+  link?: string | null;
 }
 
 const DOMEIN = 'studio-levant.nl';
@@ -145,7 +150,7 @@ export function maakIcs(o: { naam: string; taken: FeedTaak[]; afspraken: FeedAfs
   }
 
   for (const a of o.afspraken) {
-    r.push('BEGIN:VEVENT', `UID:afspraak-${a.id}@${DOMEIN}`, `DTSTAMP:${stempel}`);
+    r.push('BEGIN:VEVENT', `UID:${a.uid ?? `afspraak-${a.id}`}@${DOMEIN}`, `DTSTAMP:${stempel}`);
     const s = inAmsterdam(a.start);
     const e = inAmsterdam(a.eind);
     if (a.heleDag) {
@@ -174,9 +179,13 @@ export function maakIcs(o: { naam: string; taken: FeedTaak[]; afspraken: FeedAfs
         );
       }
     }
-    r.push(`SUMMARY:${icsTekst(a.titel)}`, `DESCRIPTION:${omschrijving(a.notitie, 'Afspraak')}`);
+    const beschrijving =
+      a.uid !== undefined
+        ? icsTekst([a.notitie.trim(), a.link ? `Openen in Google Agenda: ${a.link}` : ''].filter(Boolean).join('\n\n'))
+        : omschrijving(a.notitie, 'Afspraak');
+    r.push(`SUMMARY:${icsTekst(a.titel)}`, `DESCRIPTION:${beschrijving}`);
     if (a.locatie.trim()) r.push(`LOCATION:${icsTekst(a.locatie.trim())}`);
-    r.push('CATEGORIES:Afspraak', 'TRANSP:OPAQUE', 'END:VEVENT');
+    r.push(`CATEGORIES:${icsTekst(a.categorie ?? 'Afspraak')}`, 'TRANSP:OPAQUE', 'END:VEVENT');
   }
 
   r.push('END:VCALENDAR');

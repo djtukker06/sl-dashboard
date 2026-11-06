@@ -51,6 +51,8 @@ const ACTIES: Record<string, string> = {
   export_social: 'Social geëxporteerd',
   drive_gekoppeld: 'Google Drive gekoppeld',
   drive_ontkoppeld: 'Google Drive ontkoppeld',
+  google_agenda_gekoppeld: 'Google Agenda gekoppeld',
+  google_agenda_ontkoppeld: 'Google Agenda ontkoppeld',
   backup_gemaakt: 'Back-up gemaakt',
   backup_mislukt: 'Back-up mislukt',
   backup_gedownload: 'Back-up gedownload',

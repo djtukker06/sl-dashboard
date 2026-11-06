@@ -1,5 +1,6 @@
 'use client';
 
+import { websiteLink } from '@/lib/crm/invoer';
 import type { Klant, KlantInvoer } from '@/lib/crm/types';
 import { InlineTitel, InlineVeld } from './InlineVeld';
 import { useKlantWijzigen } from './KlantActies';
@@ -46,6 +47,29 @@ export function KlantContact({ klant }: { klant: Klant }) {
             leeg="+ Telefoonnummer"
             onBewaar={(v) => bewaar({ telefoon: v })}
             weergave={(w) => <a href={`tel:${w.replace(/[^0-9+]/g, '')}`}>{w}</a>}
+          />
+        </dd>
+      </div>
+      <div>
+        <dt>Website</dt>
+        <dd>
+          <InlineVeld
+            label="Website"
+            type="url"
+            max={300}
+            waarde={klant.website}
+            leeg="+ Website"
+            onBewaar={(v) => bewaar({ website: v })}
+            weergave={(w) => {
+              const link = websiteLink(w);
+              return link ? (
+                <a href={link} target="_blank" rel="noopener noreferrer" title="Website openen">
+                  {w.replace(/^https?:\/\//i, '')}
+                </a>
+              ) : (
+                w
+              );
+            }}
           />
         </dd>
       </div>

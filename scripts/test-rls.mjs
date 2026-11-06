@@ -1898,8 +1898,37 @@ async function scenarioE() {
   const weg = await db.query("select count(*)::int as n from public.notitie_bestanden where notitie_id = $1", [deel]);
   check(weg.rows[0].n === 0, "E: notitie definitief weg → bijlagen-rijen mee weg");
 
+  // 0035: Google Agenda (tokens en agenda's alleen via de server) + website bij klanten.
+  checkControle(await voerUit(db, lees("supabase/UITVOEREN_0035.sql"), "UITVOEREN_0035.sql"), "E: UITVOEREN_0035 (1e keer)");
+  checkControle(await voerUit(db, lees("supabase/UITVOEREN_0035.sql"), "UITVOEREN_0035.sql (2x)"), "E: UITVOEREN_0035 (2e keer)");
+  const gAcc = await db.query(
+    "insert into public.google_agenda_accounts (user_id, google_email, refresh_token_enc) values ($1, 'daniel@gmail.com', 'v1:geheim') returning id",
+    [U.daniel],
+  );
+  await db.query("insert into public.google_agendas (account_id, user_id, google_id, naam) values ($1, $2, 'daniel@gmail.com', 'Daniel')", [gAcc.rows[0].id, U.daniel]);
+  for (const tabel of ["google_agenda_accounts", "google_agendas"]) {
+    const zelf = await alsMetAal(db, "daniel", "aal1", `select * from public.${tabel}`);
+    check(leeg(zelf), `E: ${tabel} ook voor de eigenaar zelf niet direct leesbaar (alleen de server)`, uitleg(zelf));
+    for (const wie of ["anon", "indringer", "oudlid"]) {
+      const r = await als(db, wie, `select * from public.${tabel}`);
+      check(leeg(r), `E: ${wie} ziet geen ${tabel}`, uitleg(r));
+    }
+    const w = await alsMetAal(db, "daniel", "aal1", `update public.${tabel} set user_id = user_id`);
+    check(nietsGeraakt(w), `E: teamlid wijzigt ${tabel} niet direct`, uitleg(w));
+    const d = await alsMetAal(db, "daniel", "aal1", `delete from public.${tabel}`);
+    check(nietsGeraakt(d), `E: teamlid verwijdert ${tabel} niet direct`, uitleg(d));
+  }
+  const slechteKleur = await db.query("update public.google_agendas set kleur = 'red'").then(() => true, () => false);
+  check(!slechteKleur, "E: google_agendas.kleur alleen #rrggbb");
+  await db.query("delete from public.google_agenda_accounts where id = $1", [gAcc.rows[0].id]);
+  const gWeg = await db.query("select count(*)::int as n from public.google_agendas");
+  check(gWeg.rows[0].n === 0, "E: account ontkoppeld → agenda's mee weg");
+  const lang = await db.query("update public.clients set website = repeat('a', 301)").then(() => true, () => false);
+  check(!lang, "E: clients.website max. 300 tekens");
+  await db.query("update public.clients set website = 'studio-levant.nl'");
+
   await db.close();
-  if (fouten === fouten0) console.log("  scenario E (gebruikersbeheer, agenda-links, boekhoudrechten, scratchpad: UITVOEREN_0028–0032.sql): ok");
+  if (fouten === fouten0) console.log("  scenario E (gebruikersbeheer, agenda-links, boekhoudrechten, scratchpad, Google Agenda: UITVOEREN_0028–0032, 0035): ok");
 }
 
 await scenarioA();
