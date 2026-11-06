@@ -41,7 +41,8 @@ export function Rail({ account }: { account: RailAccount }) {
             <RailMeer items={items.filter((it) => !it.mobiel)} />
             {/* Account, gebruikers en beveiliging staan binnen app/(app): client-navigatie (met
                 laadscherm, zonder volledige paginalading). RailMeer sluit het menu na de navigatie.
-                Agenda koppelen en wachtwoord wijzigen staan buiten de shell en blijven <a>. */}
+                Wachtwoord wijzigen staat buiten de shell en blijft een <a>. Agenda koppelen (Apple
+                Agenda) staat in de agenda onder "Agenda's", met Google Agenda en de meldingen. */}
             <p className="sl-account-naam">{account.naam}</p>
             <p className="sl-account-mail">{account.email}</p>
             <PrivacyKnop menu />
@@ -58,9 +59,6 @@ export function Rail({ account }: { account: RailAccount }) {
                 Beveiliging &amp; audit
               </Link>
             )}
-            <a className="sl-account-link" href="/agenda-koppelen">
-              Agenda koppelen
-            </a>
             <a className="sl-account-link" href="/nieuw-wachtwoord">
               Wachtwoord wijzigen
             </a>

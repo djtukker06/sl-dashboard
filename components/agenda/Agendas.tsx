@@ -1,6 +1,9 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { api } from '@/lib/agenda/client';
+import type { FeedStatus } from '@/lib/agenda/feed-status';
+import { speelGeluid, useMeldingen, zetMeldingen } from '@/lib/agenda/meldingen';
 import { KLEUREN } from '@/lib/google-agenda/kern';
 import type { GoogleAgenda, GoogleStatus } from '@/lib/google-agenda/types';
 
@@ -302,9 +305,214 @@ export function AgendaBeheer({
               )}
             </div>
           )}
+
+          <AgendaLink open={open} />
+          <MeldingenInstelling />
         </div>
       )}
     </div>
+  );
+}
+
+const APP_NAAM: Record<string, string> = { apple: 'Apple Agenda', google: 'Google Agenda', outlook: 'Outlook', overig: 'je agenda-app' };
+
+function geleden(iso: string | null): string {
+  if (!iso) return '';
+  const min = Math.round((Date.now() - Date.parse(iso)) / 60_000);
+  if (min < 2) return 'net';
+  if (min < 60) return `${min} min geleden`;
+  if (min < 48 * 60) return `${Math.round(min / 60)} uur geleden`;
+  return `${Math.round(min / 1440)} dagen geleden`;
+}
+
+/**
+ * De agenda-link (ICS, migratie 0029): je taken en afspraken uit Studio Levant in Apple Agenda
+ * (iPhone, Mac) of een andere agenda-app. Zelfde API als /agenda-koppelen (die blijft voor de
+ * verplichte eerste keer). Een nieuwe link maakt de oude ongeldig; de link zelf zie je alleen
+ * direct na het maken.
+ */
+function AgendaLink({ open }: { open: boolean }) {
+  const [status, setStatus] = useState<FeedStatus | null>(null);
+  const [pad, setPad] = useState<string | null>(null);
+  const [zeker, setZeker] = useState(false);
+  const [bezig, setBezig] = useState(false);
+  const [fout, setFout] = useState('');
+  const [gekopieerd, setGekopieerd] = useState(false);
+  const [wacht, setWacht] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    let weg = false;
+    api<FeedStatus>('/api/account/agenda')
+      .then((s) => !weg && setStatus(s))
+      .catch(() => undefined);
+    return () => {
+      weg = true;
+    };
+  }, [open]);
+
+  // Na "In Apple Agenda zetten": elke 3 s kijken of de agenda-app de link al ophaalde.
+  useEffect(() => {
+    if (!wacht || status?.gekoppeld) return;
+    const t = setInterval(async () => {
+      try {
+        const s = await api<FeedStatus>('/api/account/agenda');
+        if (s.gekoppeld) {
+          setStatus(s);
+          setWacht(false);
+        }
+      } catch {
+        /* volgende ronde */
+      }
+    }, 3000);
+    return () => clearInterval(t);
+  }, [wacht, status?.gekoppeld]);
+
+  if (!status?.ingericht) return null;
+  const url = pad ? `${window.location.origin}${pad}` : '';
+  const webcal = url.replace(/^https?:\/\//, 'webcal://');
+
+  async function maak() {
+    setBezig(true);
+    setFout('');
+    try {
+      const r = await api<{ pad: string }>('/api/account/agenda', { method: 'POST', body: JSON.stringify({ actie: 'nieuw' }) });
+      setPad(r.pad);
+      setStatus((s) => s && { ...s, heeftLink: true, gekoppeld: false, client: null, laatstOpgehaald: null });
+      setZeker(false);
+    } catch (e) {
+      setFout(e instanceof Error ? e.message : 'Link maken mislukt.');
+    } finally {
+      setBezig(false);
+    }
+  }
+
+  async function kopieer() {
+    try {
+      await navigator.clipboard.writeText(url);
+      setGekopieerd(true);
+      setTimeout(() => setGekopieerd(false), 2000);
+      setWacht(true);
+    } catch {
+      /* selecteer handmatig */
+    }
+  }
+
+  return (
+    <section className="ag-kal-sectie" aria-label="Agenda-link">
+      <p className="ag-kal-sectie-kop">Studio Levant in je agenda-app</p>
+      <p className="ag-kal-uitleg">
+        {status.gekoppeld
+          ? `Gekoppeld met ${APP_NAAM[status.client ?? 'overig']}${status.laatstOpgehaald ? `, bijgewerkt ${geleden(status.laatstOpgehaald)}` : ''}.`
+          : 'Je taken en afspraken uit Studio Levant in Apple Agenda op je iPhone en Mac, of een andere agenda-app.'}
+      </p>
+      {!pad ? (
+        zeker ? (
+          <div className="ag-kal-acties">
+            <span className="ag-kal-uitleg">De huidige link stopt dan.</span>
+            <button type="button" className="ag-link-knop" disabled={bezig} onClick={() => void maak()}>
+              Ja, nieuwe link
+            </button>
+            <button type="button" className="ag-link-knop" onClick={() => setZeker(false)}>
+              Nee
+            </button>
+          </div>
+        ) : (
+          <div className="ag-kal-acties">
+            <button type="button" className="db-knop" disabled={bezig} onClick={() => (status.heeftLink ? setZeker(true) : void maak())}>
+              {status.gekoppeld ? 'Opnieuw koppelen' : 'Koppelen met Apple Agenda'}
+            </button>
+          </div>
+        )
+      ) : (
+        <>
+          <div className="ag-kal-acties">
+            <a className="db-knop db-knop-primair" href={webcal} onClick={() => setWacht(true)}>
+              In Apple Agenda zetten
+            </a>
+            <button type="button" className="db-knop" onClick={() => void kopieer()}>
+              {gekopieerd ? 'Gekopieerd' : 'Link kopiëren'}
+            </button>
+          </div>
+          <p className="ag-kal-uitleg">
+            {status.gekoppeld
+              ? `Gekoppeld met ${APP_NAAM[status.client ?? 'overig']}.`
+              : wacht
+                ? 'Wachten tot je agenda-app de link ophaalt… (kies daar ‘Abonneer’)'
+                : 'Op de iPhone of Mac: tik op ‘In Apple Agenda zetten’ en kies ‘Abonneer’. Andere app: kopieer de link en voeg hem toe als agenda-abonnement (deel hem met niemand).'}
+          </p>
+        </>
+      )}
+      {fout && (
+        <p className="ag-kal-melding" role="alert">
+          {fout}
+        </p>
+      )}
+    </section>
+  );
+}
+
+/** Meldingen 10 en 1 minuut vóór een afspraak (components/agenda/AfspraakMeldingen). */
+function MeldingenInstelling() {
+  const { aan, toestemming } = useMeldingen();
+  const [bezig, setBezig] = useState(false);
+
+  async function zet(nieuw: boolean) {
+    setBezig(true);
+    try {
+      await zetMeldingen(nieuw);
+    } finally {
+      setBezig(false);
+    }
+  }
+
+  function test(minuten: 10 | 1) {
+    speelGeluid(minuten);
+    try {
+      new Notification(minuten === 10 ? 'Over 10 minuten: Voorbeeldafspraak' : 'Over 1 minuut: Voorbeeldafspraak', {
+        body: 'Zo ziet een melding eruit (met dit geluid).',
+        tag: `sl-test-${minuten}`,
+        icon: '/brand/app/apple-touch-icon.png',
+        silent: true
+      });
+    } catch {
+      /* alleen het geluid */
+    }
+  }
+
+  return (
+    <section className="ag-kal-sectie" aria-label="Meldingen">
+      <p className="ag-kal-sectie-kop">Meldingen</p>
+      {toestemming === 'niet-ondersteund' ? (
+        <p className="ag-kal-uitleg">Deze browser kan geen meldingen tonen.</p>
+      ) : (
+        <>
+          <label className="ag-schakel ag-kal-feed">
+            <input type="checkbox" checked={aan} disabled={bezig || toestemming === 'denied'} onChange={(e) => void zet(e.target.checked)} />
+            <span>
+              Melding 10 minuten en 1 minuut vóór een afspraak
+              <small>Met een eigen geluid. Werkt zolang het dashboard ergens in een tabblad open staat.</small>
+            </span>
+          </label>
+          {toestemming === 'denied' && (
+            <p className="ag-kal-melding">
+              Meldingen zijn geblokkeerd in je browser. Sta ze toe via het slotje links in de adresbalk en zet ze daarna hier aan.
+            </p>
+          )}
+          {aan && (
+            <div className="ag-kal-acties">
+              <span className="ag-kal-uitleg">Proberen:</span>
+              <button type="button" className="ag-link-knop" onClick={() => test(10)}>
+                10 minuten
+              </button>
+              <button type="button" className="ag-link-knop" onClick={() => test(1)}>
+                1 minuut
+              </button>
+            </div>
+          )}
+        </>
+      )}
+    </section>
   );
 }
 

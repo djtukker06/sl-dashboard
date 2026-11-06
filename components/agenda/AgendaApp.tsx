@@ -25,6 +25,7 @@ import { useTeam } from '@/components/team/TeamProvider';
 import { googleApi, isGoogleId } from '@/lib/google-agenda/client';
 import { KOPPEL_MELDING, type GoogleStatus } from '@/lib/google-agenda/types';
 import { perGebruiker } from '@/lib/mail/client';
+import { AFSPRAKEN_GEWIJZIGD } from './AfspraakMeldingen';
 import { AgendaBeheer, AgendaChips, type AgendaWijziging } from './Agendas';
 import { ItemPaneel, nieuweAfspraak, type Selectie } from './ItemPaneel';
 import { MaandView } from './MaandView';
@@ -283,7 +284,11 @@ function Agenda({
     if (window.location.pathname + window.location.search !== url) window.history.replaceState(null, '', url);
   }, [focus, keuze, standaard, vandaag, filter, project]);
 
-  const herlaad = useCallback(() => setTeller((t) => t + 1), []);
+  const herlaad = useCallback(() => {
+    setTeller((t) => t + 1);
+    // De meldingen vooraf (AfspraakMeldingen in de shell) halen de afspraken opnieuw op.
+    window.dispatchEvent(new Event(AFSPRAKEN_GEWIJZIGD));
+  }, []);
 
   // ---------- lokale bewerkingen (optimistisch) ----------
   // De laatst getoonde lijsten. Afvinken roept pasTaakAan twee keer aan (direct, en met het

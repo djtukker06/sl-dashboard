@@ -886,6 +886,12 @@ label.ag-kal-feed { align-items: flex-start; font-size: 13px; }
 .ag-kal-koppel .db-knop { display: inline-flex; align-items: center; gap: 8px; }
 .ag-kal-uitleg { margin: 0; padding: 0 6px; font-size: 12px; line-height: 1.5; color: var(--sl-muted); }
 .ag-kal-uitleg code { font-family: var(--sl-mono); font-size: 11px; }
+.ag-kal-sectie { display: grid; gap: 8px; padding-top: 12px; border-top: 1px solid var(--sl-line-soft); }
+.ag-kal-sectie-kop { margin: 0; padding: 0 6px; font-family: var(--sl-mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--sl-muted); }
+.ag-kal-sectie .ag-kal-feed { padding: 0 6px; }
+.ag-kal-acties { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 0 6px; }
+.ag-kal-acties .ag-kal-uitleg { padding: 0; }
+.ag-kal-acties a.db-knop { text-decoration: none; }
 
 /* De rij gekleurde knopjes boven de agenda: tonen/verbergen met één klik (en de legenda). */
 .ag-kal-rij {

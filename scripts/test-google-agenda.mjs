@@ -16,6 +16,7 @@ const K = await import("../lib/google-agenda/kern.ts");
 const { parseAfspraak } = await import("../lib/agenda/invoer.ts");
 const { maakIcs } = await import("../lib/agenda/ics.ts");
 const V = await import("../lib/agenda/vergaderlink.ts");
+const M = await import("../lib/agenda/meldingen-kern.ts");
 
 let n = 0;
 const test = (naam, fn) => {
@@ -266,6 +267,33 @@ test("vergaderlinks herkennen: Teams, Meet, Zoom, Webex …", () => {
   assert.equal(V.korteLocatie(teams), "Teams");
   assert.equal(V.korteLocatie(`Stationsstraat 11 · ${teams}`), "Stationsstraat 11 · Teams");
   assert.equal(V.korteLocatie("Studio"), "Studio");
+});
+
+test("meldingen: 10 minuten en 1 minuut vooraf, elk één keer", () => {
+  const a = { id: "a1", titel: "Overleg", start: "2026-11-06T09:00:00.000Z", eind: "2026-11-06T10:00:00.000Z", locatie: "", notitie: "" };
+  const t = (iso) => Date.parse(iso);
+  const leeg = new Set();
+  assert.deepEqual(M.teMelden([a], t("2026-11-06T08:49:00Z"), leeg), [], "11 min vooraf: nog niets");
+  const tien = M.teMelden([a], t("2026-11-06T08:50:00Z"), leeg);
+  assert.equal(tien.length, 1);
+  assert.equal(tien[0].minuten, 10);
+  assert.equal(tien[0].sleutel, "a1|2026-11-06T09:00:00.000Z|10");
+  assert.deepEqual(M.teMelden([a], t("2026-11-06T08:55:00Z"), new Set([tien[0].sleutel])), [], "niet twee keer");
+  // Tab sliep: om 08:55 alsnog de 10-minutenmelding.
+  assert.equal(M.teMelden([a], t("2026-11-06T08:55:00Z"), leeg)[0].minuten, 10);
+  const een = M.teMelden([a], t("2026-11-06T08:59:00Z"), new Set([tien[0].sleutel]));
+  assert.equal(een.length, 1);
+  assert.equal(een[0].minuten, 1);
+  // In de laatste minuut nooit meer de 10-minutenmelding, ook als die gemist werd.
+  assert.deepEqual(M.teMelden([a], t("2026-11-06T08:59:30Z"), leeg).map((m) => m.minuten), [1]);
+  assert.equal(M.teMelden([a], t("2026-11-06T09:01:30Z"), leeg).length, 1, "tot 2 min na het begin");
+  assert.deepEqual(M.teMelden([a], t("2026-11-06T09:02:00Z"), leeg), [], "daarna niet meer");
+  // Verschoven afspraak: nieuwe sleutel, dus opnieuw melden.
+  const verschoven = { ...a, start: "2026-11-06T09:30:00.000Z" };
+  assert.equal(M.teMelden([verschoven], t("2026-11-06T09:20:00Z"), new Set([tien[0].sleutel])).length, 1);
+  // Volgende controle: precies op het meldmoment (max. 30 s).
+  assert.equal(M.volgendeControle([a], t("2026-11-06T08:49:50Z")), 10_050);
+  assert.equal(M.volgendeControle([a], t("2026-11-06T07:00:00Z")), 30_000);
 });
 
 console.log(`\n${n} tests geslaagd`);
