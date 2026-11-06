@@ -14,6 +14,9 @@
 //   rechtstreeks naar die sessie-URL. Alleen het pad /upload/drive/, geen andere Google-API's.
 // - frame-src: eigen iframes (PDF-voorbeelden, social-slides), blob: en Supabase (signed URL
 //   van een bonnetje-PDF). frame-ancestors 'self': nooit in een frame van een ander domein.
+// - form-action: eigen formulieren, plus het inlogscherm van Google. "Google Drive koppelen"
+//   en "Google Agenda koppelen" zijn een POST naar de eigen server die doorstuurt (303) naar
+//   accounts.google.com, en browsers passen form-action ook toe op die doorverwijzing.
 
 export function supabaseOrigins(url: string | undefined): { https: string; wss: string } | null {
   if (!url) return null;
@@ -40,7 +43,7 @@ export function bouwCsp(o: { nonce: string; supabaseUrl?: string; dev?: boolean 
     `frame-src 'self' blob: data:${sbHttps}`,
     "worker-src 'self' blob:",
     "frame-ancestors 'self'",
-    "form-action 'self'",
+    "form-action 'self' https://accounts.google.com",
     "base-uri 'none'",
     "object-src 'none'",
     "manifest-src 'self'"
