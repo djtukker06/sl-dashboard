@@ -100,7 +100,7 @@ export function zetHerinnering(sleutel: string, aan: boolean) {
 }
 
 // ---------- beltoon (10 minuten vooraf) ----------
-// "Normaal" = het klokje hieronder; "Picobello" = de eerste seconde van het nummer
+// "Normaal" = het klokje hieronder; "Picobello" = het begin van het nummer
 // (public/geluiden/picobello.mp3). Per gebruiker in deze browser.
 
 export type Beltoon = 'normaal' | 'picobello';
@@ -161,8 +161,8 @@ function toon(c: AudioContext, freq: number, start: number, duur: number, volume
 }
 
 const CLIP = '/geluiden/picobello.mp3';
-/** Hooguit zoveel seconden van de clip, met een korte fade-out (geen tik aan het eind). */
-const CLIP_SEC = 1;
+/** De clip zelf bepaalt de lengte (nu ±1,5 s), met hooguit 3 s en een korte fade-out. */
+const CLIP_SEC = 3;
 let clip: Promise<AudioBuffer | null> | null = null;
 
 function laadClip(c: AudioContext): Promise<AudioBuffer | null> {
