@@ -7,6 +7,7 @@ import { agendaApi, useNu } from '@/lib/agenda/client';
 import { DAGNAMEN_KORT, dagDelen, inAmsterdam, korteDag, plusDagen, weekdagIndex, type Dag } from '@/lib/agenda/datum';
 import { afspraakRaakt, blokkenOpDag, isBalk, tijdvak } from '@/lib/agenda/weergave';
 import type { Afspraak, Taak } from '@/lib/agenda/types';
+import { korteLocatie, vergaderlinkVan, type Vergaderlink } from '@/lib/agenda/vergaderlink';
 import { Afvinker, TaakRij } from '@/components/agenda/TaakRij';
 import { useAfvinken } from '@/components/agenda/useAfvinken';
 import { useTaakDialoog, useTaakGebeurtenis } from '@/components/taken/TakenProvider';
@@ -220,8 +221,9 @@ function VandaagKaart({
                 const voorbij = nuMin !== null && b.eind <= nuMin;
                 const bezig = nuMin !== null && b.start <= nuMin && nuMin < b.eind;
                 const isUit = uitgelicht === b;
+                const link = b.soort === 'afspraak' && !voorbij ? vergaderlinkVan(b.item) : null;
                 const meta = [
-                  b.soort === 'afspraak' ? b.item.locatie : null,
+                  b.soort === 'afspraak' && b.item.locatie ? korteLocatie(b.item.locatie) : null,
                   b.item.klantNaam
                 ].filter(Boolean).join(' · ');
                 const tekst = (
@@ -250,9 +252,12 @@ function VandaagKaart({
                         </button>
                       </>
                     ) : (
-                      <Link className="db-dag-rij" href={`/agenda?dag=${vandaag}&afspraak=${b.id}`}>
-                        {tekst}
-                      </Link>
+                      <>
+                        <Link className="db-dag-rij" href={`/agenda?dag=${vandaag}&afspraak=${b.id}`}>
+                          {tekst}
+                        </Link>
+                        {link && <Deelnemen link={link} />}
+                      </>
                     )}
                   </li>
                 );
@@ -313,6 +318,19 @@ function WeekStrip({ vandaag, taken, afspraken }: { vandaag: Dag; taken: Taak[];
   );
 }
 
+/** Kleine knop "Deelnemen" bij een afspraak met een vergaderlink (Teams, Meet, Zoom, …). */
+function Deelnemen({ link }: { link: Vergaderlink }) {
+  return (
+    <a className="db-deelnemen" href={link.url} target="_blank" rel="noopener noreferrer" title={`Deelnemen met ${link.dienst}`}>
+      <svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true">
+        <rect x="3" y="6.5" width="12" height="11" rx="2" fill="none" stroke="currentColor" strokeWidth="1.8" />
+        <path d="m15 10.5 5-3v9l-5-3" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+      </svg>
+      Deelnemen
+    </a>
+  );
+}
+
 function Eerstvolgende({ vandaag, nu, afspraken }: { vandaag: Dag; nu: number | null; afspraken: Afspraak[] }) {
   const grens = nu ?? Date.parse(`${vandaag}T00:00:00Z`);
   const komend = afspraken
@@ -324,8 +342,9 @@ function Eerstvolgende({ vandaag, nu, afspraken }: { vandaag: Dag; nu: number | 
     <ul className="db-lijst">
       {komend.map((a) => {
         const s = inAmsterdam(a.start);
+        const link = vergaderlinkVan(a);
         return (
-          <li key={a.id}>
+          <li key={a.id} className={link ? 'db-rij-met-knop' : undefined}>
             <Link className="db-rij" href={`/agenda?dag=${s.dag}&afspraak=${a.id}`}>
               <span className="db-rij-hoofd">
                 <span className="db-rij-titel">{a.titel}</span>
@@ -334,6 +353,7 @@ function Eerstvolgende({ vandaag, nu, afspraken }: { vandaag: Dag; nu: number | 
                 </span>
               </span>
             </Link>
+            {link && <Deelnemen link={link} />}
           </li>
         );
       })}
