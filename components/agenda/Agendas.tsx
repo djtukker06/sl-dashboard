@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { api } from '@/lib/agenda/client';
 import type { FeedStatus } from '@/lib/agenda/feed-status';
-import { speelGeluid, useMeldingen, zetMeldingen } from '@/lib/agenda/meldingen';
+import { BELTONEN, speelGeluid, useBeltoon, useMeldingen, zetBeltoon, zetMeldingen, type Beltoon } from '@/lib/agenda/meldingen';
 import { KLEUREN } from '@/lib/google-agenda/kern';
 import type { GoogleAgenda, GoogleStatus } from '@/lib/google-agenda/types';
 
@@ -455,6 +455,7 @@ function AgendaLink({ open }: { open: boolean }) {
 /** Meldingen 10 en 1 minuut vóór een afspraak (components/agenda/AfspraakMeldingen). */
 function MeldingenInstelling() {
   const { aan, toestemming } = useMeldingen();
+  const beltoon = useBeltoon();
   const [bezig, setBezig] = useState(false);
 
   async function zet(nieuw: boolean) {
@@ -498,6 +499,26 @@ function MeldingenInstelling() {
             <p className="ag-kal-melding">
               Meldingen zijn geblokkeerd in je browser. Sta ze toe via het slotje links in de adresbalk en zet ze daarna hier aan.
             </p>
+          )}
+          {aan && (
+            <label className="ag-kal-beltoon">
+              <span>Geluid 10 minuten vooraf</span>
+              <select
+                className="ag-veld"
+                value={beltoon}
+                onChange={(e) => {
+                  const b = e.target.value as Beltoon;
+                  zetBeltoon(b);
+                  speelGeluid(10, b);
+                }}
+              >
+                {BELTONEN.map((b) => (
+                  <option key={b.waarde} value={b.waarde}>
+                    {b.label}
+                  </option>
+                ))}
+              </select>
+            </label>
           )}
           {aan && (
             <div className="ag-kal-acties">

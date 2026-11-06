@@ -99,6 +99,38 @@ export function zetHerinnering(sleutel: string, aan: boolean) {
   window.dispatchEvent(new Event(EVENT));
 }
 
+// ---------- beltoon (10 minuten vooraf) ----------
+// "Normaal" = het klokje hieronder; "Picobello" = de eerste seconde van het nummer
+// (public/geluiden/picobello.mp3). Per gebruiker in deze browser.
+
+export type Beltoon = 'normaal' | 'picobello';
+export const BELTONEN: { waarde: Beltoon; label: string }[] = [
+  { waarde: 'normaal', label: 'Normaal' },
+  { waarde: 'picobello', label: 'Picobello' }
+];
+const BELTOON_SLEUTEL = 'sl-meldingen-beltoon';
+
+function leesBeltoon(): Beltoon {
+  try {
+    return localStorage.getItem(perGebruiker(BELTOON_SLEUTEL)) === 'picobello' ? 'picobello' : 'normaal';
+  } catch {
+    return 'normaal';
+  }
+}
+
+export function useBeltoon(): Beltoon {
+  return useSyncExternalStore(abonneer, leesBeltoon, () => 'normaal' as Beltoon);
+}
+
+export function zetBeltoon(b: Beltoon) {
+  try {
+    localStorage.setItem(perGebruiker(BELTOON_SLEUTEL), b);
+  } catch {
+    /* geen opslag */
+  }
+  window.dispatchEvent(new Event(EVENT));
+}
+
 // ---------- geluid ----------
 // Met de Web Audio API gemaakt (geen bestand): 10 minuten vooraf een rustig tweetonig
 // klokje, 1 minuut vooraf een snel oplopend drieklankje, twee keer. Browsers laten pas
@@ -128,10 +160,49 @@ function toon(c: AudioContext, freq: number, start: number, duur: number, volume
   osc.stop(start + duur + 0.05);
 }
 
-export function speelGeluid(soort: Melding['minuten']) {
+const CLIP = '/geluiden/picobello.mp3';
+/** Hooguit zoveel seconden van de clip, met een korte fade-out (geen tik aan het eind). */
+const CLIP_SEC = 1;
+let clip: Promise<AudioBuffer | null> | null = null;
+
+function laadClip(c: AudioContext): Promise<AudioBuffer | null> {
+  clip ??= fetch(CLIP, { cache: 'force-cache' })
+    .then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(new Error(`HTTP ${r.status}`))))
+    .then((b) => c.decodeAudioData(b))
+    .catch(() => {
+      clip = null; // later opnieuw proberen
+      return null;
+    });
+  return clip;
+}
+
+/** De eerste seconde van Picobello; true als dat lukte (anders speelt het klokje). */
+async function speelClip(c: AudioContext): Promise<boolean> {
+  const buf = await laadClip(c);
+  if (!buf) return false;
+  const duur = Math.min(CLIP_SEC, buf.duration);
+  const bron = c.createBufferSource();
+  const gain = c.createGain();
+  const t = c.currentTime + 0.02;
+  bron.buffer = buf;
+  gain.gain.setValueAtTime(0.9, t);
+  gain.gain.setValueAtTime(0.9, t + duur - 0.12);
+  gain.gain.linearRampToValueAtTime(0.0001, t + duur);
+  bron.connect(gain).connect(c.destination);
+  bron.start(t, 0, duur);
+  return true;
+}
+
+export function speelGeluid(soort: Melding['minuten'], beltoon: Beltoon = leesBeltoon()) {
   ontgrendelGeluid();
   const c = ctx;
   if (!c) return;
+  if (soort === 10 && beltoon === 'picobello') {
+    void speelClip(c).then((ok) => {
+      if (!ok) speelGeluid(10, 'normaal');
+    });
+    return;
+  }
   const t = c.currentTime + 0.05;
   if (soort === 10) {
     // Klokje: E5 dan B5, lang uitklinkend (met een zachte boventoon).
