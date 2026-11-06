@@ -544,9 +544,8 @@ het team niet.
   het dashboard in een tabblad open staat (`components/agenda/AfspraakMeldingen.tsx` in de
   shell, afspraken via `/api/agenda/komend`); klik op de melding = deelnemen via de
   vergaderlink, of de afspraak openen. Met meerdere tabbladen open gaat elke melding één keer af.
-  Daarnaast een banner rechtsboven in elk open tabblad (aftellen, Deelnemen, Bekijken) en een
-  knipperende tabtitel als het tabblad op de achtergrond staat; de systeemmelding komt alleen
-  als je niet naar het dashboard kijkt. Per afspraak (bij een reeks: de hele reeks) zet je de
+  De melding is de gewone systeemmelding (op de Mac een macOS-banner, zoals Agenda); staat het
+  tabblad op de achtergrond, dan knippert de titel even mee. Per afspraak (bij een reeks: de hele reeks) zet je de
   herinnering uit met "Herinnering 10 en 1 minuut van tevoren" in het afspraakpaneel
   (standaard aan; per gebruiker in deze browser, net als de meldingen zelf).
 - **Vergaderlinks:** een Teams-, Meet-, Zoom-, Webex-, Whereby-, Jitsi- of FaceTime-link in
