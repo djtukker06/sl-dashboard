@@ -98,7 +98,8 @@ export function TaakRij({
   onOpen,
   href,
   toonDatum = true,
-  versleepbaar = false
+  versleepbaar = false,
+  onMenu
 }: {
   taak: Taak;
   vandaag: string;
@@ -107,6 +108,8 @@ export function TaakRij({
   href?: string;
   toonDatum?: boolean;
   versleepbaar?: boolean;
+  /** Rechtsklik op de taak. */
+  onMenu?: (e: React.MouseEvent<HTMLElement>, t: Taak) => void;
 }) {
   const teLaat = !taak.afgerond && !!taak.datum && taak.datum < vandaag;
   const prio = taak.prioriteit === 1 ? ' is-prio-hoog' : taak.prioriteit === 3 ? ' is-prio-laag' : '';
@@ -121,6 +124,7 @@ export function TaakRij({
     <li
       className={klasse}
       draggable={versleepbaar && !taak.afgerond}
+      onContextMenu={onMenu && ((e) => onMenu(e, taak))}
       onDragStart={
         versleepbaar
           ? (e) => {

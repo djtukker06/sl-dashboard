@@ -5,7 +5,7 @@ import { DAGNAMEN_KORT, dagDelen, inAmsterdam, type Dag } from '@/lib/agenda/dat
 import { isBalk, itemsOpDag } from '@/lib/agenda/weergave';
 import type { Afspraak, Taak } from '@/lib/agenda/types';
 import type { Selectie } from './ItemPaneel';
-import { kleurStijl, type Verplaatsing } from './WeekView';
+import { kleurStijl, type OpMenu, type Verplaatsing } from './WeekView';
 
 const MAX = 3;
 const SLEEP_TYPE = 'application/x-sl-item';
@@ -19,7 +19,8 @@ export function MaandView({
   afspraken,
   onOpen,
   onKiesDag,
-  onVerplaats
+  onVerplaats,
+  onMenu
 }: {
   dagen: Dag[];
   /** Maandnummer (1–12) dat centraal staat; andere dagen worden gedimd. */
@@ -30,6 +31,8 @@ export function MaandView({
   onOpen: (s: Selectie) => void;
   onKiesDag: (d: Dag) => void;
   onVerplaats: (v: Verplaatsing) => void;
+  /** Rechtsklik op een afspraak, een taak of een dag. */
+  onMenu?: OpMenu;
 }) {
   const [drop, setDrop] = useState<string | null>(null);
 
@@ -74,6 +77,7 @@ export function MaandView({
                 // en de hele dag één tikvlak is: agenda.css) opent die dag.
                 if (!(e.target as HTMLElement).closest('button')) onKiesDag(d);
               }}
+              onContextMenu={onMenu && ((e) => onMenu(e, { soort: 'leeg', dag: d, tijd: null }))}
               onDragOver={(e) => {
                 const t = e.dataTransfer.types;
                 if (!t.includes('application/x-sl-taak') && !t.includes(SLEEP_TYPE)) return;
@@ -113,6 +117,9 @@ export function MaandView({
                         style={x.soort === 'afspraak' ? kleurStijl(x.item) : undefined}
                         onClick={() =>
                           onOpen(x.soort === 'taak' ? { soort: 'taak', item: x.item } : { soort: 'afspraak', item: x.item })
+                        }
+                        onContextMenu={
+                          onMenu && ((e) => onMenu(e, x.soort === 'taak' ? { soort: 'taak', item: x.item } : { soort: 'afspraak', item: x.item }))
                         }
                         title={x.soort === 'afspraak' && x.item.google ? `${x.item.titel} · ${x.item.google.agendaNaam}` : x.item.titel}
                       >

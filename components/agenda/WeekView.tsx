@@ -12,6 +12,10 @@ import { Afvinker } from './TaakRij';
 
 const UUR = 48; // px per uur
 
+/** Waar het rechtsklikmenu over gaat: een afspraak, een taak of een lege plek in de agenda. */
+export type MenuDoel = Selectie | { soort: 'leeg'; dag: Dag; tijd: string | null };
+export type OpMenu = (e: React.MouseEvent<HTMLElement>, doel: MenuDoel) => void;
+
 /** Kleur van een afspraak uit Google (CSS-variabele; eigen afspraken houden het zand). */
 export function kleurStijl(a: Afspraak): React.CSSProperties | undefined {
   return a.google ? ({ '--ag-kleur': a.google.kleur } as React.CSSProperties) : undefined;
@@ -55,7 +59,8 @@ export function WeekView({
   onToggle,
   onNieuw,
   onVerplaats,
-  onKiesDag
+  onKiesDag,
+  onMenu
 }: {
   dagen: Dag[];
   vandaag: Dag;
@@ -67,6 +72,8 @@ export function WeekView({
   onNieuw: (dag: Dag, tijd: string | null, x: number, y: number) => void;
   onVerplaats: (v: Verplaatsing) => void;
   onKiesDag?: (dag: Dag) => void;
+  /** Rechtsklik op een afspraak, een taak of een lege plek. */
+  onMenu?: OpMenu;
 }) {
   const { mijnId, overgang } = useTeam();
   const scroll = useRef<HTMLDivElement>(null);
@@ -183,6 +190,7 @@ export function WeekView({
               type="button"
               className={`ag-week-dag${d === vandaag ? ' is-vandaag' : ''}${weekdagIndex(d) >= 5 ? ' is-weekend' : ''}`}
               onClick={() => onKiesDag?.(d)}
+              onContextMenu={onMenu && ((e) => onMenu(e, { soort: 'leeg', dag: d, tijd: null }))}
               title="Naar deze dag"
             >
               <span className="ag-week-dagnaam">{DAGNAMEN_KORT[weekdagIndex(d)]}</span>
@@ -204,6 +212,7 @@ export function WeekView({
               onClick={(e) => {
                 if (e.target === e.currentTarget) onNieuw(d, null, e.clientX, e.clientY);
               }}
+              onContextMenu={onMenu && ((e) => onMenu(e, { soort: 'leeg', dag: d, tijd: null }))}
               onDragOver={(e) => overTaak(e, `h${d}`)}
               onDragLeave={() => setDropDag(null)}
               onDrop={(e) => dropTaak(e, d, null)}
@@ -215,13 +224,18 @@ export function WeekView({
                   className={`ag-balk${a.google ? ' is-google' : ''}`}
                   style={kleurStijl(a)}
                   onClick={() => onOpen({ soort: 'afspraak', item: a })}
+                  onContextMenu={onMenu && ((e) => onMenu(e, { soort: 'afspraak', item: a }))}
                   title={`${a.titel} · ${tijdvak(a)}${a.google ? ` · ${a.google.agendaNaam}` : ''}`}
                 >
                   {a.titel}
                 </button>
               ))}
               {losse.map((t) => (
-                <div key={t.id} className={`ag-mini-taak${t.afgerond ? ' is-af' : ''}`}>
+                <div
+                  key={t.id}
+                  className={`ag-mini-taak${t.afgerond ? ' is-af' : ''}`}
+                  onContextMenu={onMenu && ((e) => onMenu(e, { soort: 'taak', item: t }))}
+                >
                   <Afvinker taak={t} onToggle={onToggle} klein />
                   <button type="button" className="ag-mini-taak-titel" onClick={() => onOpen({ soort: 'taak', item: t })}>
                     {t.titel}
@@ -255,6 +269,13 @@ export function WeekView({
                     const min = Math.floor(minutenBijY(e.clientY, e.currentTarget) / 30) * 30;
                     onNieuw(d, minutenNaarTijd(min), e.clientX, e.clientY);
                   }}
+                  onContextMenu={
+                    onMenu &&
+                    ((e) => {
+                      const min = Math.floor(minutenBijY(e.clientY, e.currentTarget) / 30) * 30;
+                      onMenu(e, { soort: 'leeg', dag: d, tijd: minutenNaarTijd(Math.max(0, Math.min(min, 23 * 60 + 30))) });
+                    })
+                  }
                   onDragOver={(e) => overTaak(e, `k${d}`)}
                   onDragLeave={() => setDropDag(null)}
                   onDrop={(e) => {
@@ -290,6 +311,9 @@ export function WeekView({
                         aria-label={label}
                         title={label}
                         onPointerDown={(e) => startSleep(e, b, i)}
+                        onContextMenu={
+                          onMenu && ((e) => onMenu(e, b.soort === 'taak' ? { soort: 'taak', item: b.item } : { soort: 'afspraak', item: b.item }))
+                        }
                         onPointerMove={beweeg}
                         onPointerUp={eindeSleep}
                         onPointerCancel={() => {

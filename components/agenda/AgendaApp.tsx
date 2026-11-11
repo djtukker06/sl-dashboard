@@ -19,6 +19,10 @@ import {
 import type { Afspraak, Taak, TakenFilter, Tellingen } from '@/lib/agenda/types';
 import { opMijnNaam } from '@/lib/agenda/zichtbaarheid';
 import { ModuleKop } from '@/components/shell/ModuleKop';
+import { MenuIcoon, useContextMenu, type MenuRegel } from '@/components/shell/ContextMenu';
+import { heeftHerinnering, herinneringSleutel, useMeldingen, zetHerinnering } from '@/lib/agenda/meldingen';
+import { magAfspraakWijzigen, magTaakWijzigen } from '@/lib/agenda/rechten';
+import { vergaderlinkVan } from '@/lib/agenda/vergaderlink';
 import { TaakKnop } from '@/components/dashboard/TaakKnop';
 import { TakenProvider, useTaakDialoog, useTaakGebeurtenis } from '@/components/taken/TakenProvider';
 import { useTeam } from '@/components/team/TeamProvider';
@@ -32,7 +36,7 @@ import { MaandView } from './MaandView';
 import { Takenlijst } from './Takenlijst';
 import { ToastProvider, useToast } from './Toast';
 import { useAfvinken } from './useAfvinken';
-import { WeekView, type Verplaatsing } from './WeekView';
+import { WeekView, type MenuDoel, type Verplaatsing } from './WeekView';
 
 // 'week' = zeven dagen (op de telefoon drie), 'dag' = één kolom. Zonder eigen keuze is de
 // standaard 'week' op een groot scherm en 'dag' op de telefoon (≤ 720px).
@@ -100,6 +104,8 @@ function Agenda({
   googleUitkomst?: string | null;
 }) {
   const toast = useToast();
+  const menu = useContextMenu();
+  const meldingen = useMeldingen();
   const nu = useNu();
   const smal = useSmalScherm(telefoon);
   const { mijnId, overgang } = useTeam();
@@ -460,6 +466,111 @@ function Agenda({
     }
   }
 
+  // ---------- rechtsklikmenu ----------
+  // Zonder "ongedaan maken" (weg is weg), dus verwijderen vraagt in een submenu om bevestiging,
+  // net als de knop in het paneel.
+  async function verwijderAfspraak(a: Afspraak, toepassen?: 'deze' | 'reeks') {
+    try {
+      if (a.google) await googleApi.verwijder(a.id, toepassen);
+      else await agendaApi.verwijderAfspraak(a.id, toepassen);
+      if (a.google) setGoogle((g) => (g ? { ...g, events: g.events.filter((x) => x.id !== a.id) } : g));
+      else setBereik((b) => (b ? { ...b, afspraken: b.afspraken.filter((x) => x.id !== a.id) } : b));
+      toast(toepassen === 'deze' ? 'Deze afspraak verwijderd (de reeks blijft)' : toepassen === 'reeks' ? 'Reeks verwijderd' : 'Afspraak verwijderd');
+    } catch (e) {
+      toast(e instanceof Error ? `Verwijderen mislukt: ${e.message}` : 'Verwijderen mislukt.', { fout: true });
+    }
+    herlaad();
+  }
+  async function verwijderTaak(t: Taak) {
+    try {
+      await agendaApi.verwijderTaak(t.id);
+      setBereik((b) => (b ? { ...b, taken: b.taken.filter((x) => x.id !== t.id) } : b));
+      setLijst((l) => (l ? { ...l, taken: l.taken.filter((x) => x.id !== t.id) } : l));
+      toast('Taak verwijderd');
+    } catch (e) {
+      toast(e instanceof Error ? `Verwijderen mislukt: ${e.message}` : 'Verwijderen mislukt.', { fout: true });
+    }
+    herlaad();
+  }
+
+  function agendaMenu(e: React.MouseEvent<HTMLElement>, doel: MenuDoel) {
+    if (doel.soort === 'afspraak') {
+      const a = doel.item;
+      const link = vergaderlinkVan(a);
+      const magWeg = a.google ? a.google.verwijderbaar : magAfspraakWijzigen(a, mijnId, overgang);
+      const sleutel = herinneringSleutel(a);
+      const herinner = heeftHerinnering(sleutel);
+      menu(e, [
+        { label: 'Openen', icoon: <MenuIcoon naam="open" />, onKies: () => openItem(doel) },
+        link && { label: `Deelnemen met ${link.dienst}`, icoon: <MenuIcoon naam="video" />, onKies: () => window.open(link.url, '_blank', 'noopener') },
+        link && {
+          label: 'Link kopiëren',
+          icoon: <MenuIcoon naam="link" />,
+          onKies: () =>
+            void navigator.clipboard.writeText(link.url).then(
+              () => toast('Link gekopieerd'),
+              () => toast('Kopiëren lukte niet.', { fout: true })
+            )
+        },
+        meldingen.aan && Date.parse(a.start) > (nu ?? 0) && 'lijn',
+        meldingen.aan &&
+          Date.parse(a.start) > (nu ?? 0) && {
+            label: 'Herinnering vooraf',
+            vink: herinner,
+            onKies: () => {
+              zetHerinnering(sleutel, !herinner);
+              toast(herinner ? 'Geen herinnering voor deze afspraak' : 'Herinnering staat aan');
+            }
+          },
+        'lijn',
+        magWeg && {
+          label: 'Verwijderen',
+          icoon: <MenuIcoon naam="prullenbak" />,
+          gevaar: true,
+          sub: a.reeksId
+            ? [
+                { kop: 'Herhalende afspraak' },
+                { label: 'Alleen deze', gevaar: true, onKies: () => void verwijderAfspraak(a, 'deze') },
+                { label: 'De hele reeks', gevaar: true, onKies: () => void verwijderAfspraak(a, 'reeks') }
+              ]
+            : [{ kop: 'Definitief verwijderen?' }, { label: 'Ja, verwijderen', gevaar: true, onKies: () => void verwijderAfspraak(a) }]
+        }
+      ]);
+    } else if (doel.soort === 'taak') {
+      const t = doel.item;
+      const mag = magTaakWijzigen(t, mijnId, overgang);
+      const morgen = plusDagen(vandaag, 1);
+      const regels: MenuRegel[] = [
+        { label: 'Openen', icoon: <MenuIcoon naam="open" />, onKies: () => taakDialoog.open(t.id) },
+        mag && { label: t.afgerond ? 'Weer openzetten' : 'Afvinken', icoon: <MenuIcoon naam={t.afgerond ? 'herstel' : 'taak'} />, onKies: () => toggle(t) },
+        mag && !t.afgerond && 'lijn',
+        mag &&
+          !t.afgerond &&
+          t.datum !== vandaag && { label: 'Naar vandaag', icoon: <MenuIcoon naam="dag" />, onKies: () => void verplaats({ soort: 'taak', item: t, datum: vandaag, tijd: t.tijd }) },
+        mag &&
+          !t.afgerond &&
+          t.datum !== morgen && { label: 'Naar morgen', icoon: <MenuIcoon naam="pijl" />, onKies: () => void verplaats({ soort: 'taak', item: t, datum: morgen, tijd: t.tijd }) },
+        'lijn',
+        mag && {
+          label: 'Verwijderen',
+          icoon: <MenuIcoon naam="prullenbak" />,
+          gevaar: true,
+          sub: [{ kop: 'Definitief verwijderen?' }, { label: 'Ja, verwijderen', gevaar: true, onKies: () => void verwijderTaak(t) }]
+        }
+      ];
+      menu(e, regels);
+    } else {
+      const { dag, tijd } = doel;
+      menu(e, [
+        { kop: `${korteDag(dag)}${tijd ? ` · ${tijd}` : ''}` },
+        { label: 'Nieuwe afspraak', icoon: <MenuIcoon naam="kalender" />, onKies: () => nieuweAfspraakOp(dag, tijd) },
+        { label: 'Nieuwe taak', icoon: <MenuIcoon naam="taak" />, onKies: () => taakDialoog.nieuw({ datum: dag, tijd }) },
+        weergave !== 'dag' && 'lijn',
+        weergave !== 'dag' && { label: 'Deze dag bekijken', icoon: <MenuIcoon naam="dag" />, onKies: () => naarDag(dag) }
+      ]);
+    }
+  }
+
   // ---------- navigatie ----------
   const stap = weergave === 'dag' ? 1 : smal ? 3 : 7;
   const vorige = useCallback(() => {
@@ -600,6 +711,7 @@ function Agenda({
             onOpnieuw={herlaad}
             onToggle={toggle}
             onOpen={(t) => taakDialoog.open(t.id)}
+            onMenu={(e, t) => agendaMenu(e, { soort: 'taak', item: t })}
             onNieuw={() =>
               taakDialoog.nieuw({
                 project: project ? { id: project.id, naam: project.naam, klantId: null, klantNaam: null } : undefined
@@ -688,6 +800,7 @@ function Agenda({
               onNieuw={(dag, tijd, x, y) => setNieuw({ dag, tijd, x, y })}
               onVerplaats={(v) => void verplaats(v)}
               onKiesDag={weergave === 'dag' ? undefined : naarDag}
+              onMenu={agendaMenu}
             />
           ) : (
             <MaandView
@@ -698,6 +811,7 @@ function Agenda({
               afspraken={afspraken}
               onOpen={openItem}
               onKiesDag={uitMaand}
+              onMenu={agendaMenu}
               onVerplaats={(v) => void verplaats(v)}
             />
           )}

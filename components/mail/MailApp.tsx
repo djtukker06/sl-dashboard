@@ -7,6 +7,7 @@ import { adresVol, leesLaatsteVan, mailApi, MailApiFout, meldOngelezen } from '@
 import type { Adres, Bericht, Envelop, InboxDto, InboxTeller, MailMap, MapRol } from '@/lib/mail/types';
 import { ALLE_INBOXEN } from '@/lib/mail/zichtbaarheid';
 import { ModuleKop } from '@/components/shell/ModuleKop';
+import { MenuIcoon, useContextMenu } from '@/components/shell/ContextMenu';
 import { ToastProvider, useToast } from '@/components/agenda/Toast';
 import { useTeam } from '@/components/team/TeamProvider';
 import { Icoon } from './Iconen';
@@ -109,6 +110,7 @@ function Mail({
   mijnEmail: string;
 }) {
   const toast = useToast();
+  const menu = useContextMenu();
   const { mijnId } = useTeam();
   const smal = useSmal('(max-width: 720px)');
   const middel = useSmal('(max-width: 1100px)');
@@ -579,7 +581,7 @@ function Mail({
   );
 
   const verplaats = useCallback(
-    async (s: Selectie, naar: 'archief' | 'prullenbak' | 'inbox') => {
+    async (s: Selectie, naar: 'archief' | 'prullenbak' | 'inbox' | { pad: string; naam: string }) => {
       const vanMap = lijstMap;
       const verwijderd = lijst?.berichten.find((b) => b.mb === s.mb && b.uid === s.uid);
       const volgende = volgendeNa(s);
@@ -600,8 +602,9 @@ function Mail({
         if (smal) setPaneel('lijst');
       }
       try {
-        const res = await mailApi.verplaats(s.mb, vanMap, s.uid, { naar });
-        const tekst = naar === 'archief' ? 'Gearchiveerd' : naar === 'prullenbak' ? 'Naar de prullenbak' : 'Naar de inbox';
+        const res = await mailApi.verplaats(s.mb, vanMap, s.uid, typeof naar === 'string' ? { naar } : { naarMap: naar.pad });
+        const tekst =
+          typeof naar !== 'string' ? `Verplaatst naar ${naar.naam}` : naar === 'archief' ? 'Gearchiveerd' : naar === 'prullenbak' ? 'Naar de prullenbak' : 'Naar de inbox';
         const terug = res.uid;
         toast(
           tekst,
@@ -735,6 +738,86 @@ function Mail({
       }
     },
     [bericht, sel, lijstMap, envelop, opstellen, verplaats, zetGelezen, zetVlag, maakTaak]
+  );
+
+  // ---------- rechtsklikmenu op een bericht in de lijst ----------
+  // Dezelfde acties als de knoppen boven een open bericht, maar op het bericht onder de muis
+  // (dat hoeft niet het geopende te zijn). De letters zijn de sneltoetsen van het open bericht.
+  const berichtMenu = useCallback(
+    (ev: React.MouseEvent<HTMLElement>, e: Envelop) => {
+      const inbox = e.mb ?? mb;
+      const s: Selectie = { mb: inbox, uid: e.uid };
+      // Beantwoorden, doorsturen en een taak hebben het hele bericht nodig: uit het geheugen
+      // (meestal al voorgeladen) of anders even ophalen.
+      const metBericht = (doe: (b: Bericht) => void) => async () => {
+        const klaar = berichtenRef.current[berichtSleutel(inbox, lijstMap, e.uid)];
+        if (klaar) return doe(klaar);
+        try {
+          const { bericht: b } = await mailApi.bericht(inbox, lijstMap, e.uid);
+          bewaarBerichten(inbox, lijstMap, [b]);
+          doe(b);
+        } catch (f) {
+          toast(f instanceof MailApiFout ? f.message : 'Bericht laden mislukt.', { fout: true });
+        }
+      };
+      const schrijf = (modus: OpstelModus) =>
+        metBericht((b) => {
+          setSel(s);
+          opstellen(modus, b, inbox);
+        });
+      const mappen = (mappenPer[inbox] ?? []).filter((m) => m.pad !== lijstMap && m.rol !== 'concepten');
+      const leesbaar = rol !== 'concepten';
+      menu(ev, [
+        { label: 'Openen', icoon: <MenuIcoon naam="open" />, onKies: () => kies(e) },
+        leesbaar && { label: 'Beantwoorden', icoon: <Icoon naam="antwoord" grootte={16} />, toets: 'R', onKies: schrijf('antwoord') },
+        leesbaar && { label: 'Allen beantwoorden', icoon: <Icoon naam="allen" grootte={16} />, toets: 'A', onKies: schrijf('allen') },
+        leesbaar && { label: 'Doorsturen', icoon: <Icoon naam="doorsturen" grootte={16} />, toets: 'F', onKies: schrijf('doorsturen') },
+        'lijn',
+        {
+          label: e.gelezen ? 'Markeren als ongelezen' : 'Markeren als gelezen',
+          icoon: <Icoon naam="ongelezen" grootte={16} />,
+          toets: 'U',
+          onKies: () => {
+            const k = berichtSleutel(inbox, lijstMap, e.uid);
+            if (e.gelezen) handmatigOngelezen.current.add(k);
+            else handmatigOngelezen.current.delete(k);
+            void zetGelezen(inbox, lijstMap, e.uid, !e.gelezen);
+          }
+        },
+        {
+          label: e.gemarkeerd ? 'Markering weghalen' : 'Markeren',
+          icoon: <Icoon naam="vlag" grootte={16} />,
+          toets: 'S',
+          onKies: () => void zetVlag(inbox, lijstMap, e.uid, !e.gemarkeerd)
+        },
+        'lijn',
+        rol === 'inbox' && { label: 'Archiveren', icoon: <Icoon naam="archief" grootte={16} />, toets: 'E', onKies: () => void verplaats(s, 'archief') },
+        (rol === 'archief' || rol === 'prullenbak' || rol === 'spam') && {
+          label: 'Terug naar inbox',
+          icoon: <Icoon naam="inbox" grootte={16} />,
+          onKies: () => void verplaats(s, 'inbox')
+        },
+        mappen.length > 0 && {
+          label: 'Verplaatsen naar',
+          icoon: <Icoon naam="map" grootte={16} />,
+          sub: mappen.map((m) => ({
+            label: m.naam,
+            icoon: <Icoon naam={m.rol === 'overig' ? 'map' : m.rol} grootte={16} />,
+            onKies: () => void verplaats(s, m.rol === 'inbox' ? 'inbox' : m.rol === 'archief' ? 'archief' : m.rol === 'prullenbak' ? 'prullenbak' : { pad: m.pad, naam: m.naam })
+          }))
+        },
+        leesbaar && { label: 'Taak maken', icoon: <Icoon naam="taak" grootte={16} />, toets: 'T', onKies: metBericht((b) => void maakTaak(b, inbox)) },
+        'lijn',
+        rol !== 'prullenbak' && {
+          label: 'Naar prullenbak',
+          icoon: <Icoon naam="prullenbak" grootte={16} />,
+          toets: '#',
+          gevaar: true,
+          onKies: () => void verplaats(s, 'prullenbak')
+        }
+      ]);
+    },
+    [mb, lijstMap, rol, mappenPer, menu, kies, opstellen, bewaarBerichten, toast, zetGelezen, zetVlag, verplaats, maakTaak]
   );
 
   // ---------- sneltoetsen ----------
@@ -928,6 +1011,7 @@ function Mail({
           onMeer={() => laadLijst(mb, lijstMap, zoek, (lijst?.pagina ?? 1) + 1)}
           onOpnieuw={() => laadLijst(mb, lijstMap, zoek, 1)}
           onVlag={(e) => zetVlag(e.mb ?? mb, lijstMap, e.uid, !e.gemarkeerd)}
+          onMenu={berichtMenu}
           onVoorladen={(e) => laadVooruit(e.mb ?? mb, lijstMap, [e])}
         />
 
