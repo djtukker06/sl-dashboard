@@ -14,7 +14,7 @@ import { createContext, useCallback, useContext, useEffect, useId, useLayoutEffe
 //   - het aangeklikte item blijft gemarkeerd (data-menu-open) zolang het menu open staat;
 //   - toetsen: ↑ ↓ Home End, Enter/spatie, → opent een submenu, ← of Esc sluit; een letter
 //     springt naar het item dat ermee begint. Shift+F10 / de menutoets opent het ook;
-//   - een klik ernaast sluit alleen het menu (de klik doet verder niets), rechtsklik op iets
+//   - een klik, rechtsklik of scroll ernaast sluit het menu en gaat gewoon door: rechtsklik op iets
 //     anders opent meteen dat menu;
 //   - het gewone browsermenu blijft waar je het nodig hebt: in tekstvelden, op geselecteerde
 //     tekst, op links, en altijd met Shift+rechtsklik.
@@ -111,14 +111,26 @@ export function ContextMenuProvider({ children }: { children: React.ReactNode })
     [pad]
   );
 
-  // Venster kwijt of van formaat veranderd: het menu hoort bij een plek die niet meer klopt.
+  // Sluiten: een klik, rechtsklik of scroll buiten het menu (waar dan ook op de pagina), of
+  // het venster kwijt of van formaat veranderd. De klik zelf gaat gewoon door: klik je op een
+  // ander bericht, dan opent dat; rechtsklik je ergens anders, dan opent daar het nieuwe menu.
+  // Op document in de capture-fase, zodat niets op de pagina het kan tegenhouden.
   const openNu = staat !== null;
   useEffect(() => {
     if (!openNu) return;
     const weg = () => sluit();
+    const buiten = (e: Event) => {
+      if (!(e.target instanceof Element) || !e.target.closest('.sl-menu')) sluit();
+    };
+    document.addEventListener('pointerdown', buiten, true);
+    document.addEventListener('contextmenu', buiten, true);
+    document.addEventListener('wheel', buiten, { capture: true, passive: true });
     window.addEventListener('blur', weg);
     window.addEventListener('resize', weg);
     return () => {
+      document.removeEventListener('pointerdown', buiten, true);
+      document.removeEventListener('contextmenu', buiten, true);
+      document.removeEventListener('wheel', buiten, true);
       window.removeEventListener('blur', weg);
       window.removeEventListener('resize', weg);
     };
@@ -130,34 +142,7 @@ export function ContextMenuProvider({ children }: { children: React.ReactNode })
   return (
     <Ctx.Provider value={open}>
       {children}
-      {tonen && (
-        <>
-          <div
-            className="sl-menu-achter"
-            onPointerDown={(e) => {
-              // Een gewone klik ernaast sluit alleen. (Rechtsklik, op de Mac ook Ctrl+klik,
-              // komt hieronder als contextmenu binnen.)
-              if (e.button === 0 && !e.ctrlKey) sluit();
-            }}
-            onContextMenu={(e) => {
-              // Rechtsklik naast het menu: dit menu dicht en de klik afleveren bij wat eronder
-              // ligt, zodat daar meteen het goede menu opent (of geen, op een lege plek).
-              e.preventDefault();
-              e.currentTarget.style.pointerEvents = 'none';
-              const onder = document.elementFromPoint(e.clientX, e.clientY);
-              const f = focusVoor.current;
-              sluit();
-              focusVoor.current = f;
-              onder?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: e.clientX, clientY: e.clientY, button: 2 }));
-              if (!bron.current) {
-                focusVoor.current = null;
-                if (f && document.contains(f)) f.focus({ preventScroll: true });
-              }
-            }}
-          />
-          <Menu key={tonen.nr} regels={tonen.regels} punt={tonen} focus onKlaar={sluit} />
-        </>
-      )}
+      {tonen && <Menu key={tonen.nr} regels={tonen.regels} punt={tonen} focus onKlaar={sluit} />}
     </Ctx.Provider>
   );
 }

@@ -896,7 +896,6 @@ html[data-privacy] .ug-voorbeeld :is(iframe, img) {
 /* ---------- rechtsklikmenu (components/shell/ContextMenu) ---------- */
 /* Eén menu voor het hele dashboard. Opent bij de muis; de plek en de kant waar het uit
    groeit (transform-origin) zet het component zelf. */
-.sl-menu-achter { position: fixed; inset: 0; z-index: 199; }
 .sl-menu {
   position: fixed;
   z-index: 200;
