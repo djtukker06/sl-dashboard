@@ -537,6 +537,20 @@ het team niet.
   welke agenda (Studio Levant of een Google-agenda, de laatste keuze wordt onthouden), met
   optioneel **Google Meet-link toevoegen**. Ben je gast (een ander organiseert), dan kun je
   alleen bekijken en uit je agenda verwijderen; een alleen-lezen agenda alleen bekijken.
+- **Agenda-link en meldingen** staan in hetzelfde venster **Agenda's**: *Studio Levant in je
+  agenda-app* (de ICS-link voor Apple Agenda, voorheen "Agenda koppelen" in het accountmenu;
+  `/agenda-koppelen` blijft de verplichte eerste keer) en *Meldingen*: een browsermelding met
+  een eigen geluid 10 minuten en 1 minuut vóór elke afspraak (eigen en Google). Werkt zolang
+  het dashboard in een tabblad open staat (`components/agenda/AfspraakMeldingen.tsx` in de
+  shell, afspraken via `/api/agenda/komend`); klik op de melding = deelnemen via de
+  vergaderlink, of de afspraak openen. Met meerdere tabbladen open gaat elke melding één keer af.
+  De melding is de gewone systeemmelding (op de Mac een macOS-banner, zoals Agenda); staat het
+  tabblad op de achtergrond, dan knippert de titel even mee. Per afspraak (bij een reeks: de hele reeks) zet je de
+  herinnering uit met "Herinnering 10 en 1 minuut van tevoren" in het afspraakpaneel
+  (standaard aan; per gebruiker in deze browser, net als de meldingen zelf).
+- **Vergaderlinks:** een Teams-, Meet-, Zoom-, Webex-, Whereby-, Jitsi- of FaceTime-link in
+  "Locatie of vergaderlink" of in de notitie geeft een knop **Deelnemen met …** (paneel,
+  dashboard) en een camera-icoon in de agenda (`lib/agenda/vergaderlink.ts`).
 - **Herhalende afspraken:** bij een voorkomen van een reeks (eigen of uit Google) vraagt het
   paneel bij opslaan en verwijderen **Alleen deze** of **Hele reeks**. Slepen verplaatst alleen
   dat voorkomen. De herhaalregel van een reeks uit Google pas je in Google zelf aan.

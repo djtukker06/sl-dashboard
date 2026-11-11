@@ -7,6 +7,7 @@ import { magAfspraakWijzigen, namenLijst } from '@/lib/agenda/rechten';
 import { HERHALINGEN, isHerhaling, type Herhaling } from '@/lib/agenda/herhaling';
 import { dagenVanAfspraak } from '@/lib/agenda/weergave';
 import { vergaderlinkVan, vindVergaderlink } from '@/lib/agenda/vergaderlink';
+import { heeftHerinnering, herinneringSleutel, useMeldingen, zetHerinnering } from '@/lib/agenda/meldingen';
 import type { Afspraak, Taak } from '@/lib/agenda/types';
 import { googleApi } from '@/lib/google-agenda/client';
 import type { GoogleAgenda } from '@/lib/google-agenda/types';
@@ -334,6 +335,19 @@ function AfspraakFormulier({
   const [deelnemers, setDeelnemers] = useState<string[]>(afspraak.deelnemers.length ? afspraak.deelnemers : [mijnId]);
   const mag = nieuw || (g ? g.schrijfbaar : magAfspraakWijzigen(afspraak, mijnId, overgang));
   const magVerwijderen = g ? g.verwijderbaar : mag;
+  // Herinnering vooraf (AfspraakMeldingen): standaard aan, per afspraak (of reeks) uit te zetten.
+  // Persoonlijk, dus ook bij een afspraak die je niet mag wijzigen; bij een bestaande afspraak
+  // meteen, bij een nieuwe na het opslaan.
+  const meldingen = useMeldingen();
+  const herinnerSleutel = nieuw ? null : herinneringSleutel(afspraak);
+  const [herinner, setHerinner] = useState(() => !herinnerSleutel || heeftHerinnering(herinnerSleutel));
+  const kiesHerinnering = (aan: boolean) => {
+    setHerinner(aan);
+    if (herinnerSleutel) zetHerinnering(herinnerSleutel, aan);
+  };
+  const bewaarHerinnering = (a: Afspraak) => {
+    if (nieuw && !herinner) zetHerinnering(herinneringSleutel(a), false);
+  };
   // Vergaderlink (Teams, Meet, Zoom, …): de knop bovenaan hoort bij de opgeslagen afspraak;
   // een link die je nu typt of plakt, meldt het veld meteen ("Teams-link herkend").
   const opgeslagenLink = nieuw ? null : vergaderlinkVan(afspraak);
@@ -384,6 +398,7 @@ function AfspraakFormulier({
       );
       if (r) {
         if (nieuw) bewaarBron(bron);
+        bewaarHerinnering(r.event);
         onOpgeslagen(r.event);
       }
       return;
@@ -408,6 +423,7 @@ function AfspraakFormulier({
     );
     if (r) {
       if (nieuw) bewaarBron('');
+      bewaarHerinnering(r.event);
       onOpgeslagen(r.event);
     }
   }
@@ -659,6 +675,18 @@ function AfspraakFormulier({
         </label>
         )}
         </fieldset>
+        {!heleDag && (
+          <div className="ag-herinnering">
+            <label className="ag-schakel">
+              <input type="checkbox" checked={herinner} onChange={(ev) => kiesHerinnering(ev.target.checked)} />
+              <span>Herinnering 10 en 1 minuut van tevoren</span>
+            </label>
+            {herinner && !meldingen.aan && (
+              <p className="ag-uitleg">Meldingen staan nog uit in deze browser: zet ze aan onder Agenda&rsquo;s &rarr; Meldingen.</p>
+            )}
+            {reeks && <p className="ag-uitleg">Geldt voor alle keren van deze reeks.</p>}
+          </div>
+        )}
         {g && g.gasten.length > 0 && (
           <div className="ag-label">
             Gasten ({g.gasten.length})

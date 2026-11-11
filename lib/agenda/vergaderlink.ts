@@ -51,7 +51,9 @@ export function vindVergaderlink(...teksten: (string | null | undefined)[]): Ver
 }
 
 /** De vergaderlink van een afspraak: die van Google zelf, anders uit locatie of notitie. */
-export function vergaderlinkVan(a: Pick<Afspraak, 'locatie' | 'notitie' | 'google'>): Vergaderlink | null {
+export function vergaderlinkVan(
+  a: Pick<Afspraak, 'locatie' | 'notitie'> & { google?: { meetLink: string | null; vergaderDienst: string | null } }
+): Vergaderlink | null {
   if (a.google?.meetLink) return { url: a.google.meetLink, dienst: a.google.vergaderDienst ?? 'Google Meet' };
   return vindVergaderlink(a.locatie, a.notitie);
 }

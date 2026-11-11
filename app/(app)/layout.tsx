@@ -8,6 +8,7 @@ import { Rail } from '@/components/shell/Rail';
 import { TeamProvider } from '@/components/team/TeamProvider';
 import { Welkomstanimatie } from '@/components/shell/Welkomstanimatie';
 import { ShellGedrag } from '@/components/shell/ShellGedrag';
+import { AfspraakMeldingen } from '@/components/agenda/AfspraakMeldingen';
 import { PrivacyGedrag } from '@/components/shell/Privacymodus';
 import { IntroScript } from '@/components/login/IntroScript';
 import { WELKOM_SCRIPT } from '@/lib/shell/welkom';
@@ -66,6 +67,8 @@ export default async function AppLayout({ children }: Readonly<{ children: React
       </main>
       <ShellGedrag />
       <PrivacyGedrag />
+      {/* Meldingen 10 en 1 minuut vóór een afspraak (aan te zetten onder Agenda → Agenda's). */}
+      {!lid.overgang && <AfspraakMeldingen />}
       <Script src={metVersie('/shell/shell.js')} strategy="afterInteractive" nonce={nonce} />
     </div>
   );
