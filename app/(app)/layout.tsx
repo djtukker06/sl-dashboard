@@ -8,6 +8,7 @@ import { Rail } from '@/components/shell/Rail';
 import { TeamProvider } from '@/components/team/TeamProvider';
 import { Welkomstanimatie } from '@/components/shell/Welkomstanimatie';
 import { ShellGedrag } from '@/components/shell/ShellGedrag';
+import { ContextMenuProvider } from '@/components/shell/ContextMenu';
 import { AfspraakMeldingen } from '@/components/agenda/AfspraakMeldingen';
 import { PrivacyGedrag } from '@/components/shell/Privacymodus';
 import { IntroScript } from '@/components/login/IntroScript';
@@ -62,7 +63,8 @@ export default async function AppLayout({ children }: Readonly<{ children: React
           </p>
         )}
         <TeamProvider mijnId={lid.userId} overgang={lid.overgang} boekhouding={lid.boekhouding} leden={leden}>
-          {children}
+          {/* Rechtsklikmenu's (mail, agenda): één gedeeld menu, zie components/shell/ContextMenu. */}
+          <ContextMenuProvider>{children}</ContextMenuProvider>
         </TeamProvider>
       </main>
       <ShellGedrag />

@@ -82,6 +82,7 @@ export function Takenlijst({
   onToggle,
   onOpen,
   onNieuw,
+  onMenu,
   metUitgezet = true
 }: {
   filter: TakenFilter;
@@ -95,6 +96,8 @@ export function Takenlijst({
   onToggle: (t: Taak) => void;
   onOpen: (t: Taak) => void;
   onNieuw?: () => void;
+  /** Rechtsklik op een taak. */
+  onMenu?: (e: React.MouseEvent<HTMLElement>, t: Taak) => void;
   /** Tab "Uitgezet" tonen (niet vóór migratie 0021: dan bestaat toewijzen niet). */
   metUitgezet?: boolean;
 }) {
@@ -170,6 +173,7 @@ export function Takenlijst({
                     vandaag={vandaag}
                     onToggle={onToggle}
                     onOpen={onOpen}
+                    onMenu={onMenu}
                     toonDatum={filter === 'telaat' || filter === 'afgerond' || filter === 'uitgezet' || (filter === 'vandaag' && g.gevaar)}
                     versleepbaar={filter !== 'afgerond' && filter !== 'uitgezet'}
                   />

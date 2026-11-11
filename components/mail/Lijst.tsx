@@ -31,7 +31,8 @@ export function Lijst({
   onMeer,
   onOpnieuw,
   onVlag,
-  onVoorladen
+  onVoorladen,
+  onMenu
 }: {
   mapNaam: string;
   rol: MapRol;
@@ -59,6 +60,8 @@ export function Lijst({
   onVlag: (e: Envelop) => void;
   /** Muis blijft even op een rij: dat bericht alvast ophalen. */
   onVoorladen?: (e: Envelop) => void;
+  /** Rechtsklik (of de menutoets) op een bericht. */
+  onMenu?: (ev: React.MouseEvent<HTMLElement>, e: Envelop) => void;
 }) {
   const lijstRef = useRef<HTMLUListElement>(null);
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -162,6 +165,7 @@ export function Lijst({
                   data-sleutel={sleutel}
                   className={inbox ? 'ml-rij-metinbox' : undefined}
                   style={inbox ? ({ '--ml-inbox-kleur': inbox.kleur } as React.CSSProperties) : undefined}
+                  onContextMenu={onMenu && ((ev) => onMenu(ev, b))}
                 >
                   <button
                     type="button"
