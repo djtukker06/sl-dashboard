@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { vereisTeamlidPagina } from '@/lib/auth/team';
 import { factuurSnapshot } from '@/lib/dashboard/facturen';
+import { BetaalLabel, betalingVoor } from '@/components/facturen/BetaalSamenvatting';
 import { korteDatum } from '@/lib/dashboard/tijd';
 import { formatEuro } from '@/lib/format';
 import { UitgavenFout } from '@/lib/uitgaven/api';
@@ -36,6 +37,9 @@ export default async function BoekhoudingPage() {
     )
   ]);
 
+  // Betaalstatus (0037): omzet alleen uit betaalde facturen, en per factuur betaald of niet.
+  const betaling = facturen.ok ? await betalingVoor(lid, facturen.data) : null;
+
   return (
     <div className="bh">
       <BoekhoudingKop titel="Boekhouding" />
@@ -61,9 +65,14 @@ export default async function BoekhoudingPage() {
                 <div>
                   <p className="db-omzet-bedrag">
                     <span className="db-euro">€</span>
-                    {formatEuro(facturen.data.omzet)}
+                    {formatEuro(betaling ? betaling.omzet : facturen.data.omzet)}
                   </p>
-                  <p className="db-sub">Omzet {facturen.data.jaar} · excl. btw</p>
+                  <p className="db-sub">Omzet {facturen.data.jaar} · {betaling ? 'betaald · ' : ''}excl. btw</p>
+                  {betaling && betaling.aantalOpen > 0 && (
+                    <p className="db-sub db-te-ontvangen">
+                      Nog te ontvangen € {formatEuro(betaling.teOntvangen)} · {betaling.aantalOpen} {betaling.aantalOpen === 1 ? 'factuur' : 'facturen'}
+                    </p>
+                  )}
                 </div>
                 <dl className="db-cijfers">
                   <div>
@@ -90,7 +99,10 @@ export default async function BoekhoudingPage() {
                             {r.datum ? ` · ${korteDatum(r.datum)}` : ''}
                           </span>
                         </span>
-                        <span className="db-rij-bedrag">€ {formatEuro(r.totaal)}</span>
+                        <span className="db-rij-rechts">
+                          <span className="db-rij-bedrag">€ {formatEuro(r.totaal)}</span>
+                          {betaling && <BetaalLabel info={betaling.info.get(r.id)} />}
+                        </span>
                       </Link>
                     </li>
                   ))}

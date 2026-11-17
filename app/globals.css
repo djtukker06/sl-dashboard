@@ -940,3 +940,8 @@ button.betaal-pill:focus-visible { outline: none; box-shadow: var(--sl-focus); }
 .tk-wacht { color: #e3c07c; }
 .tk-akkoord-vinkje { margin-top: 16px; }
 .tk-akkoord-uitleg { margin-top: 6px !important; }
+
+/* Betaalstatus in de korte facturenlijsten (dashboard, Boekhouding → Overzicht) */
+.db-rij-rechts { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; flex-shrink: 0; }
+.db-betaal { font-size: 11px; padding: 1px 8px; white-space: nowrap; }
+.db-te-ontvangen { margin-top: 2px; }
