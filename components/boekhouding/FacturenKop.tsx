@@ -9,6 +9,7 @@ import { BoekhoudingKop } from './BoekhoudingKop';
 // hangen af van het scherm; zo hebben de facturenschermen zelf geen eigen wordmark, topbar
 // of grote titel meer (dat was een dubbele kop onder de modulekop).
 //   /facturen                      Facturen     · Prijsopgaven, + Nieuwe factuur
+//   /facturen/terugkerend          Facturen     · + Nieuwe terugkerende factuur
 //   /facturen/prijsopgaven         Prijsopgaven · + Nieuwe prijsopgave
 //   /facturen/prijsopgaven/…       Prijsopgaven
 //   /facturen/klanten/<id>         Facturen     · + Nieuwe factuur
@@ -28,6 +29,12 @@ export function FacturenKop() {
           + Nieuwe factuur
         </Link>
       </>
+    );
+  } else if (pad === '/facturen/terugkerend') {
+    acties = (
+      <Link className="db-knop db-knop-primair" href="/facturen/nieuwe-factuur?soort=terugkerend">
+        + Nieuwe terugkerende factuur
+      </Link>
     );
   } else if (pad === '/facturen/prijsopgaven') {
     acties = (

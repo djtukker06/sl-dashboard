@@ -111,6 +111,111 @@ export function InlineVeld({
 }
 
 /**
+ * Inline bewerken van een langere tekst met regels (bv. de klantbeschrijving): klik op de
+ * tekst (of "+ … toevoegen") en je typt in een tekstvak op dezelfde plek. Verlaten of
+ * Cmd/Ctrl+Enter slaat op, Escape annuleert; Enter is gewoon een nieuwe regel. De tekst
+ * wordt met regels getoond (white-space: pre-wrap). `onBewaar` geeft false bij een fout.
+ */
+export function InlineTekstvak({
+  label,
+  waarde,
+  onBewaar,
+  leeg,
+  max = 5000,
+  placeholder
+}: {
+  label: string;
+  waarde: string;
+  onBewaar: (nieuw: string) => Promise<boolean>;
+  leeg: string;
+  max?: number;
+  placeholder?: string;
+}) {
+  const [bewerk, setBewerk] = useState(false);
+  const [tekst, setTekst] = useState(waarde);
+  const [bezig, setBezig] = useState(false);
+  const veld = useRef<HTMLTextAreaElement>(null);
+  // Escape annuleert; de blur die daarop volgt mag dan niet alsnog opslaan.
+  const geannuleerd = useRef(false);
+
+  useEffect(() => {
+    if (!bewerk || !veld.current) return;
+    const v = veld.current;
+    v.focus();
+    v.setSelectionRange(v.value.length, v.value.length);
+  }, [bewerk]);
+
+  function begin() {
+    geannuleerd.current = false;
+    setTekst(waarde);
+    setBewerk(true);
+  }
+
+  async function bewaar() {
+    if (geannuleerd.current || bezig) return;
+    const t = tekst.replace(/\r\n?/g, '\n').trim();
+    if (t === waarde) {
+      setBewerk(false);
+      return;
+    }
+    setBezig(true);
+    const ok = await onBewaar(t);
+    setBezig(false);
+    if (ok) setBewerk(false);
+    else veld.current?.focus();
+  }
+
+  if (bewerk) {
+    return (
+      <span className="kp-tekstvak">
+        <textarea
+          ref={veld}
+          className="ag-veld kp-tekstvak-veld"
+          rows={Math.min(12, Math.max(3, tekst.split('\n').length + 1))}
+          value={tekst}
+          maxLength={max}
+          aria-label={label}
+          placeholder={placeholder}
+          disabled={bezig}
+          onChange={(e) => setTekst(e.target.value)}
+          onBlur={() => void bewaar()}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+              e.preventDefault();
+              void bewaar();
+            }
+            if (e.key === 'Escape') {
+              e.preventDefault();
+              geannuleerd.current = true;
+              setTekst(waarde);
+              setBewerk(false);
+            }
+          }}
+        />
+        <span className="kp-hint">{bezig ? 'Opslaan…' : 'Cmd/Ctrl+Enter of klik ernaast = opslaan · Esc = annuleren'}</span>
+      </span>
+    );
+  }
+
+  if (!waarde) {
+    return (
+      <button type="button" className="kp-inline-leeg" onClick={begin}>
+        {leeg}
+      </button>
+    );
+  }
+
+  return (
+    <button type="button" className="kp-tekstvak-waarde" title={`${label} wijzigen`} onClick={begin}>
+      <span className="kp-tekstvak-tekst">{waarde}</span>
+      <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true" className="kp-tekstvak-potlood">
+        <path d="M10.5 2.5l3 3L6 13H3v-3z" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
+      </svg>
+    </button>
+  );
+}
+
+/**
  * De paginatitel (klant- of projectnaam), direct bewerkbaar: klik erop en typ. Leeg of
  * Escape zet de oude naam terug.
  */

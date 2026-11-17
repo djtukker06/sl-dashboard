@@ -10,6 +10,8 @@ import { Welkomstanimatie } from '@/components/shell/Welkomstanimatie';
 import { ShellGedrag } from '@/components/shell/ShellGedrag';
 import { ContextMenuProvider } from '@/components/shell/ContextMenu';
 import { AfspraakMeldingen } from '@/components/agenda/AfspraakMeldingen';
+import { BetaalCheck } from '@/components/facturen/BetaalCheck';
+import { AkkoordMelding } from '@/components/facturen/AkkoordMelding';
 import { PrivacyGedrag } from '@/components/shell/Privacymodus';
 import { IntroScript } from '@/components/login/IntroScript';
 import { WELKOM_SCRIPT } from '@/lib/shell/welkom';
@@ -71,6 +73,14 @@ export default async function AppLayout({ children }: Readonly<{ children: React
       <PrivacyGedrag />
       {/* Meldingen 10 en 1 minuut vóór een afspraak (aan te zetten onder Agenda → Agenda's). */}
       {!lid.overgang && <AfspraakMeldingen />}
+      {/* Meldingen rechtsonder, onder elkaar: akkoord vooraf voor terugkerende facturen, en een
+          week na versturen "Is factuur … betaald?" (alleen met het vinkje Boekhouding). */}
+      {!lid.overgang && (
+        <div className="sl-meldingen">
+          <AkkoordMelding />
+          {lid.boekhouding && <BetaalCheck />}
+        </div>
+      )}
       <Script src={metVersie('/shell/shell.js')} strategy="afterInteractive" nonce={nonce} />
     </div>
   );

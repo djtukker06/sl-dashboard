@@ -199,6 +199,8 @@ export const TABELLEN: TabelDef[] = [
   { naam: 'notities', pk: ['id'], zonder: ['fragment'] },
   { naam: 'notitie_bestanden', pk: ['id'] },
   { naam: 'invoice_counters', pk: ['year'] },
+  // Terugkerende facturen (0036): vóór invoices, want invoices.terugkerend_id verwijst ernaar.
+  { naam: 'terugkerende_facturen', pk: ['id'] },
   { naam: 'quotes', pk: ['id'] },
   { naam: 'invoices', pk: ['id'], zelfVerwijzing: 'remainder_of_invoice_id' },
   { naam: 'expenses', pk: ['id'] },

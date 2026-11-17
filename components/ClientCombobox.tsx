@@ -2,12 +2,13 @@
 
 import { useEffect, useRef, useState } from 'react';
 
-interface ClientSuggestion {
+export interface ClientSuggestion {
   id: string;
   company_name: string;
   contact_name: string | null;
   address: string | null;
   postal_code: string | null;
+  email?: string | null;
 }
 
 interface ClientComboboxProps {
@@ -27,6 +28,7 @@ export function ClientCombobox({
 }: ClientComboboxProps) {
   const [suggesties, setSuggesties] = useState<ClientSuggestion[]>([]);
   const [open, setOpen] = useState(false);
+  const [actief, setActief] = useState(-1);
   const containerRef = useRef<HTMLLabelElement>(null);
 
   useEffect(() => {
@@ -38,6 +40,7 @@ export function ClientCombobox({
       if (!res.ok) return;
       const data: ClientSuggestion[] = await res.json();
       setSuggesties(data);
+      setActief(-1);
     }, 200);
     return () => clearTimeout(timer);
   }, [value]);
@@ -70,14 +73,31 @@ export function ClientCombobox({
           setOpen(true);
         }}
         onFocus={() => setOpen(true)}
+        onKeyDown={(e) => {
+          // Pijltjes kiezen een suggestie, Enter neemt hem over (en verstuurt het formulier niet), Esc sluit.
+          if (!open || zichtbareSuggesties.length === 0) return;
+          if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            setActief((a) => Math.min(zichtbareSuggesties.length - 1, a + 1));
+          } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            setActief((a) => Math.max(0, a - 1));
+          } else if (e.key === 'Enter' && actief >= 0) {
+            e.preventDefault();
+            onSelectClient(zichtbareSuggesties[actief]);
+            setOpen(false);
+          } else if (e.key === 'Escape') {
+            setOpen(false);
+          }
+        }}
       />
       {open && zichtbareSuggesties.length > 0 && (
         <div className="combobox-lijst">
-          {zichtbareSuggesties.map((klant) => (
+          {zichtbareSuggesties.map((klant, i) => (
             <button
               key={klant.id}
               type="button"
-              className="combobox-optie"
+              className={`combobox-optie${i === actief ? ' is-actief' : ''}`}
               onClick={() => {
                 onSelectClient(klant);
                 setOpen(false);

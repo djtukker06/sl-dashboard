@@ -6,6 +6,9 @@ import { useTransition } from 'react';
 import { deleteInvoice } from '@/app/actions/invoices';
 import { formatDatumNL, formatEuro } from '@/lib/format';
 import { RestfactuurKnop } from './RestfactuurKnop';
+import { BetaalStatus } from './facturen/BetaalStatus';
+import type { BankKeuze } from './facturen/BetaalFormulier';
+import type { BetaalInfo } from '@/lib/boekhouding/kern/betaalcheck';
 
 export interface InvoiceRow {
   id: string;
@@ -17,14 +20,24 @@ export interface InvoiceRow {
   remainder_percentage?: number | null;
   // Bij een aanbetaling: de restfactuur, als die er al is.
   restfactuur?: { id: string; invoice_number: string } | null;
+  // Gemaakt door een terugkerende factuur (migratie 0036).
+  terugkerend_id?: string | null;
+  verzonden_op?: string | null;
+  // Aangemaakt, maar zonder akkoord nog niet verstuurd (migratie 0038).
+  wacht_op_akkoord?: boolean | null;
+  // Betaalstatus uit de boekhouding (lib/boekhouding/betaalstatus.ts); alleen met het vinkje Boekhouding.
+  betaling?: BetaalInfo | null;
 }
 
 export function InvoicesTable({
   invoices,
-  volgendNummer
+  volgendNummer,
+  betaal
 }: {
   invoices: InvoiceRow[];
   volgendNummer?: string;
+  /** Rekeningen en vandaag voor "betaald boeken"; zonder (geen boekhoudrechten): geen betaalkolom. */
+  betaal?: { rekeningen: BankKeuze[]; vandaag: string } | null;
 }) {
   const [isPending, startTransition] = useTransition();
 
@@ -52,6 +65,7 @@ export function InvoicesTable({
             <th>Klant</th>
             <th>Datum</th>
             <th>Totaal</th>
+            {betaal && <th>Betaling</th>}
             <th></th>
             <th></th>
           </tr>
@@ -68,6 +82,15 @@ export function InvoicesTable({
                 )}
                 {typeof f.remainder_percentage === 'number' && (
                   <span className="soort-label">Restbetaling {f.remainder_percentage}%</span>
+                )}
+                {f.terugkerend_id && (
+                  <Link
+                    href={f.wacht_op_akkoord ? '/facturen/terugkerend#akkoord' : '/facturen/terugkerend'}
+                    className="soort-label tk-label"
+                    title={f.verzonden_op ? 'Automatisch aangemaakt en verstuurd' : f.wacht_op_akkoord ? 'Aangemaakt, wacht op jouw akkoord om te versturen' : 'Automatisch aangemaakt'}
+                  >
+                    Terugkerend{f.verzonden_op ? ' · verstuurd' : f.wacht_op_akkoord ? ' · wacht op akkoord' : ''}
+                  </Link>
                 )}
                 {typeof f.deposit_percentage === 'number' && (
                   <div className="rest-regel">
@@ -97,6 +120,15 @@ export function InvoicesTable({
               <td>{f.client_company_name}</td>
               <td>{formatDatumNL(new Date(f.issued_at))}</td>
               <td className="bedrag">&euro; {formatEuro(f.total)}</td>
+              {betaal && (
+                <td className="betaal-col">
+                  {f.betaling ? (
+                    <BetaalStatus factuurId={f.id} nummer={f.invoice_number} info={f.betaling} rekeningen={betaal.rekeningen} vandaag={betaal.vandaag} />
+                  ) : (
+                    <span className="betaal-leeg">—</span>
+                  )}
+                </td>
+              )}
               <td className="acties-col">
                 <PdfDownloadKnop href={`/api/invoices/${f.id}/pdf`} label={`Factuur ${f.invoice_number} downloaden`} />
                 <Link href={`/facturen/${f.id}/bewerken`} className="bewerk-link">

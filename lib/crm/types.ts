@@ -27,6 +27,8 @@ export interface Klant {
   postcode: string;
   /** Website (0035; '' als leeg of vóór 0035), zoals getypt: "studio-levant.nl". */
   website: string;
+  /** Vrije beschrijving (0036; '' als leeg of vóór 0036), met regels. */
+  beschrijving: string;
   status: KlantStatus;
   /** Korte "volgende stap" (0025; '' vóór 0025 of als niets gepland). */
   volgendeStap: string;
@@ -68,6 +70,8 @@ export interface KlantNotitie {
   op: string;
   /** 'status' = automatisch bij een statuswijziging (0025). */
   soort: NotitieSoort;
+  /** ISO-moment van de laatste bewerking (0036), of null. */
+  bewerktOp: string | null;
 }
 
 export interface KlantInvoer {
@@ -78,6 +82,7 @@ export interface KlantInvoer {
   adres?: string;
   postcode?: string;
   website?: string;
+  beschrijving?: string | null;
   status?: KlantStatus;
   volgendeStap?: string;
   opvolgenOp?: string | null;

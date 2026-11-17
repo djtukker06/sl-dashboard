@@ -1,6 +1,6 @@
 import { isUuid } from '@/lib/agenda/invoer';
 import { OPVOLG_KOLOMMEN, parseKlant } from '@/lib/crm/invoer';
-import { KOUD_NA_0033, OPVOLGEN_NA_0025, WEBSITE_NA_0035, crmFout, klantOphalen } from '@/lib/crm/repo';
+import { BESCHRIJVING_NA_0036, KOUD_NA_0033, OPVOLGEN_NA_0025, WEBSITE_NA_0035, crmFout, klantOphalen } from '@/lib/crm/repo';
 import { KLANT_STATUS_LABEL, type KlantInvoer, type KlantStatus } from '@/lib/crm/types';
 import { kolomOntbreekt } from '@/lib/db/ontbreekt';
 import { CRM_NIET_INGERICHT } from '@/lib/agenda/repo';
@@ -13,7 +13,7 @@ export const dynamic = 'force-dynamic';
 type Ctx = { params: Promise<{ id: string }> };
 
 // PATCH /api/klanten/[id]  { naam?, contactpersoon?, email?, telefoon?, adres?, postcode?, website?,
-//                            status?, volgendeStap?, opvolgenOp? } → { klant }
+//                            beschrijving?, status?, volgendeStap?, opvolgenOp? } → { klant }
 // Verwijderen kan hier bewust niet (dat blijft in Facturen, met de controle op bestaande
 // facturen). Een statuswijziging komt (na 0025) als regel "Lead → Actief" in de tijdlijn.
 // Volgende stap/opvolgdatum vóór 0025: een nette 503 'kolom_ontbreekt'.
@@ -45,6 +45,7 @@ export async function PATCH(request: Request, ctx: Ctx) {
       if (error.code === '23514' && k.waarde.status === 'koud') return fout(503, KOUD_NA_0033, 'kolom_ontbreekt');
       if (kolomOntbreekt(error) && OPVOLG_KOLOMMEN.some((c) => c in k.waarde)) return fout(503, OPVOLGEN_NA_0025, 'kolom_ontbreekt');
       if (kolomOntbreekt(error) && 'website' in k.waarde) return fout(503, WEBSITE_NA_0035, 'kolom_ontbreekt');
+      if (kolomOntbreekt(error) && 'beschrijving' in k.waarde) return fout(503, BESCHRIJVING_NA_0036, 'kolom_ontbreekt');
       throw crmFout(error);
     }
     if (!data) return fout(404, 'Klant niet gevonden.');

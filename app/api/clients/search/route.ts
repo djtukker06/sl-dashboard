@@ -20,7 +20,7 @@ export async function GET(request: Request) {
   const patroon = q.replace(/[\\%_]/g, (t) => `\\${t}`);
   const { data, error } = await supabase
     .from('clients')
-    .select('id, company_name, contact_name, address, postal_code')
+    .select('id, company_name, contact_name, address, postal_code, email')
     .ilike('company_name', `%${patroon}%`)
     .order('company_name')
     .limit(8);

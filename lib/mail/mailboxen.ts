@@ -1,4 +1,5 @@
 import 'server-only';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Teamlid } from '@/lib/auth/team';
 import { createServiceRoleClient } from '@/lib/supabase/service-role';
 import { tabelOntbreekt } from '@/lib/db/ontbreekt';
@@ -256,6 +257,21 @@ export async function mailboxVoor(lid: Teamlid, id?: string | null): Promise<Mai
 /** De verbinding van de standaard-inbox van dit teamlid, of null ("niet gekoppeld"). */
 export async function mailConfigVoor(lid: Teamlid, id?: string | null): Promise<MailConfig | null> {
   return (await mailboxVoor(lid, id))?.cfg ?? null;
+}
+
+/**
+ * De verbinding van één inbox voor een taak zonder ingelogde gebruiker (de cron die
+ * terugkerende facturen verstuurt, lib/invoice/terugkerend.ts): 'env' = de standaard-mailbox,
+ * anders een rij uit mailboxen. Wie de inbox mocht kiezen, is bij het opslaan van het
+ * sjabloon al gecontroleerd (mailboxVoor). Null = bestaat niet (meer) of niet te ontsleutelen.
+ */
+export async function mailConfigVoorTaak(service: SupabaseClient, id: string): Promise<MailConfig | null> {
+  if (id === ENV_MAILBOX_ID) return envMailConfig();
+  const { data, error } = await service.from('mailboxen').select(MAILBOXEN_KOLOMMEN).eq('id', id).maybeSingle();
+  if (error || !data) return null;
+  const rij = data as unknown as MailboxenRij;
+  const wachtwoord = ontsleutelMailbox(rij.wachtwoord_enc, rij.eigenaar_id, rij.id);
+  return wachtwoord === null ? null : configUitRij(rij, wachtwoord);
 }
 
 /** De inboxen voor de browser (zonder wachtwoord of servers). */

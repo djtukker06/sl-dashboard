@@ -29,7 +29,9 @@ const EERST_TONEN = 12;
 /**
  * Tijdlijn van een klant: zelf geschreven notities, statuswijzigingen (0025), facturen en
  * wanneer de klant is aangemaakt, nieuwste eerst. Bovenaan een notitieveld: Enter slaat op,
- * Shift+Enter is een nieuwe regel. Alleen je eigen notitie kun je verwijderen.
+ * Shift+Enter is een nieuwe regel. Een zelf geschreven notitie kan elk teamlid bewerken
+ * (0036; potlood, Cmd/Ctrl+Enter slaat op, Escape annuleert), statusregels niet. Alleen je
+ * eigen notitie kun je verwijderen.
  */
 export function KlantTijdlijn({
   klantId,
@@ -49,6 +51,12 @@ export function KlantTijdlijn({
   const [bezig, setBezig] = useState(false);
   const [weg, setWeg] = useState<Set<string>>(new Set());
   const [alles, setAlles] = useState(false);
+  // De notitie die nu bewerkt wordt (één tegelijk) en de tekst in het tekstvak.
+  const [bewerkId, setBewerkId] = useState<string | null>(null);
+  const [bewerkTekst, setBewerkTekst] = useState('');
+  const [bewaarBezig, setBewaarBezig] = useState(false);
+  // Net opgeslagen tekst, tot router.refresh() de nieuwe notities levert.
+  const [aangepast, setAangepast] = useState<Record<string, { tekst: string; bewerktOp: string | null }>>({});
 
   async function voegToe(e?: React.FormEvent) {
     e?.preventDefault();
@@ -80,8 +88,43 @@ export function KlantTijdlijn({
     }
   }
 
+  function begin(n: KlantNotitie) {
+    setBewerkId(n.id);
+    setBewerkTekst(n.tekst);
+  }
+
+  async function bewaar(n: KlantNotitie) {
+    if (bewaarBezig) return;
+    const t = bewerkTekst.replace(/\r\n?/g, '\n').trim();
+    if (t === n.tekst) {
+      setBewerkId(null);
+      return;
+    }
+    if (!t) {
+      toast('Een notitie kan niet leeg zijn. Verwijder hem als hij weg mag.', { fout: true });
+      return;
+    }
+    setBewaarBezig(true);
+    try {
+      const { notitie } = await crmApi<{ notitie: KlantNotitie }>(`/api/klanten/${klantId}/notities/${n.id}`, 'PATCH', { tekst: t });
+      setAangepast((a) => ({ ...a, [n.id]: { tekst: notitie.tekst, bewerktOp: notitie.bewerktOp } }));
+      setBewerkId(null);
+      router.refresh();
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'Niet gelukt.', { fout: true });
+    } finally {
+      setBewaarBezig(false);
+    }
+  }
+
   const items: Item[] = [
-    ...notities.filter((n) => !weg.has(n.id)).map((n): Item => ({ soort: n.soort, op: n.op, notitie: n })),
+    ...notities
+      .filter((n) => !weg.has(n.id))
+      .map((n): Item => {
+        const a = aangepast[n.id];
+        const nieuwer = a && (a.bewerktOp ?? '') > (n.bewerktOp ?? '');
+        return { soort: n.soort, op: n.op, notitie: nieuwer ? { ...n, ...a } : n };
+      }),
     ...facturen.filter((f) => f.datum).map((f): Item => ({ soort: 'factuur', op: `${f.datum}T12:00:00`, factuur: f })),
     ...(aangemaakt ? [{ soort: 'start', op: aangemaakt } as Item] : [])
   ].sort((a, b) => (a.op < b.op ? 1 : a.op > b.op ? -1 : 0));
@@ -143,12 +186,68 @@ export function KlantTijdlijn({
               );
             }
             const n = it.notitie;
+            if (it.soort === 'notitie' && bewerkId === n.id) {
+              return (
+                <li key={n.id} className="kp-tl kp-tl-notitie">
+                  <form
+                    className="kp-notitie-bewerk"
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      void bewaar(n);
+                    }}
+                  >
+                    <textarea
+                      className="ag-veld"
+                      rows={Math.min(10, Math.max(2, bewerkTekst.split('\n').length))}
+                      maxLength={2000}
+                      aria-label="Notitie bewerken"
+                      autoFocus
+                      value={bewerkTekst}
+                      disabled={bewaarBezig}
+                      onChange={(e) => setBewerkTekst(e.target.value)}
+                      onFocus={(e) => e.currentTarget.setSelectionRange(e.currentTarget.value.length, e.currentTarget.value.length)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                          e.preventDefault();
+                          void bewaar(n);
+                        }
+                        if (e.key === 'Escape') {
+                          e.preventDefault();
+                          setBewerkId(null);
+                        }
+                      }}
+                    />
+                    <div className="kp-notitie-voet">
+                      <span className="kp-hint">Cmd/Ctrl+Enter = opslaan · Esc = annuleren</span>
+                      <span className="kp-kop-acties">
+                        <button type="button" className="kp-linkknop" onClick={() => setBewerkId(null)} disabled={bewaarBezig}>
+                          Annuleren
+                        </button>
+                        <button type="submit" className="db-knop db-knop-klein" disabled={bewaarBezig || !bewerkTekst.trim()}>
+                          {bewaarBezig ? 'Bezig…' : 'Opslaan'}
+                        </button>
+                      </span>
+                    </div>
+                  </form>
+                </li>
+              );
+            }
             return (
               <li key={n.id} className={`kp-tl kp-tl-${it.soort}`}>
                 {it.soort === 'status' ? <p className="kp-tl-regel">Status: {n.tekst}</p> : <p className="kp-tijdlijn-tekst">{n.tekst}</p>}
                 <p className="kp-tijdlijn-meta">
                   <Persoon id={n.door} />
-                  <span>{korteDatum(n.op)}</span>
+                  <span>
+                    {korteDatum(n.op)}
+                    {it.soort === 'notitie' && n.bewerktOp && <span title={`Bewerkt ${korteDatum(n.bewerktOp)}`}> · bewerkt</span>}
+                  </span>
+                  {it.soort === 'notitie' && (
+                    <button type="button" className="kp-inline-potlood kp-tl-potlood" aria-label="Notitie bewerken" title="Notitie bewerken" onClick={() => begin(n)}>
+                      <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
+                        <path d="M10.5 2.5l3 3L6 13H3v-3z" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
+                      </svg>
+                    </button>
+                  )}
                   {n.door === mijnId && it.soort === 'notitie' && (
                     <button type="button" className="kp-linkknop" onClick={() => void verwijder(n)}>
                       Verwijderen
