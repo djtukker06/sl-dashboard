@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation';
 import { useTeam } from '@/components/team/TeamProvider';
 
 // Subnavigatie binnen Boekhouding: Overzicht · Facturen · Bonnetjes & inkoopfacturen ·
-// Bank & boekingen · Btw-aangifte · Activa · Rapporten & jaarrekening · Instellingen.
+// Bank & boekingen · Btw-aangifte · Activa · Winst & verlies · Rapporten & jaarrekening · Instellingen.
 // "Facturen" is actief op alle /facturen/*-paden (de facturenschermen zelf blijven ongewijzigd).
 // Zonder vinkje Boekhouding alleen de eerste drie (beperkt: true).
 const TABS = [
@@ -26,6 +26,7 @@ const TABS = [
   },
   { href: '/boekhouding/btw', label: 'Btw-aangifte', kort: 'Btw', actief: (p: string) => p.startsWith('/boekhouding/btw') },
   { href: '/boekhouding/activa', label: 'Activa', actief: (p: string) => p.startsWith('/boekhouding/activa') },
+  { href: '/boekhouding/winst-en-verlies', label: 'Winst & verlies', kort: 'W&V', actief: (p: string) => p.startsWith('/boekhouding/winst-en-verlies') },
   { href: '/boekhouding/rapporten', label: 'Rapporten & jaarrekening', kort: 'Rapporten', actief: (p: string) => p.startsWith('/boekhouding/rapporten') },
   { href: '/boekhouding/instellingen', label: 'Instellingen', actief: (p: string) => p.startsWith('/boekhouding/instellingen') }
 ] as const;
