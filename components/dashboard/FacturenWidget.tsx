@@ -1,15 +1,19 @@
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
 import { factuurSnapshot } from '@/lib/dashboard/facturen';
+import type { Teamlid } from '@/lib/auth/team';
+import { BetaalLabel, betalingVoor } from '@/components/facturen/BetaalSamenvatting';
 import { korteDatum } from '@/lib/dashboard/tijd';
 import { formatEuro } from '@/lib/format';
 import { Kaart, KaartMelding } from './Kaart';
 import { OpnieuwKnop } from './OpnieuwKnop';
 
-// Facturen-snapshot (alleen lezen). Leest met de gebruikerscliënt, dus via RLS.
-export async function FacturenWidget() {
+// Facturen-snapshot (alleen lezen). Leest met de gebruikerscliënt, dus via RLS. Met het vinkje
+// Boekhouding telt de omzet alleen betaalde facturen en staat bij elke factuur of hij betaald is.
+export async function FacturenWidget({ lid }: { lid: Teamlid }) {
   const supabase = await createClient();
   const res = await factuurSnapshot(supabase);
+  const betaling = res.ok ? await betalingVoor(lid, res.data) : null;
 
   if (!res.ok) {
     return (
@@ -33,9 +37,14 @@ export async function FacturenWidget() {
       <div className="db-omzet">
         <p className="db-omzet-bedrag">
           <span className="db-euro">€</span>
-          {formatEuro(f.omzet)}
+          {formatEuro(betaling ? betaling.omzet : f.omzet)}
         </p>
-        <p className="db-sub">Omzet {f.jaar} · excl. btw</p>
+        <p className="db-sub">Omzet {f.jaar} · {betaling ? 'betaald · ' : ''}excl. btw</p>
+        {betaling && betaling.aantalOpen > 0 && (
+          <p className="db-sub db-te-ontvangen">
+            Nog te ontvangen € {formatEuro(betaling.teOntvangen)} · {betaling.aantalOpen} {betaling.aantalOpen === 1 ? 'factuur' : 'facturen'}
+          </p>
+        )}
       </div>
       <dl className="db-cijfers">
         <div>
@@ -68,7 +77,10 @@ export async function FacturenWidget() {
                     {r.datum ? ` · ${korteDatum(r.datum)}` : ''}
                   </span>
                 </span>
-                <span className="db-rij-bedrag">€ {formatEuro(r.totaal)}</span>
+                <span className="db-rij-rechts">
+                  <span className="db-rij-bedrag">€ {formatEuro(r.totaal)}</span>
+                  {betaling && <BetaalLabel info={betaling.info.get(r.id)} />}
+                </span>
               </Link>
             </li>
           ))}

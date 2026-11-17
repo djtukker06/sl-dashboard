@@ -89,7 +89,7 @@ export default async function DashboardPage() {
               <ProjectenWidget lid={lid} />
             </Suspense>
             <Suspense fallback={<KaartSkelet label="Facturen" className="db-facturen" />}>
-              <FacturenWidget />
+              <FacturenWidget lid={lid} />
             </Suspense>
             <Suspense fallback={<KaartSkelet label="Laatste bonnetjes" className="db-uitgaven" />}>
               <UitgavenWidget />

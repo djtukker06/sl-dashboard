@@ -15,6 +15,8 @@ export type FactuurSnapshot = {
   aantal: number;
   openAanbetalingen: number;
   laatste: { id: string; nummer: string; klant: string; totaal: number; datum: string }[];
+  /** De facturen van het jaar in centen, voor de omzet (betaald) via omzetOverzicht (0037). */
+  vanJaar: { id: string; omzet: number; totaal: number }[];
 };
 
 type Rij = {
@@ -59,7 +61,8 @@ export async function factuurSnapshot(
         klant: f.client_company_name || '—',
         totaal: Number(f.total || 0),
         datum: f.issued_at || ''
-      }))
+      })),
+      vanJaar: vanJaar.map((f) => ({ id: f.id, omzet: Math.round(Number(f.revenue_subtotal || 0) * 100), totaal: Math.round(Number(f.total || 0) * 100) }))
     }
   };
 }
