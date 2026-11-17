@@ -21,6 +21,8 @@ export interface KlantRij {
   opvolgen_op?: string | null;
   /** 0035 */
   website?: string | null;
+  /** 0036 */
+  beschrijving?: string | null;
 }
 
 /** Velden die pas na migratie 0025 bestaan (om vóór 0025 een nette melding te geven). */
@@ -79,6 +81,18 @@ export function schoonTelefoon(v: string): string {
     .trim();
 }
 
+/**
+ * Beschrijving van een klant (0036): vrije tekst tot 5000 tekens. Anders dan tekst() blijven
+ * regels en spaties binnen de tekst staan; alleen \r\n → \n en de rand eraf. Leeg → null.
+ */
+export function parseBeschrijving(v: unknown): Resultaat<string | null> {
+  if (v === null || v === undefined) return { ok: true, waarde: null };
+  if (typeof v !== 'string') return { ok: false, fout: 'Ongeldige beschrijving.' };
+  const t = v.replace(/\r\n?/g, '\n').trim();
+  if (t.length > 5000) return { ok: false, fout: 'De beschrijving is te lang (maximaal 5000 tekens).' };
+  return { ok: true, waarde: t || null };
+}
+
 function tekst(v: unknown, max: number, naam: string): Resultaat<string> {
   if (v === null || v === undefined) return { ok: true, waarde: '' };
   if (typeof v !== 'string') return { ok: false, fout: `Ongeldige ${naam}.` };
@@ -95,7 +109,7 @@ export function isKlantStatus(v: unknown): v is KlantStatus {
  * Klant aanmaken (nieuw: bedrijfsnaam verplicht, status standaard 'lead') of wijzigen
  * (alleen de meegestuurde velden). Lege contactpersoon/adres/postcode → null, zoals in
  * de facturen; e-mail en telefoon → ''. Volgende stap (max. 200) en opvolgdatum (0025):
- * leeg → null.
+ * leeg → null. Beschrijving (0036): max. 5000, regels blijven; leeg → null.
  */
 export function parseKlant(body: KlantInvoer, nieuw: boolean): Resultaat<KlantRij> {
   if (!body || typeof body !== 'object' || Array.isArray(body)) return { ok: false, fout: 'Ongeldige invoer.' };
@@ -138,6 +152,11 @@ export function parseKlant(body: KlantInvoer, nieuw: boolean): Resultaat<KlantRi
     const w = schoonWebsite(body.website ?? '');
     if (!w.ok) return { ok: false, fout: 'Dat is geen geldige website (bijvoorbeeld studio-levant.nl).' };
     rij.website = w.waarde || null;
+  }
+  if ('beschrijving' in body) {
+    const b = parseBeschrijving(body.beschrijving);
+    if (!b.ok) return b;
+    rij.beschrijving = b.waarde;
   }
   if ('volgendeStap' in body) {
     const v = tekst(body.volgendeStap, 200, 'volgende stap');

@@ -5,6 +5,11 @@ import { ClientsList, type ClientRow } from '@/components/ClientsList';
 import { formatEuro } from '@/lib/format';
 import { vandaagNL, volgendFactuurnummer } from '@/lib/invoice/nummer';
 import { vereisTeamlidPagina } from '@/lib/auth/team';
+import { betaalOverzicht } from '@/lib/boekhouding/betaalstatus';
+import { omzetOverzicht } from '@/lib/boekhouding/kern/betaalcheck';
+import { createServiceRoleClient } from '@/lib/supabase/service-role';
+import { laadBeheer } from '@/lib/invoice/terugkerend-beheer';
+import { TerugkerendBlok } from '@/components/facturen/TerugkerendBlok';
 
 export default async function FacturenOverzichtPage({
   searchParams
@@ -12,18 +17,26 @@ export default async function FacturenOverzichtPage({
   searchParams: Promise<{ jaar?: string }>;
 }) {
   // Sessie + teamlidmaatschap (lib/auth/team.ts); verder ongewijzigd.
-  await vereisTeamlidPagina('/facturen');
+  const lid = await vereisTeamlidPagina('/facturen');
   const { jaar } = await searchParams;
   const supabase = await createClient();
 
-  const [{ data: invoices }, { data: klantRecords }] = await Promise.all([
+  // Betaalstatus uit de boekhouding (koppelingen); null zonder vinkje Boekhouding, in de demo of
+  // vóór 0027: dan geen betaalstatus en telt de omzet alles wat gefactureerd is.
+  // Terugkerende facturen (0036): alleen de server leest die tabel; vóór 0036 of bij een storing geen blok.
+  const [{ data: invoices }, { data: klantRecords }, betaling, terugkerend] = await Promise.all([
     supabase
       .from('invoices')
       // Bewust alle kolommen: draait de deploy even voor op migratie 0013, dan ontbreken
       // de restfactuur-kolommen gewoon in plaats dat het hele overzicht leeg blijft.
       .select('*')
       .order('invoice_number', { ascending: false }),
-    supabase.from('clients').select('id, company_name').order('company_name')
+    supabase.from('clients').select('id, company_name').order('company_name'),
+    betaalOverzicht(lid),
+    laadBeheer(createServiceRoleClient(lid.bewijs)).catch((e) => {
+      console.error('[facturen] terugkerende facturen ophalen mislukt', (e as Error)?.message ?? e);
+      return null;
+    })
   ]);
 
   const opgehaald = (invoices || []) as (InvoiceRow & {
@@ -43,7 +56,8 @@ export default async function FacturenOverzichtPage({
   );
   const alleFacturen = opgehaald.map((f) => ({
     ...f,
-    restfactuur: restfactuurVan.get(f.id) ?? null
+    restfactuur: restfactuurVan.get(f.id) ?? null,
+    betaling: betaling?.info.get(f.id) ?? null
   }));
   const openAanbetalingen = alleFacturen.filter(
     (f) => typeof f.deposit_percentage === 'number' && !f.restfactuur
@@ -76,6 +90,18 @@ export default async function FacturenOverzichtPage({
       ? (await volgendFactuurnummer(supabase, Number(vandaagNL().slice(0, 4)))).factuurnummer
       : undefined;
   const omzetVanJaar = facturenVanJaar.reduce((som, f) => som + f.revenue_subtotal, 0);
+
+  // Omzet telt alleen helemaal betaalde facturen (revenue_subtotal, excl. btw); een deels
+  // betaalde factuur telt pas mee als hij helemaal betaald is. Nog te ontvangen = het
+  // openstaande bedrag van de rest (incl. btw, wat de klant nog moet betalen).
+  const idsVanJaar = new Set(facturenVanJaar.map((f) => f.id));
+  const betaald = betaling
+    ? omzetOverzicht(
+        betaling.facturen.filter((f) => idsVanJaar.has(f.id)),
+        betaling.info
+      )
+    : null;
+  const betaalKeuze = betaling ? { rekeningen: betaling.rekeningen, vandaag: betaling.vandaag } : null;
 
   // De klantenlijst komt uit de clients-tabel (niet uit de factuur-snapshots), zodat een
   // hernoemde klant meteen goed staat en een klant zonder facturen ook zichtbaar — en dus
@@ -117,10 +143,27 @@ export default async function FacturenOverzichtPage({
           <div className="n">{facturenVanJaar.length}</div>
           <div className="l">Facturen {gekozenJaar}</div>
         </div>
-        <div className="stat">
-          <div className="n">&euro; {formatEuro(omzetVanJaar)}</div>
-          <div className="l">Omzet {gekozenJaar} excl. btw</div>
-        </div>
+        {betaald ? (
+          <>
+            <div className="stat">
+              <div className="n">&euro; {formatEuro(betaald.betaaldeOmzet / 100)}</div>
+              <div className="l">Omzet {gekozenJaar} (betaald) excl. btw</div>
+              <div className="stat-sub">Gefactureerd: &euro; {formatEuro(betaald.gefactureerd / 100)}</div>
+            </div>
+            <div className="stat">
+              <div className="n">&euro; {formatEuro(betaald.teOntvangen / 100)}</div>
+              <div className="l">Nog te ontvangen incl. btw</div>
+              <div className="stat-sub">
+                {betaald.aantalOpen} {betaald.aantalOpen === 1 ? 'factuur' : 'facturen'} niet (helemaal) betaald
+              </div>
+            </div>
+          </>
+        ) : (
+          <div className="stat">
+            <div className="n">&euro; {formatEuro(omzetVanJaar)}</div>
+            <div className="l">Omzet {gekozenJaar} (gefactureerd) excl. btw</div>
+          </div>
+        )}
       </div>
 
       {openAanbetalingen.length > 0 && (
@@ -131,7 +174,7 @@ export default async function FacturenOverzichtPage({
               Nog geen restfactuur — maak hem met één klik
             </span>
           </div>
-          <InvoicesTable invoices={openAanbetalingen} volgendNummer={volgendNummer} />
+          <InvoicesTable invoices={openAanbetalingen} volgendNummer={volgendNummer} betaal={betaalKeuze} />
         </>
       )}
 
@@ -139,11 +182,19 @@ export default async function FacturenOverzichtPage({
         <h2>
           Facturen {gekozenJaar}{' '}
           <span className="omzet-inline">
-            - Omzet excl. btw: &euro; {formatEuro(omzetVanJaar)}
+            {betaald
+              ? `- Omzet (betaald) excl. btw: € ${formatEuro(betaald.betaaldeOmzet / 100)}`
+              : `- Omzet (gefactureerd) excl. btw: € ${formatEuro(omzetVanJaar)}`}
           </span>
         </h2>
       </div>
-      <InvoicesTable invoices={facturenVanJaar} volgendNummer={volgendNummer} />
+      <InvoicesTable invoices={facturenVanJaar} volgendNummer={volgendNummer} betaal={betaalKeuze} />
+
+      {terugkerend && (
+        <div style={{ marginTop: 40 }}>
+          <TerugkerendBlok sjablonen={terugkerend.sjablonen} vandaag={vandaagNL()} />
+        </div>
+      )}
 
       <div className="section-head" style={{ marginTop: 40 }}>
         <h2>Klanten</h2>

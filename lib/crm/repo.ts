@@ -31,6 +31,7 @@ import type { Klant, KlantNotitie, KlantRegel, KlantStatus } from './types';
 const KLANT_KOLOMMEN = 'id,company_name,contact_name,email,telefoon,address,postal_code,status,created_at';
 const OPVOLG = ',volgende_stap,opvolgen_op';
 const WEBSITE = ',website';
+const BESCHRIJVING = ',beschrijving';
 
 interface KlantDbRij {
   id: string;
@@ -45,6 +46,7 @@ interface KlantDbRij {
   volgende_stap?: string | null;
   opvolgen_op?: string | null;
   website?: string | null;
+  beschrijving?: string | null;
 }
 
 function statusVan(s: unknown): KlantStatus {
@@ -61,6 +63,7 @@ function naarKlant(r: KlantDbRij): Klant {
     adres: r.address ?? '',
     postcode: r.postal_code ?? '',
     website: r.website ?? '',
+    beschrijving: r.beschrijving ?? '',
     status: statusVan(r.status),
     volgendeStap: r.volgende_stap ?? '',
     opvolgenOp: r.opvolgen_op ?? null
@@ -75,6 +78,12 @@ export function crmFout(error: unknown): AgendaFout {
 
 /** Melding als je een website invult vóór migratie 0035 (de kolom bestaat dan nog niet). */
 export const WEBSITE_NA_0035 = 'Een website opslaan werkt zodra migratie 0035 is uitgevoerd (supabase/UITVOEREN_0035.sql).';
+
+/** Melding als je een beschrijving opslaat vóór migratie 0036 (de kolom bestaat dan nog niet). */
+export const BESCHRIJVING_NA_0036 = 'Een beschrijving opslaan werkt zodra migratie 0036 is uitgevoerd (supabase/UITVOEREN_0036.sql).';
+
+/** Melding als je een tijdlijnnotitie bewerkt vóór migratie 0036 (kolom bewerkt_op en het updaterecht ontbreken). */
+export const NOTITIE_BEWERKEN_NA_0036 = 'Notities bewerken werkt zodra migratie 0036 is uitgevoerd (supabase/UITVOEREN_0036.sql).';
 
 /** Melding als je "Op de radar" kiest vóór migratie 0033 (de check-constraint kent 'koud' dan nog niet). */
 export const KOUD_NA_0033 = '“Op de radar” werkt zodra migratie 0033 is uitgevoerd (supabase/UITVOEREN_0033.sql).';
@@ -209,9 +218,9 @@ export async function klantOphalen(bron: AgendaBron, id: string): Promise<Klant 
 async function klantRijOphalen(bron: AgendaBron, id: string): Promise<{ rij: KlantDbRij | null; opvolging: boolean }> {
   const { data, set } = await metTerugval<KlantDbRij>(
     (kol) => bron.sb.from('clients').select(kol).eq('id', id).maybeSingle() as unknown as Antwoord<KlantDbRij>,
-    [KLANT_KOLOMMEN + OPVOLG + WEBSITE, KLANT_KOLOMMEN + OPVOLG, KLANT_KOLOMMEN]
+    [KLANT_KOLOMMEN + OPVOLG + WEBSITE + BESCHRIJVING, KLANT_KOLOMMEN + OPVOLG + WEBSITE, KLANT_KOLOMMEN + OPVOLG, KLANT_KOLOMMEN]
   );
-  return { rij: data, opvolging: set <= 1 };
+  return { rij: data, opvolging: set <= 2 };
 }
 
 export interface FactuurRegel {
@@ -260,6 +269,29 @@ export interface KlantPagina {
 
 const LAATSTE = 5;
 
+/** Kolommen van een tijdlijnnotitie (0025: soort); bewerkt_op komt erbij na 0036. */
+export const NOTITIE_KOLOMMEN = 'id,tekst,created_by,created_at,soort';
+
+export interface NotitieDbRij {
+  id: string;
+  tekst: string;
+  created_by: string | null;
+  created_at: string;
+  soort?: string;
+  bewerkt_op?: string | null;
+}
+
+export function naarNotitie(n: NotitieDbRij): KlantNotitie {
+  return {
+    id: n.id,
+    tekst: n.tekst,
+    door: n.created_by ?? null,
+    op: n.created_at,
+    soort: n.soort === 'status' ? 'status' : 'notitie',
+    bewerktOp: n.bewerkt_op ?? null
+  };
+}
+
 /**
  * Alles voor de klantpagina in twee rondes: (1) klant, notities, projecten en facturen
  * tegelijk; (2) open taken (via de projecten) en prijsopgaven (via de naam: prijsopgaven
@@ -268,12 +300,12 @@ const LAATSTE = 5;
 export async function klantPagina(bron: AgendaBron, id: string, jaar: number = new Date().getFullYear()): Promise<KlantPagina | null> {
   const [klantRij, notities, projecten, facturen] = await Promise.all([
     klantRijOphalen(bron, id),
-    metTerugval<{ id: string; tekst: string; created_by: string | null; created_at: string; soort?: string }[]>(
+    metTerugval<NotitieDbRij[]>(
       (kol) =>
         bron.sb.from('client_notes').select(kol).eq('client_id', id).order('created_at', { ascending: false }).limit(200) as unknown as Antwoord<
-          { id: string; tekst: string; created_by: string | null; created_at: string; soort?: string }[]
+          NotitieDbRij[]
         >,
-      ['id,tekst,created_by,created_at,soort', 'id,tekst,created_by,created_at']
+      [NOTITIE_KOLOMMEN + ',bewerkt_op', NOTITIE_KOLOMMEN, 'id,tekst,created_by,created_at']
     ),
     projectenLijst(bron, { selectie: 'alle', klantId: id, strikt: true }),
     metTerugval<FactuurDbRij[]>(
@@ -323,13 +355,7 @@ export async function klantPagina(bron: AgendaBron, id: string, jaar: number = n
     klant,
     aangemaakt: klantRij.rij.created_at ?? null,
     opvolging: klantRij.opvolging,
-    notities: (notities.data ?? []).map((n) => ({
-      id: n.id,
-      tekst: n.tekst,
-      door: n.created_by ?? null,
-      op: n.created_at,
-      soort: n.soort === 'status' ? 'status' : 'notitie'
-    })),
+    notities: (notities.data ?? []).map(naarNotitie),
     projecten,
     taken: ((taken.data ?? []) as unknown as TaakDbRij[]).map(naarTaak).sort(sorteerTaken),
     facturen: alleFacturen.slice(0, 50).map((f) => ({

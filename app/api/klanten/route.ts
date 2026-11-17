@@ -1,5 +1,5 @@
 import { OPVOLG_KOLOMMEN, parseKlant } from '@/lib/crm/invoer';
-import { KOUD_NA_0033, OPVOLGEN_NA_0025, crmFout } from '@/lib/crm/repo';
+import { BESCHRIJVING_NA_0036, KOUD_NA_0033, OPVOLGEN_NA_0025, crmFout } from '@/lib/crm/repo';
 import { kolomOntbreekt } from '@/lib/db/ontbreekt';
 import type { KlantInvoer } from '@/lib/crm/types';
 import { CRM_NIET_INGERICHT } from '@/lib/agenda/repo';
@@ -8,7 +8,7 @@ import { fout, foutAntwoord, json, leesBody, metSessie } from '@/lib/agenda/api'
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-// POST /api/klanten  { naam, contactpersoon?, email?, status?, volgendeStap?, opvolgenOp? }
+// POST /api/klanten  { naam, contactpersoon?, email?, status?, volgendeStap?, opvolgenOp?, beschrijving? }
 // → { klant: { id } }. Snel een klant toevoegen (alleen een naam is genoeg; standaard
 // status 'lead'; 'koud' = Op de radar, vanaf 0033). Gedeeld met het hele team; de
 // facturen zien dezelfde klant (zelfde tabel clients).
@@ -29,6 +29,7 @@ export async function POST(request: Request) {
       // Vóór 0033 kent de check-constraint de status 'koud' (Op de radar) nog niet.
       if (error.code === '23514' && k.waarde.status === 'koud') return fout(503, KOUD_NA_0033, 'kolom_ontbreekt');
       if (kolomOntbreekt(error) && OPVOLG_KOLOMMEN.some((c) => c in k.waarde)) return fout(503, OPVOLGEN_NA_0025, 'kolom_ontbreekt');
+      if (kolomOntbreekt(error) && 'beschrijving' in k.waarde) return fout(503, BESCHRIJVING_NA_0036, 'kolom_ontbreekt');
       throw crmFout(error);
     }
     return json({ klant: { id: data.id as string } }, 201);

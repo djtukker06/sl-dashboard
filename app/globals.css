@@ -681,3 +681,262 @@ input:focus { outline: none; border-color: var(--cream-dim); }
   .login-wrap.sl-intro .login-card,
   .login-wrap.sl-intro .login-banner { opacity: 1; }
 }
+
+/* ---------- Terugkerende facturen (/facturen/terugkerend, migratie 0036) ---------- */
+.facturen-tabel a.tk-label { font-weight: 500; color: var(--cream-dim); }
+.facturen-tabel a.tk-label:hover { color: var(--cream); }
+.tk-intro { color: var(--cream-dim); font-size: 14px; line-height: 1.55; margin: -12px 0 24px; max-width: 70ch; }
+.tk-leeg { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; text-align: left; }
+.tk-leeg p { margin: 0; max-width: 60ch; line-height: 1.5; }
+.tk-lijst { display: flex; flex-direction: column; gap: 0; }
+.tk-kaart.is-uit { opacity: 0.75; }
+.tk-kop { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
+.tk-naam { margin: 0; font-size: 17px; font-weight: 700; color: var(--cream); display: flex; align-items: center; flex-wrap: wrap; gap: 4px; }
+.tk-naam .soort-label { margin-left: 4px; }
+.tk-status.is-actief { border-color: rgba(124, 178, 128, 0.6); color: #a9d3ac; }
+.tk-status.is-let-op { border-color: var(--danger); color: #e8a99c; }
+.tk-klant { color: var(--cream-dim); font-size: 13.5px; margin-top: 4px; }
+.tk-prijs { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.tk-prijs strong { color: var(--cream); font-size: 17px; }
+.tk-prijs span { color: var(--cream-dim); font-size: 12.5px; }
+.tk-feiten { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px 20px; margin: 18px 0 0; }
+.tk-feiten dt { font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--cream-faint); margin-bottom: 3px; }
+.tk-feiten dd { margin: 0; color: var(--cream); font-size: 14px; overflow-wrap: anywhere; }
+.tk-fout { margin: 16px 0 0; font-size: 13px; }
+.tk-ok { margin: 16px 0 0; font-size: 13px; color: #a9d3ac; }
+.tk-acties { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 18px; }
+.tk-verwijder { margin-left: auto; color: var(--danger); }
+.tk-facturen { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border); }
+.tk-facturen-kop { font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--cream-faint); margin-bottom: 8px; }
+.tk-facturen ul { list-style: none; margin: 0 0 6px; padding: 0; }
+.tk-facturen li { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; padding: 6px 0; font-size: 13.5px; color: var(--cream-dim); }
+.tk-facturen li a { color: var(--cream); font-weight: 700; text-decoration: none; font-variant-numeric: tabular-nums; }
+.tk-bedrag-klein { font-variant-numeric: tabular-nums; }
+.tk-verzonden { color: #a9d3ac; }
+.tk-niet-verzonden { color: var(--cream-faint); }
+.tk-form select,
+.tk-form textarea {
+  font-size: 14px;
+  padding: 10px 12px;
+  background: var(--bg-page);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-family: inherit;
+  color: var(--cream);
+}
+.tk-form textarea { resize: vertical; line-height: 1.5; min-height: 120px; }
+.tk-form select:focus,
+.tk-form textarea:focus { outline: none; border-color: var(--cream-dim); }
+.tk-form .checkbox-regel { margin-bottom: 14px; }
+.tk-form .veld-hint code { font-size: 12px; padding: 1px 5px; border-radius: 4px; background: var(--bg-page); color: var(--cream); }
+.tk-bericht { margin-top: 16px; }
+.tk-bedrag { margin: 18px 0 0; color: var(--cream-dim); font-size: 14px; font-variant-numeric: tabular-nums; }
+.tk-bedrag strong { color: var(--cream); }
+.tk-samenvatting p { margin: 0; line-height: 1.6; color: var(--cream); font-size: 14px; }
+.tk-voorbeeld-regels { margin: 12px 0 0; padding-left: 18px; color: var(--cream-dim); font-size: 13.5px; line-height: 1.6; }
+.tk-voorbeeld-mail { margin-top: 14px; padding: 14px 16px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-page); }
+.tk-voorbeeld-onderwerp { font-weight: 700; color: var(--cream); font-size: 14px; margin-bottom: 8px; }
+.tk-voorbeeld-tekst { white-space: pre-wrap; color: var(--cream-dim); font-size: 13.5px; line-height: 1.55; }
+.tk-knoppen { display: flex; flex-direction: column; align-items: stretch; gap: 10px; }
+.tk-knoppen .btn-secundair { text-align: center; text-decoration: none; border-style: solid; }
+@media (max-width: 640px) {
+  .tk-kop { flex-direction: column; }
+  .tk-prijs { align-items: flex-start; }
+  .tk-form .grid-2 { grid-template-columns: 1fr; }
+  .tk-verwijder { margin-left: 0; }
+}
+
+/* Nieuwe factuur: Eenmalig / Terugkerend */
+.factuursoort { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: -8px 0 22px; }
+.factuursoort a {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 14px 18px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--panel);
+  color: var(--cream-dim);
+  text-decoration: none;
+  font-size: 15px;
+  font-weight: 700;
+}
+.factuursoort a span { font-size: 12.5px; font-weight: 400; color: var(--cream-faint); }
+.factuursoort a:hover { border-color: var(--cream-faint); color: var(--cream); }
+.factuursoort a.is-aan { border-color: var(--cream); color: var(--cream); box-shadow: inset 0 0 0 1px var(--cream); }
+.factuursoort a.is-aan span { color: var(--cream-dim); }
+
+/* Eigen keuzelijst (components/facturen/Keuzelijst.tsx) en velden zonder <label> eromheen */
+.tk-veld { display: flex; flex-direction: column; gap: 7px; font-size: 13px; color: var(--cream-dim); }
+.keuzelijst { position: relative; }
+.keuzelijst-knop {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  font-size: 14px;
+  padding: 10px 12px;
+  background: var(--bg-page);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-family: inherit;
+  color: var(--cream);
+  text-align: left;
+  cursor: pointer;
+}
+.keuzelijst-knop:hover { border-color: var(--cream-faint); }
+.keuzelijst-knop:focus-visible, .keuzelijst-knop.is-open { outline: none; border-color: var(--cream-dim); }
+.keuzelijst-waarde { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.keuzelijst-waarde.is-leeg { color: var(--cream-faint); }
+.keuzelijst-sub { color: var(--cream-dim); }
+.keuzelijst-pijl { flex-shrink: 0; color: var(--cream-dim); transition: transform 0.15s; }
+.keuzelijst-knop.is-open .keuzelijst-pijl { transform: rotate(180deg); }
+.keuzelijst-lijst { list-style: none; margin: 0; padding: 4px 0; max-height: 280px; overflow-y: auto; z-index: 20; }
+.combobox-optie.is-actief { background: var(--panel-hover); }
+.combobox-optie.is-gekozen { font-weight: 700; }
+
+/* Terugkerend: periode automatisch in de middelste kolom */
+.tk-auto-periode, .tk-midden { display: flex; align-items: center; gap: 8px; min-height: 40px; }
+.tk-auto-periode span {
+  flex: 1;
+  min-width: 0;
+  padding: 9px 12px;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  color: var(--cream);
+  font-size: 13.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-variant-numeric: tabular-nums;
+}
+.tk-midden input { flex: 1; min-width: 0; }
+.tk-auto-periode .ag-link-knop, .tk-midden .ag-link-knop { white-space: nowrap; font-size: 12px; }
+.tk-form .regels-table .mid-col { width: 34%; }
+.naam-tk { margin-bottom: 16px; }
+.tk-btw { margin-top: 18px; }
+@media (max-width: 640px) {
+  .factuursoort { grid-template-columns: 1fr; }
+  .tk-auto-periode, .tk-midden { flex-wrap: wrap; }
+}
+.tk-sub { color: var(--cream-dim); font-size: 12.5px; }
+.tk-gepauzeerd { margin: 8px 0 0; }
+.section-hint a { color: var(--cream); text-decoration: none; }
+.section-hint a:hover { text-decoration: underline; }
+
+/* ==========================================================================
+   Betaalstatus & betaalcheck (components/facturen/Betaal*, migratie 0037)
+   Pill in de facturentabel, het venster "Factuur … betaald" en de pop-up
+   "Is factuur … betaald?" rechtsonder (op mobiel boven de tabbalk).
+   ========================================================================== */
+.stat-sub { margin-top: 4px; font-size: 12px; color: var(--cream-faint); font-variant-numeric: tabular-nums; }
+.facturen-tabel td.betaal-col { white-space: nowrap; }
+.betaal-leeg { color: var(--cream-faint); }
+.betaal-pill {
+  display: inline-block;
+  padding: 3px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.4;
+  white-space: nowrap;
+  background: none;
+  color: var(--cream-dim);
+}
+.betaal-pill.is-betaald { border-color: rgba(124, 178, 128, 0.55); color: #a9d3ac; }
+.betaal-pill.is-open { border-color: var(--danger); color: #e8a99c; }
+.betaal-pill.is-deels { border-color: rgba(217, 183, 122, 0.6); color: #e2c68f; }
+button.betaal-pill { cursor: pointer; }
+button.betaal-pill:hover { background: var(--panel-hover); color: var(--cream); }
+button.betaal-pill:focus-visible { outline: none; box-shadow: var(--sl-focus); }
+
+.betaal-venster {
+  width: min(380px, calc(100vw - 32px));
+  padding: 0;
+  border: 1px solid var(--sl-line);
+  border-radius: 10px;
+  background: var(--sl-panel);
+  color: var(--sl-text);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.5);
+}
+.betaal-venster::backdrop { background: rgba(0, 0, 0, 0.45); }
+.betaal-venster-inhoud { padding: 18px; }
+.betaal-titel { margin: 0 0 4px; font-size: 16px; font-weight: 700; }
+.betaal-sub { margin: 0 0 14px; font-size: 13px; line-height: 1.5; color: var(--sl-muted); white-space: normal; }
+.betaal-form { display: grid; gap: 12px; }
+.betaal-form-velden { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
+.betaal-form-knoppen { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.betaal-fout { margin: 0; font-size: 13px; color: var(--sl-danger); white-space: normal; }
+
+.betaalcheck {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 80;
+  width: min(380px, calc(100vw - 32px));
+  padding: 14px 16px 16px;
+  border: 1px solid var(--sl-line);
+  border-radius: 10px;
+  background: var(--sl-panel);
+  color: var(--sl-text);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.5);
+  animation: ag-in 0.18s var(--sl-ease);
+}
+.betaalcheck-kop { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.betaalcheck-sluit { background: none; border: none; color: var(--sl-muted); font-size: 20px; line-height: 1; padding: 2px 6px; cursor: pointer; }
+.betaalcheck-sluit:hover { color: var(--sl-text); }
+.betaalcheck-vraag { margin: 0; font-size: 14.5px; line-height: 1.5; overflow-wrap: anywhere; }
+.betaalcheck-bedrag { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.betaalcheck-sub { margin: 4px 0 12px; font-size: 12.5px; color: var(--sl-muted); }
+.betaalcheck-klaar { margin: 0 0 10px; font-size: 13px; color: #a9d3ac; }
+.betaalcheck .betaal-form-velden { margin-top: 2px; }
+@media (max-width: 720px) {
+  .betaalcheck {
+    left: 16px;
+    right: 16px;
+    width: auto;
+    bottom: calc(var(--sl-tab-h) + env(safe-area-inset-bottom, 0px) + 12px);
+  }
+}
+/* ========== einde betaalstatus & betaalcheck ========== */
+
+/* Meldingen rechtsonder (akkoord vooraf + betaalcheck), onder elkaar in plaats van over elkaar */
+.sl-meldingen {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 80;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 12px;
+  pointer-events: none;
+}
+.sl-meldingen:empty { display: none; }
+.sl-meldingen .betaalcheck { position: static; pointer-events: auto; }
+@media (max-width: 720px) {
+  .sl-meldingen {
+    left: 16px;
+    right: 16px;
+    bottom: calc(var(--sl-tab-h) + env(safe-area-inset-bottom, 0px) + 12px);
+    align-items: stretch;
+  }
+  .sl-meldingen .betaalcheck { width: auto; }
+}
+.tk-akkoord-melding .betaal-form-knoppen { margin-top: 12px; }
+
+/* Akkoord vooraf: controlescherm op /facturen/terugkerend */
+.tk-controle { border-color: var(--cream-faint); }
+.tk-controle-kop { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 6px; }
+.tk-controle-kop h2 { margin: 0; }
+.tk-controle-lijst { list-style: none; margin: 8px 0 0; padding: 0; }
+.tk-controle-lijst li { display: flex; align-items: center; gap: 8px; padding: 10px 0; border-top: 1px solid var(--border); flex-wrap: wrap; }
+.tk-controle-lijst li:first-child { border-top: none; }
+.tk-controle-tekst { flex: 1; min-width: 220px; display: flex; flex-direction: column; gap: 3px; color: var(--cream); font-size: 14px; }
+.tk-controle-sub { margin: 16px 0 0; color: var(--cream-dim); font-size: 13px; }
+.tk-wacht { color: #e3c07c; }
+.tk-akkoord-vinkje { margin-top: 16px; }
+.tk-akkoord-uitleg { margin-top: 6px !important; }

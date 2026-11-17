@@ -35,6 +35,7 @@
       "maxDuration": 30
     },
     "app/api/cron/**/route.ts": {
+      "memory": 2048,
       "maxDuration": 300
     },
     "app/api/beveiliging/backup/route.ts": {

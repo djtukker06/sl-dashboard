@@ -114,6 +114,35 @@ test("notitie: maximaal 2000 tekens", () => {
   assert.equal(inv.parseNotitie("x".repeat(2000)).ok, true);
   assert.equal(inv.parseNotitie("x".repeat(2001)).ok, false);
 });
+test("klant: beschrijving (0036) behoudt regels, rand weg, \\r\\n → \\n", () => {
+  assert.equal(inv.parseKlant({ beschrijving: "  Bakkerij in Utrecht.\r\n\r\nWil   een nieuwe site.  " }, false).waarde.beschrijving, "Bakkerij in Utrecht.\n\nWil   een nieuwe site.");
+  assert.equal(inv.parseBeschrijving("a\rb").waarde, "a\nb");
+});
+test("klant: beschrijving leeg → null, max. 5000 tekens, alleen tekst", () => {
+  assert.equal(inv.parseKlant({ beschrijving: "  \n " }, false).waarde.beschrijving, null);
+  assert.equal(inv.parseKlant({ beschrijving: null }, false).waarde.beschrijving, null);
+  assert.equal(inv.parseKlant({ beschrijving: "x".repeat(5000) }, false).ok, true);
+  assert.equal(inv.parseKlant({ beschrijving: "x".repeat(5001) }, false).ok, false);
+  assert.equal(inv.parseKlant({ beschrijving: 5 }, false).ok, false);
+  assert.equal(inv.parseKlant({ naam: "Nieuw", beschrijving: "Op de radar via Instagram" }, true).waarde.beschrijving, "Op de radar via Instagram");
+  assert.ok(!("beschrijving" in inv.parseKlant({ naam: "Nieuw" }, true).waarde), "niet meegestuurd → niet schrijven (werkt vóór 0036)");
+});
+test("beschrijving en notitie bewerken (0036): fallback vóór 0036 en nette melding (bron)", () => {
+  const repo = lees("lib/crm/repo.ts");
+  assert.match(repo, /KLANT_KOLOMMEN \+ OPVOLG \+ WEBSITE \+ BESCHRIJVING, KLANT_KOLOMMEN \+ OPVOLG \+ WEBSITE,/);
+  assert.match(repo, /NOTITIE_KOLOMMEN \+ ',bewerkt_op', NOTITIE_KOLOMMEN,/);
+  for (const r of ["app/api/klanten/route.ts", "app/api/klanten/[id]/route.ts"]) assert.match(lees(r), /'beschrijving' in k\.waarde\) return fout\(503, BESCHRIJVING_NA_0036, 'kolom_ontbreekt'\)/, r);
+  const patch = lees("app/api/klanten/[id]/notities/[notitieId]/route.ts");
+  assert.match(patch, /export async function PATCH/);
+  assert.match(patch, /parseNotitie\(body\.tekst\)/);
+  assert.match(patch, /\.eq\('soort', 'notitie'\)/);
+  assert.match(patch, /bewerkt_op: new Date\(\)\.toISOString\(\)/);
+  assert.match(patch, /NOTITIE_BEWERKEN_NA_0036, 'kolom_ontbreekt'/);
+  assert.ok(!/createAdminClient|service_role|serviceRole/i.test(patch), "gebruikerscliënt (RLS)");
+  const sql = lees("supabase/migrations/0036_terugkerende_facturen.sql");
+  assert.match(sql, /add column if not exists beschrijving text/);
+  assert.match(sql, /add column if not exists bewerkt_op timestamptz/);
+});
 test("ilike: % _ en \\ letterlijk", () => assert.equal(inv.likeLetterlijk("50%_a\\b"), "50\\%\\_a\\\\b"));
 
 // ---------------------------------------------------------------------------------
@@ -370,7 +399,8 @@ test("UITVOEREN_0025.sql: één transactie, controle per onderdeel, actueel", ()
 test("vóór 0025: queries vallen terug, opslaan geeft een nette melding, dashboardkaart verdwijnt", () => {
   const repo = lees("lib/crm/repo.ts");
   assert.match(repo, /metTerugval<KlantDbRij\[\]>[\s\S]*?created_at' \+ OPVOLG, 'id,company_name,contact_name,email,telefoon,status,created_at'\]/);
-  assert.match(repo, /\['id,tekst,created_by,created_at,soort', 'id,tekst,created_by,created_at'\]/);
+  assert.match(repo, /NOTITIE_KOLOMMEN = 'id,tekst,created_by,created_at,soort'/);
+  assert.match(repo, /NOTITIE_KOLOMMEN, 'id,tekst,created_by,created_at'\]/);
   assert.match(repo, /return \{ klanten, opvolging: k\.set === 0 \}/);
   assert.match(repo, /if \(kolomOntbreekt\(error\)\) return null;/, "opvolgLijst: null vóór 0025");
   const api = lees("app/api/klanten/[id]/route.ts");

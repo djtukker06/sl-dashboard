@@ -1,6 +1,8 @@
 import { cronRoute } from '@/lib/auth/cron';
 import { logFout } from '@/lib/log';
 import { dbBackupNodig, heartbeat, maakDbBackup, opruimen } from '@/lib/backup/run';
+import { verwerkTerugkerend, type Uitkomst } from '@/lib/invoice/terugkerend';
+import { vandaagNL } from '@/lib/invoice/nummer';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -12,7 +14,9 @@ export const maxDuration = 300;
 //      Supabase-project nooit pauzeert. Werkt ook vóór migratie 0026 (dan een leesquery);
 //   2. opruimen: heartbeat, inlogpogingen, oude audit-regels;
 //   3. database-back-up eens per 3 dagen: alleen als de laatste geslaagde ouder is dan ~3 dagen
-//      (anders overgeslagen). De keep-alive (stap 1) blijft wél elke nacht draaien.
+//      (anders overgeslagen). De keep-alive (stap 1) blijft wél elke nacht draaien;
+//   4. terugkerende facturen (0036): alles wat vandaag (of eerder) aan de beurt is aanmaken
+//      en, als dat is ingesteld, per e-mail versturen (lib/invoice/terugkerend.ts).
 export const GET = cronRoute('dagelijks', async (_request, { service, bron }) => {
   const hb = await heartbeat(service, bron);
   await opruimen(service);
@@ -31,5 +35,13 @@ export const GET = cronRoute('dagelijks', async (_request, { service, bron }) =>
     logFout('[cron] back-up', e);
     backup = { status: 'mislukt' };
   }
-  return { status: backup.status === 'mislukt' ? 'backup_mislukt' : 'ok', heartbeat: hb, backup };
+
+  let facturen: Uitkomst[] | { status: 'mislukt' };
+  try {
+    facturen = await verwerkTerugkerend(service, vandaagNL());
+  } catch (e) {
+    logFout('[cron] terugkerende facturen', e);
+    facturen = { status: 'mislukt' };
+  }
+  return { status: backup.status === 'mislukt' ? 'backup_mislukt' : 'ok', heartbeat: hb, backup, facturen };
 });

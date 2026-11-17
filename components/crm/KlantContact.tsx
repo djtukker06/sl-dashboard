@@ -2,7 +2,7 @@
 
 import { websiteLink } from '@/lib/crm/invoer';
 import type { Klant, KlantInvoer } from '@/lib/crm/types';
-import { InlineTitel, InlineVeld } from './InlineVeld';
+import { InlineTekstvak, InlineTitel, InlineVeld } from './InlineVeld';
 import { useKlantWijzigen } from './KlantActies';
 
 /** Contactgegevens, elk veld direct bewerkbaar (potlood of "+ … toevoegen"). */
@@ -86,6 +86,23 @@ export function KlantContact({ klant }: { klant: Klant }) {
         </dd>
       </div>
     </dl>
+  );
+}
+
+/**
+ * Beschrijving (0036): wie de klant is, wat ze doen, waarom ze op de radar staan. Vrije
+ * tekst met regels; klik erop om te bewerken.
+ */
+export function KlantBeschrijving({ klant }: { klant: Klant }) {
+  const wijzig = useKlantWijzigen();
+  return (
+    <InlineTekstvak
+      label="Beschrijving"
+      waarde={klant.beschrijving}
+      leeg="+ Beschrijving toevoegen"
+      placeholder="Wie zijn ze, wat doen ze, hoe kwamen we bij ze terecht?"
+      onBewaar={(v) => wijzig(klant.id, { beschrijving: v }, 'Beschrijving opgeslagen')}
+    />
   );
 }
 

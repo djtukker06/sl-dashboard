@@ -9,7 +9,7 @@ import { BestandenBlok } from '@/components/bestanden/BestandenBlok';
 import { NotitiesBlok } from '@/components/notities/NotitiesBlok';
 import { ModuleKop } from '@/components/shell/ModuleKop';
 import { ContactActies, LeadActies, OpvolgVelden } from './KlantActies';
-import { KlantContact, KlantTitel } from './KlantContact';
+import { KlantBeschrijving, KlantContact, KlantTitel } from './KlantContact';
 import { KlantTijdlijn } from './KlantNotities';
 import { NieuwProject } from './NieuwProject';
 import { ProjectRegels } from './ProjectRegels';
@@ -152,6 +152,17 @@ export function KlantInhoud({ data, vandaag, drive }: { data: KlantPagina; vanda
         </div>
 
         <aside className="kp-zij">
+          <section className="db-kaart" aria-labelledby="kp-beschrijving">
+            <header className="db-kaart-kop">
+              <h2 id="kp-beschrijving" className="db-label">
+                Beschrijving
+              </h2>
+            </header>
+            <div className="db-kaart-inhoud">
+              <KlantBeschrijving klant={klant} />
+            </div>
+          </section>
+
           <section className="db-kaart" aria-labelledby="kp-contact">
             <header className="db-kaart-kop">
               <h2 id="kp-contact" className="db-label">

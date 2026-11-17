@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { computeTotals } from './calculations';
+import { computeTotals } from './calculations';
+import { bedrijf } from '@/lib/config';
 import type { FactuurInvoer, PrijsopgaveInvoer } from './invoer';
 import { renderInvoiceHtml, type FactuurVoorRender, type Restbetaling } from './render';
 import { renderPdf } from './pdf';
@@ -95,6 +96,12 @@ export async function bewaarPrijsopgavePdf(
       : `prijsopgaven/${prijsopgaveId}.pdf`,
     vorigPad
   });
+}
+
+/** Alleen de PDF van een factuur, zonder iets op te slaan (voorbeeld van een terugkerende factuur). */
+export async function renderFactuurPdf(invoer: FactuurInvoer): Promise<Buffer> {
+  const totalen = computeTotals(invoer.regels, bedrijf.btwPercentage, invoer.btwVerlegd, invoer.aanbetalingPercentage);
+  return renderPdf(renderInvoiceHtml({ factuurnummer: invoer.factuurnummer, datum: new Date(invoer.issuedAt), ...renderVelden(invoer, totalen), restbetaling: null }));
 }
 
 function renderVelden(invoer: FactuurInvoer | PrijsopgaveInvoer, totalen: Totalen) {
