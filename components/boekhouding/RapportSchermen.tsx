@@ -185,6 +185,121 @@ export async function RapportenScherm({ repo, sp }: { repo: BoekhoudRepo; sp: Zo
 // ---------------------------------------------------------------------------------
 type Rapport = ReturnType<typeof jaarrapport>;
 
+/**
+ * Winst & verlies als eigen scherm (/boekhouding/winst-en-verlies): per boekjaar de
+ * kerncijfers, de volledige winst-en-verliesrekening per kwartaal (t.o.v. vorig jaar) en de
+ * winstverdeling per vennoot. Alles komt uit dezelfde journaalposten als Rapporten; er staat
+ * bij wat (nog) niet meetelt, zoals bankregels die nog verwerkt moeten worden.
+ */
+export async function WinstVerliesScherm({ repo, sp, conceptBonnetjes }: { repo: BoekhoudRepo; sp: Zoekparams; conceptBonnetjes: number }) {
+  const data = await laadAlles(repo);
+  const vandaag = vandaagNL();
+  const jaren = boekjarenLijst(data, vandaag);
+  const gevraagd = Number(een(sp.jaar));
+  const jaar = jaren.includes(gevraagd) ? gevraagd : jaren[0];
+  const posten = journaalVan(data);
+  const r = jaarrapport(data, posten, jaar, vandaag);
+  const omzet = r.wv.groepen.find((g) => g.id === 'omzet')?.jaar ?? 0;
+  const opbrengsten = r.wv.groepen.filter((g) => g.opbrengst).reduce((som, g) => som + g.jaar, 0);
+  const marge = opbrengsten > 0 ? Math.round((r.wv.resultaat.jaar / opbrengsten) * 1000) / 10 : null;
+  const teVerwerken = data.boekingen.filter((x) => x.status === 'te_verwerken' && x.datum.startsWith(`${jaar}-`)).length;
+  const grootboekHref = (code: string) => `/boekhouding/rapporten?${new URLSearchParams({ r: 'grootboek', jaar: String(jaar), code })}`;
+
+  return (
+    <div className="bh">
+      <BoekhoudingKop titel="Winst & verlies" />
+      <Demo repo={repo} />
+      <div className="bh-inhoud bh-rap">
+        <nav className="bh-rek-tabs bh-rap-jaren" aria-label="Boekjaar">
+          {jaren.map((j) => (
+            <Link key={j} href={`/boekhouding/winst-en-verlies?jaar=${j}`} className={`bh-rek-tab${j === jaar ? ' is-aan' : ''}`} aria-current={j === jaar ? 'page' : undefined}>
+              {j}
+              {data.stam.vergrendeling.boekjaren.includes(j) ? <span className="bh-slot" aria-label="afgesloten"> ·  afgesloten</span> : null}
+            </Link>
+          ))}
+        </nav>
+
+        <section className="bh-saldi" aria-label={`Kerncijfers ${jaar}`}>
+          <div className="bh-saldo">
+            <span className="bh-saldo-naam">Omzet {jaar}</span>
+            <span className="bh-saldo-bedrag">{formatCenten(omzet)}</span>
+            <span className="bh-saldo-sub">excl. btw{r.lopend ? ` · t/m ${korteDatum(r.tot)}` : ''}</span>
+          </div>
+          <div className="bh-saldo">
+            <span className="bh-saldo-naam">Kosten {jaar}</span>
+            <span className="bh-saldo-bedrag">{formatCenten(r.wv.kosten.jaar)}</span>
+            <span className="bh-saldo-sub">incl. afschrijvingen</span>
+          </div>
+          <div className="bh-saldo">
+            <span className="bh-saldo-naam">{r.wv.resultaat.jaar >= 0 ? 'Winst' : 'Verlies'} {jaar}</span>
+            <span className={`bh-saldo-bedrag${r.wv.resultaat.jaar < 0 ? ' is-let-op' : ''}`}>{formatCenten(r.wv.resultaat.jaar)}</span>
+            <span className="bh-saldo-sub">vóór belasting{r.wv.resultaat.vorigJaar ? ` · ${jaar - 1}: ${formatCenten(r.wv.resultaat.vorigJaar)}` : ''}</span>
+          </div>
+          <div className="bh-saldo">
+            <span className="bh-saldo-naam">Winstmarge</span>
+            <span className="bh-saldo-bedrag">{marge === null ? '—' : `${marge.toLocaleString('nl-NL')}%`}</span>
+            <span className="bh-saldo-sub">resultaat / opbrengsten</span>
+          </div>
+        </section>
+
+        {(teVerwerken > 0 || conceptBonnetjes > 0) && (
+          <p className="bh-wv-let-op" role="status">
+            Nog niet (helemaal) verwerkt, dus mogelijk nog niet goed in deze cijfers:{' '}
+            {teVerwerken > 0 && (
+              <Link href="/boekhouding/bank?status=te_verwerken">
+                {teVerwerken} {teVerwerken === 1 ? 'bankregel' : 'bankregels'} te verwerken
+              </Link>
+            )}
+            {teVerwerken > 0 && conceptBonnetjes > 0 && ' · '}
+            {conceptBonnetjes > 0 && (
+              <Link href="/boekhouding/bonnetjes">
+                {conceptBonnetjes} {conceptBonnetjes === 1 ? 'bonnetje' : 'bonnetjes'} nog te controleren
+              </Link>
+            )}
+            .
+          </p>
+        )}
+
+        <div className="bh-rap-grid">
+          <section className="bh-kaart bh-rap-kaart" aria-labelledby="bh-wv-titel">
+            <h2 id="bh-wv-titel" className="bh-kaart-titel">
+              Winst-en-verliesrekening {jaar}
+            </h2>
+            <WinstVerlies r={r} href={grootboekHref} />
+          </section>
+
+          <aside className="bh-kaart bh-rap-zij" aria-labelledby="bh-wv-verdeling">
+            <h2 id="bh-wv-verdeling" className="bh-kaart-titel">
+              Winstverdeling {jaar}
+            </h2>
+            {r.kapitaal.regels.length ? (
+              <ul className="bh-wv-verdeling">
+                {r.kapitaal.regels.map((x) => (
+                  <li key={x.vennootId}>
+                    <span>
+                      {x.naam} <span className="bh-saldo-sub">{x.aandeel}%</span>
+                    </span>
+                    <strong>{formatCenten(x.winstaandeel)}</strong>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="bh-leeg">Geen vennoten ingesteld.</p>
+            )}
+            <p className="bh-kaart-sub">
+              Het winstaandeel per vennoot is de basis voor ieders inkomstenbelasting. Kapitaal, stortingen en privé-opnamen staan bij{' '}
+              <Link href={`/boekhouding/rapporten?r=vennoten&jaar=${jaar}`}>Rapporten → Vennoten</Link>.
+            </p>
+            <a className="db-knop bh-wv-export" href={`/api/boekhouding/export?soort=wv&jaar=${jaar}`} download>
+              Download als CSV
+            </a>
+          </aside>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function WinstVerlies({ r, href }: { r: Rapport; href: (code: string) => string }) {
   const rij = (x: WVBedragen) => (
     <>
