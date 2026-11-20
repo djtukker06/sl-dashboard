@@ -15,7 +15,7 @@ je vanuit elke module terug naar het dashboard.
 | Klanten & projecten | `/klanten`, `/projecten` | Simpel CRM/PM: klanten (lead/actief/afgerond) met contact, notities, projecten, open taken, facturen en prijsopgaven; projecten als bord of lijst (voorbereiding/bezig/wachten op goedkeuring/afgerond) met klant, deadline, eigenaar(s), taken met voortgang en een notitieveld |
 | Bestanden | `/bestanden` | De gedeelde Google Drive van Studio Levant: bladeren, slepen-uploaden (ook grote bestanden), mappen, hernoemen, prullenbak, zoeken, voorbeeld; een blok "Bestanden" op elke klant- en projectpagina; facturen, prijsopgaven en bonnetjes gaan er automatisch heen (zie "Google Drive") |
 | Boekhouding | `/boekhouding` | Kerncijfers en de keuze tussen **Facturen** (`/facturen`: facturen, prijsopgaven, klanten en PDF's, ongewijzigd) en **Bonnetjes & inkoopfacturen** (`/boekhouding/bonnetjes`), plus de boekhouding zelf: bank & boekingen, btw-aangifte per kwartaal, activa & afschrijvingen, rapporten & jaarrekening (zie `docs/BOEKHOUDING.md`) |
-| Account & mail | `/account` | Je profiel (naam, initialen, kleur), inboxen koppelen en beheren (alleen ik / hele team), 2FA-apparaten, wachtwoord wijzigen |
+| Account & mail | `/account` | Je profiel (naam, initialen, kleur, profielfoto), inboxen koppelen en beheren (alleen ik / hele team), 2FA-apparaten, wachtwoord wijzigen |
 | Beveiliging | `/beveiliging` | Alleen de eigenaar (met 2FA-sessie): wie heeft 2FA (en reset), audit-log, back-ups en keep-alive (zie "Tweestapsverificatie" en "Back-ups en keep-alive") |
 | Social | `/social` | De social-media-tool (voorheen lokaal), met dezelfde schermen en werking |
 
@@ -198,6 +198,13 @@ worden ingevuld; de instellingen-dialoog laat alleen zien of er een key op de se
 De backoffice is van en voor het team. **Alleen actieve teamleden** zien iets: facturen,
 klanten, bonnetjes, social, agenda — alles. Er is geen registratie in de app; accounts
 komen er alleen bij via een script met de service-role key ("aan de achterkant").
+
+**Profielfoto (migratie 0039).** Bij Account kies je een foto; de browser snijdt hem bij tot
+een vierkant van max. 512×512 (WebP, anders JPG). Hij staat in de privé-bucket
+`profielfotos` (geen policies: alleen de server, na de teamcheck) en het pad in
+`profiles.foto_pad`; overal waar initialen stonden (rail, taken, "aangemaakt door",
+gebruikers) staat dan de foto, via `/api/team/foto/<id>?v=…` (`components/team/Avatar.tsx`).
+Vóór 0039 blijven het de initialen en zegt uploaden dat de migratie nog moet.
 
 **Hoe het werkt**
 
@@ -1151,7 +1158,8 @@ sinds Klanten & projecten de nieuwe klantpagina (met een link naar de facturen v
 | `/api/klanten`, `/api/klanten/<id>`, `/api/klanten/<id>/notities…` | Klant maken/wijzigen (niet verwijderen; ook `volgendeStap`/`opvolgenOp`, een statuswijziging komt in de tijdlijn) en klantnotities (503 `tabel_ontbreekt` vóór 0022, `kolom_ontbreekt` voor opvolgen vóór 0025) |
 | `/api/dashboard` | Jouw planning voor het dashboard in één verzoek (zelfde gegevens als bij het laden) |
 | `/api/agenda`, `/api/taken…` (incl. `?filter=uitgezet`, `/[id]/subtaken…`), `/api/afspraken…` | Agenda-API; alleen jouw taken/afspraken (geen parameter voor die van een ander) (503 `tabel_ontbreekt` vóór de SQL, 403 als je iets van een ander wilt wijzigen) |
-| `/api/projecten…`, `/api/team` | Projecten (gedeeld; `?status=lopend\|afgerond\|alle`, met deadline en eigenaren) en de actieve teamleden (alleen naam, initialen, kleur) |
+| `/api/projecten…`, `/api/team` | Projecten (gedeeld; `?status=lopend\|afgerond\|alle`, met deadline en eigenaren) en de actieve teamleden (alleen naam, initialen, kleur, foto-URL) |
+| `/api/account/foto`, `/api/team/foto/<id>` | Je profielfoto uploaden (POST, multipart `foto`) of verwijderen (DELETE), en de foto van een teamlid tonen (503 vóór 0039; 404 zonder foto) |
 | `/mail` | Mail (`?map=`, `?uid=`, `?nieuw=1`) |
 | `/api/mail/…` | Mail-API (503 `niet_gekoppeld` zonder mail-variabelen) |
 | `/boekhouding` | Boekhouding: kerncijfers en de keuze tussen Facturen en Bonnetjes & inkoopfacturen |

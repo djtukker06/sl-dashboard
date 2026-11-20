@@ -102,7 +102,7 @@ function tekst(v: unknown, max: number, naam: string): Resultaat<string> {
 }
 
 export function isKlantStatus(v: unknown): v is KlantStatus {
-  return v === 'koud' || v === 'lead' || v === 'actief' || v === 'afgerond';
+  return v === 'koud' || v === 'lead' || v === 'actief' || v === 'afgerond' || v === 'afgewezen';
 }
 
 /**

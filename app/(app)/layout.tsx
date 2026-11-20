@@ -53,7 +53,15 @@ export default async function AppLayout({ children }: Readonly<{ children: React
       <IntroScript code={PRIVACY_SCRIPT + WELKOM_SCRIPT} nonce={nonce} />
       <Welkomstanimatie />
       <Rail
-        account={{ id: lid.userId, email: lid.email, naam: lid.profiel.naam, initialen: lid.profiel.initialen, kleur: lid.profiel.kleur, eigenaar: lid.rol === 'eigenaar' }}
+        account={{
+          id: lid.userId,
+          email: lid.email,
+          naam: lid.profiel.naam,
+          initialen: lid.profiel.initialen,
+          kleur: lid.profiel.kleur,
+          foto: leden.find((l) => l.id === lid.userId)?.foto ?? null,
+          eigenaar: lid.rol === 'eigenaar'
+        }}
       />
       <main className="sl-main">
         {lid.overgang && (

@@ -398,3 +398,20 @@ body.sl-met-rail { grid-template-columns: var(--sl-rail-w) 272px 1fr; }
 @media (prefers-reduced-motion: reduce) {
   .sl-rail *, .sl-account-pop { transition-duration: .01ms !important; animation-duration: .01ms !important; }
 }
+
+/* ---------- profielfoto in een avatar (migratie 0039; components/team/Avatar.tsx, railHtml) ----------
+   De foto ligt over de initialen heen, binnen de vorm en rand van de avatar zelf. Laadt hij
+   niet, dan verdwijnt hij (React: onError; social: alt="") en staan de initialen er weer. */
+.sl-avatar, .sl-persoon-avatar, .tk-wie-avatar, .ac-avatar, .gb-avatar { position: relative; }
+.sl-avatar-foto {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  object-fit: cover;
+  background: var(--sl-avatar-kleur, var(--sl-panel));
+  pointer-events: none;
+  user-select: none;
+}
+/* ---------- einde profielfoto ---------- */

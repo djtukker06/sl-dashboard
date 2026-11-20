@@ -19,16 +19,19 @@ import { crmApi } from './CrmDialoog';
 import { LeadActies, OpvolgVelden } from './KlantActies';
 import { OpvolgBadge, StatusPil } from './StatusPil';
 
-// Tabs in de volgorde van de klantreis: Op de radar (koud, 0033) → Leads → Actief → Afgerond.
+// Tabs in de volgorde van de klantreis: Op de radar (koud, 0033) → Leads → Actief → Afgerond → Afgewezen (0039).
 const TABS: KlantStatus[] = KLANT_STATUSSEN;
-const TAB_LABEL: Record<KlantStatus, string> = { koud: 'Op de radar', lead: 'Leads', actief: 'Actief', afgerond: 'Afgerond' };
-const STANDAARD_SORTERING: Record<KlantStatus, KlantSortering> = { koud: 'naam', lead: 'opvolgen', actief: 'actief', afgerond: 'naam' };
+const TAB_LABEL: Record<KlantStatus, string> = { koud: 'Op de radar', lead: 'Leads', actief: 'Actief', afgerond: 'Afgerond', afgewezen: 'Afgewezen' };
+const STANDAARD_SORTERING: Record<KlantStatus, KlantSortering> = { koud: 'naam', lead: 'opvolgen', actief: 'actief', afgerond: 'naam', afgewezen: 'naam' };
 const NIEUW_PLACEHOLDER: Record<KlantStatus, string> = {
   koud: 'Op de radar zetten (naam + Enter)',
   lead: 'Nieuwe lead (naam + Enter)',
   actief: 'Nieuwe klant (naam + Enter)',
-  afgerond: 'Nieuwe lead (naam + Enter)'
+  afgerond: 'Nieuwe lead (naam + Enter)',
+  afgewezen: 'Nieuwe lead (naam + Enter)'
 };
+/** Tabs waar je geen nieuwe klant in zet: een nieuwe naam komt dan bij de leads. */
+const GEEN_INVOER = (t: KlantStatus) => t === 'afgerond' || t === 'afgewezen';
 const TAB_SLEUTEL = 'sl-klanten-tab';
 /** Event van de knop "+ Klant" in de kop: focus op het snelle invoerveld. */
 export const NIEUW_EVENT = 'kp:nieuwe-klant';
@@ -73,6 +76,8 @@ export function KlantenLijst({
   const [vers, setVers] = useState<string | null>(null);
   // Statuswijzigingen die al in beeld zijn maar nog niet terug van de server (optimistisch).
   const [verschoven, setVerschoven] = useState<Record<string, KlantStatus>>({});
+  // Net verwijderd (in beeld al weg, de server volgt met router.refresh).
+  const [verwijderd, setVerwijderd] = useState<ReadonlySet<string>>(new Set());
   const zoekVeld = useRef<HTMLInputElement>(null);
   const nieuwVeld = useRef<HTMLInputElement>(null);
   const moment = useMemo(() => new Date(nu), [nu]);
@@ -92,7 +97,7 @@ export function KlantenLijst({
     if (!startTab) {
       try {
         const t = localStorage.getItem(TAB_SLEUTEL);
-        if (t === 'koud' || t === 'lead' || t === 'actief' || t === 'afgerond') {
+        if (t === 'koud' || t === 'lead' || t === 'actief' || t === 'afgerond' || t === 'afgewezen') {
           // eslint-disable-next-line react-hooks/set-state-in-effect
           setTab(t);
           setSortering(STANDAARD_SORTERING[t]);
@@ -107,7 +112,7 @@ export function KlantenLijst({
   // Sneltoetsen: / = zoeken, n = nieuwe klant/lead. "+ Klant" in de kop doet hetzelfde.
   useEffect(() => {
     function focusNieuw() {
-      setTab((t) => (t === 'afgerond' ? 'lead' : t));
+      setTab((t) => (GEEN_INVOER(t) ? 'lead' : t));
       requestAnimationFrame(() => nieuwVeld.current?.focus());
     }
     function toets(e: KeyboardEvent) {
@@ -129,8 +134,8 @@ export function KlantenLijst({
   }, []);
 
   const metStatus = useMemo(
-    () => klanten.map((k) => (verschoven[k.id] && verschoven[k.id] !== k.status ? { ...k, status: verschoven[k.id] } : k)),
-    [klanten, verschoven]
+    () => klanten.filter((k) => !verwijderd.has(k.id)).map((k) => (verschoven[k.id] && verschoven[k.id] !== k.status ? { ...k, status: verschoven[k.id] } : k)),
+    [klanten, verschoven, verwijderd]
   );
   const gevonden = useMemo(() => metStatus.filter((k) => klantPast(k, q)), [metStatus, q]);
   const aantal = (t: KlantStatus) => gevonden.filter((k) => k.status === t).length;
@@ -153,7 +158,7 @@ export function KlantenLijst({
       const { klant } = await crmApi<{ klant: { id: string } }>('/api/klanten', 'POST', { naam, status });
       setNieuw('');
       setVers(klant.id);
-      if (tab === 'afgerond') setTab('lead');
+      if (GEEN_INVOER(tab)) setTab('lead');
       toast(status === 'koud' ? `${naam} staat op de radar` : `${naam} toegevoegd als ${KLANT_STATUS_LABEL[status].toLowerCase()}`, { actie: { label: 'Openen', onClick: () => router.push(`/klanten/${klant.id}`) } });
       router.refresh();
     } catch (err) {
@@ -274,7 +279,7 @@ export function KlantenLijst({
           <ul className={`kl-lijst kl-leads${tab === 'koud' ? ' kl-radar' : ''}`}>
             {zichtbaar.map((k) => (
               <li key={k.id} className={vers === k.id ? 'is-nieuw' : undefined}>
-                <LeadKaart klant={k} opvolging={opvolging} vandaag={vandaag} moment={moment} onStatus={verschuif} />
+                <LeadKaart klant={k} opvolging={opvolging} vandaag={vandaag} moment={moment} onStatus={verschuif} onVerwijderd={(id) => setVerwijderd((v) => new Set(v).add(id))} />
               </li>
             ))}
           </ul>
@@ -339,13 +344,14 @@ function LegeStaat({
     koud: ['Nog niets op de radar', 'Bedrijven die je niet wilt vergeten, maar nu nog niet benadert. Typ de naam hierboven en druk op Enter.'],
     lead: ['Geen open leads', 'Komt er een aanvraag binnen? Typ de naam hierboven en druk op Enter; details vul je later aan.'],
     actief: ['Nog geen actieve klanten', 'Voeg een klant toe met het veld hierboven. Klanten die je bij een factuur aanmaakt, komen hier vanzelf.'],
-    afgerond: ['Nog niets afgerond', 'Afgeronde klanten en afgewezen leads blijven hier vindbaar.']
+    afgerond: ['Nog niets afgerond', 'Afgeronde klanten blijven hier vindbaar.'],
+    afgewezen: ['Niets afgewezen', 'Leads en bedrijven op de radar die niet doorgaan, blijven hier vindbaar. Wil je iemand helemaal kwijt? Gebruik Verwijderen.']
   };
   return (
     <div className="kl-leeg">
       <p className="kl-leeg-titel">{tekst[tab][0]}</p>
       <p className="kl-leeg-tekst">{tekst[tab][1]}</p>
-      {tab !== 'afgerond' && (
+      {!GEEN_INVOER(tab) && (
         <button type="button" className="db-knop" onClick={onNieuw}>
           {tab === 'lead' ? '+ Lead toevoegen' : tab === 'koud' ? '+ Op de radar zetten' : '+ Klant toevoegen'}
         </button>
@@ -368,13 +374,15 @@ function LeadKaart({
   opvolging,
   vandaag,
   moment,
-  onStatus
+  onStatus,
+  onVerwijderd
 }: {
   klant: KlantRegel;
   opvolging: boolean;
   vandaag: string;
   moment: Date;
   onStatus: (id: string, status: KlantStatus) => void;
+  onVerwijderd: (id: string) => void;
 }) {
   const radar = k.status === 'koud';
   const stand = radar ? null : opvolgStand(k.opvolgenOp, vandaag);
@@ -401,14 +409,14 @@ function LeadKaart({
       ) : (
         <span />
       )}
-      <LeadActies klant={k} opvolging={opvolging} klein onStatus={onStatus} />
+      <LeadActies klant={k} opvolging={opvolging} klein onStatus={onStatus} onVerwijderd={onVerwijderd} />
     </article>
   );
 }
 
 function KlantRij({ klant: k, opvolging, vandaag, moment, nieuw }: { klant: KlantRegel; opvolging: boolean; vandaag: string; moment: Date; nieuw: boolean }) {
   return (
-    <Link className={`kl-rij${k.status === 'afgerond' ? ' is-af' : ''}${nieuw ? ' is-nieuw' : ''}`} href={`/klanten/${k.id}`} role="row">
+    <Link className={`kl-rij${GEEN_INVOER(k.status) ? ' is-af' : ''}${nieuw ? ' is-nieuw' : ''}`} href={`/klanten/${k.id}`} role="row">
       <span className="kl-cel kl-cel-naam" role="cell">
         <span className="kl-naam">{k.naam}</span>
         <Contact k={k} />

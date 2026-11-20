@@ -7,4 +7,6 @@ export interface TeamProfiel {
   initialen: string;
   kleur: string;
   actief: boolean;
+  /** URL van de profielfoto (/api/team/foto/<id>?v=…), of null: dan de initialen. */
+  foto: string | null;
 }

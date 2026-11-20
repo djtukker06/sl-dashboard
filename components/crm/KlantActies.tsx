@@ -110,20 +110,55 @@ export function OpvolgVelden({
 }
 
 /** Onder welke tab een status staat (voor "staat weer onder …" na ongedaan maken). */
-const TAB_NAAM: Record<KlantStatus, string> = { koud: 'Op de radar', lead: 'Leads', actief: 'Actief', afgerond: 'Afgerond' };
+const TAB_NAAM: Record<KlantStatus, string> = { koud: 'Op de radar', lead: 'Leads', actief: 'Actief', afgerond: 'Afgerond', afgewezen: 'Afgewezen' };
+
+/**
+ * Een klant, lead of iets op de radar helemaal verwijderen (na bevestigen). Een klant met
+ * facturen kan niet weg; dan zegt de server waarom. Zonder `onVerwijderd` ga je daarna terug
+ * naar Klanten (vanaf de klantpagina); in de lijst verdwijnt de regel meteen.
+ */
+export function VerwijderKnop({ klant, klein = false, onVerwijderd }: { klant: { id: string; naam: string }; klein?: boolean; onVerwijderd?: (id: string) => void }) {
+  const router = useRouter();
+  const toast = useToast();
+  const [bezig, setBezig] = useState(false);
+
+  async function verwijder() {
+    if (bezig) return;
+    if (!confirm(`${klant.naam} definitief verwijderen?\n\nDe tijdlijn gaat mee; projecten, taken en afspraken blijven bestaan, zonder klant. Dit kun je niet ongedaan maken.`)) return;
+    setBezig(true);
+    try {
+      await crmApi(`/api/klanten/${klant.id}`, 'DELETE');
+      toast(`${klant.naam} is verwijderd`);
+      if (onVerwijderd) onVerwijderd(klant.id);
+      else router.push('/klanten');
+      router.refresh();
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'Verwijderen mislukt.', { fout: true });
+      setBezig(false);
+    }
+  }
+
+  return (
+    <button type="button" className={`db-knop${klein ? ' db-knop-klein' : ''} kp-knop-verwijder`} disabled={bezig} onClick={() => void verwijder()} title="Helemaal weghalen (niet naar Afgewezen of Afgerond)">
+      {bezig ? 'Bezig…' : 'Verwijderen'}
+    </button>
+  );
+}
 
 /**
  * Knoppen bij een lead of iets op de radar, elk met één klik en "Ongedaan maken" in de
  * melding: "Omzetten naar klant" (→ actief; er is akkoord), "Op de radar" ↔ "Naar leads",
- * en "Afgewezen" (→ afgerond). `onStatus` laat de lijst meteen meeschuiven (optimistisch);
- * mislukt het opslaan, dan gaat de klant terug. Bij klant/afgerond wordt de opvolgdatum
+ * "Afgewezen" (→ afgewezen, eigen tab) en "Verwijderen" (helemaal weg). `onStatus` laat de lijst
+ * meteen meeschuiven (optimistisch); mislukt het opslaan, dan gaat de klant terug. Bij
+ * klant/afgewezen wordt de opvolgdatum
  * gewist (zoals voorheen bij "Gewonnen"), en bij ongedaan maken teruggezet.
  */
 export function LeadActies({
   klant,
   opvolging,
   klein = false,
-  onStatus
+  onStatus,
+  onVerwijderd
 }: {
   klant: { id: string; naam: string; status: KlantStatus; opvolgenOp: string | null };
   /** Migratie 0025 aanwezig (dan ook de opvolgdatum wissen/terugzetten). */
@@ -131,6 +166,8 @@ export function LeadActies({
   klein?: boolean;
   /** Direct in de lijst bijwerken (de server volgt met router.refresh). */
   onStatus?: (id: string, status: KlantStatus) => void;
+  /** In de lijst: de regel meteen weghalen na verwijderen. */
+  onVerwijderd?: (id: string) => void;
 }) {
   const wijzig = useKlantWijzigen();
   const [bezig, setBezig] = useState(false);
@@ -140,7 +177,7 @@ export function LeadActies({
     if (bezig) return;
     const oud = klant.status;
     const oudeDatum = klant.opvolgenOp;
-    const wisDatum = opvolging && (nieuw === 'actief' || nieuw === 'afgerond') && !!oudeDatum;
+    const wisDatum = opvolging && (nieuw === 'actief' || nieuw === 'afgerond' || nieuw === 'afgewezen') && !!oudeDatum;
     setBezig(true);
     onStatus?.(klant.id, nieuw);
     const ok = await wijzig(klant.id, { status: nieuw, ...(wisDatum ? { opvolgenOp: null } : {}) }, melding, {
@@ -195,11 +232,12 @@ export function LeadActies({
         type="button"
         className={`${knop} kp-knop-stil`}
         disabled={bezig}
-        onClick={() => void zet('afgerond', `${klant.naam} staat nu onder Afgerond`)}
-        title="Wordt niets: naar Afgerond (blijft vindbaar)"
+        onClick={() => void zet('afgewezen', `${klant.naam} staat nu onder Afgewezen`)}
+        title="Wordt niets: naar Afgewezen (blijft vindbaar, los van Afgerond)"
       >
         Afgewezen
       </button>
+      <VerwijderKnop klant={klant} klein={klein} onVerwijderd={onVerwijderd} />
     </span>
   );
 }

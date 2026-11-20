@@ -9,7 +9,16 @@ export const metadata: Metadata = {
   // statusbalk over de donkere achtergrond (de shell houdt rekening met de safe areas).
   applicationName: 'Studio Levant',
   appleWebApp: { capable: true, title: 'Levant', statusBarStyle: 'black-translucent' },
-  icons: { apple: [{ url: '/brand/app/apple-touch-icon.png', sizes: '180x180', type: 'image/png' }] },
+  // Favicon: het Levant-beeldmerk zonder achtergrond. Crème op een donkere tabbalk, donker op een
+  // lichte (prefers-color-scheme). Zonder expliciete icon-regel liet Next.js het favicon weg
+  // zodra hier alleen het Apple-icoon stond.
+  icons: {
+    icon: [
+      { url: '/brand/app/favicon-donker.png', type: 'image/png', sizes: '64x64', media: '(prefers-color-scheme: light)' },
+      { url: '/brand/app/favicon-licht.png', type: 'image/png', sizes: '64x64', media: '(prefers-color-scheme: dark)' }
+    ],
+    apple: [{ url: '/brand/app/apple-touch-icon.png', sizes: '180x180', type: 'image/png' }]
+  },
   formatDetection: { telephone: false }
 };
 

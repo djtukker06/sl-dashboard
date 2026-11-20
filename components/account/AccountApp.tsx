@@ -5,7 +5,9 @@ import { useRouter } from 'next/navigation';
 import { ModuleKop } from '@/components/shell/ModuleKop';
 import { initialenUit, KLEUREN, valideerProfiel, type ProfielInvoer } from '@/lib/account/types';
 import type { MailboxenOverzicht } from '@/lib/mail/beheer';
+import { Avatar } from '@/components/team/Avatar';
 import { Mailboxen } from './Mailboxen';
+import { Profielfoto } from './Profielfoto';
 import { BeveiligingAccount, type BeveiligingAccountData } from '@/components/beveiliging/BeveiligingAccount';
 
 type Melding = { soort: 'ok' | 'fout'; tekst: string } | null;
@@ -36,6 +38,7 @@ export function AccountApp({
   rol,
   overgang,
   profiel,
+  foto,
   mailboxen,
   beveiliging
 }: {
@@ -43,6 +46,8 @@ export function AccountApp({
   rol: 'eigenaar' | 'lid';
   overgang: boolean;
   profiel: ProfielInvoer;
+  /** URL van je profielfoto (lib/team/foto.ts), of null. */
+  foto: string | null;
   mailboxen: MailboxenOverzicht | null;
   beveiliging: BeveiligingAccountData;
 }) {
@@ -50,7 +55,7 @@ export function AccountApp({
     <div className="ac">
       <ModuleKop label="Account" titel="Account & mail" />
       <div className="ac-inhoud">
-        <ProfielBlok email={email} rol={rol} overgang={overgang} start={profiel} />
+        <ProfielBlok email={email} rol={rol} overgang={overgang} start={profiel} foto={foto} />
         <Mailboxen start={mailboxen} email={email} />
         <BeveiligingAccount data={beveiliging} />
       </div>
@@ -61,9 +66,22 @@ export function AccountApp({
 // ---------------------------------------------------------------------------------
 // Profiel
 // ---------------------------------------------------------------------------------
-function ProfielBlok({ email, rol, overgang, start }: { email: string; rol: string; overgang: boolean; start: ProfielInvoer }) {
+function ProfielBlok({
+  email,
+  rol,
+  overgang,
+  start,
+  foto: startFoto
+}: {
+  email: string;
+  rol: string;
+  overgang: boolean;
+  start: ProfielInvoer;
+  foto: string | null;
+}) {
   const router = useRouter();
   const id = useId();
+  const [foto, setFoto] = useState(startFoto);
   const [p, setP] = useState(start);
   const [opgeslagen, setOpgeslagen] = useState(start);
   const [initialenZelf, setInitialenZelf] = useState(start.initialen !== initialenUit(start.naam));
@@ -102,9 +120,13 @@ function ProfielBlok({ email, rol, overgang, start }: { email: string; rol: stri
       </header>
       <form className="ac-profiel" onSubmit={opslaan}>
         <div className="ac-voorbeeld" aria-hidden="true">
-          <span className="ac-avatar" style={{ '--sl-avatar-kleur': p.kleur } as CSSProperties}>
-            {p.initialen || '?'}
-          </span>
+          <Avatar
+            className="ac-avatar"
+            initialen={p.initialen || '?'}
+            foto={foto}
+            style={{ '--sl-avatar-kleur': p.kleur } as CSSProperties}
+            aria-hidden
+          />
           <span className="ac-voorbeeld-tekst">
             <strong>{p.naam || 'Je naam'}</strong>
             <span>
@@ -142,6 +164,11 @@ function ProfielBlok({ email, rol, overgang, start }: { email: string; rol: stri
             />
           </label>
         </div>
+        <Profielfoto
+          foto={startFoto}
+          uitgeschakeld={overgang}
+          onWijzig={setFoto}
+        />
         <fieldset className="ac-kleuren" disabled={overgang}>
           <legend className="ac-legend">Kleur</legend>
           {kleuren.map((k) => (
