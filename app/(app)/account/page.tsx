@@ -3,11 +3,12 @@ import { vereisTeamlidPagina } from '@/lib/auth/team';
 import { mailboxenOverzicht, type MailboxenOverzicht } from '@/lib/mail/beheer';
 import { AccountApp } from '@/components/account/AccountApp';
 import { MAX_FACTOREN } from '@/lib/auth/tfa-kern';
+import { eigenFoto } from '@/lib/team/profielen';
 
 export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'Account & mail · Studio Levant' };
 
-// Account & mail: je eigen profiel (naam, initialen, kleur), je inboxen koppelen en beheren
+// Account & mail: je eigen profiel (naam, initialen, kleur, profielfoto), je inboxen koppelen en beheren
 // (meerdere, ook gedeeld met het team) en je wachtwoord wijzigen. Alles hier gaat alleen over
 // de ingelogde gebruiker zelf. Accounts aanmaken doet de admin op /gebruikers.
 export default async function AccountPage() {
@@ -26,6 +27,7 @@ export default async function AccountPage() {
       rol={lid.rol}
       overgang={lid.overgang}
       profiel={{ naam: lid.profiel.naam, initialen: lid.profiel.initialen, kleur: lid.profiel.kleur }}
+      foto={eigenFoto(lid)}
       mailboxen={mailboxen}
       beveiliging={{
         factoren: lid.tfa.factoren,

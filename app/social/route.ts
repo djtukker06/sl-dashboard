@@ -4,6 +4,7 @@ import { NextResponse } from 'next/server';
 import { huidigTeamlid, tfaDoel } from '@/lib/auth/team';
 import { railHtml } from '@/lib/shell/rail';
 import { metVersie } from '@/lib/shell/versie';
+import { eigenFoto } from '@/lib/team/profielen';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -48,6 +49,7 @@ export async function GET(request: Request) {
     naam: lid.profiel.naam,
     initialen: lid.profiel.initialen,
     kleur: lid.profiel.kleur,
+    foto: eigenFoto(lid),
     eigenaar: lid.rol === 'eigenaar'
   });
   // Nonce van de Content-Security-Policy (proxy.ts): de scripts van deze statische HTML

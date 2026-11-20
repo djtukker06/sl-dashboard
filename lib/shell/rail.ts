@@ -1,4 +1,5 @@
 import { actieveModules } from '@/lib/modules';
+import { AVATAR_FOTO_KLASSE } from '@/lib/team/foto';
 import { icoonSvg } from './iconen';
 
 // De navigatierail van de backoffice, als data én als HTML-string.
@@ -46,6 +47,8 @@ export interface RailAccount {
   naam: string;
   initialen: string;
   kleur: string;
+  /** Profielfoto-URL (lib/team/foto.ts), of null/leeg: de initialen. */
+  foto?: string | null;
   /** Eigenaar: ziet ook "Beveiliging & audit" in het accountmenu. */
   eigenaar?: boolean;
 }
@@ -79,6 +82,8 @@ export function railHtml(actief: string, acc: RailAccount): string {
     )
     .join('');
   const stijl = avatarStijl(acc.kleur);
+  // Alleen een eigen, relatieve foto-URL (lib/team/foto.ts).
+  const foto = acc.foto && /^\/api\/team\/foto\/[0-9a-f-]{36}\?v=\d+$/.test(acc.foto) ? acc.foto : null;
   return (
     `<nav class="sl-rail" aria-label="Hoofdmenu" data-gebruiker="${esc(acc.id)}">` +
     `<a class="sl-rail-logo" href="/" title="Studio Levant — Dashboard" aria-label="Naar het dashboard">` +
@@ -86,7 +91,11 @@ export function railHtml(actief: string, acc: RailAccount): string {
     `<ul class="sl-rail-nav">${items}</ul>` +
     `<div class="sl-rail-foot"><details class="sl-account">` +
     `<summary class="sl-account-knop" title="${esc(acc.naam)} · ${esc(acc.email)}">` +
-    `<span class="sl-avatar" aria-hidden="true"${stijl ? ` style="${esc(stijl)}"` : ''}>${esc(acc.initialen)}</span>` +
+    `<span class="sl-avatar" aria-hidden="true"${stijl ? ` style="${esc(stijl)}"` : ''}>${esc(acc.initialen)}` +
+    // Zonder JavaScript geen onError: alt="" laat een niet-geladen foto onzichtbaar, met de
+    // initialen eronder.
+    (foto ? `<img class="${AVATAR_FOTO_KLASSE}" src="${esc(foto)}" alt="" decoding="async" draggable="false">` : '') +
+    `</span>` +
     `<span class="sl-account-label">Account</span><span class="sl-account-label sl-account-meer" hidden>Meer</span></summary>` +
     `<div class="sl-account-pop">` +
     (neven ? `<ul class="sl-account-modules" hidden>${neven}</ul>` : '') +

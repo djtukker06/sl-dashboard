@@ -50,7 +50,7 @@ interface KlantDbRij {
 }
 
 function statusVan(s: unknown): KlantStatus {
-  return s === 'koud' || s === 'lead' || s === 'afgerond' ? s : 'actief';
+  return s === 'koud' || s === 'lead' || s === 'afgerond' || s === 'afgewezen' ? s : 'actief';
 }
 
 function naarKlant(r: KlantDbRij): Klant {
@@ -87,6 +87,9 @@ export const NOTITIE_BEWERKEN_NA_0036 = 'Notities bewerken werkt zodra migratie 
 
 /** Melding als je "Op de radar" kiest vóór migratie 0033 (de check-constraint kent 'koud' dan nog niet). */
 export const KOUD_NA_0033 = '“Op de radar” werkt zodra migratie 0033 is uitgevoerd (supabase/UITVOEREN_0033.sql).';
+
+/** Melding als je "Afgewezen" kiest vóór migratie 0039 (de check-constraint kent 'afgewezen' dan nog niet). */
+export const AFGEWEZEN_NA_0039 = '“Afgewezen” werkt zodra migratie 0039 is uitgevoerd (supabase/UITVOEREN_0039.sql).';
 
 /** Melding als je "volgende stap" of "opvolgen op" opslaat vóór migratie 0025. */
 export const OPVOLGEN_NA_0025 = 'Opvolgen (volgende stap en datum) werkt zodra migratie 0025 is uitgevoerd (supabase/UITVOEREN_0025.sql).';
@@ -409,7 +412,7 @@ export interface OpvolgRegel {
 }
 
 /**
- * Dashboardkaart "Opvolgen": klanten en leads (niet afgerond, niet "op de radar") met een
+ * Dashboardkaart "Opvolgen": klanten en leads (niet afgerond/afgewezen, niet "op de radar") met een
  * opvolgdatum van vandaag of eerder. null vóór migratie 0025 (of 0022): de kaart verschijnt
  * dan niet. Vóór 0033 bestaat 'koud' nog niet; het filter is dan gewoon zonder effect.
  */
@@ -419,7 +422,7 @@ export async function opvolgLijst(bron: AgendaBron, vandaag: string): Promise<Op
     .from('clients')
     .select('id,company_name,status,volgende_stap,opvolgen_op')
     .lte('opvolgen_op', vandaag)
-    .not('status', 'in', '(afgerond,koud)')
+    .not('status', 'in', '(afgerond,koud,afgewezen)')
     .order('opvolgen_op')
     .limit(20);
   if (error) {

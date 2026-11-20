@@ -1,6 +1,8 @@
 // Tests voor de losse stukken van de teamtoegang, zonder database en zonder netwerk:
 //   - lib/auth/herkomst.ts: welke wijzigende verzoeken komen door de CSRF-controle;
 //   - lib/auth/site.ts: de basis-URL voor mails komt nooit uit een willekeurige Host/Origin;
+//   - lib/team/foto.ts: profielfoto's (0039): echt beeldformaat uit de bytes, grootte, pad
+//     alleen in je eigen map, versie in de URL;
 //   - scripts/teamlid-*.mjs: --help en het weigeren van ongeldige invoer (zonder sleutels).
 //
 // Gebruik:  node scripts/test-team.mjs
@@ -12,8 +14,9 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 // TS laden vereist type-stripping (Node >= 22.6). Zo nodig opnieuw starten met de vlag.
-let herkomst, site;
+let herkomst, site, foto;
 try {
+  foto = await import(pathToFileURL(path.join(ROOT, "lib", "team", "foto.ts")).href);
   herkomst = await import(pathToFileURL(path.join(ROOT, "lib", "auth", "herkomst.ts")).href);
   site = await import(pathToFileURL(path.join(ROOT, "lib", "auth", "site.ts")).href);
 } catch (e) {
@@ -54,6 +57,60 @@ test("achter een proxy: origin = host-kop mag", () =>
     true,
   ));
 test("zonder Origin (geen browser) mag", () => assert.equal(herkomst.eigenHerkomst(req("POST")), true));
+
+console.log("Profielfoto's");
+{
+  const bytes = (...b) => new Uint8Array(b);
+  const JPG = bytes(0xff, 0xd8, 0xff, 0xe0, 0, 0x10);
+  const PNG = bytes(0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0);
+  const WEBP = new Uint8Array([..."RIFF"].map((c) => c.charCodeAt(0)).concat([0, 0, 0, 0], [..."WEBPVP8 "].map((c) => c.charCodeAt(0))));
+  const U = "0b6f3c1e-1234-4abc-9def-0123456789ab";
+  const ANDER = "11111111-2222-4333-8444-555555555555";
+  test("herkent jpg, png en webp aan de bytes", () => {
+    assert.equal(foto.fotoSoort(JPG), "image/jpeg");
+    assert.equal(foto.fotoSoort(PNG), "image/png");
+    assert.equal(foto.fotoSoort(WEBP), "image/webp");
+  });
+  test("weigert svg/html/gif en lege of te korte bestanden", () => {
+    const tekst = (s) => new TextEncoder().encode(s);
+    assert.equal(foto.fotoSoort(tekst("<svg xmlns='http://www.w3.org/2000/svg'></svg>")), null);
+    assert.equal(foto.fotoSoort(tekst("<html><script>alert(1)</script>")), null);
+    assert.equal(foto.fotoSoort(tekst("GIF89a")), null);
+    assert.equal(foto.fotoSoort(bytes(0xff, 0xd8)), null);
+    assert.equal(foto.valideerFoto(new Uint8Array(0)).ok, false);
+    // RIFF maar geen WEBP (bv. een WAV)
+    const wav = new Uint8Array([..."RIFF"].map((c) => c.charCodeAt(0)).concat([0, 0, 0, 0], [..."WAVE"].map((c) => c.charCodeAt(0))));
+    assert.equal(foto.fotoSoort(wav), null);
+  });
+  test("maximaal 2 MB", () => {
+    const groot = new Uint8Array(foto.FOTO_MAX_BYTES + 1);
+    groot.set(JPG);
+    assert.equal(foto.valideerFoto(groot).ok, false);
+    const precies = new Uint8Array(foto.FOTO_MAX_BYTES);
+    precies.set(JPG);
+    assert.deepEqual(foto.valideerFoto(precies), { ok: true, soort: "image/jpeg" });
+  });
+  test("nieuw pad: eigen map, tijdstempel, extensie bij het formaat", () => {
+    assert.equal(foto.nieuwFotoPad(U, "image/webp", 1763600000000), `${U}/1763600000000.webp`);
+    assert.equal(foto.nieuwFotoPad(U.toUpperCase(), "image/jpeg", 1763600000000), `${U}/1763600000000.jpg`);
+    assert.equal(foto.nieuwFotoPad(U, "image/png", 1763600000000), `${U}/1763600000000.png`);
+  });
+  test("pad hoort alleen bij de eigen gebruiker en de eigen vorm", () => {
+    const pad = foto.nieuwFotoPad(U, "image/webp", 1763600000000);
+    assert.equal(foto.fotoPadVan(pad, U), true);
+    assert.equal(foto.fotoPadVan(pad, ANDER), false);
+    for (const slecht of [null, "", `${U}/../${ANDER}/1763600000000.webp`, `${U}/1763600000000.svg`, `${U}/x.webp`, `/${U}/1763600000000.webp`, `${U}/1763600000000.webp?x`]) {
+      assert.equal(foto.fotoPadVan(slecht, U), false, String(slecht));
+    }
+  });
+  test("URL met versie, of null zonder geldige foto", () => {
+    const pad = foto.nieuwFotoPad(U, "image/jpeg", 1763600000000);
+    assert.equal(foto.fotoVersie(pad), "1763600000000");
+    assert.equal(foto.fotoUrl(U, pad), `/api/team/foto/${U}?v=1763600000000`);
+    assert.equal(foto.fotoUrl(U, null), null);
+    assert.equal(foto.fotoUrl(ANDER, pad), null);
+  });
+}
 
 console.log("Basis-URL voor mails");
 const bewaar = { ...process.env };

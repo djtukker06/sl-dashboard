@@ -88,7 +88,9 @@ export async function proxy(request: NextRequest) {
     if (sessieCookie) res.cookies.set(SESSIE_COOKIE, sessieCookie, SESSIE_COOKIE_OPTIES);
     if (sessieWissen) res.cookies.set(SESSIE_COOKIE, '', { ...SESSIE_COOKIE_OPTIES, maxAge: 0 });
     if (csp) res.headers.set('Content-Security-Policy', csp);
-    if (pad.startsWith('/api/')) res.headers.set('Cache-Control', 'private, no-store');
+    // Profielfoto's (/api/team/foto/<id>?v=…) zet de route zelf op privé cachen: het adres
+    // verandert bij een nieuwe foto. Alle andere API-antwoorden: nooit cachen.
+    if (pad.startsWith('/api/') && !pad.startsWith('/api/team/foto/')) res.headers.set('Cache-Control', 'private, no-store');
     return res;
   };
 

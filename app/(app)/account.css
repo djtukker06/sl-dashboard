@@ -388,3 +388,13 @@
   .gb-vink input { width: 20px; height: 20px; }
   .gb-acties { gap: 0 18px; }
 }
+
+/* ---------- profielfoto (components/account/Profielfoto.tsx, migratie 0039) ---------- */
+.ac-foto { display: grid; gap: 6px; min-width: 0; }
+.ac-foto-tekst { display: grid; gap: 8px; min-width: 0; }
+.ac-foto-knoppen { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
+.ac-foto .ag-uitleg, .ac-foto .ag-fout, .ac-foto .ac-ok { margin: 0; }
+@media (max-width: 720px) {
+  .ac-foto-knoppen .db-knop, .ac-foto-knoppen .ag-link-knop { min-height: 40px; }
+}
+/* ---------- einde profielfoto ---------- */

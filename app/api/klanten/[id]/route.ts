@@ -1,11 +1,12 @@
 import { isUuid } from '@/lib/agenda/invoer';
 import { OPVOLG_KOLOMMEN, parseKlant } from '@/lib/crm/invoer';
-import { BESCHRIJVING_NA_0036, KOUD_NA_0033, OPVOLGEN_NA_0025, WEBSITE_NA_0035, crmFout, klantOphalen } from '@/lib/crm/repo';
+import { BESCHRIJVING_NA_0036, AFGEWEZEN_NA_0039, KOUD_NA_0033, OPVOLGEN_NA_0025, WEBSITE_NA_0035, crmFout, klantOphalen } from '@/lib/crm/repo';
 import { KLANT_STATUS_LABEL, type KlantInvoer, type KlantStatus } from '@/lib/crm/types';
 import { kolomOntbreekt } from '@/lib/db/ontbreekt';
 import { CRM_NIET_INGERICHT } from '@/lib/agenda/repo';
 import { fout, foutAntwoord, json, leesBody, metSessie } from '@/lib/agenda/api';
 import { naKlantWijziging } from '@/lib/drive/na';
+import { logAudit } from '@/lib/audit';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -14,8 +15,7 @@ type Ctx = { params: Promise<{ id: string }> };
 
 // PATCH /api/klanten/[id]  { naam?, contactpersoon?, email?, telefoon?, adres?, postcode?, website?,
 //                            beschrijving?, status?, volgendeStap?, opvolgenOp? } → { klant }
-// Verwijderen kan hier bewust niet (dat blijft in Facturen, met de controle op bestaande
-// facturen). Een statuswijziging komt (na 0025) als regel "Lead → Actief" in de tijdlijn.
+// Een statuswijziging komt (na 0025) als regel "Lead → Actief" in de tijdlijn.
 // Volgende stap/opvolgdatum vóór 0025: een nette 503 'kolom_ontbreekt'.
 export async function PATCH(request: Request, ctx: Ctx) {
   const s = await metSessie(request);
@@ -43,6 +43,7 @@ export async function PATCH(request: Request, ctx: Ctx) {
       if (error.code === '23505') return fout(409, 'Er bestaat al een klant met die naam.');
       // Vóór 0033 kent de check-constraint de status 'koud' (Op de radar) nog niet.
       if (error.code === '23514' && k.waarde.status === 'koud') return fout(503, KOUD_NA_0033, 'kolom_ontbreekt');
+      if (error.code === '23514' && k.waarde.status === 'afgewezen') return fout(503, AFGEWEZEN_NA_0039, 'kolom_ontbreekt');
       if (kolomOntbreekt(error) && OPVOLG_KOLOMMEN.some((c) => c in k.waarde)) return fout(503, OPVOLGEN_NA_0025, 'kolom_ontbreekt');
       if (kolomOntbreekt(error) && 'website' in k.waarde) return fout(503, WEBSITE_NA_0035, 'kolom_ontbreekt');
       if (kolomOntbreekt(error) && 'beschrijving' in k.waarde) return fout(503, BESCHRIJVING_NA_0036, 'kolom_ontbreekt');
@@ -62,6 +63,37 @@ export async function PATCH(request: Request, ctx: Ctx) {
     // Nieuwe naam: de klantmap in Google Drive meenemen (ná het antwoord, best effort).
     if (k.waarde.company_name !== undefined) naKlantWijziging(s.lid, id);
     return json({ klant });
+  } catch (e) {
+    return foutAntwoord(e);
+  }
+}
+
+// DELETE /api/klanten/[id] → { ok }
+// Een lead, iets op de radar of een klant helemaal weghalen (niet naar Afgerond/Afgewezen).
+// Net als in Facturen: een klant met facturen kan niet weg (de facturen zijn de administratie;
+// de database blokkeert het ook zelf). Tijdlijnnotities en terugkerende facturen gaan mee;
+// projecten, taken, afspraken en bonnetjes blijven bestaan, zonder klant.
+export async function DELETE(request: Request, ctx: Ctx) {
+  const s = await metSessie(request);
+  if ('antwoord' in s) return s.antwoord;
+  if (!s.bron.team) return fout(503, CRM_NIET_INGERICHT, 'tabel_ontbreekt');
+
+  const { id } = await ctx.params;
+  if (!isUuid(id)) return fout(404, 'Klant niet gevonden.');
+  try {
+    const { count, error: telFout } = await s.sb.from('invoices').select('id', { count: 'exact', head: true }).eq('client_id', id);
+    if (telFout) throw crmFout(telFout);
+    if (count && count > 0) {
+      return fout(409, `Deze klant heeft ${count} factu${count === 1 ? 'ur' : 'ren'} in het archief en kan daarom niet verwijderd worden. Zet hem op Afgerond of Afgewezen.`);
+    }
+    const { data, error } = await s.sb.from('clients').delete().eq('id', id).select('id');
+    if (error) {
+      if (error.code === '23503') return fout(409, 'Deze klant heeft nog facturen in het archief en kan daarom niet verwijderd worden.');
+      throw crmFout(error);
+    }
+    if (!data?.length) return fout(404, 'Klant niet gevonden.');
+    await logAudit('verwijderd_klant', { lid: s.lid, doel: id }, request);
+    return json({ ok: true });
   } catch (e) {
     return foutAntwoord(e);
   }

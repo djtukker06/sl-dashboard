@@ -247,7 +247,7 @@ test("nieuw project bij een afgeronde klant: alleen afgerond → actief", () => 
 test("klantenoverzicht: tabs Op de radar/Leads/Actief/Afgerond, zoeken over alle tabs, snel toevoegen", () => {
   const src = lees("components/crm/KlantenLijst.tsx");
   assert.match(src, /const TABS: KlantStatus\[\] = KLANT_STATUSSEN/);
-  assert.match(lees("lib/crm/types.ts"), /KLANT_STATUSSEN: KlantStatus\[\] = \['koud', 'lead', 'actief', 'afgerond'\]/);
+  assert.match(lees("lib/crm/types.ts"), /KLANT_STATUSSEN: KlantStatus\[\] = \['koud', 'lead', 'actief', 'afgerond', 'afgewezen'\]/);
   assert.match(src, /metStatus\.filter\(\(k\) => klantPast\(k, q\)\)/, "zoeken telt over alle tabs (afgerond blijft vindbaar)");
   assert.match(src, /Wel in/, "lege zoekstaat wijst naar de andere tab");
   assert.match(src, /crmApi<\{ klant: \{ id: string \} \}>\('\/api\/klanten', 'POST', \{ naam, status \}\)/);
@@ -261,7 +261,8 @@ test("leads en radar: omzetten naar klant, radar ↔ leads, afgewezen; alles met
   assert.match(src, /Omzetten naar klant/);
   assert.match(src, /zet\('koud'/);
   assert.match(src, /zet\('lead'/);
-  assert.match(src, /zet\('afgerond'/);
+  assert.match(src, /zet\('afgewezen'/, "Afgewezen is een eigen status (0039), niet Afgerond");
+  assert.match(src, /<VerwijderKnop klant=\{klant\}/, "leads en radar zijn ook te verwijderen");
   assert.match(src, /const wisDatum = opvolging &&/, "vóór 0025 geen opvolgdatum meesturen");
   assert.match(src, /Ongedaan maken/);
   assert.match(lees("components/crm/KlantenLijst.tsx"), /onStatus=\{verschuif\}/, "de lijst schuift meteen mee");
@@ -269,7 +270,7 @@ test("leads en radar: omzetten naar klant, radar ↔ leads, afgewezen; alles met
 test("op de radar (0033): niet bij Opvolgen, factuur-trigger en nette melding vóór 0033", () => {
   assert.ok(!ov.moetOpvolgen({ status: "koud", opvolgenOp: "2026-10-01" }, "2026-10-24"));
   assert.equal(inv.isKlantStatus("koud"), true);
-  assert.match(lees("lib/crm/repo.ts"), /\.not\('status', 'in', '\(afgerond,koud\)'\)/);
+  assert.match(lees("lib/crm/repo.ts"), /\.not\('status', 'in', '\(afgerond,koud,afgewezen\)'\)/);
   const sql = lees("supabase/migrations/0033_crm_koude_leads.sql");
   assert.match(sql, /check \(status in \('koud', 'lead', 'actief', 'afgerond'\)\)/);
   assert.match(sql, /status in \('lead', 'koud'\)/);
@@ -440,11 +441,16 @@ for (const f of ROUTES) {
     assert.ok(!/createServiceClient|service_role|SERVICE_ROLE/.test(src), "geen service-role");
   });
 }
-test("klanten verwijderen kan niet via de nieuwe API", () => {
-  for (const f of ROUTES.filter((r) => r.includes("klanten"))) {
-    const src = lees(f);
-    assert.ok(!/from\('clients'\)\s*\.delete\(/.test(src), f);
+test("klanten verwijderen (0039): alleen zonder facturen, en alleen via DELETE /api/klanten/[id]", () => {
+  for (const f of ROUTES.filter((r) => r.includes("klanten") && !r.endsWith("klanten/[id]/route.ts"))) {
+    assert.ok(!/from\('clients'\)\s*\.delete\(/.test(lees(f)), f);
   }
+  const src = lees("app/api/klanten/[id]/route.ts");
+  assert.match(src, /export async function DELETE/);
+  assert.match(src, /from\('invoices'\)\.select\('id', \{ count: 'exact', head: true \}\)\.eq\('client_id', id\)/, "eerst facturen tellen");
+  assert.match(src, /logAudit\('verwijderd_klant'/);
+  assert.equal(inv.isKlantStatus("afgewezen"), true);
+  assert.ok(!ov.moetOpvolgen({ status: "afgewezen", opvolgenOp: "2026-10-01" }, "2026-10-24"), "afgewezen niet bij Opvolgen");
 });
 test("notitie verwijderen: alleen je eigen (ook in de query, naast de RLS)", () => {
   assert.match(lees("app/api/klanten/[id]/notities/[notitieId]/route.ts"), /\.eq\('created_by', s\.bron\.userId\)/);

@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { ModuleKop } from '@/components/shell/ModuleKop';
+import { Avatar } from '@/components/team/Avatar';
+import { useTeam } from '@/components/team/TeamProvider';
 import { api, datumTijd } from '@/lib/beveiliging/client';
 import { KLEUREN } from '@/lib/account/types';
 import { initialenVoorstel, MIN_WACHTWOORD, type Gebruiker, type GebruikerRol } from '@/lib/auth/gebruikers-kern';
@@ -159,6 +161,8 @@ export function GebruikersApp({ aal2 }: { aal2: boolean }) {
 }
 
 function GebruikerRij({ g, onBewerk, onKlaar }: { g: Gebruiker; onBewerk: () => void; onKlaar: (t: string) => void }) {
+  // De profielfoto komt uit het team (TeamProvider), niet uit de gebruikerslijst.
+  const foto = useTeam().perId.get(g.userId)?.foto ?? null;
   const [paneel, setPaneel] = useState<'geen' | 'wachtwoord' | 'verwijderen'>('geen');
   const [wachtwoord, setWachtwoord] = useState('');
   const [bevestig, setBevestig] = useState('');
@@ -182,9 +186,13 @@ function GebruikerRij({ g, onBewerk, onKlaar }: { g: Gebruiker; onBewerk: () => 
   return (
     <li className={`gb-item${g.actief ? '' : ' is-uit'}`}>
       <div className="gb-rij">
-        <span className="gb-avatar" style={{ ['--sl-avatar-kleur' as string]: g.kleur }} aria-hidden="true">
-          {g.initialen}
-        </span>
+        <Avatar
+          className="gb-avatar"
+          initialen={g.initialen}
+          foto={foto}
+          style={{ ['--sl-avatar-kleur' as string]: g.kleur }}
+          aria-hidden
+        />
         <div className="gb-tekst">
           <strong>
             {g.naam}

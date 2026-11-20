@@ -7,10 +7,10 @@ import type { ProjectStatus } from '@/lib/agenda/types';
 // 'koud' (migratie 0033) = "Op de radar": een bedrijf dat we niet willen vergeten maar nu
 // (nog) niet benaderen. Geen opvolgdatum op het dashboard; wel met één klik naar Leads of
 // meteen naar klant. Een 'lead' is iemand die we gesproken hebben of binnenkort benaderen.
-export type KlantStatus = 'koud' | 'lead' | 'actief' | 'afgerond';
+export type KlantStatus = 'koud' | 'lead' | 'actief' | 'afgerond' | 'afgewezen';
 /** In de volgorde van de klantreis: op de radar → lead → actief → afgerond. */
-export const KLANT_STATUSSEN: KlantStatus[] = ['koud', 'lead', 'actief', 'afgerond'];
-export const KLANT_STATUS_LABEL: Record<KlantStatus, string> = { koud: 'Op de radar', lead: 'Lead', actief: 'Actief', afgerond: 'Afgerond' };
+export const KLANT_STATUSSEN: KlantStatus[] = ['koud', 'lead', 'actief', 'afgerond', 'afgewezen'];
+export const KLANT_STATUS_LABEL: Record<KlantStatus, string> = { koud: 'Op de radar', lead: 'Lead', actief: 'Actief', afgerond: 'Afgerond', afgewezen: 'Afgewezen' };
 
 /** Nog geen klant: een lead of iets op de radar (kan met één klik "klant" worden). */
 export function isProspect(s: string): boolean {

@@ -8,7 +8,8 @@ import type { DriveStatus } from '@/lib/drive/types';
 import { BestandenBlok } from '@/components/bestanden/BestandenBlok';
 import { NotitiesBlok } from '@/components/notities/NotitiesBlok';
 import { ModuleKop } from '@/components/shell/ModuleKop';
-import { ContactActies, LeadActies, OpvolgVelden } from './KlantActies';
+import { ContactActies, LeadActies, OpvolgVelden, VerwijderKnop } from './KlantActies';
+import { TerugNaarLeads } from './TerugNaarLeads';
 import { KlantBeschrijving, KlantContact, KlantTitel } from './KlantContact';
 import { KlantTijdlijn } from './KlantNotities';
 import { NieuwProject } from './NieuwProject';
@@ -40,7 +41,8 @@ export function KlantInhoud({ data, vandaag, drive }: { data: KlantPagina; vanda
             afgerond: 'Klant afgerond. Hij blijft vindbaar onder Klanten → Afgerond.',
             actief: 'Klant staat op Actief.',
             lead: 'Klant staat op Lead.',
-            koud: 'Staat op de radar: niet vergeten, telt niet mee bij Opvolgen.'
+            koud: 'Staat op de radar: niet vergeten, telt niet mee bij Opvolgen.',
+            afgewezen: 'Afgewezen. Blijft vindbaar onder Klanten → Afgewezen.'
           }}
         />
       </ModuleKop>
@@ -79,6 +81,18 @@ export function KlantInhoud({ data, vandaag, drive }: { data: KlantPagina; vanda
               weer op Actief.
             </p>
             <NieuwProject klant={klantRef} klantAfgerond label="+ Nieuw project" />
+          </div>
+        )}
+        {klant.status === 'afgewezen' && (
+          <div className="kp-afgerond-melding" role="note">
+            <p>
+              <strong>Afgewezen.</strong> Deze lead gaat niet door en blijft vindbaar onder Klanten → Afgewezen. Toch weer interessant? Zet hem terug
+              bij de leads. Wil je hem helemaal kwijt? Verwijder hem.
+            </p>
+            <span className="kp-leadacties">
+              <TerugNaarLeads klant={klantRef} />
+              <VerwijderKnop klant={klantRef} />
+            </span>
           </div>
         )}
 
@@ -255,6 +269,15 @@ export function KlantInhoud({ data, vandaag, drive }: { data: KlantPagina; vanda
           <NotitiesBlok koppeling={{ klant: klant.id }} />
 
           <BestandenBlok status={drive} start={{ klant: klant.id }} />
+
+          {(klant.status === 'actief' || klant.status === 'afgerond') && (
+            <div className="kp-verwijder-blok">
+              <VerwijderKnop klant={klantRef} />
+              <span className="kp-uitleg">
+                {cijfers.aantalFacturen > 0 ? 'Kan niet zolang er facturen zijn; zet hem dan op Afgerond.' : 'Haalt de klant helemaal weg.'}
+              </span>
+            </div>
+          )}
         </aside>
       </div>
     </>

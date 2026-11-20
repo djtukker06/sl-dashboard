@@ -1,6 +1,7 @@
 import type { CSSProperties } from 'react';
 import Link from 'next/link';
 import { avatarStijl, LOGO_SRC, railItems, type RailAccount } from '@/lib/shell/rail';
+import { Avatar } from '@/components/team/Avatar';
 import { PrivacyKnop } from './Privacymodus';
 import { RailMeer } from './RailMeer';
 import { RailNav } from './RailNav';
@@ -29,9 +30,13 @@ export function Rail({ account }: { account: RailAccount }) {
           {/* Op de telefoon heet dit vak "Meer": het menu bevat dan ook de modules die niet in
               de tabbalk passen (RailMeer) en opent als blad van onderen (shell.css). */}
           <summary className="sl-account-knop" title={`${account.naam} · ${account.email}`}>
-            <span className="sl-avatar" aria-hidden="true" style={alsStijl(avatarStijl(account.kleur))}>
-              {account.initialen}
-            </span>
+            <Avatar
+              className="sl-avatar"
+              initialen={account.initialen}
+              foto={account.foto}
+              style={alsStijl(avatarStijl(account.kleur))}
+              aria-hidden
+            />
             <span className="sl-account-label">Account</span>
             <span className="sl-account-label sl-account-meer" hidden>
               Meer

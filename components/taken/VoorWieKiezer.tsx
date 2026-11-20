@@ -3,6 +3,7 @@
 import type { CSSProperties } from 'react';
 import { useTeam } from '@/components/team/TeamProvider';
 import type { TeamProfiel } from '@/lib/team/types';
+import { Avatar } from '@/components/team/Avatar';
 
 /**
  * "Voor wie": avatar-chips van de teamleden, meerdere tegelijk aan te zetten, plus de
@@ -52,9 +53,7 @@ export function VoorWieKiezer({
             onClick={() => wissel(p.id)}
             style={{ '--sl-avatar-kleur': p.kleur } as CSSProperties}
           >
-            <span className="tk-wie-avatar" aria-hidden="true">
-              {p.initialen}
-            </span>
+            <Avatar className="tk-wie-avatar" initialen={p.initialen} foto={p.foto} aria-hidden />
             <span className="tk-wie-naam">{naam}</span>
           </button>
         );

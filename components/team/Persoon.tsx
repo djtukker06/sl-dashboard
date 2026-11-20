@@ -1,6 +1,7 @@
 'use client';
 
 import type { CSSProperties } from 'react';
+import { Avatar } from './Avatar';
 import { useTeam } from './TeamProvider';
 
 // Een teamlid als avatar (+ naam): voor "aangemaakt door", toegewezenen en uploaders.
@@ -30,9 +31,13 @@ export function Persoon({
       className={`sl-persoon${compact ? ' sl-persoon-compact' : ''}${className ? ` ${className}` : ''}`}
       title={compact ? `${voorvoegsel ? `${voorvoegsel} ` : ''}${p.naam}` : undefined}
     >
-      <span className="sl-persoon-avatar" style={stijl} aria-hidden={compact ? undefined : true}>
-        {p.initialen}
-      </span>
+      <Avatar
+        className="sl-persoon-avatar"
+        initialen={p.initialen}
+        foto={p.foto}
+        style={stijl}
+        aria-hidden={compact ? undefined : true}
+      />
       {compact ? (
         <span className="sr-only">{`${voorvoegsel ? `${voorvoegsel} ` : ''}${p.naam}`}</span>
       ) : (
