@@ -191,6 +191,9 @@ export const TABELLEN: TabelDef[] = [
   // Google Agenda (0035): het refresh token staat er versleuteld in (zoals drive_koppeling).
   { naam: 'google_agenda_accounts', pk: ['id'] },
   { naam: 'google_agendas', pk: ['id'] },
+  // Apple Agenda (0040): het app-wachtwoord staat er alleen versleuteld in (MAIL_ENCRYPTION_KEY).
+  { naam: 'apple_agenda_accounts', pk: ['id'] },
+  { naam: 'apple_agendas', pk: ['id'] },
   { naam: 'clients', pk: ['id'], zonder: ['company_name_normalized'] },
   { naam: 'client_notes', pk: ['id'] },
   { naam: 'projects', pk: ['id'] },

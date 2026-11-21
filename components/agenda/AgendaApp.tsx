@@ -26,11 +26,12 @@ import { vergaderlinkVan } from '@/lib/agenda/vergaderlink';
 import { TaakKnop } from '@/components/dashboard/TaakKnop';
 import { TakenProvider, useTaakDialoog, useTaakGebeurtenis } from '@/components/taken/TakenProvider';
 import { useTeam } from '@/components/team/TeamProvider';
-import { googleApi, isGoogleId } from '@/lib/google-agenda/client';
-import { KOPPEL_MELDING, type GoogleStatus } from '@/lib/google-agenda/types';
+import { externApi, isExternId, metBron } from '@/lib/agenda/extern-client';
+import type { AgendaWijziging, ExternAccount, ExternAgenda, ExternStatus } from '@/lib/agenda/extern-types';
+import { KOPPEL_MELDING } from '@/lib/google-agenda/types';
 import { perGebruiker } from '@/lib/mail/client';
 import { AFSPRAKEN_GEWIJZIGD } from './AfspraakMeldingen';
-import { AgendaBeheer, AgendaChips, type AgendaWijziging } from './Agendas';
+import { AgendaBeheer, AgendaChips } from './Agendas';
 import { ItemPaneel, nieuweAfspraak, type Selectie } from './ItemPaneel';
 import { MaandView } from './MaandView';
 import { Takenlijst } from './Takenlijst';
@@ -133,10 +134,10 @@ function Agenda({
   const [selectie, setSelectie] = useState<Selectie | null>(null);
   const [nieuw, setNieuw] = useState<{ dag: Dag; tijd: string | null; x: number; y: number } | null>(null);
   const [mobielTab, setMobielTab] = useState<'taken' | 'agenda'>('agenda');
-  // Google Agenda (0035): afspraken van het getoonde bereik, de accounts/agenda's (schakelaars)
+  // Gekoppelde agenda's (Google 0035, Apple 0040): afspraken van het getoonde bereik, de accounts/agenda's (schakelaars)
   // en of je eigen afspraken getoond worden.
   const [google, setGoogle] = useState<{ sleutel: string; events: Afspraak[]; fouten: { accountId: string; melding: string }[] } | null>(null);
-  const [gStatus, setGStatus] = useState<GoogleStatus | null>(null);
+  const [gStatus, setGStatus] = useState<ExternStatus | null>(null);
   const [beheerOpen, setBeheerOpen] = useState(googleUitkomst === 'gekoppeld');
   const [eigenZichtbaar, setEigenZichtbaar] = useState(true);
 
@@ -218,11 +219,12 @@ function Agenda({
     };
   }, [van, tot, teller]);
 
-  // Google-afspraken los van de eigen agenda: is Google traag of stuk, dan staat de rest al.
+  // Afspraken uit gekoppelde agenda's los van de eigen agenda: is Google of iCloud traag of
+  // stuk, dan staat de rest al.
   useEffect(() => {
     let weg = false;
     const s = `${van}|${tot}`;
-    googleApi
+    externApi
       .bereik(van, tot)
       .then((r) => {
         if (weg) return;
@@ -269,7 +271,7 @@ function Agenda({
     let weg = false;
     if (openTaak) taakDialoog.open(openTaak);
     else if (openAfspraak) {
-      (isGoogleId(openAfspraak) ? googleApi.afspraak(openAfspraak) : agendaApi.afspraak(openAfspraak))
+      (isExternId(openAfspraak) ? externApi.afspraak(openAfspraak) : agendaApi.afspraak(openAfspraak))
         .then((r) => !weg && setSelectie({ soort: 'afspraak', item: r.event }))
         .catch(() => !weg && toast('Deze afspraak bestaat niet meer.', { fout: true }));
     }
@@ -342,29 +344,30 @@ function Agenda({
   });
 
   const pasAfspraakAan = useCallback((a: Afspraak) => {
-    if (a.google) setGoogle((g) => (g ? { ...g, events: g.events.map((x) => (x.id === a.id ? a : x)) } : g));
+    if (a.extern) setGoogle((g) => (g ? { ...g, events: g.events.map((x) => (x.id === a.id ? a : x)) } : g));
     else setBereik((b) => (b ? { ...b, afspraken: b.afspraken.map((x) => (x.id === a.id ? a : x)) } : b));
   }, []);
 
-  // ---------- Google-agenda's: tonen, kleur, agenda-link (optimistisch) ----------
+  // ---------- gekoppelde agenda's: tonen, kleur, agenda-link (optimistisch), koppelen ----------
   const wijzigAgenda = useCallback(
-    async (agendaId: string, w: AgendaWijziging) => {
+    async (agenda: ExternAgenda, w: AgendaWijziging) => {
       const vorige = gStatus;
-      const pas = (s: GoogleStatus | null) =>
-        s && { ...s, accounts: s.accounts.map((acc) => ({ ...acc, agendas: acc.agendas.map((a) => (a.id === agendaId ? { ...a, ...w } : a)) })) };
+      const pas = (s: ExternStatus | null) =>
+        s && { ...s, accounts: s.accounts.map((acc) => ({ ...acc, agendas: acc.agendas.map((a) => (a.id === agenda.id ? { ...a, ...w } : a)) })) };
       setGStatus(pas);
       // Kleur meteen ook op de al geladen afspraken (behalve die met een eigen kleur in Google).
       if (w.kleur) {
-        const oud = vorige?.accounts.flatMap((a) => a.agendas).find((a) => a.id === agendaId)?.kleur;
+        const oud = agenda.kleur;
         setGoogle((g) =>
           g && {
             ...g,
-            events: g.events.map((e) => (e.google?.agendaId === agendaId && e.google.kleur === oud ? { ...e, google: { ...e.google, kleur: w.kleur! } } : e))
+            events: g.events.map((e) => (e.extern?.agendaId === agenda.id && e.extern.kleur === oud ? { ...e, extern: { ...e.extern, kleur: w.kleur! } } : e))
           }
         );
       }
       try {
-        setGStatus(await googleApi.agenda(agendaId, w));
+        const nieuw = await externApi.agenda(agenda.bron, agenda.id, w);
+        setGStatus((s) => metBron(s, agenda.bron, nieuw));
         // Aangezet: de afspraken van die agenda nu ophalen.
         if (w.zichtbaar) setTeller((t) => t + 1);
       } catch (e) {
@@ -375,9 +378,10 @@ function Agenda({
     [gStatus, toast]
   );
   const vernieuwAccount = useCallback(
-    async (accountId: string) => {
+    async (account: ExternAccount) => {
       try {
-        setGStatus(await googleApi.vernieuw(accountId));
+        const nieuw = await externApi.vernieuw(account.bron, account.id);
+        setGStatus((s) => metBron(s, account.bron, nieuw));
         setTeller((t) => t + 1);
         toast("Agenda's bijgewerkt");
       } catch (e) {
@@ -387,15 +391,33 @@ function Agenda({
     [toast]
   );
   const ontkoppelAccount = useCallback(
-    async (accountId: string) => {
+    async (account: ExternAccount) => {
       try {
-        setGStatus(await googleApi.ontkoppel(accountId));
-        setGoogle((g) => g && { ...g, events: [], fouten: g.fouten.filter((f) => f.accountId !== accountId) });
+        const nieuw = await externApi.ontkoppel(account.bron, account.id);
+        setGStatus((s) => metBron(s, account.bron, nieuw));
+        setGoogle(
+          (g) =>
+            g && {
+              ...g,
+              events: g.events.filter((e) => !account.agendas.some((a) => a.id === e.extern?.agendaId)),
+              fouten: g.fouten.filter((f) => f.accountId !== account.id)
+            }
+        );
         setTeller((t) => t + 1);
-        toast('Google-account ontkoppeld');
+        toast(account.bron === 'google' ? 'Google-account ontkoppeld' : 'Apple ID ontkoppeld');
       } catch (e) {
         toast(e instanceof Error ? e.message : 'Ontkoppelen mislukt.', { fout: true });
       }
+    },
+    [toast]
+  );
+  // Gooit bij een fout (het formulier toont de melding).
+  const koppelApple = useCallback(
+    async (appleId: string, wachtwoord: string) => {
+      const nieuw = await externApi.koppelApple(appleId, wachtwoord);
+      setGStatus((s) => metBron(s, 'apple', nieuw));
+      setTeller((t) => t + 1);
+      toast('Apple Agenda gekoppeld');
     },
     [toast]
   );
@@ -456,7 +478,7 @@ function Agenda({
         const wijziging = v.start
           ? { datum: v.datum, start: v.start, duur: Math.round((Date.parse(a.eind) - Date.parse(a.start)) / 60000), toepassen }
           : { datum: v.datum, toepassen };
-        if (a.google) await googleApi.wijzig(a.id, wijziging);
+        if (a.extern) await externApi.wijzig(a.id, wijziging);
         else await agendaApi.wijzigAfspraak(a.id, wijziging);
         toast(`Verplaatst naar ${korteDag(v.datum)}${v.start ? ` ${v.start}` : ''}`);
       } catch (e) {
@@ -471,9 +493,9 @@ function Agenda({
   // net als de knop in het paneel.
   async function verwijderAfspraak(a: Afspraak, toepassen?: 'deze' | 'reeks') {
     try {
-      if (a.google) await googleApi.verwijder(a.id, toepassen);
+      if (a.extern) await externApi.verwijder(a.id, toepassen);
       else await agendaApi.verwijderAfspraak(a.id, toepassen);
-      if (a.google) setGoogle((g) => (g ? { ...g, events: g.events.filter((x) => x.id !== a.id) } : g));
+      if (a.extern) setGoogle((g) => (g ? { ...g, events: g.events.filter((x) => x.id !== a.id) } : g));
       else setBereik((b) => (b ? { ...b, afspraken: b.afspraken.filter((x) => x.id !== a.id) } : b));
       toast(toepassen === 'deze' ? 'Deze afspraak verwijderd (de reeks blijft)' : toepassen === 'reeks' ? 'Reeks verwijderd' : 'Afspraak verwijderd');
     } catch (e) {
@@ -497,7 +519,7 @@ function Agenda({
     if (doel.soort === 'afspraak') {
       const a = doel.item;
       const link = vergaderlinkVan(a);
-      const magWeg = a.google ? a.google.verwijderbaar : magAfspraakWijzigen(a, mijnId, overgang);
+      const magWeg = a.extern ? a.extern.verwijderbaar : magAfspraakWijzigen(a, mijnId, overgang);
       const sleutel = herinneringSleutel(a);
       const herinner = heeftHerinnering(sleutel);
       menu(e, [
@@ -615,15 +637,15 @@ function Agenda({
   // ---------- afgeleide staat ----------
   const huidigBereik = bereik?.sleutel === sleutel ? bereik : null;
   const toonBereik = huidigBereik ?? bereik; // tijdens laden de vorige week blijven tonen
-  // Alle getoonde afspraken: je eigen (als die aan staan) en die van de zichtbare Google-agenda's,
+  // Alle getoonde afspraken: je eigen (als die aan staan) en die van de zichtbare gekoppelde agenda's,
   // met de kleur en naam zoals nu ingesteld (een schakelaar werkt zo meteen, vóór het antwoord).
   const googleAgendas = useMemo(() => gStatus?.accounts.flatMap((a) => a.agendas) ?? [], [gStatus]);
   const afspraken = useMemo(() => {
     const eigen = eigenZichtbaar ? (toonBereik?.afspraken ?? []) : [];
     const perId = new Map(googleAgendas.map((a) => [a.id, a]));
     const uitGoogle = (google?.sleutel === sleutel ? google.events : (google?.events ?? [])).flatMap((e) => {
-      const ag = e.google ? perId.get(e.google.agendaId) : undefined;
-      return ag?.zichtbaar ? [{ ...e, google: { ...e.google!, agendaNaam: ag.naam } }] : [];
+      const ag = e.extern ? perId.get(e.extern.agendaId) : undefined;
+      return ag?.zichtbaar ? [{ ...e, extern: { ...e.extern!, agendaNaam: ag.naam } }] : [];
     });
     return uitGoogle.length ? [...eigen, ...uitGoogle] : eigen;
   }, [eigenZichtbaar, toonBereik, google, sleutel, googleAgendas]);
@@ -755,9 +777,10 @@ function Agenda({
               open={beheerOpen}
               onOpen={setBeheerOpen}
               onEigen={kiesEigen}
-              onWijzig={(id, w) => void wijzigAgenda(id, w)}
+              onWijzig={(a, w) => void wijzigAgenda(a, w)}
               onVernieuw={vernieuwAccount}
               onOntkoppel={ontkoppelAccount}
+              onKoppelApple={koppelApple}
             />
             <div className="ag-segment" role="group" aria-label="Weergave">
               <button type="button" aria-pressed={weergave === 'dag'} className={weergave === 'dag' ? 'is-aan' : ''} onClick={() => setWeergave('dag')} title="Dag (d)">
@@ -772,8 +795,8 @@ function Agenda({
             </div>
             </div>
           </div>
-          {gStatus?.tabellen && (
-            <AgendaChips status={gStatus} eigenZichtbaar={eigenZichtbaar} onEigen={kiesEigen} onWijzig={(id, w) => void wijzigAgenda(id, w)} />
+          {gStatus && gStatus.accounts.length > 0 && (
+            <AgendaChips status={gStatus} eigenZichtbaar={eigenZichtbaar} onEigen={kiesEigen} onWijzig={(a, w) => void wijzigAgenda(a, w)} />
           )}
 
           {bereikFout?.sleutel === sleutel && !huidigBereik ? (
@@ -839,11 +862,11 @@ function Agenda({
         <ItemPaneel
           selectie={selectie}
           herhalingKlaar={herhalingKlaar}
-          googleAgendas={googleAgendas}
+          externAgendas={googleAgendas}
           onSluit={() => setSelectie(null)}
           onOpgeslagen={(s) => {
             setSelectie(null);
-            if (s.soort === 'afspraak' && s.item.google) {
+            if (s.soort === 'afspraak' && s.item.extern) {
               const item = s.item;
               if (selectie.nieuw) setGoogle((g) => (g ? { ...g, events: [...g.events, item] } : g));
               else pasAfspraakAan(item);
@@ -859,7 +882,7 @@ function Agenda({
           }}
           onVerwijderd={(s) => {
             setSelectie(null);
-            if (s.soort === 'afspraak' && s.item.google) setGoogle((g) => (g ? { ...g, events: g.events.filter((x) => x.id !== s.item.id) } : g));
+            if (s.soort === 'afspraak' && s.item.extern) setGoogle((g) => (g ? { ...g, events: g.events.filter((x) => x.id !== s.item.id) } : g));
             else setBereik((b) => (b ? { ...b, afspraken: b.afspraken.filter((x) => x.id !== s.item.id) } : b));
             herlaad();
           }}

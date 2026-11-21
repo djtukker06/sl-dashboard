@@ -50,11 +50,11 @@ export function vindVergaderlink(...teksten: (string | null | undefined)[]): Ver
   return null;
 }
 
-/** De vergaderlink van een afspraak: die van Google zelf, anders uit locatie of notitie. */
+/** De vergaderlink van een afspraak: die van de gekoppelde agenda zelf, anders uit locatie of notitie. */
 export function vergaderlinkVan(
-  a: Pick<Afspraak, 'locatie' | 'notitie'> & { google?: { meetLink: string | null; vergaderDienst: string | null } }
+  a: Pick<Afspraak, 'locatie' | 'notitie'> & { extern?: { meetLink: string | null; vergaderDienst: string | null } }
 ): Vergaderlink | null {
-  if (a.google?.meetLink) return { url: a.google.meetLink, dienst: a.google.vergaderDienst ?? 'Google Meet' };
+  if (a.extern?.meetLink) return { url: a.extern.meetLink, dienst: a.extern.vergaderDienst ?? 'Videogesprek' };
   return vindVergaderlink(a.locatie, a.notitie);
 }
 
