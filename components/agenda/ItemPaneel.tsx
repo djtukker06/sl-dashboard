@@ -9,8 +9,8 @@ import { dagenVanAfspraak } from '@/lib/agenda/weergave';
 import { vergaderlinkVan, vindVergaderlink } from '@/lib/agenda/vergaderlink';
 import { heeftHerinnering, herinneringSleutel, useMeldingen, zetHerinnering } from '@/lib/agenda/meldingen';
 import type { Afspraak, Taak } from '@/lib/agenda/types';
-import { googleApi } from '@/lib/google-agenda/client';
-import type { GoogleAgenda } from '@/lib/google-agenda/types';
+import { externApi } from '@/lib/agenda/extern-client';
+import type { ExternAgenda } from '@/lib/agenda/extern-types';
 import { perGebruiker } from '@/lib/mail/client';
 import { Persoon } from '@/components/team/Persoon';
 import { useTeam } from '@/components/team/TeamProvider';
@@ -50,7 +50,7 @@ export function ItemPaneel({
   onOpgeslagen,
   onVerwijderd,
   herhalingKlaar = true,
-  googleAgendas = []
+  externAgendas = []
 }: {
   selectie: Extract<Selectie, { soort: 'afspraak' }>;
   onSluit: () => void;
@@ -58,8 +58,8 @@ export function ItemPaneel({
   onVerwijderd: (s: Selectie) => void;
   /** false zolang migratie 0034 (herhalen) niet is uitgevoerd: dan staat "Herhalen" uit. */
   herhalingKlaar?: boolean;
-  /** Je gekoppelde Google-agenda's (0035): kiezen waar een nieuwe afspraak komt. */
-  googleAgendas?: GoogleAgenda[];
+  /** Je gekoppelde agenda's (Google 0035, Apple 0040): kiezen waar een nieuwe afspraak komt. */
+  externAgendas?: ExternAgenda[];
 }) {
   const paneel = useRef<HTMLElement>(null);
 
@@ -94,7 +94,7 @@ export function ItemPaneel({
           afspraak={selectie.item}
           nieuw={!!selectie.nieuw}
           herhalingKlaar={herhalingKlaar}
-          googleAgendas={googleAgendas}
+          externAgendas={externAgendas}
           onSluit={onSluit}
           onOpgeslagen={(a) => onOpgeslagen({ soort: 'afspraak', item: a })}
           onVerwijderd={() => onVerwijderd(selectie)}
@@ -253,7 +253,7 @@ function useOpslaan() {
 /** Laatst gekozen agenda voor een nieuwe afspraak ('' = Studio Levant), per gebruiker. */
 const BRON_SLEUTEL = 'sl-agenda-nieuw-in';
 
-function leesBron(agendas: GoogleAgenda[]): string {
+function leesBron(agendas: ExternAgenda[]): string {
   try {
     const id = localStorage.getItem(perGebruiker(BRON_SLEUTEL)) ?? '';
     return agendas.some((a) => a.id === id && a.schrijfbaar) ? id : '';
@@ -272,7 +272,9 @@ function bewaarBron(id: string) {
 
 const GAST_STATUS: Record<string, string> = { accepted: 'komt', declined: 'komt niet', tentative: 'misschien', needsAction: 'nog geen antwoord' };
 
-/** Tekst met klikbare http(s)-links (een beschrijving uit Google die je niet mag wijzigen). */
+const BRON_NAAM: Record<string, string> = { apple: 'Apple Agenda', google: 'Google Agenda' };
+
+/** Tekst met klikbare http(s)-links (een beschrijving uit een andere agenda die je niet mag wijzigen). */
 function MetLinks({ tekst }: { tekst: string }) {
   const delen = tekst.split(/(https?:\/\/[^\s<>()]+[^\s<>().,;:!?'"])/g);
   return (
@@ -294,7 +296,7 @@ function AfspraakFormulier({
   afspraak,
   nieuw,
   herhalingKlaar,
-  googleAgendas,
+  externAgendas,
   onSluit,
   onOpgeslagen,
   onVerwijderd
@@ -302,17 +304,20 @@ function AfspraakFormulier({
   afspraak: Afspraak;
   nieuw: boolean;
   herhalingKlaar: boolean;
-  googleAgendas: GoogleAgenda[];
+  externAgendas: ExternAgenda[];
   onSluit: () => void;
   onOpgeslagen: (a: Afspraak) => void;
   onVerwijderd: () => void;
 }) {
-  const g = afspraak.google;
-  const schrijfbareAgendas = googleAgendas.filter((a) => a.schrijfbaar);
-  // Waar de afspraak staat: '' = Studio Levant (dashboard), anders het id van de Google-agenda.
+  const g = afspraak.extern;
+  const schrijfbareAgendas = externAgendas.filter((a) => a.schrijfbaar);
+  // Waar de afspraak staat: '' = Studio Levant (dashboard), anders het id van de gekoppelde agenda.
   const [bron, setBron] = useState(() => g?.agendaId ?? (nieuw ? leesBron(schrijfbareAgendas) : ''));
   const inGoogle = bron !== '';
-  const bronAgenda = googleAgendas.find((a) => a.id === bron);
+  const bronAgenda = externAgendas.find((a) => a.id === bron);
+  // Google Meet-link alleen bij een afspraak in Google.
+  const isGoogle = (g?.bron ?? bronAgenda?.bron) === 'google';
+  const bronNaam = BRON_NAAM[g?.bron ?? bronAgenda?.bron ?? 'google'];
   const [meet, setMeet] = useState(false);
   const s = inAmsterdam(afspraak.start);
   const e = inAmsterdam(afspraak.eind);
@@ -353,7 +358,7 @@ function AfspraakFormulier({
   const opgeslagenLink = nieuw ? null : vergaderlinkVan(afspraak);
   const getypt = mag ? vindVergaderlink(locatie, notitie) : null;
   const nieuweLink = getypt && getypt.url !== opgeslagenLink?.url ? getypt : null;
-  // De herhaling van een reeks uit Google pas je in Google zelf aan.
+  // De herhaling van een reeks uit een andere agenda pas je daar zelf aan.
   const herhaaltInGoogle = !!g?.herhaalt;
   const { bezig, fout, doe } = useOpslaan();
   // Telefoon: een bestaande afspraak openen zonder dat het toetsenbord meteen opent.
@@ -380,8 +385,8 @@ function AfspraakFormulier({
         ? { ...basis, herhaling: herhaling || null, herhaalTot: herhaling ? herhaalTot || null : null, toepassen }
         : { ...basis, toepassen };
     if (inGoogle) {
-      // Naar Google: geen klant of deelnemers (die kent Google niet); de herhaling van een
-      // bestaande reeks blijft zoals hij in Google staat.
+      // Naar de gekoppelde agenda: geen klant of deelnemers (die kent die niet); de herhaling
+      // van een bestaande reeks blijft zoals hij daar staat.
       const tijd = heleDag ? { heleDag: true, datum, eindDatum: eindDatum || datum } : { heleDag: false, datum, start, eind };
       const gb = {
         titel,
@@ -391,10 +396,11 @@ function AfspraakFormulier({
         toepassen,
         ...(herhaaltInGoogle ? {} : { herhaling: herhaling || null, herhaalTot: herhaling ? herhaalTot || null : null })
       };
-      const naam = bronAgenda?.naam ?? 'Google Agenda';
+      const naam = bronAgenda?.naam ?? bronNaam;
+      const extra = isGoogle ? { meet } : {};
       const r = await doe(
-        () => (nieuw ? googleApi.maak(bron, { ...gb, meet }) : googleApi.wijzig(afspraak.id, { ...gb, meet })),
-        nieuw ? `Afspraak toegevoegd aan ${naam}` : toepassen === 'deze' ? 'Alleen deze afspraak opgeslagen' : reeks ? 'Reeks opgeslagen' : 'Opgeslagen in Google'
+        () => (nieuw ? externApi.maak(bronAgenda?.bron ?? 'google', bron, { ...gb, ...extra }) : externApi.wijzig(afspraak.id, { ...gb, ...extra })),
+        nieuw ? `Afspraak toegevoegd aan ${naam}` : toepassen === 'deze' ? 'Alleen deze afspraak opgeslagen' : reeks ? 'Reeks opgeslagen' : `Opgeslagen in ${bronNaam}`
       );
       if (r) {
         if (nieuw) bewaarBron(bron);
@@ -430,7 +436,7 @@ function AfspraakFormulier({
 
   async function verwijder(toepassen?: 'deze' | 'reeks') {
     const r = await doe(
-      () => (g ? googleApi.verwijder(afspraak.id, toepassen) : agendaApi.verwijderAfspraak(afspraak.id, toepassen)),
+      () => (g ? externApi.verwijder(afspraak.id, toepassen) : agendaApi.verwijderAfspraak(afspraak.id, toepassen)),
       toepassen === 'deze' ? 'Deze afspraak verwijderd (de reeks blijft)' : toepassen === 'reeks' ? 'Reeks verwijderd' : 'Afspraak verwijderd'
     );
     if (r) onVerwijderd();
@@ -454,7 +460,7 @@ function AfspraakFormulier({
           <p className="tk-melding" role="note">
             {g.organisator
               ? `${g.organisator} organiseert deze afspraak; alleen die kan hem wijzigen.`
-              : 'Deze Google-agenda kun je alleen bekijken.'}
+              : 'Deze agenda kun je alleen bekijken.'}
             {magVerwijderen ? ' Verwijderen uit je agenda kan wel.' : ''}
           </p>
         )}
@@ -478,7 +484,7 @@ function AfspraakFormulier({
               <option value="">Studio Levant (dashboard)</option>
               {schrijfbareAgendas.map((a) => (
                 <option key={a.id} value={a.id}>
-                  Google · {a.naam}
+                  {a.bron === 'apple' ? 'Apple' : 'Google'} · {a.naam}
                 </option>
               ))}
             </select>
@@ -576,7 +582,7 @@ function AfspraakFormulier({
         )}
 
         {herhaaltInGoogle ? (
-          <p className="ag-uitleg">Herhalende afspraak uit Google. De herhaling zelf pas je aan in Google Agenda; bij opslaan en verwijderen kies je: alleen deze of de hele reeks.</p>
+          <p className="ag-uitleg">Herhalende afspraak uit {bronNaam}. De herhaling zelf pas je daar aan; bij opslaan en verwijderen kies je: alleen deze of de hele reeks.</p>
         ) : (
         <>
         <div className="ag-velden-2">
@@ -640,7 +646,7 @@ function AfspraakFormulier({
           </p>
         )}
 
-        {inGoogle && !g?.meetLink && !nieuweLink && mag && (
+        {inGoogle && isGoogle && !g?.meetLink && !nieuweLink && mag && (
           <label className="ag-schakel">
             <input type="checkbox" checked={meet} onChange={(ev) => setMeet(ev.target.checked)} />
             <span>Google Meet-link toevoegen</span>
@@ -708,10 +714,10 @@ function AfspraakFormulier({
             {g.organisator ? <>Georganiseerd door {g.organisator} · </> : null}
             {g.link ? (
               <a href={g.link} target="_blank" rel="noopener noreferrer">
-                Openen in Google Agenda
+                Openen in {bronNaam}
               </a>
             ) : (
-              'Uit Google Agenda'
+              `Uit ${bronNaam} · ${g.agendaNaam}`
             )}
           </p>
         )}

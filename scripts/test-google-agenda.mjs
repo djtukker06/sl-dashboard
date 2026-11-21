@@ -68,15 +68,15 @@ test("afspraak met tijd, Meet-link, gasten en eigen kleur", () => {
   assert.equal(a.eind, "2026-11-06T10:30:00.000Z");
   assert.equal(a.heleDag, false);
   assert.equal(a.notitie, "Agenda:\n1. Intro\nhet plan (https://studio-levant.nl/plan) & meer");
-  assert.equal(a.google.meetLink, "https://meet.google.com/abc-defg-hij");
-  assert.equal(a.google.vergaderDienst, "Google Meet");
-  assert.equal(a.google.kleur, "#d50000", "colorId 11 = tomaat");
-  assert.equal(a.google.schrijfbaar, true);
-  assert.equal(a.google.organisator, null);
-  assert.equal(a.google.gasten.length, 2, "geen vergaderruimte");
-  assert.deepEqual(a.google.gasten[1], { email: "klant@voorbeeld.nl", naam: "Klant", status: "tentative", ik: false });
+  assert.equal(a.extern.meetLink, "https://meet.google.com/abc-defg-hij");
+  assert.equal(a.extern.vergaderDienst, "Google Meet");
+  assert.equal(a.extern.kleur, "#d50000", "colorId 11 = tomaat");
+  assert.equal(a.extern.schrijfbaar, true);
+  assert.equal(a.extern.organisator, null);
+  assert.equal(a.extern.gasten.length, 2, "geen vergaderruimte");
+  assert.deepEqual(a.extern.gasten[1], { email: "klant@voorbeeld.nl", naam: "Klant", status: "tentative", ik: false });
   assert.equal(a.reeksId, null);
-  assert.equal(a.google.herhaalt, false);
+  assert.equal(a.extern.herhaalt, false);
 });
 
 test("hele dag (meerdaags): 00:00 Amsterdam t/m 00:00 na de laatste dag", () => {
@@ -112,21 +112,21 @@ test("voorkomen van een reeks: reeks-id en oorspronkelijke datum", () => {
   );
   assert.equal(a.reeksId, "reeks1");
   assert.equal(a.voorkomen, "2026-11-09", "verplaatst voorkomen houdt zijn oorspronkelijke datum");
-  assert.equal(a.google.herhaalt, true);
-  assert.equal(a.google.eventId, "reeks1_20261109T090000Z");
+  assert.equal(a.extern.herhaalt, true);
+  assert.equal(a.extern.eventId, "reeks1_20261109T090000Z");
 });
 
 test("rechten: alleen-lezen agenda, gast, gasten mogen wijzigen", () => {
   const basis = { id: "r", start: { dateTime: "2026-11-06T10:00:00Z" }, end: { dateTime: "2026-11-06T11:00:00Z" } };
   const lezen = K.naarAfspraak(basis, { ...agenda, toegang: "reader" });
-  assert.equal(lezen.google.schrijfbaar, false);
-  assert.equal(lezen.google.verwijderbaar, false);
+  assert.equal(lezen.extern.schrijfbaar, false);
+  assert.equal(lezen.extern.verwijderbaar, false);
   const gast = K.naarAfspraak({ ...basis, organizer: { email: "ander@bedrijf.nl", displayName: "Ander" } }, agenda);
-  assert.equal(gast.google.schrijfbaar, false);
-  assert.equal(gast.google.verwijderbaar, true, "als gast mag je hem uit je eigen agenda halen");
-  assert.equal(gast.google.organisator, "Ander");
+  assert.equal(gast.extern.schrijfbaar, false);
+  assert.equal(gast.extern.verwijderbaar, true, "als gast mag je hem uit je eigen agenda halen");
+  assert.equal(gast.extern.organisator, "Ander");
   const mag = K.naarAfspraak({ ...basis, organizer: { email: "ander@bedrijf.nl" }, guestsCanModify: true }, agenda);
-  assert.equal(mag.google.schrijfbaar, true);
+  assert.equal(mag.extern.schrijfbaar, true);
 });
 
 test("alleen http(s)-links (Meet, Google-link)", () => {
@@ -140,8 +140,8 @@ test("alleen http(s)-links (Meet, Google-link)", () => {
     },
     agenda
   );
-  assert.equal(a.google.meetLink, null);
-  assert.equal(a.google.link, null);
+  assert.equal(a.extern.meetLink, null);
+  assert.equal(a.extern.link, null);
 });
 
 test("HTML-beschrijving → platte tekst", () => {
@@ -260,7 +260,7 @@ test("vergaderlinks herkennen: Teams, Meet, Zoom, Webex …", () => {
   // Locatie eerst, dan de notitie; de Meet-link van Google zelf gaat voor.
   assert.equal(V.vindVergaderlink("Studio", "Of online: https://meet.google.com/aaa-bbbb-ccc").dienst, "Google Meet");
   assert.equal(
-    V.vergaderlinkVan({ locatie: "https://us02web.zoom.us/j/1", notitie: "", google: { meetLink: "https://meet.google.com/x", vergaderDienst: "Google Meet" } }).dienst,
+    V.vergaderlinkVan({ locatie: "https://us02web.zoom.us/j/1", notitie: "", extern: { meetLink: "https://meet.google.com/x", vergaderDienst: "Google Meet" } }).dienst,
     "Google Meet"
   );
   assert.equal(V.vergaderlinkVan({ locatie: "https://us02web.zoom.us/j/1", notitie: "" }).dienst, "Zoom");
@@ -296,8 +296,8 @@ test("meldingen: 10 minuten en 1 minuut vooraf, elk één keer", () => {
   // Sleutel: eigen afspraak, voorkomen van een reeks, Google-reeks.
   assert.equal(M.herinneringSleutel({ id: "u1", reeksId: null }), "u1");
   assert.equal(M.herinneringSleutel({ id: "u1~2026-11-06", reeksId: "u1" }), "u1");
-  assert.equal(M.herinneringSleutel({ id: `g.${AG}.r_2026`, reeksId: "r", google: { agendaId: AG } }), `g.${AG}.r`);
-  assert.equal(M.herinneringSleutel({ id: `g.${AG}.los`, reeksId: null, google: { agendaId: AG } }), `g.${AG}.los`);
+  assert.equal(M.herinneringSleutel({ id: `g.${AG}.r_2026`, reeksId: "r", extern: { bron: "google", agendaId: AG } }), `g.${AG}.r`);
+  assert.equal(M.herinneringSleutel({ id: `g.${AG}.los`, reeksId: null, extern: { bron: "google", agendaId: AG } }), `g.${AG}.los`);
   // Volgende controle: precies op het meldmoment (max. 30 s).
   assert.equal(M.volgendeControle([a], t("2026-11-06T08:49:50Z")), 10_050);
   assert.equal(M.volgendeControle([a], t("2026-11-06T07:00:00Z")), 30_000);

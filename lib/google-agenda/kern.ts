@@ -323,7 +323,8 @@ export function naarAfspraak(ev: GEvent, agenda: AgendaVoorWeergave): Afspraak |
     herhaalTot: null,
     reeksId: reeks,
     voorkomen: oorspronkelijk ? inAmsterdam(oorspronkelijk.start).dag : null,
-    google: {
+    extern: {
+      bron: 'google',
       agendaId: agenda.id,
       agendaNaam: agenda.naam,
       kleur: (ev.colorId && EVENT_KLEUR[ev.colorId]) || agenda.kleur,

@@ -207,7 +207,7 @@ export async function wijzigGoogleAfspraak(service: SupabaseClient, userId: stri
   const ev = await haalEvent(v, agenda, eventId);
   const huidig = naarAfspraak(ev, weergave(agenda));
   if (!huidig) throw new GoogleAgendaFout('niet_gevonden');
-  if (!huidig.google?.schrijfbaar) throw new GoogleAgendaFout('geen_recht');
+  if (!huidig.extern?.schrijfbaar) throw new GoogleAgendaFout('geen_recht');
 
   const invoer: AfspraakInvoer = { ...body };
   delete invoer.klantId;
@@ -217,7 +217,7 @@ export async function wijzigGoogleAfspraak(service: SupabaseClient, userId: stri
   if (invoer.titel === huidig.titel) delete invoer.titel;
   if (invoer.notitie === huidig.notitie) delete invoer.notitie;
   if (invoer.locatie === huidig.locatie) delete invoer.locatie;
-  if (huidig.google.herhaalt) {
+  if (huidig.extern.herhaalt) {
     delete invoer.herhaling;
     delete invoer.herhaalTot;
   }
@@ -227,7 +227,7 @@ export async function wijzigGoogleAfspraak(service: SupabaseClient, userId: stri
   const metTijd =
     rij.starts_at !== undefined &&
     (Date.parse(rij.starts_at) !== Date.parse(huidig.start) || Date.parse(rij.ends_at!) !== Date.parse(huidig.eind) || rij.all_day !== huidig.heleDag);
-  const meet = body.meet === true && !huidig.google.meetLink;
+  const meet = body.meet === true && !huidig.extern.meetLink;
 
   const reeks = huidig.reeksId && body.toepassen !== 'deze' ? huidig.reeksId : null;
   let doelId = eventId;
@@ -271,7 +271,7 @@ export async function verwijderGoogleAfspraak(service: SupabaseClient, userId: s
     throw e;
   }
   const huidig = naarAfspraak(ev, weergave(agenda));
-  if (huidig && !huidig.google?.verwijderbaar) throw new GoogleAgendaFout('geen_recht', 'Deze afspraak kun je in Google niet verwijderen.');
+  if (huidig && !huidig.extern?.verwijderbaar) throw new GoogleAgendaFout('geen_recht', 'Deze afspraak kun je in Google niet verwijderen.');
   const doel = ev.recurringEventId && toepassen !== 'deze' ? ev.recurringEventId : eventId;
   try {
     await gApi<void>(v, `${kal(agenda.google_id)}/events/${encodeURIComponent(doel)}?sendUpdates=${verstuur(ev)}`, { method: 'DELETE' });
@@ -312,19 +312,19 @@ export async function googleVoorFeed(service: SupabaseClient, userId: string, nu
         const events = await lijstEvents({ account, service }, agenda, van, tot, signal);
         for (const ev of events) {
           const a = naarAfspraak(ev, weergave(agenda));
-          if (!a || !a.google) continue;
-          const extra = [a.google.meetLink ? `${a.google.vergaderDienst ?? 'Videogesprek'}: ${a.google.meetLink}` : '', a.notitie].filter(Boolean).join('\n\n');
+          if (!a || !a.extern) continue;
+          const extra = [a.extern.meetLink ? `${a.extern.vergaderDienst ?? 'Videogesprek'}: ${a.extern.meetLink}` : '', a.notitie].filter(Boolean).join('\n\n');
           uit.push({
             id: a.id,
-            uid: `google-${agenda.id}-${a.google.eventId}`,
+            uid: `google-${agenda.id}-${a.extern.eventId}`,
             titel: a.titel,
             notitie: extra,
-            locatie: a.locatie || a.google.meetLink || '',
+            locatie: a.locatie || a.extern.meetLink || '',
             start: a.start,
             eind: a.eind,
             heleDag: a.heleDag,
             categorie: agenda.naam,
-            link: a.google.link
+            link: a.extern.link
           });
         }
       } catch (e) {

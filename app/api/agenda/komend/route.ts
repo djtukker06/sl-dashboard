@@ -1,7 +1,7 @@
 import { plusDagen, vandaag as vandaagNL } from '@/lib/agenda/datum';
 import { afsprakenInBereik } from '@/lib/agenda/repo';
 import { foutAntwoord, json, metSessie } from '@/lib/agenda/api';
-import { metGoogleAfspraken } from '@/lib/google-agenda/afspraken';
+import { metExterneAfspraken } from '@/lib/agenda/extern-server';
 import { createServiceRoleClient } from '@/lib/supabase/service-role';
 import { herinneringSleutel } from '@/lib/agenda/meldingen-kern';
 
@@ -18,7 +18,7 @@ export async function GET(request: Request) {
   const vandaag = vandaagNL();
   try {
     const { afspraken: eigen } = await afsprakenInBereik(s.bron, vandaag, plusDagen(vandaag, 1));
-    const alle = await metGoogleAfspraken(createServiceRoleClient(s.lid.bewijs), s.lid.userId, vandaag, eigen);
+    const alle = await metExterneAfspraken(createServiceRoleClient(s.lid.bewijs), s.lid.userId, vandaag, plusDagen(vandaag, 1), eigen);
     const nu = Date.now();
     const tot = nu + 26 * 3_600_000;
     const afspraken = alle
@@ -30,8 +30,8 @@ export async function GET(request: Request) {
         eind: a.eind,
         locatie: a.locatie,
         notitie: a.notitie.slice(0, 2000),
-        google: a.google
-          ? { meetLink: a.google.meetLink, vergaderDienst: a.google.vergaderDienst, agendaNaam: a.google.agendaNaam, kleur: a.google.kleur }
+        extern: a.extern
+          ? { meetLink: a.extern.meetLink, vergaderDienst: a.extern.vergaderDienst, agendaNaam: a.extern.agendaNaam, kleur: a.extern.kleur }
           : undefined,
         herinnering: herinneringSleutel(a)
       }));

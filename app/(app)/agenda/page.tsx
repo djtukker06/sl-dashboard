@@ -6,6 +6,7 @@ import { isDag, vandaag as vandaagNL } from '@/lib/agenda/datum';
 import { isUuid } from '@/lib/agenda/invoer';
 import { isAfspraakId } from '@/lib/agenda/herhaling';
 import { isGoogleAfspraakId } from '@/lib/google-agenda/kern';
+import { isAppleAfspraakId } from '@/lib/apple-agenda/id-kern';
 import { KOPPEL_MELDING } from '@/lib/google-agenda/types';
 import { AgendaApp } from '@/components/agenda/AgendaApp';
 
@@ -58,7 +59,7 @@ export default async function AgendaPage({
       startFilter={sp.lijst === 'uitgezet' ? 'uitgezet' : 'vandaag'}
       startProject={isUuid(sp.project) ? sp.project : null}
       openTaak={isUuid(sp.taak) ? sp.taak : null}
-      openAfspraak={isAfspraakId(sp.afspraak) || isGoogleAfspraakId(sp.afspraak) ? sp.afspraak! : null}
+      openAfspraak={isAfspraakId(sp.afspraak) || isGoogleAfspraakId(sp.afspraak) || isAppleAfspraakId(sp.afspraak) ? sp.afspraak! : null}
       googleUitkomst={sp.google && sp.google in KOPPEL_MELDING ? sp.google : null}
     />
   );
