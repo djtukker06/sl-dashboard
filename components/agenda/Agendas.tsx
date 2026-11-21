@@ -5,21 +5,22 @@ import { api } from '@/lib/agenda/client';
 import type { FeedStatus } from '@/lib/agenda/feed-status';
 import { BELTONEN, speelGeluid, useBeltoon, useMeldingen, zetBeltoon, zetMeldingen, type Beltoon } from '@/lib/agenda/meldingen';
 import { KLEUREN } from '@/lib/google-agenda/kern';
-import type { GoogleAgenda, GoogleStatus } from '@/lib/google-agenda/types';
+import type { AgendaWijziging, ExternAccount, ExternAgenda, ExternStatus } from '@/lib/agenda/extern-types';
 
-// Welke agenda's je ziet. Twee plekken, zoals in Google Agenda zelf:
-//   - AgendaChips: een rij gekleurde knopjes boven de agenda (Studio Levant en je eigen
-//     Google-agenda's): één klik = tonen of verbergen. Dit is ook de legenda van de kleuren.
-//   - AgendaBeheer: het venster achter de knop "Agenda's": alle agenda's per Google-account
-//     (ook feestdagen, gedeelde agenda's), kleur kiezen, "ook in je Apple-agenda",
-//     account toevoegen, verversen of ontkoppelen.
+// Welke agenda's je ziet. Twee plekken:
+//   - AgendaChips: een rij gekleurde knopjes boven de agenda (je eigen afspraken en je
+//     gekoppelde agenda's): één klik = tonen of verbergen. Dit is ook de legenda van de kleuren.
+//   - AgendaBeheer: het venster achter de knop "Agenda's": je gekoppelde agenda's per account
+//     (kleur, tonen, "ook in je agenda-link" bij Google, verversen, ontkoppelen), Google Agenda en
+//     Apple Agenda koppelen, de agenda-link en meldingen vooraf.
 
 export const EIGEN_KLEUR = '#c8a97e';
+const EIGEN_NAAM = 'Studio Levant';
 
-export type AgendaWijziging = { zichtbaar?: boolean; inFeed?: boolean; kleur?: string };
+const BRON_NAAM: Record<string, string> = { apple: 'Apple Agenda', google: 'Google Agenda' };
 
 /** In de rij met knopjes: je eigen (schrijfbare) agenda's en alles wat je aanzette. */
-const inRij = (a: GoogleAgenda) => a.zichtbaar || a.schrijfbaar;
+const inRij = (a: ExternAgenda) => a.zichtbaar || a.schrijfbaar;
 
 export function AgendaChips({
   status,
@@ -27,26 +28,26 @@ export function AgendaChips({
   onEigen,
   onWijzig
 }: {
-  status: GoogleStatus;
+  status: ExternStatus;
   eigenZichtbaar: boolean;
   onEigen: (zichtbaar: boolean) => void;
-  onWijzig: (agendaId: string, w: AgendaWijziging) => void;
+  onWijzig: (agenda: ExternAgenda, w: AgendaWijziging) => void;
 }) {
   const agendas = status.accounts.flatMap((a) => a.agendas.filter(inRij));
   if (!agendas.length) return null;
   return (
     <div className="ag-kal-rij" role="group" aria-label="Agenda's tonen">
-      <Chip naam="Studio Levant" kleur={EIGEN_KLEUR} aan={eigenZichtbaar} onClick={() => onEigen(!eigenZichtbaar)} />
+      <Chip naam={EIGEN_NAAM} kleur={EIGEN_KLEUR} aan={eigenZichtbaar} onClick={() => onEigen(!eigenZichtbaar)} />
       {status.accounts.map((acc) =>
         acc.agendas.filter(inRij).map((a) => (
           <Chip
             key={a.id}
             naam={a.naam}
-            titel={`${a.naam} · ${acc.email}`}
+            titel={`${a.naam} · ${BRON_NAAM[acc.bron]} (${acc.email})`}
             kleur={a.kleur}
             aan={a.zichtbaar}
             fout={!!acc.fout}
-            onClick={() => onWijzig(a.id, { zichtbaar: !a.zichtbaar })}
+            onClick={() => onWijzig(a, { zichtbaar: !a.zichtbaar })}
           />
         ))
       )}
@@ -54,21 +55,7 @@ export function AgendaChips({
   );
 }
 
-function Chip({
-  naam,
-  titel,
-  kleur,
-  aan,
-  fout,
-  onClick
-}: {
-  naam: string;
-  titel?: string;
-  kleur: string;
-  aan: boolean;
-  fout?: boolean;
-  onClick: () => void;
-}) {
+function Chip({ naam, titel, kleur, aan, fout, onClick }: { naam: string; titel?: string; kleur: string; aan: boolean; fout?: boolean; onClick: () => void }) {
   return (
     <button
       type="button"
@@ -93,23 +80,26 @@ export function AgendaBeheer({
   onEigen,
   onWijzig,
   onVernieuw,
-  onOntkoppel
+  onOntkoppel,
+  onKoppelApple
 }: {
-  status: GoogleStatus | null;
+  status: ExternStatus | null;
   eigenZichtbaar: boolean;
   fouten: { accountId: string; melding: string }[];
   open: boolean;
   onOpen: (open: boolean) => void;
   onEigen: (zichtbaar: boolean) => void;
-  onWijzig: (agendaId: string, w: AgendaWijziging) => void;
-  onVernieuw: (accountId: string) => Promise<void>;
-  onOntkoppel: (accountId: string) => Promise<void>;
+  onWijzig: (agenda: ExternAgenda, w: AgendaWijziging) => void;
+  onVernieuw: (account: ExternAccount) => Promise<void>;
+  onOntkoppel: (account: ExternAccount) => Promise<void>;
+  onKoppelApple: (appleId: string, wachtwoord: string) => Promise<void>;
 }) {
   const doos = useRef<HTMLDivElement>(null);
   const knop = useRef<HTMLButtonElement>(null);
   const [details, setDetails] = useState<string | null>(null);
   const [bezig, setBezig] = useState<string | null>(null);
   const [zekerWeg, setZekerWeg] = useState<string | null>(null);
+  const [appleOpen, setAppleOpen] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -142,7 +132,10 @@ export function AgendaBeheer({
     }
   }
 
-  const aantal = status?.accounts.length ?? 0;
+  const apple = status?.apple ?? null;
+  const appleAccounts = status?.accounts.filter((a) => a.bron === 'apple') ?? [];
+  const google = status?.google ?? null;
+  const googleAccounts = status?.accounts.filter((a) => a.bron === 'google') ?? [];
 
   return (
     <div className="ag-kal">
@@ -153,14 +146,14 @@ export function AgendaBeheer({
         aria-expanded={open}
         aria-haspopup="dialog"
         onClick={() => onOpen(!open)}
-        title="Agenda's tonen, kleuren en Google Agenda koppelen"
+        title="Agenda's tonen, kleuren, Google en Apple Agenda koppelen"
       >
         <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true">
           <rect x="3.5" y="5" width="17" height="15" rx="2" fill="none" stroke="currentColor" strokeWidth="1.5" />
           <path d="M3.5 9.5h17M8 3v4M16 3v4" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
         </svg>
         <span>Agenda&rsquo;s</span>
-        {fouten.length > 0 && <span className="ag-kal-let" aria-label="Er is iets mis met een koppeling" />}
+        {(fouten.length > 0 || status?.accounts.some((a) => a.fout)) && <span className="ag-kal-let" aria-label="Er is iets mis met een koppeling" />}
       </button>
       {open && (
         <div ref={doos} className="ag-popover ag-kal-venster" role="dialog" aria-label="Agenda's">
@@ -172,145 +165,286 @@ export function AgendaBeheer({
                 <input type="checkbox" checked={eigenZichtbaar} onChange={(e) => onEigen(e.target.checked)} />
                 <span className="ag-kal-stip" style={{ '--ag-kleur': EIGEN_KLEUR } as React.CSSProperties} aria-hidden="true" />
                 <span className="ag-kal-naam">
-                  Studio Levant
-                  <small>Afspraken uit het dashboard</small>
+                  {EIGEN_NAAM}
+                  <small>Afspraken uit het systeem</small>
                 </span>
               </label>
             </li>
           </ul>
 
-          {status && !status.tabellen ? (
-            <p className="ag-kal-uitleg">
-              Google Agenda koppelen kan zodra migratie 0035 is uitgevoerd (<code>supabase/UITVOEREN_0035.sql</code> in de Supabase SQL Editor).
-            </p>
-          ) : status && !status.ingericht ? (
-            <p className="ag-kal-uitleg">Google Agenda is nog niet ingericht op de server (GOOGLE_CLIENT_ID en GOOGLE_CLIENT_SECRET).</p>
-          ) : (
-            status?.accounts.map((acc) => {
-              const melding = acc.fout ? 'De toegang is verlopen of ingetrokken.' : fouten.find((f) => f.accountId === acc.id)?.melding;
-              return (
-                <section key={acc.id} className="ag-kal-account">
-                  <header className="ag-kal-account-kop">
-                    <span className="ag-kal-account-naam" title={acc.email}>
-                      {acc.email}
+          {status?.accounts.map((acc) => {
+            const melding = acc.fout ? 'De toegang werkt niet meer (wachtwoord ingetrokken?).' : fouten.find((f) => f.accountId === acc.id)?.melding;
+            return (
+              <section key={acc.id} className="ag-kal-account">
+                <header className="ag-kal-account-kop">
+                  <span className="ag-kal-account-naam" title={`${BRON_NAAM[acc.bron]} · ${acc.email}`}>
+                    {acc.bron === 'apple' ? 'iCloud' : 'Google'} · {acc.email}
+                  </span>
+                  {zekerWeg === acc.id ? (
+                    <span className="ag-kal-account-acties">
+                      <button
+                        type="button"
+                        className="ag-link-knop ag-link-gevaar"
+                        disabled={bezig === acc.id}
+                        onClick={() => void doe(acc.id, () => onOntkoppel(acc)).then(() => setZekerWeg(null))}
+                      >
+                        Ja, ontkoppelen
+                      </button>
+                      <button type="button" className="ag-link-knop" onClick={() => setZekerWeg(null)}>
+                        Nee
+                      </button>
                     </span>
-                    {zekerWeg === acc.id ? (
-                      <span className="ag-kal-account-acties">
+                  ) : (
+                    <span className="ag-kal-account-acties">
+                      {!acc.fout && (
                         <button
                           type="button"
-                          className="ag-link-knop ag-link-gevaar"
+                          className="ag-link-knop"
                           disabled={bezig === acc.id}
-                          onClick={() => void doe(acc.id, () => onOntkoppel(acc.id)).then(() => setZekerWeg(null))}
+                          title="Nieuwe of verwijderde agenda's ophalen"
+                          onClick={() => void doe(acc.id, () => onVernieuw(acc))}
                         >
-                          Ja, ontkoppelen
+                          {bezig === acc.id ? 'Bezig…' : 'Vernieuwen'}
                         </button>
-                        <button type="button" className="ag-link-knop" onClick={() => setZekerWeg(null)}>
-                          Nee
-                        </button>
-                      </span>
-                    ) : (
-                      <span className="ag-kal-account-acties">
-                        {!acc.fout && (
-                          <button
-                            type="button"
-                            className="ag-link-knop"
-                            disabled={bezig === acc.id}
-                            title="Nieuwe of verwijderde agenda's uit Google ophalen"
-                            onClick={() => void doe(acc.id, () => onVernieuw(acc.id))}
-                          >
-                            {bezig === acc.id ? 'Bezig…' : 'Vernieuwen'}
-                          </button>
-                        )}
-                        <button type="button" className="ag-link-knop" onClick={() => setZekerWeg(acc.id)}>
-                          Ontkoppelen
-                        </button>
-                      </span>
-                    )}
-                  </header>
-                  {melding && (
-                    <div className="ag-kal-melding" role="alert">
-                      <span>{melding}</span>
-                      {acc.fout && <KoppelKnop tekst="Opnieuw koppelen" klein />}
-                    </div>
+                      )}
+                      <button type="button" className="ag-link-knop" onClick={() => setZekerWeg(acc.id)}>
+                        Ontkoppelen
+                      </button>
+                    </span>
                   )}
-                  <ul className="ag-kal-lijst">
-                    {acc.agendas.map((a) => (
-                      <li key={a.id} className="ag-kal-item">
-                        <div className="ag-kal-regel-rij">
-                          <label className="ag-kal-regel">
-                            <input type="checkbox" checked={a.zichtbaar} onChange={(e) => onWijzig(a.id, { zichtbaar: e.target.checked })} />
-                            <span className="ag-kal-stip" style={{ '--ag-kleur': a.kleur } as React.CSSProperties} aria-hidden="true" />
-                            <span className="ag-kal-naam">
-                              {a.naam}
-                              {!a.schrijfbaar && <small>Alleen lezen</small>}
-                            </span>
-                          </label>
-                          <button
-                            type="button"
-                            className="ag-icoonknop ag-kal-meer"
-                            aria-expanded={details === a.id}
-                            aria-label={`Kleur en instellingen van ${a.naam}`}
-                            title="Kleur en instellingen"
-                            onClick={() => setDetails(details === a.id ? null : a.id)}
-                          >
-                            <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
-                              <circle cx="6" cy="12" r="1.4" fill="currentColor" />
-                              <circle cx="12" cy="12" r="1.4" fill="currentColor" />
-                              <circle cx="18" cy="12" r="1.4" fill="currentColor" />
-                            </svg>
-                          </button>
-                        </div>
-                        {details === a.id && (
-                          <div className="ag-kal-details">
-                            <div className="ag-kal-kleuren" role="radiogroup" aria-label={`Kleur van ${a.naam}`}>
-                              {KLEUREN.map((k) => (
-                                <button
-                                  key={k.kleur}
-                                  type="button"
-                                  role="radio"
-                                  aria-checked={a.kleur === k.kleur}
-                                  aria-label={k.naam}
-                                  title={k.naam}
-                                  className="ag-kal-kleur"
-                                  style={{ '--ag-kleur': k.kleur } as React.CSSProperties}
-                                  onClick={() => onWijzig(a.id, { kleur: k.kleur })}
-                                />
-                              ))}
-                            </div>
+                </header>
+                {melding && (
+                  <div className="ag-kal-melding" role="alert">
+                    <span>{melding}</span>
+                    {acc.fout && acc.bron === 'google' && <KoppelKnop tekst="Opnieuw koppelen" klein />}
+                    {acc.fout && acc.bron === 'apple' && (
+                      <button type="button" className="ag-link-knop" onClick={() => setAppleOpen(acc.email)}>
+                        Opnieuw koppelen
+                      </button>
+                    )}
+                  </div>
+                )}
+                <ul className="ag-kal-lijst">
+                  {acc.agendas.map((a) => (
+                    <li key={a.id} className="ag-kal-item">
+                      <div className="ag-kal-regel-rij">
+                        <label className="ag-kal-regel">
+                          <input type="checkbox" checked={a.zichtbaar} onChange={(e) => onWijzig(a, { zichtbaar: e.target.checked })} />
+                          <span className="ag-kal-stip" style={{ '--ag-kleur': a.kleur } as React.CSSProperties} aria-hidden="true" />
+                          <span className="ag-kal-naam">
+                            {a.naam}
+                            {!a.schrijfbaar && <small>Alleen lezen</small>}
+                          </span>
+                        </label>
+                        <button
+                          type="button"
+                          className="ag-icoonknop ag-kal-meer"
+                          aria-expanded={details === a.id}
+                          aria-label={`Kleur en instellingen van ${a.naam}`}
+                          title="Kleur en instellingen"
+                          onClick={() => setDetails(details === a.id ? null : a.id)}
+                        >
+                          <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+                            <circle cx="6" cy="12" r="1.4" fill="currentColor" />
+                            <circle cx="12" cy="12" r="1.4" fill="currentColor" />
+                            <circle cx="18" cy="12" r="1.4" fill="currentColor" />
+                          </svg>
+                        </button>
+                      </div>
+                      {details === a.id && (
+                        <div className="ag-kal-details">
+                          <div className="ag-kal-kleuren" role="radiogroup" aria-label={`Kleur van ${a.naam}`}>
+                            {KLEUREN.map((k) => (
+                              <button
+                                key={k.kleur}
+                                type="button"
+                                role="radio"
+                                aria-checked={a.kleur === k.kleur}
+                                aria-label={k.naam}
+                                title={k.naam}
+                                className="ag-kal-kleur"
+                                style={{ '--ag-kleur': k.kleur } as React.CSSProperties}
+                                onClick={() => onWijzig(a, { kleur: k.kleur })}
+                              />
+                            ))}
+                          </div>
+                          {a.bron === 'google' && (
                             <label className="ag-schakel ag-kal-feed">
-                              <input type="checkbox" checked={a.inFeed} onChange={(e) => onWijzig(a.id, { inFeed: e.target.checked })} />
+                              <input type="checkbox" checked={a.inFeed} onChange={(e) => onWijzig(a, { inFeed: e.target.checked })} />
                               <span>
                                 Ook in je agenda-link
                                 <small>Apple Agenda op je iPhone en Mac (zet uit als die deze Google-agenda al toont)</small>
                               </span>
                             </label>
-                          </div>
-                        )}
-                      </li>
-                    ))}
-                  </ul>
-                </section>
-              );
-            })
-          )}
+                          )}
+                        </div>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            );
+          })}
 
-          {status?.tabellen && status.ingericht && (
+          {google && !google.tabellen ? (
+            <p className="ag-kal-uitleg">
+              Google Agenda koppelen kan zodra migratie 0035 is uitgevoerd (<code>supabase/UITVOEREN_0035.sql</code> in de Supabase SQL Editor).
+            </p>
+          ) : google && !google.ingericht ? (
+            <p className="ag-kal-uitleg">Google Agenda is nog niet ingericht op de server (GOOGLE_CLIENT_ID en GOOGLE_CLIENT_SECRET).</p>
+          ) : google ? (
             <div className="ag-kal-voet">
-              <KoppelKnop tekst={aantal ? '+ Nog een Google-account' : 'Google Agenda koppelen'} primair={!aantal} />
-              {!aantal && (
+              <KoppelKnop tekst={googleAccounts.length ? '+ Nog een Google-account' : 'Google Agenda koppelen'} primair={!googleAccounts.length && !appleAccounts.length} />
+              {!googleAccounts.length && (
                 <p className="ag-kal-uitleg">
-                  Je afspraken uit Google (met Meet-links, beschrijving en gasten) verschijnen hier in hun eigen kleur. Je kunt ze
-                  hier ook maken, wijzigen en verwijderen. Alleen jij ziet ze.
+                  Je afspraken uit Google (met Meet-links, beschrijving en gasten) verschijnen hier in hun eigen kleur. Je kunt ze hier ook maken,
+                  wijzigen en verwijderen. Alleen jij ziet ze.
                 </p>
               )}
             </div>
-          )}
+          ) : null}
+
+          {apple && !apple.tabellen ? (
+            <p className="ag-kal-uitleg">
+              Apple Agenda koppelen kan zodra migratie 0040 is uitgevoerd (<code>supabase/UITVOEREN_0040.sql</code> in de Supabase SQL Editor).
+            </p>
+          ) : apple && !apple.ingericht ? (
+            <p className="ag-kal-uitleg">Apple Agenda koppelen is nog niet ingericht op de server (MAIL_ENCRYPTION_KEY).</p>
+          ) : apple ? (
+            <div className="ag-kal-voet">
+              {appleOpen !== null ? (
+                <AppleKoppelen
+                  standaardId={appleOpen}
+                  onKlaar={async (id, ww) => {
+                    await onKoppelApple(id, ww);
+                    setAppleOpen(null);
+                  }}
+                  onAnnuleer={() => setAppleOpen(null)}
+                />
+              ) : (
+                <>
+                  <button type="button" className="db-knop" onClick={() => setAppleOpen('')}>
+                    <AppleIcoon />
+                    {appleAccounts.length ? '+ Nog een Apple ID' : 'Apple Agenda koppelen'}
+                  </button>
+                  {!appleAccounts.length && (
+                    <p className="ag-kal-uitleg">
+                      Je agenda&rsquo;s uit Apple Agenda (iCloud), zoals je werk- en privé-agenda, verschijnen hier in hun eigen kleur. Je kunt
+                      er hier ook afspraken in zetten; die staan dan meteen op je iPhone. Alleen jij ziet ze.
+                    </p>
+                  )}
+                </>
+              )}
+            </div>
+          ) : null}
 
           <AgendaLink open={open} />
           <MeldingenInstelling />
         </div>
       )}
     </div>
+  );
+}
+
+function AppleIcoon() {
+  return (
+    <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true">
+      <path
+        fill="currentColor"
+        d="M16.4 12.6c0-2.5 2-3.7 2.1-3.8-1.2-1.7-3-1.9-3.6-2-1.5-.2-3 .9-3.7.9-.8 0-2-.9-3.2-.8-1.7 0-3.2 1-4 2.4-1.7 3-.4 7.4 1.2 9.8.8 1.2 1.8 2.5 3 2.4 1.2 0 1.7-.8 3.1-.8 1.5 0 1.9.8 3.2.8 1.3 0 2.1-1.2 2.9-2.4.9-1.4 1.3-2.7 1.3-2.8 0 0-2.5-1-2.3-3.7ZM14 5.2c.7-.8 1.1-1.9 1-3-1 0-2.1.7-2.8 1.5-.6.7-1.2 1.8-1 2.9 1.1.1 2.1-.6 2.8-1.4Z"
+      />
+    </svg>
+  );
+}
+
+/** Het formulier om Apple Agenda te koppelen: Apple ID + app-specifiek wachtwoord. */
+function AppleKoppelen({
+  standaardId,
+  onKlaar,
+  onAnnuleer
+}: {
+  standaardId: string;
+  onKlaar: (appleId: string, wachtwoord: string) => Promise<void>;
+  onAnnuleer: () => void;
+}) {
+  const [appleId, setAppleId] = useState(standaardId);
+  const [wachtwoord, setWachtwoord] = useState('');
+  const [bezig, setBezig] = useState(false);
+  const [fout, setFout] = useState<string | null>(null);
+
+  async function verstuur(e: React.FormEvent) {
+    e.preventDefault();
+    setBezig(true);
+    setFout(null);
+    try {
+      await onKlaar(appleId.trim(), wachtwoord);
+      setWachtwoord('');
+    } catch (err) {
+      setFout(err instanceof Error ? err.message : 'Koppelen is niet gelukt.');
+    } finally {
+      setBezig(false);
+    }
+  }
+
+  return (
+    <form className="ag-apple" onSubmit={verstuur}>
+      <p className="ag-apple-titel">
+        <AppleIcoon /> Apple Agenda koppelen
+      </p>
+      <ol className="ag-apple-stappen">
+        <li>
+          Ga naar{' '}
+          <a href="https://account.apple.com/account/manage" target="_blank" rel="noopener noreferrer">
+            account.apple.com
+          </a>{' '}
+          en log in.
+        </li>
+        <li>
+          Kies <strong>Inloggen en beveiliging</strong> → <strong>App-specifieke wachtwoorden</strong> en maak er een aan (bijvoorbeeld met de naam
+          &ldquo;Studio Levant&rdquo;).
+        </li>
+        <li>Vul hieronder je Apple ID en dat wachtwoord in.</li>
+      </ol>
+      <label className="ag-label">
+        Apple ID
+        <input
+          className="ag-veld"
+          type="email"
+          inputMode="email"
+          autoComplete="username"
+          placeholder="naam@icloud.com"
+          value={appleId}
+          onChange={(e) => setAppleId(e.target.value)}
+          required
+        />
+      </label>
+      <label className="ag-label">
+        App-specifiek wachtwoord
+        <input
+          className="ag-veld"
+          type="password"
+          autoComplete="off"
+          placeholder="xxxx-xxxx-xxxx-xxxx"
+          value={wachtwoord}
+          onChange={(e) => setWachtwoord(e.target.value)}
+          required
+        />
+      </label>
+      <p className="ag-uitleg">Niet je gewone Apple-wachtwoord. Het wordt versleuteld bewaard en alleen gebruikt voor je agenda.</p>
+      {fout && (
+        <p className="ag-fout" role="alert">
+          {fout}
+        </p>
+      )}
+      <div className="ag-apple-acties">
+        <button type="submit" className="db-knop db-knop-primair" disabled={bezig || !appleId.trim() || !wachtwoord.trim()}>
+          {bezig ? 'Koppelen…' : 'Koppelen'}
+        </button>
+        <button type="button" className="ag-link-knop" onClick={onAnnuleer} disabled={bezig}>
+          Annuleren
+        </button>
+      </div>
+    </form>
   );
 }
 

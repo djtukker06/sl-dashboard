@@ -1,7 +1,7 @@
-import { vandaag as vandaagNL } from '@/lib/agenda/datum';
+import { plusDagen, vandaag as vandaagNL } from '@/lib/agenda/datum';
 import { dashboardPlanning } from '@/lib/agenda/repo';
 import { foutAntwoord, json, metSessie } from '@/lib/agenda/api';
-import { metGoogleAfspraken } from '@/lib/google-agenda/afspraken';
+import { metExterneAfspraken } from '@/lib/agenda/extern-server';
 import { createServiceRoleClient } from '@/lib/supabase/service-role';
 
 export const runtime = 'nodejs';
@@ -17,8 +17,8 @@ export async function GET(request: Request) {
   const vandaag = vandaagNL();
   try {
     const planning = await dashboardPlanning(s.bron, vandaag);
-    // Plus je afspraken uit gekoppelde Google-agenda's (0035; best effort, max. 2,5 s).
-    planning.afspraken = await metGoogleAfspraken(createServiceRoleClient(s.lid.bewijs), s.lid.userId, vandaag, planning.afspraken);
+    // Plus je afspraken uit gekoppelde Google- en Apple-agenda's (0035, 0040; best effort, max. 2,5 s).
+    planning.afspraken = await metExterneAfspraken(createServiceRoleClient(s.lid.bewijs), s.lid.userId, vandaag, plusDagen(vandaag, 6), planning.afspraken);
     return json({ planning, vandaag });
   } catch (e) {
     return foutAntwoord(e);

@@ -18,7 +18,7 @@ export type OpMenu = (e: React.MouseEvent<HTMLElement>, doel: MenuDoel) => void;
 
 /** Kleur van een afspraak uit Google (CSS-variabele; eigen afspraken houden het zand). */
 export function kleurStijl(a: Afspraak): React.CSSProperties | undefined {
-  return a.google ? ({ '--ag-kleur': a.google.kleur } as React.CSSProperties) : undefined;
+  return a.extern ? ({ '--ag-kleur': a.extern.kleur } as React.CSSProperties) : undefined;
 }
 
 /** Klein camera-icoon bij een afspraak met een videolink (Google Meet e.d.). */
@@ -221,11 +221,11 @@ export function WeekView({
                 <button
                   key={a.id}
                   type="button"
-                  className={`ag-balk${a.google ? ' is-google' : ''}`}
+                  className={`ag-balk${a.extern ? ' is-google' : ''}`}
                   style={kleurStijl(a)}
                   onClick={() => onOpen({ soort: 'afspraak', item: a })}
                   onContextMenu={onMenu && ((e) => onMenu(e, { soort: 'afspraak', item: a }))}
-                  title={`${a.titel} · ${tijdvak(a)}${a.google ? ` · ${a.google.agendaNaam}` : ''}`}
+                  title={`${a.titel} · ${tijdvak(a)}${a.extern ? ` · ${a.extern.agendaNaam}` : ''}`}
                 >
                   {a.titel}
                 </button>
@@ -299,12 +299,12 @@ export function WeekView({
                     const kort = hoogte < 38;
                     const label =
                       b.soort === 'afspraak'
-                        ? `${b.item.titel}, ${tijdvak(b.item)}${b.item.google ? ` (${b.item.google.agendaNaam})` : ''}`
+                        ? `${b.item.titel}, ${tijdvak(b.item)}${b.item.extern ? ` (${b.item.extern.agendaNaam})` : ''}`
                         : `Taak ${b.item.titel}, ${b.item.tijd}`;
                     return (
                       <div
                         key={`${b.soort}:${b.id}`}
-                        className={`ag-blok ag-blok-${b.soort}${b.soort === 'afspraak' && b.item.google ? ' is-google' : ''}${b.soort === 'taak' && b.item.afgerond ? ' is-af' : ''}${sleept ? ' is-sleep' : ''}${kort ? ' is-kort' : ''}`}
+                        className={`ag-blok ag-blok-${b.soort}${b.soort === 'afspraak' && b.item.extern ? ' is-google' : ''}${b.soort === 'taak' && b.item.afgerond ? ' is-af' : ''}${sleept ? ' is-sleep' : ''}${kort ? ' is-kort' : ''}`}
                         style={stijl}
                         role="button"
                         tabIndex={0}

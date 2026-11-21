@@ -1,8 +1,8 @@
 import type { Teamlid } from '@/lib/auth/team';
 import { bronVan } from '@/lib/agenda/api';
-import { vandaag as vandaagNL } from '@/lib/agenda/datum';
+import { plusDagen, vandaag as vandaagNL } from '@/lib/agenda/datum';
 import { AgendaFout, dashboardPlanning } from '@/lib/agenda/repo';
-import { metGoogleAfspraken } from '@/lib/google-agenda/afspraken';
+import { metExterneAfspraken } from '@/lib/agenda/extern-server';
 import { createServiceRoleClient } from '@/lib/supabase/service-role';
 import { KaartSkelet } from './Kaart';
 import { Planning, type PlanningData } from './Planning';
@@ -16,8 +16,8 @@ export async function PlanningWidgets({ lid }: { lid: Teamlid }) {
   let fout: 'niet-ingericht' | 'fout' | null = null;
   try {
     const p = await dashboardPlanning(bronVan(lid), vandaag);
-    // Plus je afspraken uit gekoppelde Google-agenda's (0035; best effort, max. 2,5 s).
-    data = { ...p, afspraken: await metGoogleAfspraken(createServiceRoleClient(lid.bewijs), lid.userId, vandaag, p.afspraken) };
+    // Plus je afspraken uit gekoppelde Google- en Apple-agenda's (0035, 0040; best effort, max. 2,5 s).
+    data = { ...p, afspraken: await metExterneAfspraken(createServiceRoleClient(lid.bewijs), lid.userId, vandaag, plusDagen(vandaag, 6), p.afspraken) };
   } catch (e) {
     fout = e instanceof AgendaFout && e.code === 'tabel_ontbreekt' ? 'niet-ingericht' : 'fout';
   }

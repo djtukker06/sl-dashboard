@@ -13,7 +13,7 @@ export interface KomendeAfspraak {
   eind: string;
   locatie: string;
   notitie: string;
-  google?: { meetLink: string | null; vergaderDienst: string | null; agendaNaam: string; kleur: string };
+  extern?: { meetLink: string | null; vergaderDienst: string | null; agendaNaam: string; kleur: string };
   /** Sleutel voor "herinnering aan/uit" (herinneringSleutel): bij een reeks die van de reeks. */
   herinnering: string;
 }
@@ -21,11 +21,11 @@ export interface KomendeAfspraak {
 /**
  * Sleutel waaronder je "geen herinnering" voor een afspraak bewaart. Bij een herhalende
  * afspraak die van de reeks (dus geldt de keuze voor alle keren): eigen afspraak "<uuid>",
- * uit Google "g.<agenda>.<reeks-event-id>".
+ * uit Google "g.<agenda>.<reeks-event-id>", uit Apple het id van de reeks ("a.<agenda>.<bestand>").
  */
-export function herinneringSleutel(a: { id: string; reeksId: string | null; google?: { agendaId: string } }): string {
+export function herinneringSleutel(a: { id: string; reeksId: string | null; extern?: { bron: 'apple' | 'google'; agendaId: string } }): string {
   if (!a.reeksId) return a.id;
-  return a.google ? `g.${a.google.agendaId}.${a.reeksId}` : a.reeksId;
+  return a.extern?.bron === 'google' ? `g.${a.extern.agendaId}.${a.reeksId}` : a.reeksId;
 }
 
 export interface Melding {
