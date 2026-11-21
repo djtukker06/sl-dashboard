@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { agendaApi, ApiFout, useSmal, vindKlant } from '@/lib/agenda/client';
+import { agendaApi, api, ApiFout, useSmal, vindKlant } from '@/lib/agenda/client';
 import { dagTekst, maandagVan, plusDagen, vandaag as vandaagNL, weekdagIndex } from '@/lib/agenda/datum';
 import { magTaakWijzigen, namenLijst } from '@/lib/agenda/rechten';
 import { parseSnelinvoer } from '@/lib/agenda/snelinvoer';
@@ -14,6 +14,48 @@ import { ProjectKiezer, type ProjectKeuze } from './ProjectKiezer';
 import { SubtakenLijst, type SubtaakRegel } from './SubtakenLijst';
 import type { TaakGebeurtenis } from './TakenProvider';
 import { VoorWieKiezer } from './VoorWieKiezer';
+import type { ExternAgenda, ExternStatus } from '@/lib/agenda/extern-types';
+import { perGebruiker } from '@/lib/mail/client';
+
+// ---------- Apple-agenda's (0041): een taak kan ook als afspraak in een Apple-agenda staan ----------
+let appleLijst: Promise<ExternAgenda[]> | null = null;
+function laadAppleAgendas(): Promise<ExternAgenda[]> {
+  appleLijst ??= api<ExternStatus>('/api/apple-agenda')
+    .then((s) => s.accounts.filter((a) => a.bron === 'apple' && !a.fout).flatMap((a) => a.agendas.filter((g) => g.schrijfbaar)))
+    .catch(() => {
+      appleLijst = null;
+      return [];
+    });
+  return appleLijst;
+}
+/** Je schrijfbare Apple-agenda's, of null zolang ze laden. */
+function useAppleAgendas(): ExternAgenda[] | null {
+  const [lijst, setLijst] = useState<ExternAgenda[] | null>(null);
+  useEffect(() => {
+    let weg = false;
+    void laadAppleAgendas().then((l) => !weg && setLijst(l));
+    return () => {
+      weg = true;
+    };
+  }, []);
+  return lijst;
+}
+/** Laatst gekozen Apple-agenda voor een nieuwe taak ('' = alleen in het systeem), per gebruiker. */
+const TAAK_APPLE_SLEUTEL = 'sl-taak-apple-agenda';
+function leesTaakApple(): string {
+  try {
+    return localStorage.getItem(perGebruiker(TAAK_APPLE_SLEUTEL)) ?? '';
+  } catch {
+    return '';
+  }
+}
+function bewaarTaakApple(id: string) {
+  try {
+    localStorage.setItem(perGebruiker(TAAK_APPLE_SLEUTEL), id);
+  } catch {
+    /* geen opslag */
+  }
+}
 
 /** Voorinvulling voor een nieuwe taak (vanuit de agenda, een project of een klant). */
 export interface TaakStandaard {
@@ -212,6 +254,7 @@ interface Stand {
   klant: string | null;
   project: string | null;
   subs: string[];
+  apple: string;
 }
 
 /** Vergelijkbare momentopname van het formulier (voor "Wijzigingen weggooien?"). */
@@ -256,6 +299,18 @@ function TaakFormulier({
 
   const [taak, setTaak] = useState<TaakDetail | undefined>(start);
   const mag = !taak || magTaakWijzigen(taak, mijnId, overgang);
+  const appleAgendas = useAppleAgendas();
+  // '' = alleen in het systeem; bij een nieuwe taak de laatste keuze (als die agenda er nog is).
+  const [apple, setApple] = useState(start?.appleAgendaId ?? '');
+  const [appleStart] = useState(start?.appleAgendaId ?? '');
+  useEffect(() => {
+    if (!nieuw || !appleAgendas) return;
+    const laatst = leesTaakApple();
+    if (laatst && appleAgendas.some((a) => a.id === laatst)) {
+      const t = setTimeout(() => setApple(laatst), 0);
+      return () => clearTimeout(t);
+    }
+  }, [nieuw, appleAgendas]);
 
   // ---------- velden ----------
   const [titel, setTitel] = useState(start?.titel ?? '');
@@ -295,7 +350,8 @@ function TaakFormulier({
     prio,
     klant: klant?.id ?? null,
     project: project?.id ?? null,
-    subs: nieuw ? regels.map((r) => r.titel) : []
+    subs: nieuw ? regels.map((r) => r.titel) : [],
+    apple: nieuw ? '' : apple
   };
   const [schoon, setSchoon] = useState<string>(() => momentopname(stand));
   const gewijzigd = momentopname(stand) !== schoon;
@@ -368,6 +424,8 @@ function TaakFormulier({
       b.voorWie = voorWie;
       b.projectId = project?.id ?? null;
     }
+    // Alleen meesturen als je Apple-agenda's geladen zijn (anders niets veranderen).
+    if (appleAgendas && (appleAgendas.length || apple !== appleStart)) b.appleAgendaId = apple || null;
     return b;
   }
 
@@ -389,7 +447,9 @@ function TaakFormulier({
       if (nieuw) {
         const b = invoer();
         if (!overgang) b.subtaken = regels.map((r) => r.titel);
-        const { task } = await agendaApi.maakTaak(b);
+        const { task, appleFout } = await agendaApi.maakTaak(b);
+        if (appleAgendas?.length) bewaarTaakApple(apple);
+        if (appleFout) toast(appleFout, { fout: true });
         onGebeurtenis({ soort: 'aangemaakt', taak: task });
         const wie = overgang ? '' : ` voor ${namenVan(task.toegewezen.length ? task.toegewezen : voorWie)}`;
         toast(`Taak toegevoegd${wie}`, { actie: { label: 'Openen', onClick: () => onOpen(task.id) } });
@@ -418,7 +478,8 @@ function TaakFormulier({
           titelRef.current?.focus();
         } else onSluit();
       } else if (taak) {
-        const { task } = await agendaApi.bewaarTaak(taak.id, invoer());
+        const { task, appleFout } = await agendaApi.bewaarTaak(taak.id, invoer());
+        if (appleFout) toast(appleFout, { fout: true });
         if (task) {
           onGebeurtenis({ soort: 'gewijzigd', taak: task });
           toast('Taak opgeslagen');
@@ -731,6 +792,26 @@ function TaakFormulier({
             </div>
             {datum && <span className={`tk-uitleg${verleden ? ' is-waarschuwing' : ''}`}>{verleden ? `Ligt in het verleden (${dagTekst(datum, vandaag)})` : dagTekst(datum, vandaag)}</span>}
           </div>
+
+          {appleAgendas && (appleAgendas.length > 0 || appleStart) && (
+            <label className="ag-label">
+              <span>Ook in agenda</span>
+              <select className="ag-veld" value={apple} disabled={!mag} onChange={(e) => setApple(e.target.value)}>
+                <option value="">Alleen in het systeem</option>
+                {appleAgendas.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    Apple · {a.naam}
+                  </option>
+                ))}
+                {appleStart && !appleAgendas.some((a) => a.id === appleStart) && <option value={appleStart}>Apple-agenda (niet meer gekoppeld)</option>}
+              </select>
+              {apple && (
+                <span className="tk-uitleg">
+                  {datum ? 'Staat als afspraak in je Apple-agenda; afgerond krijgt hij een ✓.' : 'Komt in je Apple-agenda zodra de taak een datum heeft.'}
+                </span>
+              )}
+            </label>
+          )}
 
           <div className="ag-label" role="group" aria-label="Urgentie">
             <span>

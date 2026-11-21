@@ -495,3 +495,36 @@ export function zonderVoorkomen(ics: string, code: string, nu = new Date()): str
   stempel(hoofd, nu);
   return cal.toString();
 }
+
+// ---------------------------------------------------------------------------------
+// Taken als afspraak (0041)
+// ---------------------------------------------------------------------------------
+
+/** De vaste bestandsnaam van een taak in een Apple-agenda (zelfde taak = zelfde bestand). */
+export const taakBestand = (taakId: string) => `taak-${taakId}.ics`;
+
+/**
+ * Een taak als afspraak: op datum + tijd (duur, standaard 30 min) of de hele dag, met "✓ "
+ * voor de titel als hij af is. Zonder datum: null (dan hoort hij niet in een agenda).
+ */
+export function taakIcs(
+  t: { id: string; titel: string; notitie: string; datum: string | null; tijd: string | null; duur: number | null; afgerond: boolean },
+  nu = new Date()
+): string | null {
+  if (!t.datum) return null;
+  const heleDag = !t.tijd;
+  const start = heleDag ? amsterdamNaarMoment(t.datum) : amsterdamNaarMoment(t.datum, t.tijd!);
+  const eind = heleDag ? amsterdamNaarMoment(plusDagen(t.datum, 1)) : new Date(start.getTime() + Math.max(t.duur ?? 30, 5) * 60_000);
+  return nieuweIcs(
+    {
+      title: `${t.afgerond ? '✓ ' : ''}${t.titel}`.slice(0, 300),
+      notes: t.notitie,
+      location: '',
+      starts_at: start.toISOString(),
+      ends_at: eind.toISOString(),
+      all_day: heleDag
+    },
+    `taak-${t.id}`,
+    nu
+  );
+}

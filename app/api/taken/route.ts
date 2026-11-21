@@ -14,6 +14,8 @@ import {
 } from '@/lib/agenda/repo';
 import { TAKEN_FILTERS, type TaakInvoer, type TakenFilter } from '@/lib/agenda/types';
 import { fout, foutAntwoord, json, leesBody, metSessie } from '@/lib/agenda/api';
+import { createServiceRoleClient } from '@/lib/supabase/service-role';
+import { taakNaarApple } from '@/lib/apple-agenda/taken';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -63,6 +65,7 @@ export async function POST(request: Request) {
   const subtaken = parseSubtaken(body.subtaken);
   if (!subtaken.ok) return fout(400, subtaken.fout);
   const rij = p.waarde;
+  const appleKeuze = body.appleAgendaId === null || isUuid(body.appleAgendaId) ? body.appleAgendaId : undefined;
 
   try {
     const teamFout = await controleerTeamleden(bron, personen.waarde);
@@ -106,6 +109,11 @@ export async function POST(request: Request) {
     if (typeof id !== 'string') throw new AgendaFout(500, 'De taak is niet aangemaakt.');
     const taak = await taakOphalen(bron, id);
     if (!taak) throw new AgendaFout(500, 'De taak is aangemaakt maar kon niet worden gelezen.');
+    // Ook in een Apple-agenda (0041)? Best effort: de taak staat er al.
+    if (appleKeuze) {
+      const a = await taakNaarApple(createServiceRoleClient(s.lid.bewijs), bron.userId, taak, appleKeuze);
+      return json({ task: { ...taak, appleAgendaId: a.appleAgendaId }, appleFout: a.appleFout }, 201);
+    }
     return json({ task: taak }, 201);
   } catch (e) {
     return foutAntwoord(e);

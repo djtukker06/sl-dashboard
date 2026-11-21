@@ -50,7 +50,7 @@ function bestandUit(href: string): string | null {
   }
 }
 
-function itemUrl(agenda: AgendaRij, bestand: string): string {
+export function itemUrl(agenda: AgendaRij, bestand: string): string {
   const basis = agenda.url.endsWith('/') ? agenda.url : `${agenda.url}/`;
   return new URL(encodeURIComponent(bestand), basis).toString();
 }
@@ -124,7 +124,7 @@ export async function appleBereik(service: SupabaseClient, userId: string, van: 
 // Eén afspraak
 // ---------------------------------------------------------------------------------
 
-async function vindAgenda(service: SupabaseClient, userId: string, agendaId: string): Promise<{ agenda: AgendaRij; v: Verbinding }> {
+export async function vindAgenda(service: SupabaseClient, userId: string, agendaId: string): Promise<{ agenda: AgendaRij; v: Verbinding }> {
   const agenda = (await agendasVan(service, userId)).find((a) => a.id === agendaId);
   const account = agenda ? (await accountsVan(service, userId)).find((a) => a.id === agenda.account_id) : undefined;
   if (!agenda || !account) throw new AppleAgendaFout('niet_gevonden', 'Deze Apple-agenda is niet (meer) gekoppeld.');
@@ -175,7 +175,7 @@ function invoerFout(fout: string): AppleAgendaFout {
   return new AppleAgendaFout('ongeldig', fout);
 }
 
-async function schrijf(v: Verbinding, agenda: AgendaRij, bestand: string, ics: string, voorwaarde: Record<string, string>) {
+export async function schrijf(v: Verbinding, agenda: AgendaRij, bestand: string, ics: string, voorwaarde: Record<string, string>) {
   const r = await davVoor(v, itemUrl(agenda, bestand), 'PUT', { body: ics, type: 'text/calendar; charset=utf-8', headers: voorwaarde });
   if (r.status === 412) throw new AppleAgendaFout('gewijzigd');
   if (r.status === 403) throw new AppleAgendaFout('geen_recht');

@@ -11,6 +11,8 @@ import {
 } from '@/lib/agenda/repo';
 import type { TaakInvoer } from '@/lib/agenda/types';
 import { fout, foutAntwoord, json, leesBody, metSessie } from '@/lib/agenda/api';
+import { createServiceRoleClient } from '@/lib/supabase/service-role';
+import { appleAgendaVanTaak, taakNaarApple, taakUitApple } from '@/lib/apple-agenda/taken';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -28,7 +30,9 @@ export async function GET(request: Request, ctx: Ctx) {
   try {
     const taak = await taakDetail(s.bron, id);
     if (!taak) return fout(404, 'Taak niet gevonden.');
-    return json({ task: taak });
+    // In welke van jouw Apple-agenda's hij ook staat (0041), voor het taakvenster.
+    const appleAgendaId = await appleAgendaVanTaak(createServiceRoleClient(s.lid.bewijs), s.lid.userId, id);
+    return json({ task: { ...taak, appleAgendaId } });
   } catch (e) {
     return foutAntwoord(e);
   }
@@ -114,7 +118,11 @@ export async function PATCH(request: Request, ctx: Ctx) {
       if (personen && !personen.includes(bron.userId)) return json({ task: null, overgedragen: true });
       return fout(404, 'Taak niet gevonden.');
     }
-    return json({ task: taak });
+    // De afspraak in Apple bijwerken (0041; alleen als de taak in een Apple-agenda staat of je
+    // er nu een kiest). Best effort: de taak is al opgeslagen.
+    const appleKeuze = body.appleAgendaId === null || isUuid(body.appleAgendaId) ? body.appleAgendaId : undefined;
+    const a = await taakNaarApple(createServiceRoleClient(s.lid.bewijs), bron.userId, taak, appleKeuze);
+    return json({ task: { ...taak, appleAgendaId: a.appleAgendaId }, appleFout: a.appleFout });
   } catch (e) {
     return foutAntwoord(e);
   }
@@ -133,6 +141,8 @@ export async function DELETE(request: Request, ctx: Ctx) {
     if (!bestaat.data) return fout(404, 'Taak niet gevonden.');
     if (!(await magTaakWijzigen(s.bron, id))) return fout(403, GEEN_RECHT, 'geen_recht');
 
+    // Eerst de afspraak uit Apple Agenda (0041; best effort), daarna de taak.
+    await taakUitApple(createServiceRoleClient(s.lid.bewijs), id);
     const { data, error } = await s.sb.from('tasks').delete().eq('id', id).select('id');
     if (error) throw dbFout(error);
     if (!data?.length) return fout(404, 'Taak niet gevonden.');
