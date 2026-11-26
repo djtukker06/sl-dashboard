@@ -110,7 +110,8 @@ export const FACTUUR_TEMPLATE = `<!doctype html>
   .aan-block { grid-column: 1; grid-row: 2; margin-top: 4mm; }
   .aan-label { font-weight: 700; display: inline-block; width: 9mm; vertical-align: top; }
   .aan-content { display: inline-block; vertical-align: top; }
-  .gegevens { grid-column: 2; grid-row: 2; align-self: start; }
+  /* Rechts tegen de rand van de blauwe balk, zoals links het adres. */
+  .gegevens { grid-column: 2; grid-row: 2; align-self: start; justify-self: end; }
   .gegevens table { border-collapse: collapse; }
   .gegevens td { padding: 0.3mm 0; font-size: 9.5pt; }
   .gegevens td.label { font-weight: 700; text-align: right; padding-right: 3mm; white-space: nowrap; }
@@ -143,24 +144,19 @@ export const FACTUUR_TEMPLATE = `<!doctype html>
   table.items tbody td.mid { text-align: right; color: #4a5a70; }
   table.items tbody td.totaal { text-align: right; }
 
+  /* De bedragen staan recht onder die in de tabel (4mm binnenruimte); het blok groeit naar
+     links mee als label en bedrag niet in 65mm passen. */
   .samenvatting {
-    width: 65mm;
+    width: fit-content;
+    min-width: 65mm;
     margin-left: auto;
     margin-bottom: 14mm;
   }
   .samenvatting table { width: 100%; border-collapse: collapse; }
-  .samenvatting td { padding: 1.6mm 0; font-size: 9.5pt; font-weight: 400; }
+  .samenvatting td { padding: 1.6mm 0; font-size: 9.5pt; font-weight: 400; white-space: nowrap; }
   .samenvatting td.label { text-align: right; padding-right: 4mm; color: #4a5a70; }
-  .samenvatting td.value { text-align: right; }
+  .samenvatting td.value { text-align: right; padding-right: 4mm; }
   .samenvatting tr.totaal td { border-top: 1px solid #1c2a4a; font-weight: 800; font-size: 10.5pt; padding-top: 2.5mm; }
-
-  /* Prijsopgave: gegevens rechts tegen de rand van de blauwe balk (zoals links het adres), en
-     het totaalbedrag recht onder de bedragen in de tabel (die hebben 4mm binnenruimte). Het
-     blok groeit naar links mee als "Totaal (excl. btw)" en het bedrag niet in 65mm passen. */
-  .prijsopgave .gegevens { justify-self: end; }
-  .prijsopgave .samenvatting { width: fit-content; min-width: 65mm; }
-  .prijsopgave .samenvatting td { white-space: nowrap; }
-  .prijsopgave .samenvatting td.value { padding-right: 4mm; }
 
   .footer {
     text-align: center;
@@ -188,7 +184,7 @@ export const FACTUUR_TEMPLATE = `<!doctype html>
 </style>
 </head>
 <body>
-  <div class="page<%= factuur.soort === 'prijsopgave' ? ' prijsopgave' : '' %>">
+  <div class="page">
     <div class="top">
       <div class="brand">
         <div class="logo"><img src="data:image/png;base64,${LOGO_PNG_BASE64}" alt="Studio Levant"></div>
