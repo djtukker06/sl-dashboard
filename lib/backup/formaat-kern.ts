@@ -228,6 +228,8 @@ export const TABELLEN: TabelDef[] = [
   { naam: 'tasks', pk: ['id'] },
   { naam: 'task_assignees', pk: ['task_id', 'user_id'] },
   { naam: 'task_subtasks', pk: ['id'] },
+  // Taken in Apple Agenda (0041): welke taak in welke Apple-agenda staat.
+  { naam: 'apple_taak_koppelingen', pk: ['task_id'] },
   { naam: 'social_brand', pk: ['id'] },
   { naam: 'social_projects', pk: ['id'] },
   { naam: 'social_slides', pk: ['project_id', 'file'] },

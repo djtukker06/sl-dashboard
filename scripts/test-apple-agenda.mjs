@@ -269,4 +269,19 @@ test("onleesbare data: geen crash", () => {
   assert.throws(() => I.wijzigIcs("onzin", { voorkomen: null, deze: false, rij: {}, metTijd: false, huidig: { start: "", eind: "", heleDag: false } }));
 });
 
+test("taak als afspraak: tijd, hele dag, afgerond, zonder datum", () => {
+  const t = { id: "33333333-2222-4333-8444-555555555555", titel: "Offerte sturen", notitie: "Klant X", datum: "2026-11-24", tijd: "14:00", duur: 45, afgerond: false };
+  const ics = I.taakIcs(t, new Date("2026-11-21T10:00:00Z"));
+  assert.equal(I.uidVan(ics), `taak-${t.id}`);
+  const [a] = I.afsprakenUitIcs(ics, I.taakBestand(t.id), AGENDA, van, tot);
+  assert.equal(a.titel, "Offerte sturen");
+  assert.equal(a.start, "2026-11-24T13:00:00.000Z");
+  assert.equal(a.eind, "2026-11-24T13:45:00.000Z");
+  const [af] = I.afsprakenUitIcs(I.taakIcs({ ...t, afgerond: true, tijd: null }), "t.ics", AGENDA, van, tot);
+  assert.equal(af.titel, "✓ Offerte sturen");
+  assert.equal(af.heleDag, true);
+  assert.equal(I.taakIcs({ ...t, datum: null }), null);
+  assert.equal(I.taakBestand(t.id), `taak-${t.id}.ics`);
+});
+
 console.log(`${n} tests geslaagd`);

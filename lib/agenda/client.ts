@@ -91,11 +91,11 @@ export const agendaApi = {
       `/api/taken${qs({ filter, project: opties.project })}`
     ),
   taak: (id: string) => api<{ task: TaakDetail }>(`/api/taken/${id}`),
-  maakTaak: (b: TaakInvoer) => api<{ task: Taak }>('/api/taken', { method: 'POST', body: body(b) }),
+  maakTaak: (b: TaakInvoer) => api<{ task: Taak; appleFout?: string }>('/api/taken', { method: 'POST', body: body(b) }),
   wijzigTaak: (id: string, b: TaakInvoer) => api<{ task: Taak }>(`/api/taken/${id}`, { method: 'PATCH', body: body(b) }),
   /** Zoals wijzigTaak, maar met "voor wie": task is null als je de taak aan een ander gaf en hem niet meer mag zien. */
   bewaarTaak: (id: string, b: TaakInvoer) =>
-    api<{ task: Taak | null; overgedragen?: boolean }>(`/api/taken/${id}`, { method: 'PATCH', body: body(b) }),
+    api<{ task: Taak | null; overgedragen?: boolean; appleFout?: string }>(`/api/taken/${id}`, { method: 'PATCH', body: body(b) }),
   verwijderTaak: (id: string) => api<{ ok: true }>(`/api/taken/${id}`, { method: 'DELETE' }),
   maakSubtaak: (taakId: string, titel: string) =>
     api<{ subtaak: Subtaak }>(`/api/taken/${taakId}/subtaken`, { method: 'POST', body: body({ titel }) }),

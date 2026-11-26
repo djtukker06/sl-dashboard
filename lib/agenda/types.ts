@@ -32,6 +32,8 @@ export interface Taak {
   aangemaaktDoor: string | null;
   /** User-id van wie de taak afrondde. */
   afgerondDoor: string | null;
+  /** In welke van jouw Apple-agenda's de taak ook staat (0041); alleen bij één taak opvragen. */
+  appleAgendaId?: string | null;
 }
 
 export interface Subtaak {
@@ -171,6 +173,8 @@ export interface TaakInvoer {
   voorWie?: string[];
   /** Alleen bij POST: titels van de subtaken, in volgorde. */
   subtaken?: string[];
+  /** Ook als afspraak in deze Apple-agenda (id), of null = alleen in het systeem (0041). */
+  appleAgendaId?: string | null;
 }
 
 export interface SubtaakInvoer {
