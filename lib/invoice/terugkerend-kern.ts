@@ -115,7 +115,21 @@ export function vulIn(tekst: string, p: Placeholders): string {
     bedrag: p.bedrag ?? '{bedrag}',
     klant: p.klant ?? '{klant}'
   };
-  return tekst.replace(/\{(periodenaam|periode|maand|kwartaal|jaar|factuurnummer|bedrag|klant)\}/g, (_, k: string) => waarden[k]);
+  // Hoofdletters maken niet uit: {Factuurnummer} werkt net zo goed als {factuurnummer}.
+  return tekst.replace(/\{(periodenaam|periode|maand|kwartaal|jaar|factuurnummer|bedrag|klant)\}/gi, (_, k: string) => waarden[k.toLowerCase()]);
+}
+
+/** Staat {factuurnummer} in deze tekst (ongeacht hoofdletters)? */
+export const metFactuurnummer = (tekst: string): boolean => /\{factuurnummer\}/i.test(tekst);
+
+/**
+ * De naam van een gemaakte factuur (bestandsnaam van de PDF en de naam in de lijst). Met
+ * {factuurnummer} in de naam bepaal je hem helemaal zelf ("Factuur {factuurnummer}"); zonder
+ * komt het nummer ervoor, zoals altijd ("Factuur 26-031 · Onderhoudspakket").
+ */
+export function factuurNaam(naam: string, p: Placeholders & { factuurnummer: string }): string {
+  const ingevuld = vulIn(naam, p).trim();
+  return (metFactuurnummer(naam) ? ingevuld : `Factuur ${p.factuurnummer} · ${ingevuld}`).slice(0, 200);
 }
 
 export const STANDAARD_ONDERWERP = 'Factuur {factuurnummer} – {periodenaam}';

@@ -21,10 +21,12 @@ import {
   ritme,
   schuifOp,
   vulIn,
-  type Interval
+  type Interval,
+  factuurNaam
 } from '@/lib/invoice/terugkerend-kern';
 import type { TerugkerendDto } from '@/lib/invoice/terugkerend-beheer';
 import { Keuzelijst } from './Keuzelijst';
+import { FactuurInzien } from './FactuurInzien';
 
 export interface InboxKeuze {
   id: string;
@@ -41,7 +43,18 @@ const DAGEN = Array.from({ length: 28 }, (_, i) => ({ waarde: i + 1, label: i ==
 // (/facturen/terugkerend/[id]). Drie blokken in de volgorde waarin je erover nadenkt: wat
 // (klant, regels, btw), wanneer (ritme en eerstvolgende datum) en versturen (e-mail). Onderaan
 // staat steeds wat er gaat gebeuren, met de teksten zoals ze op de eerstvolgende factuur komen.
-export function TerugkerendFormulier({ sjabloon, inboxen, vandaag }: { sjabloon?: TerugkerendDto; inboxen: InboxKeuze[]; vandaag: string }) {
+export function TerugkerendFormulier({
+  sjabloon,
+  inboxen,
+  vandaag,
+  volgendNummer
+}: {
+  sjabloon?: TerugkerendDto;
+  inboxen: InboxKeuze[];
+  vandaag: string;
+  /** Het eerstvolgende vrije factuurnummer van nu, voor de samenvatting (bij aanmaken kan het anders zijn). */
+  volgendNummer?: string;
+}) {
   const router = useRouter();
   const bewerken = Boolean(sjabloon);
 
@@ -99,15 +112,17 @@ export function TerugkerendFormulier({ sjabloon, inboxen, vandaag }: { sjabloon?
 
   const voorbeeld = useMemo(() => {
     if (!datumGeldig) return null;
-    const p = { datum: volgendeDatum, interval, dag, klant: klantTav.trim() || klantNaam.trim() || 'de klant', factuurnummer: '26-0XX', bedrag: `€ ${formatEuro(subtotaal + btw)}` };
+    const nummer = volgendNummer ?? '26-0XX';
+    const p = { datum: volgendeDatum, interval, dag, klant: klantTav.trim() || klantNaam.trim() || 'de klant', factuurnummer: nummer, bedrag: `€ ${formatEuro(subtotaal + btw)}` };
     return {
+      titel: factuurNaam(naam.trim() || 'Naam', p),
       periode: periodeLabel(volgendeDatum, interval),
       daarna: [1, 2].map((n) => datumKort(schuifOp(volgendeDatum, interval, dag, n))),
       regels: regels.filter((r) => r.beschrijving.trim()).map((r) => `${vulIn(r.beschrijving, p)}${r.midden.trim() ? ` · ${vulIn(r.midden, p)}` : ''}`),
       onderwerp: vulIn(onderwerp, p),
       bericht: vulIn(bericht, p)
     };
-  }, [datumGeldig, volgendeDatum, interval, dag, klantNaam, klantTav, subtotaal, btw, regels, onderwerp, bericht]);
+  }, [datumGeldig, volgendNummer, volgendeDatum, interval, dag, naam, klantNaam, klantTav, subtotaal, btw, regels, onderwerp, bericht]);
 
   async function opslaan(e: React.FormEvent) {
     e.preventDefault();
@@ -194,8 +209,8 @@ export function TerugkerendFormulier({ sjabloon, inboxen, vandaag }: { sjabloon?
       <section className="card">
         <h2>Factuurregels</h2>
         <label className="naam-tk">
-          Naam (voor je eigen overzicht en de bestandsnaam van de PDF)
-          <input type="text" required value={naam} maxLength={200} placeholder="Bijv. Onderhoudspakket" onChange={(e) => setNaam(e.target.value)} />
+          Naam (voor je overzicht en de titel/bestandsnaam van de PDF)
+          <input type="text" required value={naam} maxLength={200} placeholder="Bijv. Onderhoudspakket of Factuur {factuurnummer}" onChange={(e) => setNaam(e.target.value)} />
         </label>
         <label className="mid-label-input">
           Naam van de middelste kolom (optioneel)
@@ -256,7 +271,9 @@ export function TerugkerendFormulier({ sjabloon, inboxen, vandaag }: { sjabloon?
         </button>
         <p className="veld-hint">
           De periode in de middelste kolom volgt vanzelf uit <strong>Wanneer</strong>: bij elke factuur staat er de periode waar hij over gaat. In een
-          beschrijving kun je ook <code>{'{periodenaam}'}</code> (bijv. &quot;december 2026&quot;), <code>{'{maand}'}</code> of <code>{'{jaar}'}</code> gebruiken.
+          beschrijving kun je ook <code>{'{periodenaam}'}</code> (bijv. &quot;december 2026&quot;), <code>{'{maand}'}</code>, <code>{'{jaar}'}</code> of{' '}
+          <code>{'{factuurnummer}'}</code> gebruiken. Zet je <code>{'{factuurnummer}'}</code> in de naam (bijv. &quot;Factuur {'{factuurnummer}'}&quot;), dan wordt dat de
+          titel van elke factuur met het juiste nummer; zonder komt het nummer er vanzelf voor (&quot;Factuur 26-031 · Onderhoudspakket&quot;).
         </p>
 
         <label className="checkbox-regel tk-btw">
@@ -375,6 +392,10 @@ export function TerugkerendFormulier({ sjabloon, inboxen, vandaag }: { sjabloon?
       {voorbeeld && (
         <section className="card tk-samenvatting">
           <h2>Wat er gaat gebeuren</h2>
+          <p className="tk-titel-voorbeeld">
+            Titel: <strong>{voorbeeld.titel}</strong>
+            {volgendNummer ? <span> (nummer voorlopig: bij het aanmaken het eerstvolgende nummer van dat moment)</span> : null}
+          </p>
           <p>
             Op <strong>{datumKort(volgendeDatum)}</strong> wordt de factuur voor <strong>{voorbeeld.periode}</strong> aangemaakt
             {klantNaam.trim() ? <> voor {klantNaam.trim()}</> : null}
@@ -396,12 +417,10 @@ export function TerugkerendFormulier({ sjabloon, inboxen, vandaag }: { sjabloon?
             </ul>
           )}
           {sjabloon && (
-            <p className="veld-hint">
-              <a href={`/api/terugkerend/${sjabloon.id}/voorbeeld`} target="_blank" rel="noreferrer">
-                Voorbeeld-PDF van de eerstvolgende factuur
-              </a>{' '}
-              (zoals hij nu is opgeslagen; sla wijzigingen eerst op om ze in het voorbeeld te zien).
-            </p>
+            <div className="tk-inzien-rij">
+              <FactuurInzien id={sjabloon.id} naam={sjabloon.naam} label="Eerstvolgende factuur inzien" />
+              <span className="veld-hint">Zoals hij nu is opgeslagen; sla wijzigingen eerst op om ze in het voorbeeld te zien.</span>
+            </div>
           )}
           {versturen && (
             <div className="tk-voorbeeld-mail">

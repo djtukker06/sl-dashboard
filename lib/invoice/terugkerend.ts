@@ -5,7 +5,7 @@ import { renderFactuurPdf } from './opslag';
 import { volgendFactuurnummer } from './nummer';
 import { veiligeBestandsnaam } from './bestandsnaam';
 import type { FactuurInvoer } from './invoer';
-import { isAanDeBeurt, naUitvoeren, vulIn, type Interval, type TerugkerendRegel } from './terugkerend-kern';
+import { isAanDeBeurt, naUitvoeren, vulIn, type Interval, type TerugkerendRegel, factuurNaam } from './terugkerend-kern';
 import { formatEuro } from '@/lib/format';
 import { mailConfigVoorTaak } from '@/lib/mail/mailboxen';
 import { bouwBericht, parseAdressen, verstuur, type UitgaandeBijlage } from '@/lib/mail/smtp';
@@ -180,13 +180,13 @@ async function klantVan(service: SupabaseClient, s: SjabloonRij): Promise<KlantR
 
 /** De factuur zoals hij voor `periode` wordt: klantgegevens van nu, placeholders ingevuld. */
 function bouwInvoer(s: SjabloonRij, k: KlantRij, periode: string, datum: string, nummer: { factuurnummer: string; jaar: number; volgnummer: number }): FactuurInvoer {
-  const p = { datum: periode, interval: s.interval, dag: s.dag, klant: k.company_name };
+  const p = { datum: periode, interval: s.interval, dag: s.dag, klant: k.company_name, factuurnummer: nummer.factuurnummer };
   return {
     factuurnummer: nummer.factuurnummer,
     jaar: nummer.jaar,
     volgnummer: nummer.volgnummer,
     issuedAt: `${datum}T12:00:00Z`,
-    naamFactuur: `Factuur ${nummer.factuurnummer} · ${vulIn(s.naam, p)}`.slice(0, 200),
+    naamFactuur: factuurNaam(s.naam, p),
     klant: { bedrijfsnaam: k.company_name, tav: k.contact_name || '', adres: k.address || '', postcode: k.postal_code || '' },
     middenKolomLabel: s.midden_kolom_label,
     btwVerlegd: s.btw_verlegd,
