@@ -154,6 +154,14 @@ export const FACTUUR_TEMPLATE = `<!doctype html>
   .samenvatting td.value { text-align: right; }
   .samenvatting tr.totaal td { border-top: 1px solid #1c2a4a; font-weight: 800; font-size: 10.5pt; padding-top: 2.5mm; }
 
+  /* Prijsopgave: gegevens rechts tegen de rand van de blauwe balk (zoals links het adres), en
+     het totaalbedrag recht onder de bedragen in de tabel (die hebben 4mm binnenruimte). Het
+     blok groeit naar links mee als "Totaal (excl. btw)" en het bedrag niet in 65mm passen. */
+  .prijsopgave .gegevens { justify-self: end; }
+  .prijsopgave .samenvatting { width: fit-content; min-width: 65mm; }
+  .prijsopgave .samenvatting td { white-space: nowrap; }
+  .prijsopgave .samenvatting td.value { padding-right: 4mm; }
+
   .footer {
     text-align: center;
     font-size: 8.5pt;
@@ -180,7 +188,7 @@ export const FACTUUR_TEMPLATE = `<!doctype html>
 </style>
 </head>
 <body>
-  <div class="page">
+  <div class="page<%= factuur.soort === 'prijsopgave' ? ' prijsopgave' : '' %>">
     <div class="top">
       <div class="brand">
         <div class="logo"><img src="data:image/png;base64,${LOGO_PNG_BASE64}" alt="Studio Levant"></div>
