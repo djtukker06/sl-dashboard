@@ -64,6 +64,8 @@
 //             boekhoudrechten en de Scratchpad (0031): gedeelde notities voor het team, privé
 //             alleen voor de maker, created_by vast, alleen de maker maakt privé of verwijdert
 //             definitief, grenzen op titel en inhoud, buitenstaanders zien en wijzigen niets.
+//             Daarna UITVOEREN_0035.sql (Google Agenda) en UITVOEREN_0041.sql (social media
+//             management): alle tabellen alleen voor de service-role, bucket social-media privé.
 //
 // Gebruik:  node scripts/test-rls.mjs        (vereist de devDependency @electric-sql/pglite)
 import fs from "node:fs";
@@ -1927,8 +1929,49 @@ async function scenarioE() {
   check(!lang, "E: clients.website max. 300 tekens");
   await db.query("update public.clients set website = 'studio-levant.nl'");
 
+  // 0041: social media management. Alle tabellen alleen via de server, bucket privé.
+  checkControle(await voerUit(db, lees("supabase/UITVOEREN_0041.sql"), "UITVOEREN_0041.sql"), "E: UITVOEREN_0041 (1e keer)");
+  checkControle(await voerUit(db, lees("supabase/UITVOEREN_0041.sql"), "UITVOEREN_0041.sql (2x)"), "E: UITVOEREN_0041 (2e keer)");
+  const sAcc = (
+    await db.query("insert into public.social_accounts (platform, extern_id, naam, token_enc) values ('instagram', '1784', 'Studio Levant', 'v1:geheim') returning id")
+  ).rows[0].id;
+  const sPost = (
+    await db.query("insert into public.social_posts (status, soort, caption, gepland_op, aangemaakt_door) values ('ingepland', 'foto', 'Hoi', now() + interval '1 day', $1) returning id", [U.daniel])
+  ).rows[0].id;
+  const sKan = (await db.query("insert into public.social_post_kanalen (post_id, account_id, status) values ($1, $2, 'ingepland') returning id", [sPost, sAcc])).rows[0].id;
+  await db.query("insert into public.social_media (post_id, pad, type, mime) values ($1, $2, 'afbeelding', 'image/jpeg')", [sPost, `${sPost}/1.jpg`]);
+  await db.query("insert into public.social_inzichten (post_kanaal_id, account_id, extern_post_id, datum, cijfers) values ($1, $2, '999', current_date, '{\"bereik\": 10}')", [sKan, sAcc]);
+  await db.query("insert into public.social_account_inzichten (account_id, datum, volgers) values ($1, current_date, 100)", [sAcc]);
+  const SOCIAL = ["social_accounts", "social_posts", "social_post_kanalen", "social_media", "social_inzichten", "social_account_inzichten"];
+  for (const tabel of SOCIAL) {
+    const zelf = await alsMetAal(db, "daniel", "aal1", `select * from public.${tabel}`);
+    check(leeg(zelf), `E: ${tabel} ook voor een teamlid niet direct leesbaar (alleen de server)`, uitleg(zelf));
+    for (const wie of ["anon", "indringer", "oudlid"]) {
+      const r = await als(db, wie, `select * from public.${tabel}`);
+      check(leeg(r), `E: ${wie} ziet geen ${tabel}`, uitleg(r));
+    }
+    const d = await alsMetAal(db, "daniel", "aal1", `delete from public.${tabel}`);
+    check(nietsGeraakt(d), `E: teamlid verwijdert ${tabel} niet direct`, uitleg(d));
+    const s = await als(db, "service", `select * from public.${tabel}`);
+    check(s.ok && s.rows.length >= 1, `E: de server leest ${tabel}`, uitleg(s));
+  }
+  const zonderDatum = await db.query("insert into public.social_posts (status) values ('ingepland')").then(() => true, () => false);
+  check(!zonderDatum, "E: social_posts: inplannen zonder datum geweigerd");
+  const captionTeLang = await db.query("insert into public.social_posts (caption) values (repeat('a', 2201))").then(() => true, () => false);
+  check(!captionTeLang, "E: social_posts: caption max. 2200 tekens");
+  const accDubbel = await db.query("insert into public.social_accounts (platform, extern_id, token_enc) values ('instagram', '1784', 'x')").then(() => true, () => false);
+  check(!accDubbel, "E: social_accounts: elk account maar één keer");
+  const smBucket = (await db.query("select public, file_size_limit from storage.buckets where id = 'social-media'")).rows[0];
+  check(smBucket && !smBucket.public && Number(smBucket.file_size_limit) === 52428800, "E: bucket social-media privé, 50 MB");
+  await db.query("delete from public.social_posts where id = $1", [sPost]);
+  const kWeg = await db.query("select (select count(*) from public.social_post_kanalen)::int as k, (select count(*) from public.social_media)::int as m, (select count(*) from public.social_inzichten)::int as i");
+  check(kWeg.rows[0].k === 0 && kWeg.rows[0].m === 0 && kWeg.rows[0].i === 0, "E: post weg → kanalen, media en inzichten mee weg");
+  await db.query("delete from public.social_accounts where id = $1", [sAcc]);
+  const aWeg = await db.query("select count(*)::int as n from public.social_account_inzichten");
+  check(aWeg.rows[0].n === 0, "E: account ontkoppeld → account-inzichten mee weg");
+
   await db.close();
-  if (fouten === fouten0) console.log("  scenario E (gebruikersbeheer, agenda-links, boekhoudrechten, scratchpad, Google Agenda: UITVOEREN_0028–0032, 0035): ok");
+  if (fouten === fouten0) console.log("  scenario E (gebruikersbeheer, agenda-links, boekhoudrechten, scratchpad, Google Agenda, social: UITVOEREN_0028–0032, 0035, 0041): ok");
 }
 
 await scenarioA();

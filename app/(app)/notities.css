@@ -562,9 +562,9 @@
 .sp-kort-meta { flex: none; font-family: var(--sl-mono); font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--sl-faint); white-space: nowrap; padding-top: 3px; }
 .sp-kort-acties { display: flex; flex-wrap: wrap; gap: 8px; }
 
-/* Dashboard: de Scratchpad onder de posts; de gestapelde kaarten rechts ervan (projecten,
-   facturen, bonnetjes: de stapel direct vóór de Scratchpad) lopen daarvoor twee rijen door.
-   Zonder Scratchpad-kaart verandert er niets. */
+/* Dashboard: de Scratchpad links (8 kolommen), de gestapelde kaarten (projecten, facturen,
+   bonnetjes) rechts ernaast. Staat de stapel direct vóór de Scratchpad, dan loopt hij twee
+   rijen door. Zonder Scratchpad-kaart verandert er niets. */
 .db-grid > .db-stapel:has(+ .db-scratchpad) { grid-row: span 2; }
 .db-grid > .db-scratchpad { grid-column: 1 / span 8; }
 @media (max-width: 1180px) {

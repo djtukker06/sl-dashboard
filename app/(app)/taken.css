@@ -324,5 +324,3 @@
 @media (max-width: 720px) {
   .ag-filterbalk + .ag { height: auto; }
 }
-.db-post-meta { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.db-post-meta .sl-persoon-avatar { width: 18px; height: 18px; font-size: 8.5px; }

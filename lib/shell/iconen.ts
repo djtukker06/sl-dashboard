@@ -1,5 +1,5 @@
-// Lijn-iconen (24×24, stroke 1.6) van de backoffice. Eén bron voor de React-rail,
-// de rail in de social-HTML (railHtml) en het dashboard. Elke waarde is de
+// Lijn-iconen (24×24, stroke 1.6) van de backoffice. Eén bron voor de rail en het
+// dashboard. Elke waarde is de
 // binnenkant van een <svg viewBox="0 0 24 24">.
 
 export type IcoonNaam = 'dashboard' | 'mail' | 'agenda' | 'factuur' | 'uitgaven' | 'social' | 'klanten' | 'bestanden' | 'scratchpad' | 'map' | 'pijl';
@@ -35,7 +35,7 @@ export const ICONEN: Record<IcoonNaam, string> = {
   pijl: '<path d="M5 12h14M13 6l6 6-6 6"/>'
 };
 
-/** Volledige <svg>-string; gebruikt door railHtml en (via dangerouslySetInnerHTML) React. */
+/** Volledige <svg>-string; in React via dangerouslySetInnerHTML. */
 export function icoonSvg(naam: IcoonNaam, grootte = 20, klasse = 'sl-icoon'): string {
   return (
     `<svg class="${klasse}" viewBox="0 0 24 24" width="${grootte}" height="${grootte}" fill="none" ` +

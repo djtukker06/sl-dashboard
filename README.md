@@ -9,7 +9,7 @@ je vanuit elke module terug naar het dashboard.
 
 | Module | Route | Wat |
 |---|---|---|
-| Dashboard | `/` | Jouw eigen "Vandaag": begroeting, snelle acties, jouw dagplanning, taken en week, wat je uitdeelde, je eigen inbox; gedeeld: facturen, laatste bonnetjes en recente posts (met wie ze maakte) |
+| Dashboard | `/` | Jouw eigen "Vandaag": begroeting, snelle acties, jouw dagplanning, taken en week, wat je uitdeelde, je eigen inbox; gedeeld: projecten, facturen, laatste bonnetjes en de Scratchpad |
 | Mail | `/mail` | Al je inboxen onder elkaar (eigen en met het team gedeelde, elk met kleur, naam, teller en mappen), plus "Alle inboxen": lezen, beantwoorden vanaf de juiste inbox, doorsturen, nieuwe mail, mail → taak |
 | Agenda | `/agenda` | Taken op naam (popup: voor wie, deadline, urgentie, klant, project, subtaken) en afspraken in één agenda (week/maand), alleen wat op jouw naam staat; tab Uitgezet voor wat je bij een ander hebt uitgezet |
 | Klanten & projecten | `/klanten`, `/projecten` | Simpel CRM/PM: klanten (lead/actief/afgerond) met contact, notities, projecten, open taken, facturen en prijsopgaven; projecten als bord of lijst (voorbereiding/bezig/wachten op goedkeuring/afgerond) met klant, deadline, eigenaar(s), taken met voortgang en een notitieveld |
@@ -17,7 +17,7 @@ je vanuit elke module terug naar het dashboard.
 | Boekhouding | `/boekhouding` | Kerncijfers en de keuze tussen **Facturen** (`/facturen`: facturen, prijsopgaven, klanten en PDF's, ongewijzigd) en **Bonnetjes & inkoopfacturen** (`/boekhouding/bonnetjes`), plus de boekhouding zelf: bank & boekingen, btw-aangifte per kwartaal, activa & afschrijvingen, rapporten & jaarrekening (zie `docs/BOEKHOUDING.md`) |
 | Account & mail | `/account` | Je profiel (naam, initialen, kleur, profielfoto), inboxen koppelen en beheren (alleen ik / hele team), 2FA-apparaten, wachtwoord wijzigen |
 | Beveiliging | `/beveiliging` | Alleen de eigenaar (met 2FA-sessie): wie heeft 2FA (en reset), audit-log, back-ups en keep-alive (zie "Tweestapsverificatie" en "Back-ups en keep-alive") |
-| Social | `/social` | De social-media-tool (voorheen lokaal), met dezelfde schermen en werking |
+| Social | `/social` | Social media management voor Instagram en Facebookpagina's: overzicht (lijst en kalender) van geplaatste, ingeplande en concept-posts, een editor om posts in te plannen op datum en tijd (stipt geplaatst via de Graph API van Meta), analytics en koppelingen (zie "Social media management") |
 
 ## Eerste keer inrichten (checklist)
 
@@ -27,7 +27,7 @@ je vanuit elke module terug naar het dashboard.
    Doe dit **vóór** de SQL: zo kan niemand zich nog registreren terwijl het team wordt
    ingericht.
 2. **SQL uitvoeren** in Supabase: `supabase/UITVOEREN_IN_SQL_EDITOR.sql` (zie hieronder).
-   Tot dan tonen social, de agenda en uitgaven een nette melding "nog niet ingericht".
+   Tot dan tonen de agenda en uitgaven een nette melding "nog niet ingericht".
    Al eerder uitgevoerd (0014–0019)? Dan `supabase/UITVOEREN_0020_UITGAVEN.sql`.
    Al eerder uitgevoerd (0014–0020)? Dan `supabase/UITVOEREN_0021_TEAM.sql`.
    Al eerder uitgevoerd (0014–0021)? Dan alleen `supabase/UITVOEREN_0022.sql` en daarna
@@ -38,18 +38,20 @@ je vanuit elke module terug naar het dashboard.
    alleen `supabase/UITVOEREN_0026.sql`**, volgens "Uitrol 0026" hieronder.
    Alleen de oudste bestaande gebruiker (Daniel) wordt automatisch lid (eigenaar); controleer
    onderaan het aantal leden en wie het zijn.
-3. **Oude social-posts importeren** met `scripts/importeer-social-projecten.mjs`
-   (zie "Social-projecten importeren").
-4. **Omgevingsvariabelen** zetten in `.env.local` en in Vercel (zie "Omgevingsvariabelen"),
+3. **Omgevingsvariabelen** zetten in `.env.local` en in Vercel (zie "Omgevingsvariabelen"),
    inclusief `MAIL_ENCRYPTION_KEY` (eigen mailboxen koppelen via `/account`), eventueel
    `MAIL_USER`/`MAIL_PASSWORD` (standaard-mailbox van de eigenaar) en `NEXT_PUBLIC_SITE_URL`.
-5. Deployen op Vercel (zie "Deployen op Vercel").
-6. **Google Drive koppelen** (module Bestanden): Google Cloud-project, env-vars en één keer
+4. Deployen op Vercel (zie "Deployen op Vercel").
+5. **Google Drive koppelen** (module Bestanden): Google Cloud-project, env-vars en één keer
    koppelen als eigenaar (zie "Google Drive").
-7. **Beveiliging en back-ups** (migratie 0026): volg "Uitrol 0026" en de checklist in
+6. **Beveiliging en back-ups** (migratie 0026): volg "Uitrol 0026" en de checklist in
    [`docs/BEVEILIGING.md`](docs/BEVEILIGING.md) (2FA, geheimen in Vercel en GitHub, eerste back-up).
-8. **Compagnon toevoegen** met `scripts/teamlid-toevoegen.mjs` (zie "Bram toevoegen in 3 stappen"),
+7. **Compagnon toevoegen** met `scripts/teamlid-toevoegen.mjs` (zie "Bram toevoegen in 3 stappen"),
    pas nadat 2FA live staat.
+8. **Social** (Instagram en Facebookpagina's): `supabase/UITVOEREN_0041.sql` en daarna
+   `supabase/UITVOEREN_0041_cron.sql` (met je eigen `CRON_SECRET` en domein), de Meta-app en
+   `META_APP_ID`/`META_APP_SECRET` in Vercel, en koppelen via Social → Koppelingen (zie
+   "Social media management").
 
 ## Lokaal draaien
 
@@ -99,6 +101,7 @@ bestand staat een controletabel (elke regel `ok`) en wie er toegang heeft.
 | `0026_beveiliging_mailboxen_backups.sql` | **mailboxen** (meerdere inboxen per teamlid, naam/kleur/volgorde, `prive`/`team`; bestaande `user_mailboxes` één keer overgezet; RLS aan, geen policies, alleen de server), **2FA in RLS** (`is_teamlid()`: wie een geverifieerde factor heeft, ziet alleen data met een aal2-sessie; wie geen factor heeft valt niet buiten tenzij "streng"), `app_instellingen` (noodstop `tfa_rls`, `tfa_rls_streng`), `toegang_status()`, `is_eigenaar()`, **audit_log** (alleen de eigenaar leest; niemand wijzigt of wist, trigger; `audit_opruimen()` na 400 dagen), `inlog_pogingen` (alleen hashes, alleen de server), **backup_runs**, `backup_bestanden`, **heartbeat** (alleen de eigenaar leest) en `backup_tabellen()`. Alleen toevoegend; facturen ongewijzigd. De app werkt ook vóór 0026 |
 | `0035_google_agenda_en_website.sql` | Google Agenda per teamlid: `google_agenda_accounts` (Google-account + versleuteld refresh token) en `google_agendas` (naam, kleur, tonen, in de agenda-link); RLS aan, **geen policies en geen rechten** voor `anon`/`authenticated`, alleen de server. Plus `clients.website` (max. 300 tekens). Uitvoeren: `supabase/UITVOEREN_0035.sql`. De app werkt ook vóór 0035 (koppelen en website verborgen/met melding) |
 | `0036_terugkerende_facturen.sql` | Terugkerende facturen: `terugkerende_facturen` (sjabloon met klant, regels, btw, ritme, volgende datum en e-mailinstellingen; RLS aan, **geen policies**, alleen de server) en op `invoices` de kolommen `terugkerend_id`, `terugkerend_periode` (uniek per sjabloon) en `verzonden_op`/`verzonden_aan`. Plus `clients.beschrijving` (max. 5000 tekens) en bewerkbare tijdlijnnotities (`client_notes.bewerkt_op`, update-policy voor zelf geschreven notities). Uitvoeren: `supabase/UITVOEREN_0036.sql`. De app werkt ook vóór 0036 (met een melding) |
+| `0041_social_planning.sql` | Social media management: `social_accounts` (gekoppelde Instagram-accounts en Facebookpagina's, versleuteld page token), `social_posts`, `social_post_kanalen` (per post per kanaal: status, herkansingen, permalink), `social_media`, `social_inzichten` en `social_account_inzichten` (cijfers); alle zes RLS aan, **geen policies en geen rechten** voor `anon`/`authenticated`, alleen de server. Plus de privé-bucket `social-media` (50 MB, jpeg/png/webp/mp4/mov, geen policies). De oude tabellen van 0014–0017 blijven staan. Uitvoeren: `supabase/UITVOEREN_0041.sql`, daarna `supabase/UITVOEREN_0041_cron.sql` (zie "Social media management"). De app werkt ook vóór 0041 (met een melding) |
 | `0037_betaalcheck.sql` | Betaalcheck: `invoices.betaalcheck_na` (datum; leeg = een week na versturen, "Nee" in de pop-up zet hem op vandaag + 7). Alleen de server schrijft hem. Uitvoeren: `supabase/UITVOEREN_0037.sql`. De app werkt ook vóór 0037 ("Nee" wordt dan alleen op het apparaat onthouden) |
 | `0023_projectstatus.sql` | projectenbord: status `voorbereiding`/`bezig`/`wachten`/`afgerond` (`gepland` → `voorbereiding`, standaard `voorbereiding`), kolom `status_sinds` met trigger (zet "nu" bij elke statuswijziging; bestaande projecten krijgen hun laatste wijziging), indexen op status + status_sinds en deadline. RLS ongewijzigd |
 
@@ -138,26 +141,6 @@ dus er is dan niets half doorgevoerd aan de migratie zelf; zoek de oorzaak en vo
 - Met de Supabase CLI kan het ook: `supabase link --project-ref <ref>` en `supabase db push`
   (draait de losse migraties).
 
-## Social-projecten importeren
-
-De projecten van de oude lokale tool (`Social-media-tool/projects/`) zet je over met
-`scripts/importeer-social-projecten.mjs`. **Volgorde:** eerst het SQL-bestand hierboven, dan
-pas importeren.
-
-```bash
-# 1. Dry-run (standaard): toont alleen wat er geïmporteerd zou worden, schrijft niets
-node scripts/importeer-social-projecten.mjs --bron ../Social-media-tool
-
-# 2. Echt importeren: vraagt om bevestiging door de Supabase-host over te typen
-SUPABASE_URL=https://<ref>.supabase.co SUPABASE_SERVICE_ROLE_KEY=<key> \
-  node scripts/importeer-social-projecten.mjs --bron ../Social-media-tool --uitvoeren
-```
-
-Het script slaat `.prullenbak` over, neemt alle slide-bestanden en versies mee en zet het
-beeldmateriaal in de bucket `social-assets`. Het is veilig om opnieuw te draaien (upsert).
-Dode verwijzingen naar beeldmateriaal worden gemeld en overgeslagen. Daarna staan de oude
-posts gewoon in de social-sidebar en op het dashboard.
-
 ## Omgevingsvariabelen
 
 Lokaal in `.env.local` (voorbeeld zonder waarden: `.env.local.example`), online in Vercel
@@ -169,7 +152,7 @@ onder **Project Settings → Environment Variables** (Production én Preview):
 | `NEXT_PUBLIC_SITE_URL` | aanbevolen | Publieke adres van de backoffice (bv. `https://backoffice.studio-levant.nl`). Basis voor links in herstel- en uitnodigingsmails; zonder deze waarde alleen de Vercel-productie-URL of localhost |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | ja | Publieke anon-key (login in de browser) |
 | `SUPABASE_SERVICE_ROLE_KEY` | ja | Geheime service-role key, alleen op de server |
-| `ANTHROPIC_API_KEY` | voor social en uitgaven | Anthropic-key voor het genereren van social posts en het uitlezen van bonnetjes (zonder key: uitgaven handmatig invullen) |
+| `ANTHROPIC_API_KEY` | voor uitgaven | Anthropic-key voor het uitlezen van bonnetjes (zonder key: uitgaven handmatig invullen) |
 | `MAIL_ENCRYPTION_KEY` | voor eigen mailboxen | 32 bytes, base64 (`openssl rand -base64 32`). Versleutelt de mailbox-wachtwoorden die teamleden via `/account` koppelen (AES-256-GCM). Geheim; niet wijzigen zonder dat iedereen opnieuw koppelt (zie "Mail per gebruiker") |
 | `MAIL_USER`, `MAIL_PASSWORD` | nee | Standaard-mailbox van Daniel (zie "Mail koppelen"). Voor precies één account: hetzelfde adres als `MAIL_USER`, anders `MAIL_ENV_USER_ID`, anders de oudste eigenaar; alleen zolang die geen eigen mailbox heeft gekoppeld |
 | `MAIL_ENV_USER_ID` | nee | User-id (uuid) van het account dat de standaard-mailbox krijgt, als dat niet het account met het adres uit `MAIL_USER` is. Leeg = de oudste actieve eigenaar |
@@ -177,7 +160,10 @@ onder **Project Settings → Environment Variables** (Production én Preview):
 | `MAIL_FROM_NAME`, `MAIL_HANDTEKENING` | nee | Afzendernaam (standaard "Studio Levant") en handtekening (`\n` = nieuwe regel) |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | voor Bestanden en Google Agenda | OAuth-client (type "Web application") uit Google Cloud Console, voor de koppeling met de Google Drive van Studio Levant (zie "Google Drive") en met de Google-agenda's van elk teamlid (zie "Google Agenda"). Het secret is geheim |
 | `DRIVE_ENCRYPTION_KEY` | nee | Eigen sleutel (32 bytes, base64) voor het Drive-refresh token. Leeg = `MAIL_ENCRYPTION_KEY` wordt gebruikt. Wijzigen = Drive opnieuw koppelen |
-| `CHROME_PATH` | nee, alleen lokaal | Eigen Chrome/Chromium voor social-exports tijdens `npm run dev` |
+| `META_APP_ID`, `META_APP_SECRET` | voor Social (plaatsen) | De Meta-app voor Instagram en Facebookpagina's (zie "Social media management"). Het secret is geheim |
+| `META_CONFIG_ID` | aanbevolen voor Social | Id van de configuratie van Facebook Login for Business. Leeg = de klassieke permissielijst |
+| `META_GRAPH_VERSION` | nee | Andere Graph API-versie (bv. `v26.0`). Leeg = `v27.0` |
+| `SOCIAL_ENCRYPTION_KEY` | nee | Eigen sleutel (32 bytes, base64) voor de page tokens. Leeg = `MAIL_ENCRYPTION_KEY`. Wijzigen = alle accounts opnieuw koppelen |
 | `BACKUP_ENCRYPTION_KEY` | voor back-ups | 32 bytes, base64 (`openssl rand -base64 32`). Versleutelt elke back-up (AES-256-GCM). Zonder sleutel geen back-up (de run wordt "mislukt"). **Ook in je wachtwoordmanager bewaren**: zonder deze sleutel zijn de back-ups onbruikbaar. Alleen Production |
 | `CRON_SECRET` | voor keep-alive en back-ups | Geheim (min. 16 tekens, `openssl rand -base64 32`). Vercel Cron stuurt het zelf mee naar `/api/cron/*`; zonder waarde geven die routes 503. Zelfde waarde als het GitHub-secret `SL_CRON_SECRET` |
 | `MFA_AFDWINGEN` | nee | Leeg = 2FA verplicht (standaard). Alleen `uit` zet het verplicht **instellen** tijdelijk uit (noodgeval); wie al een apparaat heeft, vult nog steeds zijn code in |
@@ -190,8 +176,7 @@ keep-alive `.github/workflows/keepalive.yml`: `SL_CRON_URL` (`https://sl-dashboa
 zonder `/` aan het eind) en `SL_CRON_SECRET` (gelijk aan `CRON_SECRET`).
 
 Na het wijzigen van een variabele in Vercel: opnieuw deployen (Deployments → … → Redeploy),
-anders gebruikt de site nog de oude waarden. De API-key kan niet in de social-tool zelf
-worden ingevuld; de instellingen-dialoog laat alleen zien of er een key op de server staat.
+anders gebruikt de site nog de oude waarden.
 
 ## Team & toegang
 
@@ -219,7 +204,7 @@ Vóór 0039 blijven het de initialen en zegt uploaden dat de migratie nog moet.
   van die controle: code die hem zonder controle gebruikt, compileert niet.
 - `proxy.ts` controleert het toegangstoken (`getClaims()`) en logt bij het openen van een
   pagina een ingelogd account zonder lidmaatschap direct uit en stuurt het naar
-  `/geen-toegang`. API's, `/social-files` en de RSC-verzoeken van de router slaan die extra
+  `/geen-toegang`. API's en de RSC-verzoeken van de router slaan die extra
   lidcheck in de proxy over: ze doen zelf altijd de volledige controle (403/`/geen-toegang`,
   fail closed). Ook inloggen en `/auth/callback` controleren het lidmaatschap.
 - Gedeelde bedrijfsdata (facturen, prijsopgaven, klanten, bonnetjes, social, projecten) ziet
@@ -373,7 +358,7 @@ Auth MFA: Google Authenticator, 1Password, Bitwarden, …).
 - **Audit-log** (`/beveiliging` › Audit-log, alleen de eigenaar): inloggen (ook mislukt en
   geblokkeerd), 2FA, wachtwoord, team, inboxen, exports, verwijderen, Drive, back-ups en cron.
   Niet te wijzigen of te verwijderen; opruimen na 400 dagen.
-- **Limiet op dure AI-routes** (bonnetjes uitlezen, social genereren) per gebruiker per uur.
+- **Limiet op dure AI-routes** (bonnetjes uitlezen) per gebruiker per uur.
 
 ## Uitrol 0026 (inboxen, 2FA, back-ups)
 
@@ -403,17 +388,14 @@ De volgorde waarin niemand wordt buitengesloten:
 - **React-pagina's** staan in de route-group `app/(app)/` (dashboard, mail, agenda, facturen);
   `app/(app)/layout.tsx` controleert de sessie en zet de rail (`components/shell/Rail.tsx`)
   eromheen. De URL's veranderen daardoor niet.
-- **Social** is een los HTML-document (`assets/social-app/index.html` + `public/social/app.js`/
-  `app.css`). `app/social/route.ts` controleert de sessie en zet dezelfde rail
-  (`railHtml()` uit `lib/shell/rail.ts`) direct na `<body>`. Binnen zijn eigen kolommen is
-  social gelijk aan het origineel; de banner linkt naar het dashboard.
-- **Stijl en gedrag** voor beide: `public/shell/shell.css` (alles met prefix `sl-`, botst niet
-  met facturen of social) en `public/shell/shell.js` (accountmenu, mail-badge,
-  `/social#nieuw` opent "Nieuwe post").
+- **Social** (`/social`) is een gewone pagina in `app/(app)/social/`, net als de rest; de oude
+  carrousel-generator (los HTML-document met een eigen HTML-rail) is verwijderd.
+- **Stijl en gedrag:** `public/shell/shell.css` (alles met prefix `sl-`, botst niet
+  met facturen) en `public/shell/shell.js` (accountmenu, mail-badge).
 - **Logo's:** `public/brand/beeldmerk-licht.png` (rail, favicon via `app/icon.png`) en
   `public/brand/banner-licht.png` (login). Ze zijn openbaar, net als op de website.
 - **Uitloggen** is een gewoon formulier naar `POST /auth/uitloggen` (controleert de
-  `Origin`), zodat het ook in social werkt.
+  `Origin`), zodat het ook zonder JavaScript werkt.
 - Op een telefoon (≤ 720 px) wordt de rail een tabbalk onderaan.
 - **Breedte van de inhoud** (onderaan `app/(app)/app.css`): werkpagina's met veel kolommen
   (mail, agenda, projectenbord) vullen de volle breedte naast de rail; overzichtspagina's
@@ -428,14 +410,14 @@ De volgorde waarin niemand wordt buitengesloten:
 
 `app/(app)/page.tsx`: elk teamlid heeft een eigen dashboard. Kop met dag, weeknummer en
 begroeting met je eigen voornaam; snelle acties (+ Taak opent de taak-popup, sneltoets `n`;
-Nieuwe factuur, Nieuwe prijsopgave, + Bonnetje, Nieuwe post, Nieuwe mail).
+Nieuwe factuur, Nieuwe prijsopgave, + Bonnetje, Nieuwe mail).
 
 - **Alleen van jou:** Vandaag, Deze week en Taken tonen alleen taken die aan jou zijn
   toegewezen en afspraken waar jij bij hoort; de Inbox is je eigen mailbox. Taken die je voor
   een ander maakte staan er niet; onder de takenkaart staat alleen "N uitgezet bij anderen →"
   (naar de tab Uitgezet).
-- **Gedeeld met het team:** Facturen, Laatste bonnetjes en Recente posts, met een avatar van
-  wie ze maakte/uploadde.
+- **Gedeeld met het team:** Projecten, Facturen, Laatste bonnetjes (met een avatar van wie ze
+  uploadde) en de Scratchpad.
 - Het dashboard ververst je planning elke 2 minuten met één verzoek (`GET /api/dashboard`) en
   als je terugkomt naar het venster ook de gedeelde widgets, zodat werk van je compagnon
   vanzelf verschijnt. De mailcheck staat in een eigen laadblok: de rest van het dashboard
@@ -949,6 +931,141 @@ Studio Levant/
 - **Vóór 0024 of zonder env-vars** tonen Bestanden en de blokken een nette melding (welke
   variabelen ontbreken, of welk SQL-bestand nog moet); facturen en bonnetjes werken gewoon.
 
+## Social media management
+
+Module Social (`/social`) vervangt de oude carrousel-generator (die is helemaal verwijderd;
+de oude tabellen `social_projects`… en bucket `social-assets` uit 0014–0017 blijven alleen
+staan voor de back-up). Kanalen in deze versie: **Instagram** (zakelijk of maker-account dat
+aan een Facebookpagina hangt) en **Facebookpagina's**, via de Graph API van Meta (v27.0).
+LinkedIn en TikTok komen later.
+
+**Wat het doet**
+- **Overzicht** (`/social`): alle posts in een lijst ("Komt eraan", "Concepten zonder datum",
+  "Geplaatst en eerder") of als maandkalender, met filters op kanaal, status en maand. Ook
+  posts die buiten het dashboard op Instagram/Facebook zijn geplaatst verschijnen (bron
+  "extern"). Geplaatste posts tonen bereik, likes, reacties en opslagen; mislukte posts de
+  fout met "Opnieuw proberen".
+- **Editor** (`/social/nieuw`, `/social/<id>`): kanalen, soort (foto, carrousel, reel of
+  tekst; tekst alleen Facebook), media (slepen, volgorde, alt-tekst; PNG/WebP worden JPEG
+  voor Instagram; video's gaan rechtstreeks naar Supabase Storage via een signed upload-URL),
+  caption (max. 2200 tekens), hashtags (max. 30, onder de caption of in de eerste reactie),
+  eerste reactie, personen taggen, collab-accounts, locatie, een eigen tekst per kanaal en
+  datum + tijd in Nederlandse tijd (bv. donderdag 26 november 19:30). De media worden vooraf
+  gecontroleerd op de eisen van Meta (beeldverhouding, afmetingen, duur). Rechts een live
+  voorbeeld. Knoppen: concept opslaan, inplannen, nu plaatsen, inplanning annuleren.
+- **Analytics** (`/social/analytics`): 7/30/90 dagen, tegels (bereik, weergaven, likes,
+  reacties, opslagen, nieuwe volgers), volgersverloop, top-posts en gemiddelden per soort,
+  weekdag en dagdeel.
+- **Koppelingen** (`/social/koppelingen`): Meta koppelen, ontkoppelen, nu synchroniseren.
+- **Dashboard**: kaart "Social" met de eerstvolgende posts, concepten en mislukte posts.
+
+Code: `lib/social/kern.ts` (pure regels: validatie, media-eisen, tijdzone, herkansingen;
+getest in `scripts/test-social.mjs`), `lib/social/posts.ts` en `lib/social/media.ts` (API),
+`lib/social/meta/` (Graph-client, login, foutvertaling; `scripts/test-social-meta.mjs`),
+`lib/social/koppeling.ts` (versleutelde tokens), `lib/social/plaatsen.ts` (plaatsen + cron),
+`lib/social/sync.ts` (externe posts en cijfers), schermen in `components/social/`.
+Zonder Meta-instellingen werkt de rest van Social gewoon (posts maken en inplannen), alleen
+het plaatsen en de cijfers niet. Vóór migratie 0041 tonen alle schermen een melding.
+
+**0. Database** (één keer)
+
+1. Voer `supabase/UITVOEREN_0041.sql` uit in de SQL Editor van Supabase (alle regels `ok`).
+2. Daarna `supabase/UITVOEREN_0041_cron.sql`, zie stap 3 hieronder.
+
+**Omgevingsvariabelen** (Vercel Production + Preview en `.env.local`; zie ook de tabel bij
+"Omgevingsvariabelen"): `META_APP_ID` en `META_APP_SECRET` (verplicht om te plaatsen),
+`META_CONFIG_ID` (aanbevolen), `META_GRAPH_VERSION` (optioneel), `SOCIAL_ENCRYPTION_KEY`
+(optioneel; leeg = `MAIL_ENCRYPTION_KEY`) en `CRON_SECRET` (bestaat al; ook nodig voor de
+5-minuten-planner).
+
+**1. De Meta-app** (één keer, door de eigenaar)
+
+1. Ga naar [developers.facebook.com](https://developers.facebook.com/apps) → **Create app**.
+   Kies het type **Business** en koppel de app aan het Business Portfolio van Studio Levant.
+2. Voeg de producten **Facebook Login for Business** en **Instagram** (API setup with
+   Facebook login) toe.
+3. Facebook Login for Business → **Settings** → *Valid OAuth Redirect URIs*:
+   `https://<jouw domein>/api/social/meta/callback` en voor lokaal
+   `http://localhost:3000/api/social/meta/callback` (exact, zonder `/` erachter).
+   Zet *Use Strict Mode for redirect URIs* aan.
+4. Facebook Login for Business → **Configurations** → **Create configuration**: tokentype
+   **User access token**, en vink deze permissies aan (ook de assets: alle pagina's en
+   Instagram-accounts die je wilt gebruiken). Het id van de configuratie is `META_CONFIG_ID`.
+
+   | Permissie | Waarvoor |
+   |---|---|
+   | `pages_show_list` | je pagina's en de Instagram-accounts eraan tonen |
+   | `pages_read_engagement` | pagina-gegevens en posts lezen (ook nodig voor Instagram) |
+   | `pages_manage_posts` | op de Facebookpagina plaatsen |
+   | `pages_manage_engagement` | de eerste reactie onder een Facebookpost |
+   | `read_insights` | cijfers van de pagina en de posts |
+   | `publish_video` | reels op de Facebookpagina |
+   | `business_management` | pagina's die in een Business Portfolio staan |
+   | `instagram_basic` | het Instagram-account en zijn posts lezen |
+   | `instagram_content_publish` | op Instagram plaatsen |
+   | `instagram_manage_comments` | de eerste reactie onder een Instagrampost |
+   | `instagram_manage_insights` | cijfers van Instagram |
+
+5. App settings → **Basic**: kopieer *App ID* (`META_APP_ID`) en *App secret*
+   (`META_APP_SECRET`). Vul een privacybeleid-URL in. Zet onder **Advanced** *Require App
+   Secret* aan (de server stuurt altijd een `appsecret_proof` mee).
+6. Gebruik je alleen de eigen accounts van Studio Levant, dan is **Standard access**
+   genoeg en is App Review niet nodig: wie koppelt moet wel een rol op de app hebben (App
+   roles → Administrator/Developer) en op de pagina inhoud mogen maken (Facebook-toegang
+   "Inhoud" of volledige controle). Zet de app daarna op **Live**.
+7. Zet de variabelen in Vercel (Production en Preview) en in `.env.local`, en deploy
+   opnieuw. Het token wordt versleuteld met `SOCIAL_ENCRYPTION_KEY` (leeg = `MAIL_ENCRYPTION_KEY`).
+
+**2. Koppelen** (in de app): Social → Koppelingen → *Koppelen met Meta*. Je logt in bij
+Facebook, kiest de pagina's (en Instagram-accounts) en komt terug met
+`?gekoppeld=<aantal>`. Per pagina wordt een Facebook-account opgeslagen, en als er een
+Instagram-account aan hangt ook dat. Alleen de page tokens worden bewaard, versleuteld
+(AES-256-GCM, gebonden aan platform + id), nooit in de browser of in logs. Opnieuw koppelen
+ververst de tokens. Foutcodes in `?fout=`: `niet_ingericht`, `site_url`, `geweigerd`,
+`ongeldig`, `scope`, `geen_paginas`, `geen_rechten`, `tabel_ontbreekt`, `meta`, `fout`.
+
+Ontkoppelen (prullenbak bij het account) wist het token en zet het account uit; geplaatste
+posts en cijfers blijven. Ook de toegang bij Meta intrekken: Facebook → Instellingen →
+Bedrijfsintegraties → de app verwijderen.
+
+Een page token verloopt niet, maar Meta vraagt na 90 dagen zonder login opnieuw om
+toestemming ("data access"). De sync controleert elk token (`debug_token`) en zet bij het
+account `verloopt_binnenkort` (7 dagen vooraf) of `opnieuw_koppelen`; het scherm toont dat.
+
+**3. Stipt op tijd: pg_cron** (één keer, na `UITVOEREN_0041.sql`)
+
+Vercel Hobby draait een cron maar één keer per dag. Daarom roept Supabase zelf elke 5
+minuten `GET /api/cron/social` aan (met `Authorization: Bearer <CRON_SECRET>`):
+
+1. Open `supabase/UITVOEREN_0041_cron.sql`, vervang `PLAATS_HIER_JE_CRON_SECRET` door de
+   waarde van `CRON_SECRET` en `https://JOUW-DOMEIN` door het adres van de backoffice.
+2. Plak het in de **SQL Editor** van Supabase en voer het uit (alle regels "ok"). Het secret
+   en het adres staan daarna versleuteld in **Vault**; sla het ingevulde bestand niet op in git.
+3. Na ~5 minuten: `select status_code, left(content::text, 200) from net._http_response
+   order by created desc limit 5;` moet `200` en `"ok":true` geven.
+
+Elke run (`lib/social/plaatsen.ts`, `verwerkSocialCron`):
+- ruimt onderbroken runs op (een post die >15 min op "bezig" staat wordt "mislukt" met de
+  vraag te controleren of hij al online staat: nooit blind opnieuw, dubbel plaatsen is erger);
+- maakt voor reels die binnen 15 minuten moeten de container al aan (Instagram) of laat de
+  video al uploaden (Facebook), zodat Meta hem op tijd verwerkt heeft;
+- plaatst alles waarvan het tijdstip is aangebroken (een run die net vóór het tijdstip
+  begint, neemt hem al mee) en kanalen waarvan de herkansing aan de beurt is. Een post van
+  19:30 staat er dus uiterlijk ~19:35 (een reel soms een paar minuten later);
+- haalt eens per 6 uur per account de posts (ook die buiten het dashboard zijn geplaatst,
+  als bron "extern") en de cijfers op, en controleert de tokens.
+
+Nooit dubbel: een post én elk kanaal worden geclaimd met een conditionele update (alleen als
+de status nog "ingepland" was). Mislukt een kanaal, dan krijgt het een Nederlandse melding
+en een herkansing na 5, 15 en 60 minuten; fouten die een herkansing niet oplost (bestand
+voldoet niet, toegang ingetrokken) gaan direct naar "mislukt". Een post die meer dan 12 uur
+over tijd is (de planner lag stil), wordt niet meer vanzelf geplaatst. Lukt alleen de eerste
+reactie niet, dan staat de post er wel en zegt de melding dat je de reactie zelf plaatst.
+
+Limieten van Meta: Instagram 100 posts per 24 uur via de API, Facebook-reels 30 per pagina
+per 24 uur. Cijfers: Meta heeft "impressions" vervangen door "views" (weergaven); bereik,
+likes, reacties, opslagen, gedeeld en (reels) kijktijd worden per post per dag bewaard.
+
 ## Back-ups en keep-alive (migratie 0026)
 
 **Wat er automatisch gebeurt**
@@ -956,7 +1073,7 @@ Studio Levant/
 - **Tweede vangnet.** Een GitHub Actions-workflow (`.github/workflows/keepalive.yml`) roept dezelfde route elke 3 dagen aan.
 - **Database-back-up.** Eens per 3 dagen maakt dezelfde nachtelijke taak een volledige export van alle eigen tabellen, plus de gebruikers (zonder wachtwoorden) en een overzicht van de storage-bestanden. De export wordt met AES-256-GCM versleuteld (`BACKUP_ENCRYPTION_KEY`) en komt in Google Drive onder `Studio Levant/Back-ups/<jaar>/<datum>.slbak`. Is de laatste geslaagde back-up nog geen 3 dagen oud, dan wordt hij overgeslagen (de keep-alive draait wel elke nacht).
 - **Bewaren.** Alleen de nieuwste 3 back-ups blijven staan; komt er een nieuwe bij, dan gaat de oudste naar de prullenbak van Drive (die leegt zichzelf na 30 dagen).
-- **Bestanden.** Facturen-PDF's, bonnetjes en social-assets gaan eens per 3 dagen via `/api/cron/bestanden` naar Drive (04:30 UTC). Alleen nieuwe en gewijzigde bestanden worden gekopieerd, elk apart versleuteld, naar `Studio Levant/Back-ups/Bestanden/<bucket>/`. Een ronde die niet in één keer af komt, gaat de volgende ronde verder.
+- **Bestanden.** Facturen-PDF's, bonnetjes, social-assets en social-media (de foto's en video's van Social) gaan eens per 3 dagen via `/api/cron/bestanden` naar Drive (04:30 UTC). Alleen nieuwe en gewijzigde bestanden worden gekopieerd, elk apart versleuteld, naar `Studio Levant/Back-ups/Bestanden/<bucket>/`. Een ronde die niet in één keer af komt, gaat de volgende ronde verder.
 
 - **Alleen voor de eigenaar.** De map `Back-ups` (en alles eronder) is onbereikbaar via de Drive-module van de app (`lib/drive/mappen.ts` › `backupIds`): niet zichtbaar in de root, niet te zoeken, downloaden, hernoemen, verwijderen of te vullen (`buiten_root`). In Drive zelf (account van Daniel) staat hij gewoon.
 
@@ -1181,14 +1298,15 @@ sinds Klanten & projecten de nieuwe klantpagina (met een link naar de facturen v
 | `/beveiliging/instellen`, `/login/2fa` | 2FA instellen / code invullen bij het inloggen |
 | `/api/beveiliging/…` | `2fa/{inschrijven,bevestigen,uitdagen,verwijderen}`, `team` en `team/<id>/2fa` (reset, eigenaar), `audit` (eigenaar), `backup` (POST: nu back-up maken) en `backup/<id>/download` (eigenaar, aal2) |
 | `/api/cron/dagelijks`, `/api/cron/bestanden` | Nachtelijke taken (Vercel Cron, GitHub Actions): alleen met `Authorization: Bearer <CRON_SECRET>` (401 zonder of fout, 503 als het secret niet is ingesteld) |
-| `/social` | Social-media-tool (`#p=<id>` opent een project, `#nieuw` een nieuwe post) |
-| `/api/social/…`, `/social-files/…` | Social-API (spiegelt de oude Express-API) en de bestanden die slides laden |
+| `/social`, `/social/nieuw`, `/social/<id>`, `/social/analytics`, `/social/koppelingen` | Social: overzicht (`?status=`), editor, analytics en koppelingen (`?gekoppeld=<n>` / `?fout=<code>` na het koppelen) |
+| `/api/social/…` | Social-API (teamlid): `posts` (GET `?status=&kanaal=&van=&tot=`, POST), `posts/<id>` (GET/PATCH/DELETE, `?definitief=1`), `posts/<id>/nu`, `posts/<id>/media`, `media/upload-url`, `media/<id>`, `inzichten?van=&tot=`, `accounts`, `accounts/<id>` (DELETE = ontkoppelen), `meta/start`, `meta/callback`, `sync` (503 met de migratiemelding vóór 0041) |
+| `/api/cron/social` | De social-planner: elke 5 minuten via Supabase pg_cron (`UITVOEREN_0041_cron.sql`), alleen met `Authorization: Bearer <CRON_SECRET>` |
 
 **Beveiliging.** Alles behalve `/login`, `/wachtwoord-vergeten`, `/geen-toegang`, `/auth/*`,
-de logo's, de shell-bestanden en de twee cron-routes (eigen geheim) zit achter de login, het
+de logo's, de shell-bestanden en de cron-routes (eigen geheim) zit achter de login, het
 teamlidmaatschap en (na 0026) de 2FA-code (zie "Team &
-toegang"). `proxy.ts` stuurt niet-ingelogde bezoekers naar `/login` (alle API's en
-`/social-files` krijgen een JSON-401) en niet-teamleden naar `/geen-toegang`; **elke** pagina,
+toegang"). `proxy.ts` stuurt niet-ingelogde bezoekers naar `/login` (alle API's
+krijgen een JSON-401) en niet-teamleden naar `/geen-toegang`; **elke** pagina,
 server action en API-route controleert daarnaast zelf (`lib/auth/team.ts`). Wijzigende
 API-verzoeken van een ander domein worden geweigerd. Elke tabel heeft RLS met `is_teamlid()`.
 Mail-HTML wordt op de server gesaneerd en in een gesandboxte iframe zonder scripts getoond.
@@ -1201,7 +1319,7 @@ Elk antwoord krijgt `X-Frame-Options: SAMEORIGIN`, `Referrer-Policy: same-origin
 
 ```bash
 npx tsc --noEmit && npm run lint && npm run build
-node scripts/rooktest-shell.mjs --alleen-statisch     # rails gelijk + teamtoegang overal (statisch)
+node scripts/rooktest-shell.mjs --alleen-statisch     # rail + teamtoegang overal (statisch)
 npx next start -p 3107 &                              # (na de build)
 node scripts/rooktest-shell.mjs http://localhost:3107 # alle pagina's -> /login, alle API's JSON-401, koppen
 node scripts/test-snelinvoer.mjs                      # herkenning datum/tijd in de taak-popup (incl. zomer-/wintertijd)
@@ -1210,7 +1328,6 @@ node scripts/test-uitgaven.mjs                        # uitgaven: bedragen, btw,
 node scripts/test-bonnetje-heic.mjs [--claude]        # HEIC → JPEG (server + headless Chrome), foto's voor Claude; --claude: échte testbon
 node scripts/test-team.mjs                            # herkomst (CSRF), basis-URL voor mails, teambeheer-scripts
 node scripts/test-account.mjs                         # mailkluis (AES-GCM), SSRF-controle, profiel/mailbox-invoer, zoeken
-node scripts/test-brand-guard-parity.mjs              # social-port gelijk aan het origineel
 node scripts/test-rls.mjs                             # RLS van 0021–0026 op lokale Postgres (PGlite): per tabel/bucket wie wat mag, 2FA, audit-log
 node scripts/test-beveiliging.mjs                     # 2FA-beslisregels, limieten, sessiecookie, CSP, log-maskering, systeemcliënt-allowlist
 node scripts/test-backup.mjs                          # back-upformaat (AES-GCM, geknoei/verkeerde sleutel), retentie, export, herstel (nagebootst)
@@ -1218,7 +1335,6 @@ node scripts/test-drive.mjs                           # Google Drive: paden, nam
 node scripts/test-externals.mjs                       # serverExternalPackages (ook libheif-js) laden zonder require(esm); gebouwde mail-/uitgavenroutes (na build)
 node scripts/genereer-sql-editor.mjs --controleer     # SQL-bestanden actueel
 node scripts/teamlid-toevoegen.mjs --help             # teambeheer (niet uitvoeren zonder reden)
-node --experimental-strip-types scripts/rooktest-render.mjs   # social-renderer (lokale Chrome nodig)
 ```
 
 `scripts/test-rls.mjs` (devDependency `@electric-sql/pglite`, geen netwerk, geen Supabase):
@@ -1261,7 +1377,7 @@ node --experimental-strip-types scripts/rooktest-render.mjs   # social-renderer 
 ## Een module toevoegen
 
 1. Voeg één entry toe aan `MODULES` in `lib/modules.ts` (id, naam, kort label, `href`, icoon,
-   `actief: true`, eventueel een `snelactie`). De rail (ook in social) en de snelle acties op
+   `actief: true`, eventueel een `snelactie`). De rail en de snelle acties op
    het dashboard nemen hem automatisch over. Een nieuw icoon voeg je toe in `lib/shell/iconen.ts`.
 2. Maak de pagina's in `app/(app)/<module>/`; dan staan ze vanzelf in de shell.
 3. Eventueel API-routes in `app/api/<module>/`. Wikkel elke route in `teamlidRoute()` uit
@@ -1284,19 +1400,11 @@ node --experimental-strip-types scripts/rooktest-render.mjs   # social-renderer 
 
 Instellingen:
 
-- Zet **Fluid compute** aan (standaard bij nieuwe projecten). Dan kan de generatie
-  van social posts tot `maxDuration` 300 seconden duren, ook op het Hobby-plan.
-- `vercel.json` geeft de PDF- en exportroutes `memory` 2048 MB (Chromium via
-  `@sparticuz/chromium`), en generate/revise `maxDuration` 300. Controleer na de eerste
-  build in het Vercel-dashboard (Functions) dat deze instellingen zijn toegepast.
-- Generaties hebben daardoor een limiet van circa 4:45 min (`TIME_LIMIT_MS` in
-  `lib/social/generation.ts`). De lokale tool had geen limiet; een grote carrousel met
-  veel beelden kan erover gaan. Op het **Pro-plan** kan dit omhoog tot 800 seconden: zet
-  dan `maxDuration` op 800 in `vercel.json` én in
-  `app/api/social/projects/[id]/generate/route.ts` en
-  `app/api/social/projects/[id]/slides/[file]/revise/route.ts`, en `TIME_LIMIT_MS` op
-  `785_000` (pas ook de foutmelding aan). Op het Hobby-plan is 300 het maximum; een hogere
-  waarde laat de deploy mislukken.
+- Zet **Fluid compute** aan (standaard bij nieuwe projecten). Dan kunnen de cron- en
+  back-uproutes tot `maxDuration` 300 seconden duren, ook op het Hobby-plan.
+- `vercel.json` geeft de PDF-routes (facturen, prijsopgaven) `memory` 2048 MB (Chromium via
+  `@sparticuz/chromium`). Controleer na de eerste build in het Vercel-dashboard (Functions)
+  dat deze instellingen zijn toegepast.
 - Mail-routes hebben `maxDuration` 30 (`vercel.json`); er blijft geen IMAP-verbinding open.
 - **Node-versie:** `package.json` → `"engines": { "node": ">=22.17.0 <25" }`. Vercel kiest
   daarmee de nieuwste toegestane major (24.x); lokaal werkt ook Node 22.
@@ -1334,22 +1442,12 @@ git push -u origin dashboard
 ## Bekende beperkingen
 
 
-- **Generatie maximaal 5 minuten.** Duurt een generatie langer, dan stopt de server met
-  een melding. Probeer het opnieuw of met minder beelden.
-- **Uploads maximaal 5 MB per afbeelding** (limiet van Anthropic). Foto's worden in de
-  browser al verkleind; dit raakt vooral grote GIF's.
-- **Export via een Storage-link.** PNG-zip, PDF en de ZIP met HTML-bestanden worden eerst
-  in Storage gezet; je browser downloadt ze via een tijdelijke link (5 minuten geldig).
-  Oude exports in `social-assets/exports/` worden nog niet automatisch opgeruimd.
-- **"Map met HTML-bestanden tonen"** is online "HTML-bestanden downloaden (ZIP)".
-- **De lokale `.env`-key is vervallen**; de key staat in `ANTHROPIC_API_KEY` op de server.
 - **Mail:** de link in een taak die met "Taak maken" uit een mail is gemaakt werkt niet meer
   zodra die mail naar een andere map is verplaatst (het uid verandert dan).
 - **Agenda:** geen herhalende afspraken (bewust, voor nu).
 - **Bonnetjes:** een HEIC die al vóór deze versie is geüpload, wordt pas omgezet (en
   getoond) na **Opnieuw automatisch uitlezen**. Bedragen in andere valuta worden niet
   omgerekend. Het btw-overzicht is een indicatie.
-- **Social op de telefoon** is net als het origineel niet geoptimaliseerd voor kleine schermen.
 - **Bestanden:** bekijken/downloaden loopt via de server (gestreamd); heel grote downloads
   kunnen tegen de tijdslimiet van een Vercel-functie (60 s) aanlopen. Uploaden heeft die
   grens niet (rechtstreeks naar Google). Mappen slepen (een hele map uploaden) en bestanden

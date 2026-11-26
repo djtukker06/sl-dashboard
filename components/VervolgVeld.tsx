@@ -4,7 +4,7 @@ import { useEffect, useRef } from 'react';
 
 // Verborgen veld "next" op de loginpagina. De browser stuurt een #hash nooit naar de
 // server, maar houdt hem wel vast bij de redirect naar /login. Zo kom je na het inloggen
-// terug op exact dezelfde plek (bv. /social#p=<project>).
+// terug op exact dezelfde plek (bv. een hash als #p=<id>).
 export function VervolgVeld({ next }: { next?: string }) {
   const ref = useRef<HTMLInputElement>(null);
   useEffect(() => {

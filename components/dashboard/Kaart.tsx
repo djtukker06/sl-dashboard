@@ -5,28 +5,19 @@ export function Kaart({
   label,
   href,
   linkTekst = 'Alles',
-  document = false,
   className = '',
   children
 }: {
   label: string;
   href?: string;
   linkTekst?: string;
-  /** true = gewone <a> (volledige paginalading, voor social). */
-  document?: boolean;
   className?: string;
   children: React.ReactNode;
 }) {
   const link = href ? (
-    document ? (
-      <a className="db-kaart-link" href={href}>
-        {linkTekst} <span aria-hidden="true">→</span>
-      </a>
-    ) : (
-      <Link className="db-kaart-link" href={href}>
-        {linkTekst} <span aria-hidden="true">→</span>
-      </Link>
-    )
+    <Link className="db-kaart-link" href={href}>
+      {linkTekst} <span aria-hidden="true">→</span>
+    </Link>
   ) : null;
   return (
     <section className={`db-kaart ${className}`} aria-label={label}>

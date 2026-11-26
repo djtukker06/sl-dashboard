@@ -20,7 +20,7 @@ import { afdwingenUitEnv, alsAal, tfaStap, type Aal, type TfaStap } from './tfa-
 //      geblokkeerde of verwijderde gebruiker valt meteen af, niet pas na een uur). Bewust
 //      niet alleen de handtekening lokaal controleren (zoals proxy.ts doet): dan bleef een
 //      token na uitloggen nog tot een uur bruikbaar voor de routes die met de service-role
-//      werken (mail, social);
+//      werken (mail, bestanden);
 //   2. team_members: alleen een ACTIEF teamlid komt erin (de allowlist uit migratie 0021).
 //      Een account zonder lidmaatschap — bv. iemand die zich toch heeft weten te
 //      registreren — krijgt "geen toegang".
@@ -76,7 +76,7 @@ export function systeemBewijs(doel: SysteemDoel): TeamlidBewijs {
   return maakBewijs();
 }
 
-// Voor diep liggende code (Storage-hulpjes van social/uitgaven) die binnen een
+// Voor diep liggende code (Storage-hulpjes van uitgaven) die binnen een
 // gecontroleerde route draait: de wrapper zet het teamlid in de context van het verzoek.
 const context = new AsyncLocalStorage<Teamlid>();
 

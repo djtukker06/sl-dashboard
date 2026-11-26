@@ -2,17 +2,18 @@
 // Zonder imports met @/, zodat scripts/test-beveiliging.mjs en de rooktest hem kunnen laden.
 //
 // - script-src: alleen eigen bestanden en scripts met de nonce van dit verzoek (Next.js zet
-//   de nonce zelf op zijn scripts; de shell en /social krijgen hem expliciet). Bewust ZONDER
-//   'strict-dynamic': dan blijven gewone <script src="/..."> van de eigen site (shell.js,
-//   social/app.js) werken, en een ingevoegd inline-script of een script van een ander domein
+//   de nonce zelf op zijn scripts; de shell krijgt hem expliciet). Bewust ZONDER
+//   'strict-dynamic': dan blijven gewone <script src="/..."> van de eigen site (shell.js)
+//   werken, en een ingevoegd inline-script of een script van een ander domein
 //   niet. Geen 'unsafe-inline' en (behalve in development) geen 'unsafe-eval'.
-// - style-src 'unsafe-inline': React-stijlattributen en de social-HTML gebruiken inline
-//   stijlen; CSS kan geen scripts starten. Google Fonts (Manrope) mag.
+// - style-src 'unsafe-inline': React-stijlattributen gebruiken inline stijlen; CSS kan geen scripts starten. Google Fonts (Manrope) mag.
 // - connect-src: de eigen API, Supabase (uploads via signed URL's gaan rechtstreeks naar
 //   Supabase Storage) en de upload-API van Google Drive: de server opent een resumable
 //   upload-sessie en de browser stuurt het bestand (factuur-/prijsopgave-PDF, bestanden)
 //   rechtstreeks naar die sessie-URL. Alleen het pad /upload/drive/, geen andere Google-API's.
-// - frame-src: eigen iframes (PDF-voorbeelden, social-slides), blob: en Supabase (signed URL
+// - media-src: eigen bestanden, blob: (net gekozen video) en Supabase (signed URL van een
+//   geüploade social-video in de privé-bucket 'social-media').
+// - frame-src: eigen iframes (PDF-voorbeelden), blob: en Supabase (signed URL
 //   van een bonnetje-PDF). frame-ancestors 'self': nooit in een frame van een ander domein.
 // - form-action: eigen formulieren, plus het inlogscherm van Google. "Google Drive koppelen"
 //   en "Google Agenda koppelen" zijn een POST naar de eigen server die doorstuurt (303) naar
@@ -39,7 +40,7 @@ export function bouwCsp(o: { nonce: string; supabaseUrl?: string; dev?: boolean 
     "img-src 'self' data: blob: https:",
     "font-src 'self' data: https://fonts.gstatic.com",
     `connect-src 'self'${sbHttps}${sb ? ` ${sb.wss}` : ''} https://www.googleapis.com/upload/drive/${o.dev ? ' ws: wss:' : ''}`,
-    "media-src 'self' blob:",
+    `media-src 'self' blob:${sbHttps}`,
     `frame-src 'self' blob: data:${sbHttps}`,
     "worker-src 'self' blob:",
     "frame-ancestors 'self'",

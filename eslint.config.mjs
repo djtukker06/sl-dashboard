@@ -12,8 +12,6 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
-    // Social-frontend: letterlijk overgenomen vanilla JS uit Social-media-tool.
-    "public/social/**",
   ]),
 ]);
 

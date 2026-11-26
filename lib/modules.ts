@@ -1,7 +1,7 @@
 import type { IcoonNaam } from '@/lib/shell/iconen';
 
-// Module-register van de Studio Levant-backoffice. De navigatierail (React: components/
-// shell/Rail.tsx, social: lib/shell/rail.ts → railHtml) en het dashboard lezen hun
+// Module-register van de Studio Levant-backoffice. De navigatierail (components/shell/
+// Rail.tsx via lib/shell/rail.ts) en het dashboard lezen hun
 // modules uitsluitend uit deze lijst, zodat alles één geheel blijft.
 //
 // Een nieuwe module toevoegen:
@@ -26,11 +26,6 @@ export type Module = {
   paden?: string[];
   icoon: IcoonNaam;
   actief: boolean;
-  /**
-   * true = geen React-route maar een los HTML-document (social): links ernaartoe zijn
-   * gewone <a>'s met een volledige paginalading in plaats van client-side navigatie.
-   */
-  document?: boolean;
   /** Belangrijkste actie van de module, voor de snelle acties op het dashboard. */
   snelactie?: { label: string; href: string };
 };
@@ -120,13 +115,10 @@ export const MODULES: Module[] = [
     id: 'social',
     naam: 'Social media',
     kort: 'Social',
-    beschrijving: 'Posts en carrousels genereren in de huisstijl',
+    beschrijving: 'Social media management',
     href: '/social',
     icoon: 'social',
-    actief: true,
-    document: true,
-    // #nieuw opent direct de dialoog "Nieuwe post" (public/shell/shell.js).
-    snelactie: { label: 'Nieuwe post', href: '/social#nieuw' }
+    actief: true
   }
 ];
 

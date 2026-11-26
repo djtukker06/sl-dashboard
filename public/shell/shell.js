@@ -1,5 +1,5 @@
-// Studio Levant — gedrag van de gedeelde shell. Eén vanilla script voor alle pagina's:
-// React (app/(app)/layout.tsx) en social (ingevoegd door app/social/route.ts).
+// Studio Levant — gedrag van de gedeelde shell. Eén vanilla script voor alle pagina's
+// (geladen door app/(app)/layout.tsx).
 // Bewust zonder afhankelijkheden en idempotent (mag twee keer geladen worden).
 (() => {
   if (window.__slShell) return;
@@ -111,24 +111,4 @@
   // event); daar wachten we even zodat er niet twee IMAP-verbindingen tegelijk opengaan.
   const eigenOphaler = location.pathname === "/mail" || location.pathname === "/";
   setTimeout(() => ververs(false), eigenOphaler ? 4000 : 0);
-
-  // ---- social: /social#nieuw (snelle actie op het dashboard) opent "Nieuwe post".
-  // De hash wordt hier al gelezen: app.js vervangt hem bij het opstarten door #p=<id>.
-  if (location.pathname === "/social" && location.hash === "#nieuw") {
-    history.replaceState(null, "", location.pathname);
-    let gedaan = false;
-    const open = () => {
-      if (gedaan) return;
-      gedaan = true;
-      const btn = document.getElementById("newProject");
-      if (btn && !document.getElementById("newDialog")?.open) btn.click();
-    };
-    // Dit script draait (defer) vóór app.js (module); DOMContentLoaded komt pas ná app.js
-    // en dus ná bindEvents(). "load" is het vangnet als DOMContentLoaded al geweest is.
-    if (document.readyState === "complete") open();
-    else {
-      document.addEventListener("DOMContentLoaded", open, { once: true });
-      window.addEventListener("load", open, { once: true });
-    }
-  }
 })();

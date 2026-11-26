@@ -20,16 +20,9 @@ export function RailNav({ items }: { items: RailItem[] }) {
         const huidig = it.id === actief ? 'page' : undefined;
         return (
           <li key={it.id} className={it.mobiel ? undefined : 'sl-rail-neven'}>
-            {it.document ? (
-              // Social is een los HTML-document: volledige paginalading.
-              <a className="sl-rail-item" href={it.href} aria-current={huidig}>
-                {inhoud}
-              </a>
-            ) : (
-              <Link className="sl-rail-item" href={it.href} aria-current={huidig}>
-                {inhoud}
-              </Link>
-            )}
+            <Link className="sl-rail-item" href={it.href} aria-current={huidig}>
+              {inhoud}
+            </Link>
           </li>
         );
       })}

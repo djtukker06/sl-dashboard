@@ -28,9 +28,9 @@ import './taken.css';
 import './klanten.css';
 import './bestanden.css';
 import './notities.css';
+import './social.css';
 
-// Gedeelde shell voor alle ingelogde React-pagina's (dashboard, mail, agenda, boekhouding, account).
-// De social-module (statisch HTML) krijgt dezelfde rail via app/social/route.ts.
+// Gedeelde shell voor alle ingelogde React-pagina's (dashboard, mail, agenda, boekhouding, social, account).
 // Login, wachtwoordherstel en /geen-toegang staan buiten deze route-group en dus zonder rail.
 //
 // Toegang: sessie + actief teamlid (lib/auth/team.ts). Een layout rendert bij navigatie niet

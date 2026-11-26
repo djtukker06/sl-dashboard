@@ -1,5 +1,5 @@
 import type { Browser } from 'puppeteer-core';
-import { chromiumEnv } from '../social/render';
+import { chromiumEnv } from '@/lib/pdf/chromium';
 
 // `puppeteer` (met eigen gedownloade Chrome) is alleen een devDependency, voor lokaal
 // ontwikkelen op de Mac. In productie (Vercel) gebruiken we puppeteer-core met de

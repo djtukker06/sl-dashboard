@@ -1,11 +1,9 @@
 /* ==========================================================
    Studio Levant — gedeelde shell (navigatierail)
-   Eén bron voor alle modules:
-   - React-pagina's: geïmporteerd in app/(app)/layout.tsx
-   - social (statisch HTML): gelinkt door app/social/route.ts
+   Eén bron voor alle modules: geïmporteerd in app/(app)/layout.tsx.
    Alles heeft het voorvoegsel sl-, zodat niets botst met de
-   :root-variabelen van facturen (globals.css) of social (app.css).
-   Kleuren = huisstijl Studio Levant (gelijk aan social/app.css).
+   :root-variabelen van facturen (globals.css).
+   Kleuren = huisstijl Studio Levant.
    ========================================================== */
 
 :root {
@@ -40,12 +38,6 @@
   background: var(--sl-bg);
 }
 .sl-main { min-width: 0; }
-
-/* social: rail als extra eerste kolom vóór de eigen sidebar en main (app.css blijft gelijk) */
-body.sl-met-rail { grid-template-columns: var(--sl-rail-w) 272px 1fr; }
-@media (max-width: 860px) {
-  body.sl-met-rail { grid-template-columns: var(--sl-rail-w) 220px 1fr; }
-}
 
 /* ---------- rail ---------- */
 .sl-rail {
@@ -293,17 +285,12 @@ body.sl-met-rail { grid-template-columns: var(--sl-rail-w) 272px 1fr; }
   .sl-avatar { width: 28px; height: 28px; font-size: 11px; }
   .sl-account-knop { gap: 6px; }
   .sl-account-pop { left: auto; right: 0; bottom: calc(100% + 12px); }
-
-  /* social: rail valt uit de grid, de eigen kolommen houden hun ruimte */
-  body.sl-met-rail { grid-template-columns: 220px 1fr; padding-bottom: calc(var(--sl-tab-h) + env(safe-area-inset-bottom)); }
-  body.sl-met-rail > .sidebar, body.sl-met-rail > main { height: calc(100vh - var(--sl-tab-h)); }
 }
 
 /* De modules onder "Meer" en het label "Meer" bestaan alleen op de telefoon (zie hieronder). */
 .sl-account-modules[hidden], .sl-account-meer[hidden] { display: none; }
 
-/* ---------- telefoon (≤ 720px): vijf tabs + "Meer" ----------
-   Hier en niet in app.css, zodat /social (laadt alleen deze shell.css) dezelfde tabbalk krijgt. */
+/* ---------- telefoon (≤ 720px): vijf tabs + "Meer" ---------- */
 @media (max-width: 720px) {
   .sl-rail { padding-left: env(safe-area-inset-left, 0px); padding-right: env(safe-area-inset-right, 0px); }
   /* Vijf modules in de balk (lib/shell/rail.ts: MOBIEL_HOOFD); de rest onder "Meer". */
@@ -399,9 +386,9 @@ body.sl-met-rail { grid-template-columns: var(--sl-rail-w) 272px 1fr; }
   .sl-rail *, .sl-account-pop { transition-duration: .01ms !important; animation-duration: .01ms !important; }
 }
 
-/* ---------- profielfoto in een avatar (migratie 0039; components/team/Avatar.tsx, railHtml) ----------
+/* ---------- profielfoto in een avatar (migratie 0039; components/team/Avatar.tsx) ----------
    De foto ligt over de initialen heen, binnen de vorm en rand van de avatar zelf. Laadt hij
-   niet, dan verdwijnt hij (React: onError; social: alt="") en staan de initialen er weer. */
+   niet, dan verdwijnt hij (onError) en staan de initialen er weer. */
 .sl-avatar, .sl-persoon-avatar, .tk-wie-avatar, .ac-avatar, .gb-avatar { position: relative; }
 .sl-avatar-foto {
   position: absolute;

@@ -12,8 +12,8 @@ function alsStijl(css: string): CSSProperties | undefined {
   return Object.fromEntries(css.split(';').map((d) => d.split(':') as [string, string])) as CSSProperties;
 }
 
-// De navigatierail voor alle React-pagina's binnen app/(app). Zelfde opbouw en classes
-// als railHtml() in lib/shell/rail.ts (die de social-module gebruikt).
+// De navigatierail voor alle pagina's binnen app/(app); de modules komen uit railItems()
+// (lib/shell/rail.ts).
 export function Rail({ account }: { account: RailAccount }) {
   const items = railItems();
   return (
