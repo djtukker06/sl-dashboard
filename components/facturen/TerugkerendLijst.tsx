@@ -7,6 +7,7 @@ import { bedrijf } from '@/lib/config';
 import { formatEuro } from '@/lib/format';
 import { akkoordStand, datumKort, periodeBereik, periodeLabel, ritme, subtotaal } from '@/lib/invoice/terugkerend-kern';
 import type { TerugkerendDto } from '@/lib/invoice/terugkerend-beheer';
+import { FactuurInzien } from './FactuurInzien';
 
 // Overzicht van de terugkerende facturen (/facturen/terugkerend): per sjabloon wat, voor wie,
 // hoe vaak, wanneer de volgende komt en waar hij heen gaat, met pauzeren/hervatten, nu
@@ -107,9 +108,7 @@ function Controle({ sjablonen, vandaag }: { sjablonen: TerugkerendDto[]; vandaag
                   {datumKort(s.volgendeDatum)} · {periodeBereik(s.volgendeDatum, s.interval, s.dag)} · € {formatEuro(inclBtw(s))} · naar {s.emailAan}
                 </span>
               </div>
-              <a className="db-knop" href={`/api/terugkerend/${s.id}/voorbeeld`} target="_blank" rel="noreferrer">
-                Voorbeeld
-              </a>
+              <FactuurInzien id={s.id} naam={s.naam} />
               <button type="button" className="db-knop db-knop-primair" disabled={bezig !== null} onClick={() => post(s.id, '/api/terugkerend/akkoord', { ids: [s.id] }, `"${s.naam}" goedgekeurd.`)}>
                 {bezig === s.id ? 'Bezig…' : 'Akkoord'}
               </button>
@@ -244,9 +243,7 @@ function Sjabloon({ s, vandaag }: { s: TerugkerendDto; vandaag: string }) {
         <Link href={`/facturen/terugkerend/${s.id}`} className="db-knop">
           Bewerken
         </Link>
-        <a className="db-knop" href={`/api/terugkerend/${s.id}/voorbeeld`} target="_blank" rel="noreferrer" title="De eerstvolgende factuur als PDF, zonder iets op te slaan of te versturen">
-          Voorbeeld
-        </a>
+        {s.actief && <FactuurInzien id={s.id} naam={s.naam} />}
         {(akkoord === 'gevraagd' || akkoord === 'later') && (
           <button type="button" className="db-knop db-knop-primair" disabled={bezig !== null} onClick={() => doe('akkoord', '/api/terugkerend/akkoord', { ids: [s.id] }, () => `Akkoord voor ${datumKort(s.volgendeDatum)}.`)}>
             {bezig === 'akkoord' ? 'Bezig…' : 'Akkoord geven'}

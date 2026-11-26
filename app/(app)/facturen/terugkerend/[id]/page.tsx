@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { isUuid, vereisTeamlidPagina } from '@/lib/auth/team';
 import { createServiceRoleClient } from '@/lib/supabase/service-role';
-import { vandaagNL } from '@/lib/invoice/nummer';
+import { vandaagNL, volgendFactuurnummer } from '@/lib/invoice/nummer';
 import { laadBeheer, NA_0036 } from '@/lib/invoice/terugkerend-beheer';
 import { inboxKeuzes } from '@/lib/invoice/terugkerend-pagina';
 import { TerugkerendFormulier } from '@/components/facturen/TerugkerendFormulier';
@@ -26,7 +26,12 @@ export default async function TerugkerendBewerkenPage({ params }: { params: Prom
         <h2>{sjabloon ? sjabloon.naam : 'Terugkerende factuur'}</h2>
       </header>
       {data && sjabloon ? (
-        <TerugkerendFormulier sjabloon={sjabloon} inboxen={inboxen} vandaag={vandaagNL()} />
+        <TerugkerendFormulier
+          sjabloon={sjabloon}
+          inboxen={inboxen}
+          vandaag={vandaagNL()}
+          volgendNummer={(await volgendFactuurnummer(lid.sb, Number(sjabloon.volgendeDatum.slice(0, 4)))).factuurnummer}
+        />
       ) : (
         <div className="foutmelding">{NA_0036}</div>
       )}

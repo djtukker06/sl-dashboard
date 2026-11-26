@@ -37,7 +37,11 @@ export default async function NieuweFactuurPage({ searchParams }: { searchParams
       </nav>
 
       {terugkerend ? (
-        <TerugkerendFormulier inboxen={await inboxKeuzes(lid)} vandaag={vandaag} />
+        <TerugkerendFormulier
+          inboxen={await inboxKeuzes(lid)}
+          vandaag={vandaag}
+          volgendNummer={(await volgendFactuurnummer(await createClient(), Number(vandaag.slice(0, 4)))).factuurnummer}
+        />
       ) : (
         <InvoiceForm
           beginwaarden={nieuweFactuurBeginwaarden((await volgendFactuurnummer(await createClient(), Number(vandaag.slice(0, 4)))).factuurnummer, vandaag)}

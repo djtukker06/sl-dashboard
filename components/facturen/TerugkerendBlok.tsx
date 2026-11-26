@@ -3,6 +3,7 @@ import { bedrijf } from '@/lib/config';
 import { formatEuro } from '@/lib/format';
 import { akkoordStand, datumKort, periodeLabel, ritme, subtotaal } from '@/lib/invoice/terugkerend-kern';
 import type { TerugkerendDto } from '@/lib/invoice/terugkerend-beheer';
+import { FactuurInzien } from './FactuurInzien';
 
 // Het blok "Terugkerende facturen" op het facturenoverzicht: per lopende terugkerende factuur
 // in één regel wat, voor wie, hoe vaak en wanneer de volgende komt. Beheren (pauzeren, nu
@@ -43,6 +44,7 @@ export function TerugkerendBlok({ sjablonen, vandaag }: { sjablonen: Terugkerend
                 <th>Ritme</th>
                 <th>Volgende</th>
                 <th>Bedrag</th>
+                <th></th>
               </tr>
             </thead>
             <tbody>
@@ -70,6 +72,9 @@ export function TerugkerendBlok({ sjablonen, vandaag }: { sjablonen: Terugkerend
                       {datumKort(s.volgendeDatum)} <span className="tk-sub">· {periodeLabel(s.volgendeDatum, s.interval)}</span>
                     </td>
                     <td className="bedrag">&euro; {formatEuro(incl)}</td>
+                    <td className="acties-col">
+                      <FactuurInzien id={s.id} naam={s.naam} klein />
+                    </td>
                   </tr>
                 );
               })}

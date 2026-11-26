@@ -129,6 +129,15 @@ test("formulier: zonder versturen geen adres nodig; bestaande datum in het verle
   assert.equal(K.parseTerugkerend({ ...goed, volgendeDatum: "2026-11-01" }, { ...opties, huidigeDatum: "2026-11-01" }).ok, true);
 });
 
+test("factuurnummer in de naam: eigen titel, hoofdletters maken niet uit", () => {
+  const p = { datum: "2026-12-01", interval: "maand", dag: 1, factuurnummer: "26-031", klant: "Trefpunt" };
+  assert.equal(K.factuurNaam("Factuur {factuurnummer}", p), "Factuur 26-031");
+  assert.equal(K.factuurNaam("Factuur {Factuurnummer} – {periodenaam}", p), "Factuur 26-031 – december 2026");
+  assert.equal(K.factuurNaam("Onderhoudspakket", p), "Factuur 26-031 · Onderhoudspakket", "zonder placeholder: nummer ervoor, zoals altijd");
+  assert.equal(K.vulIn("{FACTUURNUMMER} {Periodenaam}", p), "26-031 december 2026");
+  assert.ok(K.metFactuurnummer("Factuur {FactuurNummer}"));
+  assert.ok(/factuurNaam\(s\.naam, p\)/.test(lees("lib/invoice/terugkerend.ts")), "cron en voorbeeld gebruiken dezelfde naam");
+});
 test("akkoord vooraf: wanneer gevraagd, goedgekeurd of niet nodig", () => {
   const t = { actief: true, versturen: true, akkoord_vereist: true, akkoord_periode: null, volgende_datum: "2026-12-01" };
   assert.equal(K.dagenTussen("2026-11-24", "2026-12-01"), 7);
