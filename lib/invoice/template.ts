@@ -251,6 +251,9 @@ export const FACTUUR_TEMPLATE = `<!doctype html>
 
     <div class="samenvatting">
       <table>
+        <% if (factuur.soort === 'prijsopgave') { %>
+        <tr class="totaal"><td class="label">Totaal</td><td class="value">&euro; <%= factuur.subtotaalWeergave %> (excl. btw)</td></tr>
+        <% } else { %>
         <tr><td class="label">Subtotaal</td><td class="value">&euro; <%= factuur.subtotaalWeergave %></td></tr>
         <% if (factuur.btwVerlegd) { %>
         <tr><td class="label">Btw</td><td class="value"><%= factuur.btwVerlegdTekst %></td></tr>
@@ -258,6 +261,7 @@ export const FACTUUR_TEMPLATE = `<!doctype html>
         <tr><td class="label">Btw (<%= factuur.btwPercentage %>%)</td><td class="value">&euro; <%= factuur.btwWeergave %></td></tr>
         <% } %>
         <tr class="totaal"><td class="label"><%= factuur.aanbetalingPercentage ? 'Totaal aanbetaling' : 'Totaal' %></td><td class="value">&euro; <%= factuur.totaalWeergave %></td></tr>
+        <% } %>
       </table>
     </div>
 
