@@ -467,6 +467,18 @@ export function igSoort(mediaType: string | null | undefined, productType?: stri
 }
 
 /** Facebook-post → onze soort, uit de bijlagen (attachments{media_type,type,subattachments}). */
+/**
+ * Is dit een "post" die Facebook zelf maakt bij een profielwijziging (nieuwe omslagfoto of
+ * profielfoto, bijgewerkte pagina-info)? Die horen niet in het overzicht. Meta geeft het type
+ * van de bijlage (cover_photo, profile_media) en een automatische zin in `story`.
+ */
+export function isProfielWijziging(p: { story?: string; status_type?: string; attachments?: { data?: { type?: string }[] } }): boolean {
+  const type = p.attachments?.data?.[0]?.type ?? '';
+  if (/^(cover_photo|profile_media|profile_photo|avatar)$/.test(type)) return true;
+  const story = (p.story ?? '').toLowerCase();
+  return /(cover photo|profile picture|profile photo|omslagfoto|profielfoto|updated (their|its|his|her) (information|info|website|phone|address|hours)|heeft (de|zijn|haar) (info|gegevens))/.test(story);
+}
+
 export function fbSoort(p: { attachments?: { data?: { media_type?: string; type?: string; subattachments?: { data?: unknown[] } }[] } }): PostSoort {
   const a = p.attachments?.data?.[0];
   if (!a) return 'tekst';

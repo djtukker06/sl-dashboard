@@ -13,6 +13,7 @@ import {
   FB_POST_METRICS,
   fbPostNaarCijfers,
   fbSoort,
+  isProfielWijziging,
   IG_ACCOUNT_METRICS,
   igInzichtenNaarCijfers,
   igMediaMetrics,
@@ -190,6 +191,26 @@ async function slaExternOp(service: SupabaseClient, accountId: string, posts: Ex
     nieuw++;
   }
   return nieuw;
+}
+
+/**
+ * Eerder opgeslagen profielwijzigingen (omslagfoto e.d.) weer weg: alleen posts van buiten
+ * het dashboard, en hun cijfers. Wat via het dashboard is geplaatst blijft altijd staan.
+ */
+async function ruimProfielWijzigingenOp(service: SupabaseClient, accountId: string, externIds: string[], bekend: Map<string, string>): Promise<void> {
+  const kanaalIds = externIds.map((id) => bekend.get(id)).filter((id): id is string => !!id);
+  if (externIds.length) {
+    const { error } = await service.from('social_inzichten').delete().eq('account_id', accountId).in('extern_post_id', externIds);
+    if (error) logFout('[social-sync] cijfers profielwijziging opruimen', error);
+  }
+  if (!kanaalIds.length) return;
+  const { data, error } = await service.from('social_post_kanalen').select('post_id').in('id', kanaalIds);
+  if (error) return logFout('[social-sync] profielwijzigingen zoeken', error);
+  const postIds = [...new Set((data ?? []).map((r) => r.post_id as string))];
+  if (!postIds.length) return;
+  const weg = await service.from('social_posts').delete().in('id', postIds).eq('bron', 'extern');
+  if (weg.error) logFout('[social-sync] profielwijzigingen opruimen', weg.error);
+  for (const id of externIds) bekend.delete(id);
 }
 
 /**
@@ -385,6 +406,8 @@ interface FbPost {
   created_time?: string;
   permalink_url?: string;
   full_picture?: string;
+  story?: string;
+  status_type?: string;
   attachments?: { data?: { media_type?: string; type?: string; subattachments?: { data?: unknown[] } }[] };
 }
 
@@ -396,11 +419,14 @@ async function syncFacebook(service: SupabaseClient, a: SocialAccountRij, token:
 
   const sinds = nu.getTime() - SYNC_DAGEN * 86_400_000;
   const d = await graph<{ data?: FbPost[] }>(token, `/${page}/published_posts`, {
-    params: { fields: 'id,message,created_time,permalink_url,full_picture,attachments{media_type,type,subattachments}', limit: 100, since: unix(new Date(sinds)) }
+    params: { fields: 'id,message,story,status_type,created_time,permalink_url,full_picture,attachments{media_type,type,subattachments}', limit: 100, since: unix(new Date(sinds)) }
   });
-  const recent = (d.data ?? []).filter((p) => typeof p.id === 'string' && /^[\d_]{1,80}$/.test(p.id) && p.created_time);
+  const alles = (d.data ?? []).filter((p) => typeof p.id === 'string' && /^[\d_]{1,80}$/.test(p.id) && p.created_time);
+  // Nieuwe omslagfoto, profielfoto e.d. zijn geen echte posts: overslaan.
+  const recent = alles.filter((p) => !isProfielWijziging(p));
 
   const bekend = await bekendeKanalen(service, a.id);
+  await ruimProfielWijzigingenOp(service, a.id, alles.filter((p) => isProfielWijziging(p)).map((p) => p.id), bekend);
   const extern = recent.map((p) => ({
     id: p.id,
     soort: fbSoort(p),

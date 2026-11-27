@@ -144,6 +144,8 @@
   line-clamp: 2;
 }
 .so-tegel button { position: relative; z-index: 1; }
+.so-tegel-verberg { justify-self: start; font-size: 12px; color: var(--sl-muted); }
+.so-tegel-verberg:hover { color: var(--sl-text); }
 .so-kaart {
   display: flex;
   gap: 14px;

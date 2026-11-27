@@ -49,8 +49,15 @@ export async function leesInzichten(service: SupabaseClient, van: string, tot: s
   ]);
   for (const r of [reeksen, kanalen, zonderKanaal]) if (r.error) throw dbFout(r.error);
 
-  // Laatste stand per post-kanaal.
-  const kanaalRijen = (kanalen.data ?? []) as { id: string; post_id: string; account_id: string; extern_post_id: string; permalink: string | null; geplaatst_op: string | null }[];
+  // Laatste stand per post-kanaal (zonder de posts die in het overzicht verborgen zijn).
+  const alleKanalen = (kanalen.data ?? []) as { id: string; post_id: string; account_id: string; extern_post_id: string; permalink: string | null; geplaatst_op: string | null }[];
+  const verborgen = new Set<string>();
+  {
+    const { data, error } = await service.from('social_posts').select('id').eq('verborgen', true).limit(5000);
+    if (error) throw dbFout(error);
+    for (const r of (data ?? []) as { id: string }[]) verborgen.add(r.id);
+  }
+  const kanaalRijen = alleKanalen.filter((k) => !verborgen.has(k.post_id));
   const laatste = new Map<string, InzichtCijfers>();
   for (let i = 0; i < kanaalRijen.length; i += 150) {
     const stuk = kanaalRijen.slice(i, i + 150).map((k) => k.id);

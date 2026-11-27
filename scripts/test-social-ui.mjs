@@ -56,6 +56,7 @@ function post(o = {}) {
     status: "concept",
     soort: "foto",
     titel: "",
+    verborgen: false,
     caption: "",
     eerste_reactie: "",
     hashtags: "",
