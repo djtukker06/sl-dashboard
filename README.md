@@ -1004,10 +1004,15 @@ het plaatsen en de cijfers niet. Vóór migratie 0041 tonen alle schermen een me
    | `business_management` | pagina's die in een Business Portfolio staan |
    | `instagram_basic` | het Instagram-account en zijn posts lezen |
    | `instagram_content_publish` | op Instagram plaatsen |
+   | `instagram_manage_comments` | de eerste reactie onder een Instagrampost |
+   | `instagram_manage_insights` | cijfers van Instagram (weergaven, bereik) |
 
-   Niet gevraagd (Meta keurt ze voor nieuwe apps af via deze login): `pages_manage_engagement`,
-   `instagram_manage_comments` en `instagram_manage_insights`. Gevolg: de eerste reactie lukt
-   niet (waarschuwing bij de post) en de cijfers van Instagram blijven leeg.
+   Elke permissie moet in de app bij een use case op **Ready for testing** staan
+   (Gebruiksscenario's → Instagram API / Pagina → Permissions and features → "Add"), anders
+   weigert Meta het inlogscherm ("Invalid Scopes"). Neem de varianten **zonder** `business`
+   (`instagram_business_…` hoort bij een andere login). `pages_manage_engagement` wordt niet
+   gevraagd (trekt `pages_read_user_content` mee); de eerste reactie op Facebook geeft dan een
+   waarschuwing.
 
 5. App settings → **Basic**: kopieer *App ID* (`META_APP_ID`) en *App secret*
    (`META_APP_SECRET`). Vul een privacybeleid-URL in. Zet onder **Advanced** *Require App

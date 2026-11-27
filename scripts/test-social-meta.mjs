@@ -65,7 +65,7 @@ test("login-URL: config_id (Facebook Login for Business) of anders de scope-lijs
   assert.equal(met.searchParams.get("redirect_uri"), "https://x.nl/api/social/meta/callback");
   const zonder = new URL(M.loginUrl({ versie: "v27.0", appId: "123", redirectUri: "https://x.nl/cb", state: "s" }));
   const scopes = zonder.searchParams.get("scope").split(",");
-  for (const s of ["instagram_basic", "instagram_content_publish", "pages_show_list", "pages_read_engagement", "pages_manage_posts", "business_management"]) {
+  for (const s of ["instagram_basic", "instagram_content_publish", "instagram_manage_insights", "instagram_manage_comments", "pages_show_list", "pages_read_engagement", "pages_manage_posts", "business_management"]) {
     assert.ok(scopes.includes(s), s);
   }
   assert.ok(!zonder.searchParams.has("config_id"));
