@@ -12,7 +12,7 @@ import {
   dagdeel,
   formatGetal,
   interacties,
-  kortCaption,
+  postNaam,
   lijnPad,
   optellen,
   perGroep,
@@ -150,7 +150,7 @@ export function Analytics() {
                       <>
                         {r.post ? <PostThumb post={r.post} klein /> : <span className="so-thumb so-thumb-klein" aria-hidden="true" />}
                         <span className="so-top-tekst">
-                          <span>{kortCaption(r.post?.caption ?? '', 90) || (r.post ? SOORT_LABEL[r.post.soort] : 'Post buiten het dashboard')}</span>
+                          <span>{r.post ? postNaam(r.post, 90) : 'Post buiten het dashboard'}</span>
                           <span className="so-zacht">
                             {acc && <PlatformIcoon platform={acc.platform} grootte={11} titel={PLATFORM_LABEL[acc.platform]} />}{' '}
                             {r.geplaatst_op ? formatGepland(r.geplaatst_op) : ''}

@@ -63,7 +63,7 @@ export type MediaType = 'afbeelding' | 'video';
 
 /** De privé-bucket met de foto's en video's (pad = <post-id>/<bestand>). */
 export const MEDIA_BUCKET = 'social-media';
-export const MIGRATIE_MELDING = 'Voer migratie 0041 uit (supabase/UITVOEREN_0041.sql).';
+export const MIGRATIE_MELDING = 'Voer migratie 0041 en 0042 uit (supabase/UITVOEREN_0041.sql en UITVOEREN_0042.sql).';
 
 /** Een gebruikerstag op een foto (IG user_tags). x en y van 0 t/m 1 (linksboven = 0,0). */
 export interface GebruikersTag {
@@ -125,6 +125,8 @@ export interface SocialPostRij {
   id: string;
   status: PostStatus;
   soort: PostSoort;
+  /** Eigen titel (alleen intern, nooit geplaatst). Leeg = begin van de caption. */
+  titel: string;
   caption: string;
   eerste_reactie: string;
   /** Los veld ("#a #b"); komt achter de caption of in de eerste reactie (hashtags_plek). */
@@ -262,6 +264,8 @@ export interface PostDto {
   id: string;
   status: PostStatus;
   soort: PostSoort;
+  /** Eigen titel (alleen intern, nooit geplaatst). Leeg = begin van de caption. */
+  titel: string;
   caption: string;
   eerste_reactie: string;
   hashtags: string;
@@ -308,6 +312,7 @@ export interface PostInvoer {
   /** Alleen 'concept' of 'ingepland' (de rest zet de server zelf). Standaard 'concept'. */
   status?: 'concept' | 'ingepland';
   soort: PostSoort;
+  titel?: string;
   caption?: string;
   eerste_reactie?: string;
   hashtags?: string;
@@ -326,6 +331,8 @@ export interface PostInvoer {
 export interface GeldigePost {
   status: 'concept' | 'ingepland';
   soort: PostSoort;
+  /** Eigen titel (alleen intern, nooit geplaatst). Leeg = begin van de caption. */
+  titel: string;
   caption: string;
   eerste_reactie: string;
   hashtags: string;

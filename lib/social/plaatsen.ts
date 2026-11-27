@@ -59,7 +59,7 @@ import { MIGRATIE_MELDING, type PlaatsResultaat, type PostStatus, type SocialAcc
 // de samenvatting van zijn kanalen (`postStatusUitKanalen`).
 
 const POST_KOLOMMEN =
-  'id,status,soort,caption,eerste_reactie,hashtags,hashtags_plek,locatie_id,locatie_naam,gebruikers_tags,collaborators,gepland_op,geplaatst_op,notities,bron,aangemaakt_door,aangemaakt_op,gewijzigd_op';
+  'id,status,soort,titel,caption,eerste_reactie,hashtags,hashtags_plek,locatie_id,locatie_naam,gebruikers_tags,collaborators,gepland_op,geplaatst_op,notities,bron,aangemaakt_door,aangemaakt_op,gewijzigd_op';
 const KANAAL_KOLOMMEN = 'id,post_id,account_id,status,caption_eigen,container_id,extern_post_id,permalink,fout,pogingen,volgende_poging_op,geplaatst_op';
 const MEDIA_KOLOMMEN = 'id,post_id,volgorde,pad,type,mime,breedte,hoogte,duur_sec,alt_tekst,grootte,aangemaakt_op';
 

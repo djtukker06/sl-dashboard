@@ -115,6 +115,7 @@ export function accountNaarDto(r: SocialAccountRij): AccountDto {
 // ---------------------------------------------------------------------------------
 
 export const MAX_CAPTION = 2200;
+export const MAX_TITEL = 120;
 export const MAX_HASHTAGS = 30;
 export const MAX_VERMELDINGEN = 20;
 export const MAX_GEBRUIKERSTAGS = 20;
@@ -380,6 +381,8 @@ export function parsePost(invoer: unknown, opties: ParseOpties): ParseUitkomst {
   }
   const inplannen = status === 'ingepland';
 
+  const titel = tekst(b.titel, MAX_TITEL);
+  if (titel == null) fouten.push(`De titel is te lang (max. ${MAX_TITEL} tekens).`);
   const caption = tekst(b.caption, MAX_CAPTION);
   if (caption == null) fouten.push(`De caption is te lang (max. ${MAX_CAPTION} tekens).`);
   const eersteReactie = tekst(b.eerste_reactie, MAX_CAPTION);
@@ -511,6 +514,7 @@ export function parsePost(invoer: unknown, opties: ParseOpties): ParseUitkomst {
     post: {
       status: status as 'concept' | 'ingepland',
       soort,
+      titel: (titel ?? '').replace(/\s+/g, ' ').trim(),
       caption: (caption ?? '').trim(),
       eerste_reactie: (eersteReactie ?? '').trim(),
       hashtags: ht.tekst,

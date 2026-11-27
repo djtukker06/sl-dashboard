@@ -280,6 +280,18 @@ test("media-paden: veilig en per post", () => {
   assert.ok(!K.isMediaPadVanPost(`${id}/sub/x.jpg`, id));
 });
 
+// ---------- titel ----------
+test("parsePost: titel wordt opgeschoond en is max. 120 tekens", () => {
+  const r = K.parsePost({ soort: "foto", titel: "  Lancering \n site ", caption: "Idee" }, opt());
+  assert.ok(r.ok);
+  assert.equal(r.post.titel, "Lancering site");
+  const leeg = K.parsePost({ soort: "foto", caption: "Idee" }, opt());
+  assert.equal(leeg.post.titel, "");
+  const lang = K.parsePost({ soort: "foto", titel: "x".repeat(121) }, opt());
+  assert.equal(lang.ok, false);
+  assert.match(lang.fout, /titel is te lang/);
+});
+
 // ---------- bron: migratie, back-up, types ----------
 test("migratie 0041: RLS aan, geen policies, revoke, privé-bucket, identieke kopie", () => {
   const m = lees("supabase/migrations/0041_social_planning.sql");

@@ -84,6 +84,50 @@
 .so-kaart-link::after { content: ""; position: absolute; inset: 0; border-radius: var(--sl-r); }
 .so-kaart button { position: relative; z-index: 1; }
 .so-kaart-moment { margin: 0; font-size: 12.5px; color: var(--sl-muted); }
+.so-kaart-caption {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--sl-muted);
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+.so-kaart-vb {
+  position: relative;
+  z-index: 1;
+  flex: 0 0 auto;
+  align-self: flex-start;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid var(--sl-line);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--sl-muted);
+  cursor: pointer;
+}
+.so-kaart-vb:hover { color: var(--sl-text); background: var(--sl-hover); }
+.so-kaart-vb:focus-visible { outline: none; box-shadow: var(--sl-focus); }
+.so-vb-venster {
+  width: min(440px, calc(100vw - 32px));
+  max-height: calc(100dvh - 48px);
+  padding: 16px;
+  border: 1px solid var(--sl-line);
+  border-radius: var(--sl-r);
+  background: var(--sl-panel);
+  color: var(--sl-text);
+  overflow: auto;
+}
+.so-vb-venster::backdrop { background: rgba(10, 10, 10, 0.6); }
+.so-vb-venster-kop { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.so-vb-venster-kop strong { font-size: 14px; min-width: 0; overflow-wrap: anywhere; }
+.so-vb-venster-keuze { margin-bottom: 12px; }
 .so-kaart-moment::first-letter { text-transform: uppercase; }
 .so-kaart-fout { display: grid; gap: 8px; justify-items: start; font-size: 12.5px; color: var(--sl-danger); line-height: 1.45; }
 .so-kaart-fout p { margin: 0; overflow-wrap: anywhere; }
@@ -91,8 +135,8 @@
 .so-thumb {
   position: relative;
   flex: 0 0 auto;
-  width: 84px;
-  height: 84px;
+  width: 104px;
+  height: 104px;
   border-radius: 3px;
   overflow: hidden;
   background: var(--sl-bg);
@@ -186,12 +230,13 @@
 .so-kal-dag:hover .so-kal-nieuw, .so-kal-nieuw:focus-visible { opacity: 1; }
 .so-kal-nieuw:hover { background: var(--sl-hover); color: var(--sl-text); }
 .so-kal-nieuw:focus-visible { outline: none; box-shadow: var(--sl-focus); }
-.so-kal-items { list-style: none; margin: 4px 0 0; padding: 0; display: grid; gap: 3px; }
+.so-kal-items { list-style: none; margin: 4px 0 0; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 3px; }
+.so-kal-items li { min-width: 0; }
 .so-kal-item {
-  display: flex;
-  align-items: center;
-  gap: 5px;
+  display: grid;
+  gap: 1px;
   min-width: 0;
+  overflow: hidden;
   padding: 3px 6px;
   border-radius: 3px;
   border-left: 2px solid var(--sl-line);
@@ -209,13 +254,24 @@
 .so-kal-concept { border-left-style: dashed; color: var(--sl-muted); }
 .so-kal-tijd { font-family: var(--sl-mono); font-size: 10.5px; flex: 0 0 auto; }
 .so-kal-iconen { display: inline-flex; gap: 2px; color: var(--sl-muted); flex: 0 0 auto; }
-.so-kal-titel { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.so-kal-regel { display: flex; align-items: center; gap: 5px; min-width: 0; }
+/* De naam mag twee regels hebben en blijft altijd binnen de dag. */
+.so-kal-titel {
+  min-width: 0;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
 .so-kal-meer { padding: 0 6px; font-size: 11px; color: var(--sl-muted); }
 .so-kal-voet { margin: 0; font-size: 12.5px; }
 @media (max-width: 720px) {
   .so-kal-dag { min-height: 64px; padding: 4px 2px; }
   .so-kal-nieuw { display: none; }
-  .so-kal-item { padding: 2px 3px; justify-content: center; }
+  .so-kal-item { padding: 2px 3px; justify-items: center; }
+  .so-kal-iconen { display: none; }
   .so-kal-tijd { font-size: 9.5px; }
   .so-kal-kop span { padding: 6px 2px; text-align: center; }
 }

@@ -55,6 +55,7 @@ function post(o = {}) {
     id: o.id ?? "11111111-1111-4111-8111-111111111111",
     status: "concept",
     soort: "foto",
+    titel: "",
     caption: "",
     eerste_reactie: "",
     hashtags: "",
@@ -428,6 +429,15 @@ test("pure hulpjes zonder @/-imports; css, dashboardkaart en migratiemelding", (
   assert.match(lees("app/api/social/posts/route.ts"), /melding: MIGRATIE_MELDING/);
   // Geen secrets of tokens in logs: alleen logFout (maskeert).
   for (const f of eigenLib) assert.ok(!/console\.(log|error|warn)\(/.test(lees(f)), `${f}: gebruik logFout`);
+});
+
+// ---------- postNaam ----------
+test("postNaam: eigen titel, anders caption, anders soort", () => {
+  assert.equal(W.postNaam(post({ titel: "  Lancering   site ", caption: "Lang verhaal" })), "Lancering site");
+  assert.equal(W.postNaam(post({ caption: "Nieuw project\nlive" })), "Nieuw project live");
+  assert.equal(W.postNaam(post({ media: [{ id: "m" }] })), "Foto");
+  assert.equal(W.postNaam(post({})), "Lege post");
+  assert.equal(W.foutVeld("De titel is te lang (max. 120 tekens)."), "titel");
 });
 
 console.log(`test-social-ui: ${geslaagd} geslaagd, ${mislukt} mislukt`);

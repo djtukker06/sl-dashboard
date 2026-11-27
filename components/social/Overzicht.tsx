@@ -10,10 +10,10 @@ import {
   FILTER_STATUSSEN,
   WEEKDAG_KORT,
   groepeerVoorLijst,
-  kortCaption,
   maandBereik,
   maandLabel,
   maandRaster,
+  postNaam,
   postsPerDag,
   tijdVan,
   verschuifMaand
@@ -294,20 +294,25 @@ function Kalender({ maand, posts, nu, onNieuw }: { maand: string; posts: PostDto
                     </button>
                   )}
                   <ul className="so-kal-items">
-                    {items.slice(0, 4).map((p) => (
-                      <li key={p.id}>
-                        <Link href={`/social/${p.id}`} className={`so-kal-item so-kal-${p.status}`} title={kortCaption(p.caption, 80) || 'Post'}>
-                          <span className="so-kal-tijd">{tijdVan((p.geplaatst_op ?? p.gepland_op)!)}</span>
-                          <span className="so-kal-iconen sl-niet-mobiel">
-                            {[...new Set(p.kanalen.map((k) => k.platform))].map((pl) => (
-                              <PlatformIcoon key={pl} platform={pl} grootte={11} />
-                            ))}
-                          </span>
-                          <span className="so-kal-titel sl-niet-mobiel">{kortCaption(p.caption, 40) || 'Post'}</span>
-                        </Link>
-                      </li>
-                    ))}
-                    {items.length > 4 && <li className="so-kal-meer">+{items.length - 4}</li>}
+                    {items.slice(0, 3).map((p) => {
+                      const naam = postNaam(p, 60);
+                      return (
+                        <li key={p.id}>
+                          <Link href={`/social/${p.id}`} className={`so-kal-item so-kal-${p.status}`} title={naam}>
+                            <span className="so-kal-regel">
+                              <span className="so-kal-tijd">{tijdVan((p.geplaatst_op ?? p.gepland_op)!)}</span>
+                              <span className="so-kal-iconen">
+                                {[...new Set(p.kanalen.map((k) => k.platform))].map((pl) => (
+                                  <PlatformIcoon key={pl} platform={pl} grootte={11} />
+                                ))}
+                              </span>
+                            </span>
+                            <span className="so-kal-titel sl-niet-mobiel">{naam}</span>
+                          </Link>
+                        </li>
+                      );
+                    })}
+                    {items.length > 3 && <li className="so-kal-meer">+{items.length - 3} meer</li>}
                   </ul>
                 </div>
               );

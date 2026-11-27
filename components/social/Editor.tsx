@@ -7,6 +7,7 @@ import { ToastProvider, useToast } from '@/components/agenda/Toast';
 import {
   CARROUSEL_MAX,
   MAX_CAPTION,
+  MAX_TITEL,
   MAX_COLLABORATORS,
   MAX_GEBRUIKERSTAGS,
   MAX_HASHTAGS,
@@ -92,6 +93,7 @@ function EditorInhoud({ accounts, post: begin, startDatum, melding }: { accounts
   const [eigen, setEigen] = useState<Record<string, string>>(() => Object.fromEntries((begin?.kanalen ?? []).map((k) => [k.account_id, k.caption_eigen ?? ''])));
   const [eigenOpen, setEigenOpen] = useState<boolean>(() => !!begin?.kanalen.some((k) => k.caption_eigen));
   const [soort, setSoort] = useState<PostSoort>(begin?.soort ?? 'foto');
+  const [titel, setTitel] = useState(begin?.titel ?? '');
   const [caption, setCaption] = useState(begin?.caption ?? '');
   const [hashtags, setHashtags] = useState(begin?.hashtags ?? '');
   const [plek, setPlek] = useState<HashtagsPlek>(begin?.hashtags_plek ?? 'caption');
@@ -154,6 +156,7 @@ function EditorInhoud({ accounts, post: begin, startDatum, melding }: { accounts
     (s: 'concept' | 'ingepland'): PostInvoer => ({
       status: s,
       soort,
+      titel,
       caption,
       eerste_reactie: reactie,
       hashtags,
@@ -166,7 +169,7 @@ function EditorInhoud({ accounts, post: begin, startDatum, melding }: { accounts
       notities,
       kanalen: kanalen.map((id) => ({ account_id: id, caption_eigen: eigen[id]?.trim() ? eigen[id] : null }))
     }),
-    [soort, caption, reactie, hashtags, plek, locatieId, locatieNaam, tags, collab, geplandOp, notities, kanalen, eigen]
+    [soort, titel, caption, reactie, hashtags, plek, locatieId, locatieNaam, tags, collab, geplandOp, notities, kanalen, eigen]
   );
 
   const parseAccounts = useMemo(() => accounts.map((a) => ({ id: a.id, platform: a.platform, actief: a.actief })), [accounts]);
@@ -538,6 +541,27 @@ function EditorInhoud({ accounts, post: begin, startDatum, melding }: { accounts
               ))}
             </ul>
           )}
+
+          <fieldset className="so-sectie" disabled={!bewerkbaar}>
+            <legend className="db-label">Titel</legend>
+            <label className="ag-label">
+              <span className="so-label-rij">
+                Alleen voor jezelf: in de lijst en de kalender
+                <span className={`so-teller${[...titel].length > MAX_TITEL ? ' is-te-veel' : ''}`}>
+                  {[...titel].length}/{MAX_TITEL}
+                </span>
+              </span>
+              <input
+                className="ag-veld"
+                type="text"
+                value={titel}
+                maxLength={MAX_TITEL}
+                onChange={(e) => wijzig(setTitel)(e.target.value)}
+                placeholder="Bijv. Lancering website Bakkerij Jansen"
+              />
+            </label>
+            {veldFout('titel')}
+          </fieldset>
 
           <fieldset className="so-sectie" disabled={!bewerkbaar}>
             <legend className="db-label">Kanalen</legend>
