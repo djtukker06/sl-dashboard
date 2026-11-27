@@ -1,14 +1,14 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { zipBuffer, type ZipEntry } from '@/lib/social/zip';
+import { zipBuffer, type ZipEntry } from '@/lib/util/zip';
 import { dbFout } from './api';
 import { download, exportKlaarzetten } from './opslag';
 import { exportBestandsnaam, maakCsv, type Uitgave } from './model';
 
 // Export voor de boekhouder: CSV (puntkomma, NL-decimalen) en een ZIP met alle bonnetjes
 // (JJJJ-MM-DD_leverancier_bedrag.ext) plus die CSV. Een Vercel-respons mag max. 4,5 MB
-// zijn, dus de ZIP gaat via Storage (bucket uitgaven-export) en een signed URL, net als de
-// social-export. Grote periodes worden in delen van max. ±45 MB gesplitst (de bucket
-// staat 50 MB per bestand toe); elk deel bevat de volledige CSV.
+// zijn, dus de ZIP gaat via Storage (bucket uitgaven-export) en een signed URL.
+// Grote periodes worden in delen van max. ±45 MB gesplitst (de bucket staat
+// 50 MB per bestand toe); elk deel bevat de volledige CSV.
 
 const MAX_DEEL_BYTES = 45 * 1024 * 1024;
 

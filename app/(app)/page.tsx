@@ -7,7 +7,6 @@ import { ModuleKop } from '@/components/shell/ModuleKop';
 import { KaartSkelet } from '@/components/dashboard/Kaart';
 import { InboxKaart, InboxKaartSkelet, NieuweMailKnop } from '@/components/dashboard/InboxKaart';
 import { FacturenWidget } from '@/components/dashboard/FacturenWidget';
-import { SocialWidget } from '@/components/dashboard/SocialWidget';
 import { PlanningSkelet, PlanningWidgets } from '@/components/dashboard/PlanningWidgets';
 import { OpvolgenWidget } from '@/components/dashboard/OpvolgenWidget';
 import { ProjectenWidget } from '@/components/dashboard/ProjectenWidget';
@@ -17,6 +16,7 @@ import { BonnetjeKnop } from '@/components/uitgaven/BonnetjeKnop';
 import { DashboardTaken } from '@/components/taken/DashboardTaken';
 import { BackupWaarschuwing } from '@/components/dashboard/BackupWaarschuwing';
 import { ScratchpadWidget } from '@/components/dashboard/ScratchpadWidget';
+import { SocialKaart } from '@/components/dashboard/SocialKaart';
 
 export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'Dashboard · Studio Levant' };
@@ -25,11 +25,10 @@ export const metadata: Metadata = { title: 'Dashboard · Studio Levant' };
 // server-component in <Suspense>, zodat één trage of kapotte bron de rest niet blokkeert.
 //   - persoonlijk: begroeting, jouw afspraken en taken, wat je uitdeelde, jouw mailbox;
 //   - gedeeld met het team: op te volgen leads/klanten (alleen als er iets is), projecten
-//     (tellers per status), facturen, bonnetjes, posts (met wie ze maakte) en de
+//     (tellers per status), de eerstvolgende social-posts, facturen, bonnetjes en de
 //     Scratchpad (vastgepinde en laatst bewerkte notities).
 export default async function DashboardPage() {
-  // Elke pagina controleert zelf sessie + teamlidmaatschap (de social-widget leest daarna
-  // met de service-role, met dit teamlid als bewijs).
+  // Elke pagina controleert zelf sessie + teamlidmaatschap.
   const lid = await vereisTeamlidPagina('/');
 
   const nu = new Date();
@@ -50,9 +49,6 @@ export default async function DashboardPage() {
             Nieuwe prijsopgave
           </Link>
           <BonnetjeKnop />
-          <a className="db-knop" href="/social#nieuw">
-            Nieuwe post
-          </a>
           {/* Alleen je eigen mailbox; de mailcheck houdt de rest van de pagina niet op. */}
           <Suspense fallback={null}>
             <NieuweMailKnop lid={lid} />
@@ -75,11 +71,12 @@ export default async function DashboardPage() {
             <InboxKaart lid={lid} />
           </Suspense>
 
-          <Suspense fallback={<KaartSkelet label="Recente posts" regels={2} className="db-breed db-social" />}>
-            <SocialWidget lid={lid} />
+          {/* Scratchpad: vastgepinde en laatst bewerkte notities (notities.css), links naast de stapel. */}
+          <Suspense fallback={<KaartSkelet label="Scratchpad" regels={3} className="db-scratchpad" />}>
+            <ScratchpadWidget lid={lid} />
           </Suspense>
 
-          {/* Projecten (tellers per status), facturen en de laatste bonnetjes onder elkaar naast de posts. */}
+          {/* Projecten (tellers per status), facturen en de laatste bonnetjes onder elkaar naast de Scratchpad. */}
           <div className="db-smal db-stapel">
             {/* Opvolgen: alleen zichtbaar als er vandaag (of eerder) iets op te volgen is. */}
             <Suspense fallback={null}>
@@ -88,6 +85,10 @@ export default async function DashboardPage() {
             <Suspense fallback={<KaartSkelet label="Projecten" regels={1} className="db-projecten" />}>
               <ProjectenWidget lid={lid} />
             </Suspense>
+            {/* Social: eerstvolgende ingeplande posts + aantal concepten (migratie 0041). */}
+            <Suspense fallback={<KaartSkelet label="Social" regels={2} className="db-social" />}>
+              <SocialKaart lid={lid} />
+            </Suspense>
             <Suspense fallback={<KaartSkelet label="Facturen" className="db-facturen" />}>
               <FacturenWidget lid={lid} />
             </Suspense>
@@ -95,11 +96,6 @@ export default async function DashboardPage() {
               <UitgavenWidget />
             </Suspense>
           </div>
-
-          {/* Scratchpad: vastgepinde en laatst bewerkte notities, onder de posts (notities.css). */}
-          <Suspense fallback={<KaartSkelet label="Scratchpad" regels={3} className="db-scratchpad" />}>
-            <ScratchpadWidget lid={lid} />
-          </Suspense>
         </div>
       </div>
     </DashboardTaken>

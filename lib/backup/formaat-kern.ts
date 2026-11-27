@@ -232,6 +232,13 @@ export const TABELLEN: TabelDef[] = [
   { naam: 'social_projects', pk: ['id'] },
   { naam: 'social_slides', pk: ['project_id', 'file'] },
   { naam: 'social_versions', pk: ['id'] },
+  // Social media management (0041): het page access token staat er alleen versleuteld in.
+  { naam: 'social_accounts', pk: ['id'] },
+  { naam: 'social_posts', pk: ['id'] },
+  { naam: 'social_post_kanalen', pk: ['id'] },
+  { naam: 'social_media', pk: ['id'] },
+  { naam: 'social_inzichten', pk: ['id'] },
+  { naam: 'social_account_inzichten', pk: ['account_id', 'datum'] },
   { naam: 'drive_koppeling', pk: ['id'] },
   { naam: 'drive_mappen', pk: ['root_id', 'soort', 'sleutel'] },
   { naam: 'drive_kopieen', pk: ['root_id', 'bron', 'bron_id'] },
@@ -248,8 +255,12 @@ export const TABELLEN: TabelDef[] = [
 /** Tabellen die bewust niet in de export staan. */
 export const NIET_EXPORTEREN = new Set(['inlog_pogingen']);
 
-/** Storage-buckets in de back-up. mail-tmp en uitgaven-export zijn tijdelijk. */
-export const BUCKETS = ['invoices', 'uitgaven', 'social-assets', 'notities'] as const;
+/**
+ * Storage-buckets in de back-up. mail-tmp en uitgaven-export zijn tijdelijk. social-media
+ * (0041) gaat mee: de bestandensync is incrementeel en slaat bestanden boven 50 MB over (de
+ * bucketgrens is ook 50 MB), en een bucket die er nog niet is telt als leeg.
+ */
+export const BUCKETS = ['invoices', 'uitgaven', 'social-assets', 'notities', 'social-media'] as const;
 
 export interface DbTabelExport {
   pk: string[];

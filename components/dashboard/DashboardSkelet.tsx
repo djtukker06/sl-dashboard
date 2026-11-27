@@ -10,13 +10,12 @@ export function DashboardSkelet() {
     <div className="db-grid" aria-busy="true" aria-label="Laden…">
       <PlanningSkelet />
       <InboxKaartSkelet />
-      <KaartSkelet label="Recente posts" regels={2} className="db-breed db-social" />
+      <KaartSkelet label="Scratchpad" regels={3} className="db-scratchpad" />
       <div className="db-smal db-stapel">
         <KaartSkelet label="Projecten" regels={1} className="db-projecten" />
         <KaartSkelet label="Facturen" className="db-facturen" />
         <KaartSkelet label="Laatste bonnetjes" className="db-uitgaven" />
       </div>
-      <KaartSkelet label="Scratchpad" regels={3} className="db-scratchpad" />
     </div>
   );
 }

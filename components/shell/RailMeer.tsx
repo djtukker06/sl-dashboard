@@ -13,7 +13,7 @@ function sluitMenu() {
 
 // De modules die op de telefoon niet in de tabbalk staan, bovenin het accountmenu ("Meer").
 // Standaard [hidden]: alleen de mobiele stijl (public/shell/shell.css, ≤720px) toont ze; op grotere schermen
-// staan ze gewoon in de rail. Gelijk aan het neven-blok in railHtml() (lib/shell/rail.ts).
+// staan ze gewoon in de rail.
 export function RailMeer({ items }: { items: RailItem[] }) {
   const pad = usePathname() || '/';
   const actief = moduleVoorPad(pad);
@@ -34,15 +34,9 @@ export function RailMeer({ items }: { items: RailItem[] }) {
         const huidig = it.id === actief ? 'page' : undefined;
         return (
           <li key={it.id}>
-            {it.document ? (
-              <a className="sl-account-module" href={it.href} aria-current={huidig}>
-                {inhoud}
-              </a>
-            ) : (
-              <Link className="sl-account-module" href={it.href} aria-current={huidig} onClick={sluitMenu}>
-                {inhoud}
-              </Link>
-            )}
+            <Link className="sl-account-module" href={it.href} aria-current={huidig} onClick={sluitMenu}>
+              {inhoud}
+            </Link>
           </li>
         );
       })}

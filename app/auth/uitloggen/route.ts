@@ -7,7 +7,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 // Uitloggen vanuit het accountmenu in de rail. Een gewoon <form method="post">, zodat
-// het ook werkt in de statische social-pagina (zonder React/server actions).
+// het ook zonder JavaScript werkt.
 // Alleen POST en alleen vanaf de eigen site (Origin-check tegen CSRF-uitlogpogingen).
 export async function POST(request: Request) {
   const origin = request.headers.get('origin');

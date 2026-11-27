@@ -1,9 +1,9 @@
 // Rooktest voor de gedeelde shell en de toegangscontrole, zonder in te loggen en zonder
 // iets te schrijven.
 //
-// 1. Statisch: de React-rail (components/shell/Rail.tsx + RailNav.tsx) en de HTML-rail
-//    voor social (railHtml in lib/shell/rail.ts) gebruiken dezelfde items, classes, links
-//    en logo.
+// 1. Statisch: de rail (components/shell/Rail.tsx + RailNav.tsx + RailMeer.tsx) leest de
+//    modules uit railItems() (lib/shell/rail.ts), heeft de vaste links en het logo; er is
+//    geen losse HTML-rail meer (de oude social-carrouselmodule is weg).
 // 2. Statisch: de teamtoegang (lib/auth/team.ts) zit overal vóór:
 //    - elke API-route gebruikt de helper of een wrapper die hem aanroept;
 //    - elke pagina in app/(app) begint met vereisTeamlidPagina();
@@ -13,10 +13,10 @@
 //      bestand eindigt met 0021–0026; de proxy-matcher heeft geen algemene .png/.jpg-uitzondering.
 // 3. Tegen een draaiende server (`npm run build && npx next start -p 3107`):
 //    - elke pagina (automatisch gevonden in app/) stuurt zonder sessie door naar /login;
-//    - elke API-route en elk social-bestand weigert met een JSON-401 — voor elke
+//    - elke API-route weigert met een JSON-401 — voor elke
 //      geëxporteerde methode, ook paden die op .png eindigen;
 //    - /login, /wachtwoord-vergeten en /geen-toegang laden, met het echte logo en zonder rail;
-//    - logo, shell.css en shell.js zijn openbaar; de social-frontend (app.js/app.css) niet;
+//    - logo, shell.css en shell.js zijn openbaar;
 //    - beveiligingskoppen (X-Frame-Options, Referrer-Policy, nosniff) staan op elk antwoord;
 //    - uitloggen weigert een ander domein (403) en werkt vanaf het eigen domein (303);
 //    - /uitgaven (met query) stuurt door naar /boekhouding/bonnetjes.
@@ -129,25 +129,18 @@ function check(ok, label, detail = "") {
 // ---------------------------------------------------------------------------------
 // 1. Statische pariteit van de twee rails
 // ---------------------------------------------------------------------------------
-console.log("Rail: React en HTML gelijk");
+console.log("Rail: één React-rail");
 {
-  const html = lees("lib/shell/rail.ts");
-  // RailMeer.tsx: de modules onder "Meer" op de telefoon (het neven-blok in railHtml()).
+  const rail = lees("lib/shell/rail.ts");
   const react = lees("components/shell/Rail.tsx") + lees("components/shell/RailNav.tsx") + lees("components/shell/RailMeer.tsx");
-  const klassen = (src, ...res) =>
-    new Set(res.flatMap((re) => [...src.matchAll(re)]).flatMap((m) => m[1].split(/\s+/)).filter(Boolean));
-  // In railHtml() ook class="${voorwaarde ? '' : 'klasse'}"; in React className={voorwaarde ? undefined : 'klasse'}.
-  const htmlKlassen = klassen(html, /class="([^"$]+)"/g, /class="\$\{[^}]*?'([a-z][\w-]*)'[^}]*\}"/g);
-  const reactKlassen = klassen(react, /className="([^"]+)"/g, /className=\{[^}]*?'([a-z][\w-]*)'[^}]*\}/g);
-  const verschil = [...htmlKlassen].filter((k) => !reactKlassen.has(k)).concat([...reactKlassen].filter((k) => !htmlKlassen.has(k)));
-  check(verschil.length === 0, "zelfde classes", verschil.join(", "));
   for (const href of ["/", "/account", "/nieuw-wachtwoord", "/auth/uitloggen"]) {
-    check(html.includes(`"${href}"`) && react.includes(`"${href}"`), `link ${href} in beide rails`);
+    check(react.includes(`"${href}"`), `link ${href} in de rail`);
   }
-  check(/railItems\(\)/.test(html) && /railItems\(\)/.test(react), "beide rails lezen railItems() uit lib/modules.ts");
-  check(/LOGO_SRC/.test(react) && /export const LOGO_SRC = '\/brand\/beeldmerk-licht\.png'/.test(html), "zelfde logo");
+  check(/railItems\(\)/.test(react), "de rail leest railItems() uit lib/modules.ts");
+  check(/LOGO_SRC/.test(react) && /export const LOGO_SRC = '\/brand\/beeldmerk-licht\.png'/.test(rail), "logo uit LOGO_SRC");
   check(fs.existsSync(path.join(ROOT, "public/brand/beeldmerk-licht.png")), "public/brand/beeldmerk-licht.png bestaat");
-  check(/railHtml\(/.test(lees("app/social/route.ts")), "social krijgt railHtml()");
+  check(!/railHtml\(/.test(rail), "geen HTML-rail meer (railHtml)");
+  check(!fs.existsSync(path.join(ROOT, "app/social/route.ts")), "/social is geen los HTML-document meer");
   check(/<Rail\b/.test(lees("app/(app)/layout.tsx")), "app/(app)/layout.tsx rendert <Rail>");
 }
 
@@ -170,8 +163,9 @@ function bestandenIn(map, filter) {
 }
 {
   // eigenaarRoute = teamlidRoute + eigenaar + aal2; tfaRoute = sessie van een teamlid (ook
-  // vóór de 2FA-code), alleen voor de 2FA-routes zelf (geen service-role).
-  const WRAPPERS = /\b(teamlidRoute|controleerRoute|metSessie|mailRoute|uitgavenRoute|driveRoute|bkRoute|eigenaarRoute|tfaRoute|route)(?:<\w+>)?\(/;
+  // vóór de 2FA-code), alleen voor de 2FA-routes zelf (geen service-role); socialRoute =
+  // teamlidRoute + service-role met bewijs (lib/social/posts.ts).
+  const WRAPPERS = /\b(teamlidRoute|controleerRoute|metSessie|mailRoute|uitgavenRoute|driveRoute|bkRoute|eigenaarRoute|tfaRoute|socialRoute|route)(?:<\w+>)?\(/;
   for (const f of bestandenIn("app/api", (n) => n === "route.ts")) {
     // De cron-routes hebben geen sessie: daar is CRON_SECRET de controle (cronRoute).
     if (f.startsWith(path.join("app", "api", "cron") + path.sep)) {
@@ -185,15 +179,11 @@ function bestandenIn(map, filter) {
     }
     check(WRAPPERS.test(lees(f)), `${f} gebruikt de teamlidcontrole`);
   }
-  for (const f of bestandenIn("app/social-files", (n) => n === "route.ts")) {
-    check(/\broute\(/.test(lees(f)), `${f} gebruikt route() (teamlidcontrole)`);
-  }
   for (const f of bestandenIn("app/(app)", (n) => n === "page.tsx")) {
     // vereisBoekhouderPagina = vereisTeamlidPagina + vinkje Boekhouding (lib/auth/team.ts).
     check(/vereis(Teamlid|Boekhouder)Pagina\(/.test(lees(f)), `${f} begint met vereisTeamlidPagina()`);
   }
   check(/vereisTeamlidPagina\(/.test(lees("app/(app)/layout.tsx")), "app/(app)/layout.tsx controleert het lidmaatschap");
-  check(/huidigTeamlid\(/.test(lees("app/social/route.ts")), "/social controleert het lidmaatschap");
   for (const f of ["app/actions/invoices.ts", "app/actions/quotes.ts", "app/actions/clients.ts"]) {
     check(/vereisTeamlid\(/.test(lees(f)), `${f} controleert het lidmaatschap`);
   }
@@ -687,17 +677,13 @@ try {
 }
 
 console.log(`\nPagina's zonder sessie -> /login  (${BASIS})`);
-for (const r of alles.filter((r) => (r.pagina || r.url === "/social") && !PUBLIEK.has(r.url))) {
+for (const r of alles.filter((r) => r.pagina && !PUBLIEK.has(r.url))) {
   const res = await vraag(r.url);
   check(naarLogin(res), `${r.url}`, `status ${res.status} ${res.headers.get("location") || ""}`);
 }
-{
-  const res = await vraag("/social/index.html");
-  check(res.status >= 300 && res.status < 400, "/social/index.html stuurt door", `status ${res.status}`);
-}
 
 console.log("API's en bestanden zonder sessie -> JSON-401");
-for (const r of alles.filter((r) => !r.pagina && !PUBLIEK.has(r.url) && r.url !== "/social" && !r.url.startsWith("/api/cron/"))) {
+for (const r of alles.filter((r) => !r.pagina && !PUBLIEK.has(r.url) && !r.url.startsWith("/api/cron/"))) {
   for (const m of r.methoden) {
     const init = { method: m, headers: { origin: BASIS } };
     if (m !== "GET" && m !== "DELETE") {
@@ -710,7 +696,7 @@ for (const r of alles.filter((r) => !r.pagina && !PUBLIEK.has(r.url) && r.url !=
   }
 }
 // Paden die op een afbeelding eindigen gaan ook door de proxy (en de route weigert zelf).
-for (const url of ["/social-files/brand/logo-licht.png", "/social-files/projects/x/assets/foto.png", "/api/taken/x.png", "/api/invoices/x.jpg/pdf"]) {
+for (const url of ["/api/taken/x.png", "/api/invoices/x.jpg/pdf"]) {
   const res = await vraag(url);
   check(res.status === 401, `GET ${url} (eindigt op een beeldextensie)`, `status ${res.status}`);
 }
@@ -818,11 +804,6 @@ for (const url of ["/login", "/wachtwoord-vergeten", "/geen-toegang"]) {
 for (const url of ["/brand/beeldmerk-licht.png", "/brand/banner-licht.png", "/shell/shell.css", "/shell/shell.js", "/icon.png"]) {
   const res = await vraag(url);
   check(res.status === 200, `${url} openbaar`, `status ${res.status}`);
-}
-// De social-frontend zelf blijft achter de login.
-for (const url of ["/social/app.js", "/social/app.css"]) {
-  const res = await vraag(url);
-  check(naarLogin(res), `${url} achter login`, `status ${res.status}`);
 }
 
 console.log("Beveiligingskoppen");

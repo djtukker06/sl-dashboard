@@ -107,9 +107,9 @@ export async function registreerPoging(sleutelLijst: string[], gelukt: boolean):
 }
 
 // ---------------------------------------------------------------------------------
-// Eenvoudige limiet per gebruiker voor dure routes (AI: bonnetjes uitlezen, social
-// genereren). In het geheugen per instantie: genoeg om een op hol geslagen script of een
-// gestolen sessie af te remmen, zonder databaseverkeer.
+// Eenvoudige limiet per gebruiker voor dure routes (AI: bonnetjes uitlezen). In het
+// geheugen per instantie: genoeg om een op hol geslagen script of een gestolen sessie af te
+// remmen, zonder databaseverkeer.
 // ---------------------------------------------------------------------------------
 const gebruik = new Map<string, number[]>();
 

@@ -19,16 +19,7 @@ const nextConfig: NextConfig = {
   // dynamisch inleest — die moeten dus expliciet worden meegenomen in de deploy-bundel.
   // Geldt voor alle API-routes (ook PUT/restfactuur/prijsopgaven), niet alleen /api/invoices.
   outputFileTracingIncludes: {
-    '/api/**': ['./node_modules/@sparticuz/chromium/bin/**/*'],
-    // Social-export rendert de logo's mee (gelezen via fs uit assets/social-brand/), plus Chromium.
-    '/api/social/**': [
-      './assets/social-brand/**/*',
-      './node_modules/@sparticuz/chromium/bin/**/*'
-    ],
-    // De logo's zijn niet publiek: deze route serveert ze pas na een sessiecheck.
-    '/social-files/brand/**': ['./assets/social-brand/**/*'],
-    // /social leest de social-HTML via fs in en zet de gedeelde rail erin (app/social/route.ts).
-    '/social': ['./assets/social-app/index.html']
+    '/api/**': ['./node_modules/@sparticuz/chromium/bin/**/*']
   },
   // Geen beeldoptimalisatie nodig (geen next/image): zo is /_next/image (bekende lekken in
   // oudere versies, SSRF/DoS-gevoelig) helemaal dicht.
@@ -37,7 +28,7 @@ const nextConfig: NextConfig = {
   poweredByHeader: false,
   // Beveiligingskoppen voor elk antwoord (pagina's, API's en bestanden). De
   // Content-Security-Policy (met nonce per verzoek) zet proxy.ts.
-  //   - niet in een frame van een ander domein (clickjacking); eigen iframes (social-slides) mogen;
+  //   - niet in een frame van een ander domein (clickjacking); eigen iframes (PDF-voorbeelden) mogen;
   //   - Referer alleen binnen de eigen site: signed URL's en ?-parameters lekken niet naar buiten;
   //   - geen MIME-sniffing; camera alleen voor de eigen site (bonnetje fotograferen), de rest uit;
   //   - HSTS: twee jaar alleen https (ook subdomeinen);
@@ -62,24 +53,21 @@ const nextConfig: NextConfig = {
         source: '/((?!brand/).*)',
         headers: [{ key: 'Cross-Origin-Resource-Policy', value: 'same-origin' }]
       },
-      // Losse shell- en social-bestanden met een versie (?v=<commit>, lib/shell/versie.ts) lang
-      // in de browser bewaren: geen herbevestiging (en voor /social/app.* geen proxy- en
-      // databaserondgang) bij elke paginalading. Alleen MET ?v=: een kale URL houdt het
-      // standaardgedrag, zodat oude code nooit blijft hangen. "private": niet in gedeelde caches
-      // (social/app.* staat achter de sessiecontrole).
-      ...['/shell/:file(shell\\.js|shell\\.css)', '/social/:file(app\\.js|app\\.css)'].map((source) => ({
-        source,
+      // Losse shell-bestanden met een versie (?v=<commit>, lib/shell/versie.ts) lang in de
+      // browser bewaren: geen herbevestiging bij elke paginalading. Alleen MET ?v=: een kale URL
+      // houdt het standaardgedrag, zodat oude code nooit blijft hangen. "private": niet in
+      // gedeelde caches.
+      {
+        source: '/shell/:file(shell\\.js|shell\\.css)',
         has: [{ type: 'query' as const, key: 'v' }],
         headers: [{ key: 'Cache-Control', value: 'private, max-age=31536000, immutable' }]
-      }))
+      }
     ];
   },
   // De facturenschermen staan sinds het dashboard onder /facturen. Oude bookmarks
   // blijven werken via deze tijdelijke redirects (de query, bv. ?jaar=, gaat mee).
   async redirects() {
     return [
-      // De social-HTML wordt sinds de gedeelde shell door app/social/route.ts geserveerd.
-      { source: '/social/index.html', destination: '/social', permanent: false },
       // Oud jaaroverzicht (/?jaar=2025) → facturenoverzicht met hetzelfde jaar.
       { source: '/', has: [{ type: 'query', key: 'jaar' }], destination: '/facturen', permanent: false },
       { source: '/nieuwe-factuur', destination: '/facturen/nieuwe-factuur', permanent: false },

@@ -36,17 +36,17 @@ import {
 //      regelen de pagina's zelf, lib/auth/team.ts.)
 //
 // Snelheid: stap 5/6 (een database-rondgang) doen we alleen bij het openen van een pagina
-// of bestand. API-routes, /social-files en de RSC-verzoeken van de router (navigeren en
+// of bestand. API-routes en de RSC-verzoeken van de router (navigeren en
 // prefetchen binnen de app) slaan hem over: die doen ALTIJD zelf de volledige controle
 // (teamlidRoute / route() / vereisTeamlidPagina in lib/auth/team.ts, fail closed). Een
 // nagemaakte rsc-header helpt een buitenstaander dus niets: de pagina weigert hem zelf; voor
 // losse bestanden (met extensie) geldt de header niet.
 export async function proxy(request: NextRequest) {
   const pad = request.nextUrl.pathname;
-  // fetch()-clients (alle API's, social-bestanden) krijgen JSON i.p.v. een HTML-redirect.
-  const isApi = pad.startsWith('/api/') || pad === '/api' || pad.startsWith('/social-files/');
+  // fetch()-clients (alle API's) krijgen JSON i.p.v. een HTML-redirect.
+  const isApi = pad.startsWith('/api/') || pad === '/api';
 
-  // CSP alleen voor documenten (pagina's en /social); API's en bestanden zetten zelf een
+  // CSP alleen voor documenten (pagina's); API's en bestanden zetten zelf een
   // strengere (bv. sandbox) of hebben er geen nodig.
   const nonce = maakNonce();
   const csp = isApi
@@ -114,7 +114,7 @@ export async function proxy(request: NextRequest) {
   // zelf door naar /login.
   // De cron-routes (Vercel Cron, GitHub Actions) hebben geen sessie; ze controleren zelf
   // CRON_SECRET (lib/auth/cron.ts, fail closed). Exact deze paden, geen voorvoegsel.
-  const isCronPad = pad === '/api/cron/dagelijks' || pad === '/api/cron/bestanden';
+  const isCronPad = pad === '/api/cron/dagelijks' || pad === '/api/cron/bestanden' || pad === '/api/cron/social';
   // Het agenda-abonnement (Apple/Google Agenda haalt het zonder sessie op); de route
   // controleert zelf het geheime token (lib/agenda/feed.ts, fail closed).
   const isAgendaFeed = /^\/api\/agenda-feed\/[A-Za-z0-9_-]{40,64}(\.ics)?$/.test(pad);
@@ -133,9 +133,9 @@ export async function proxy(request: NextRequest) {
     url.pathname = '/login';
     url.search = '';
     for (const [k, v] of Object.entries(extra ?? {})) url.searchParams.set(k, v);
-    // Na het inloggen terug naar waar je was (bv. een bladwijzer naar /social).
-    // De hash (#p=…) neemt de loginpagina zelf mee (components/VervolgVeld.tsx).
-    // Alleen voor pagina's (niet voor losse bestanden zoals /social/app.js).
+    // Na het inloggen terug naar waar je was (bv. een bladwijzer naar /agenda).
+    // De hash (#…) neemt de loginpagina zelf mee (components/VervolgVeld.tsx).
+    // Alleen voor pagina's (niet voor paden met een extensie, zoals .png of .pdf).
     if (veiligVervolg(pad) !== '/' && !/\.[a-z0-9]+$/i.test(pad)) {
       url.searchParams.set('next', pad + request.nextUrl.search);
     }
@@ -232,7 +232,7 @@ export const config = {
     // shell.js), brand/ (logo's), het app-icoon, het web-app-manifest (browsers halen dat
     // zonder cookies op) en Next' eigen bestanden. GEEN algemene
     // uitzondering op .png/.jpg/…: dan zouden dynamische routes die zo eindigen
-    // (bv. /social-files/…/foto.png) zonder controle en sessieverversing blijven.
+    // (bv. /api/taken/…/foto.png) zonder controle en sessieverversing blijven.
     // /_next/image staat uit (next.config.ts: images.unoptimized), dus geen uitzondering nodig.
     '/((?!_next/static|favicon\\.ico$|icon\\.png$|manifest\\.webmanifest$|shell/|brand/).*)'
   ]

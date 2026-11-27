@@ -51,7 +51,7 @@
 .sl-main > .wrap > .app-header { padding-top: 0; }
 .sl-main > .wrap > .sl-laden-blok { padding-top: 0; }
 
-/* ---------- knoppen (zelfde vorm als .btn in social) ---------- */
+/* ---------- knoppen ---------- */
 .db-knop {
   display: inline-flex;
   align-items: center;
@@ -75,7 +75,7 @@
 .db-knop:disabled { opacity: .5; cursor: default; transform: none; }
 .db-knop-primair { background: var(--sl-sand); border-color: var(--sl-sand); color: var(--sl-dark); font-weight: 600; }
 .db-knop-primair:hover { background: var(--sl-sand-hover); border-color: var(--sl-sand-hover); }
-.db-knop:focus-visible, .db-kaart-link:focus-visible, .db-rij:focus-visible, .db-post:focus-visible {
+.db-knop:focus-visible, .db-kaart-link:focus-visible, .db-rij:focus-visible {
   outline: none;
   box-shadow: var(--sl-focus);
 }
@@ -223,89 +223,18 @@
 }
 .db-rij-bedrag { flex: none; font-size: 13.5px; font-variant-numeric: tabular-nums; white-space: nowrap; }
 
-/* ---------- social ---------- */
-/* Compact: elke rij heeft een vaste hoogte (miniatuur + naam + meta), en de lijst toont er
-   hooguit twee. De rest scrollt binnen de kaart, rij voor rij (scroll-snap). Houd
-   --db-post-thumb gelijk aan THUMB_H in components/dashboard/SocialWidget.tsx. */
-.db-posts {
-  --db-post-thumb: 120px;
-  --db-post-rij: calc(var(--db-post-thumb) + 6px + 4px + 19px + 4px + 22px);
-  --db-post-gat: 16px;
-  list-style: none;
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  grid-auto-rows: var(--db-post-rij);
-  gap: var(--db-post-gat);
-  /* twee rijen + tussenruimte + de 3px binnenrand boven en onder */
-  max-height: calc(2 * var(--db-post-rij) + var(--db-post-gat) + 6px);
-  overflow-y: auto;
-  scroll-snap-type: y mandatory;
-  scroll-padding-top: 3px;
-  /* ruimte voor de focusring en de scrollbalk */
-  padding: 3px 6px 3px 3px;
-  margin: -3px -6px -3px -3px;
-  scrollbar-width: thin;
-  scrollbar-color: var(--sl-line) transparent;
-}
-.db-posts > li { scroll-snap-align: start; min-width: 0; }
-.db-posts::-webkit-scrollbar { width: 6px; }
-.db-posts::-webkit-scrollbar-track { background: transparent; }
-.db-posts::-webkit-scrollbar-thumb { background: var(--sl-line); border-radius: 999px; }
-.db-posts::-webkit-scrollbar-thumb:hover { background: var(--sl-faint); }
-.db-post {
-  display: grid;
-  grid-template-rows: auto 19px 22px;
-  gap: 4px;
-  height: 100%;
-  color: var(--sl-text);
-  text-decoration: none;
-  border-radius: var(--sl-r);
-}
-.db-post-thumb {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin-bottom: 6px;
-  overflow: hidden;
-  background: var(--sl-bg);
-  border: 1px solid var(--sl-line-soft);
-  border-radius: var(--sl-r);
-  transition: border-color .2s var(--sl-ease);
-}
-.db-post:hover .db-post-thumb { border-color: var(--sl-sand); }
-.db-post-frame {
-  position: relative;
-  display: block;
-  overflow: hidden;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, .35);
-}
-.db-post-frame iframe {
-  position: absolute;
-  top: 0;
-  left: 0;
-  border: 0;
-  transform-origin: 0 0;
-  pointer-events: none;
-  background: #000;
-}
-.db-post-leeg { font-family: var(--sl-mono); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--sl-faint); }
-.db-post-naam { font-size: 14px; font-weight: 500; line-height: 19px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-
 /* ---------- responsive ---------- */
 @media (max-width: 1180px) {
   .db-breed, .db-smal { grid-column: span 6; }
-  .db-posts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 900px) {
   .db-breed, .db-smal { grid-column: 1 / -1; }
-  .db-posts { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }
 @media (max-width: 720px) {
   .sl-kop { flex-direction: column; align-items: flex-start; padding: 18px 16px; gap: 14px; }
   .sl-kop-acties { justify-content: flex-start; }
   .sl-kop-titel { white-space: normal; }
   .db-grid { padding: 16px 16px 32px; gap: 16px; }
-  .db-posts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (prefers-reduced-motion: reduce) {
   .db-skelet { animation: none; }
@@ -385,7 +314,7 @@
    ----------------------------------------------------------
    Elke pagina — dashboard, klanten, projecten (+ bord en detail),
    bestanden, boekhouding (alle schermen), bonnetjes, facturen, account, beveiliging,
-   gebruikers, de laadschermen én social (public/social/app.css) — gebruikt dezelfde kolom:
+   gebruikers, social en de laadschermen — gebruikt dezelfde kolom:
      --sl-inhoud  1440px  breedte van de kolom inclusief de gutter (≥ 1920px: 1600px)
      --sl-gutter    40px  minimale zijmarge (≥ 1920px: 56px, telefoon ≤ 720px: 16px)
      --sl-uitlijn         afstand van de rand van .sl-main tot de linker- en rechterlijn:
@@ -645,7 +574,7 @@
 /* ---------- telefoon (≤ 720px): tabbalk onderaan + "Meer" ---------- */
 @media (max-width: 720px) {
   .sl-shell { --sl-onder: calc(var(--sl-tab-h) + env(safe-area-inset-bottom, 0px)); }
-  /* Tabbalk, "Meer" en het accountmenu: public/shell/shell.css (ook voor /social). */
+  /* Tabbalk, "Meer" en het accountmenu: public/shell/shell.css. */
 
   /* Modulekop: compact, acties op een eigen regel die mag doorlopen. */
   .sl-kop { min-height: 0; padding-block: 16px; gap: 12px; }

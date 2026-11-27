@@ -15,7 +15,7 @@ import {
 
 // De Claude-kant van het uitlezen: schema, prompt, de aanroep en het samenvoegen met wat
 // er al is ingevuld. Bewust zonder '@/'-imports, zodat scripts/test-uitgaven.mjs dit
-// bestand los kan laden. Zelfde SDK-patroon als lib/social/claude.ts (env ANTHROPIC_API_KEY).
+// bestand los kan laden. Officiële SDK met env ANTHROPIC_API_KEY.
 // Eerst Haiku (snelst en goedkoopst, meestal voldoende); blijft leverancier, datum of
 // totaal leeg of onzeker, dan één tweede poging met Sonnet (zelfde schema), zie uitlezen.ts.
 

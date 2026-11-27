@@ -142,9 +142,6 @@ function DashboardLaden({ grid }: { grid?: React.ReactNode }) {
           Nieuwe prijsopgave
         </Link>
         <BonnetjePlek />
-        <a className="db-knop" href="/social#nieuw">
-          Nieuwe post
-        </a>
       </ModuleKop>
       {grid ?? <InhoudSkelet klasse="db-grid" />}
     </div>
