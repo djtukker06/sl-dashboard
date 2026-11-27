@@ -40,7 +40,7 @@ import type { InzichtCijfers, PostSoort, SocialAccountRij } from './types';
 export const SYNC_INTERVAL_UUR = 6;
 /** Handmatig niet vaker dan dit (Meta heeft limieten per uur). */
 const MIN_HANDMATIG_MIN = 2;
-const SYNC_DAGEN = 60;
+const SYNC_DAGEN = 365;
 const INZICHT_DAGEN = 30;
 const MAX_INZICHT_POSTS = 25;
 
@@ -136,6 +136,13 @@ interface ExternePost {
   caption: string;
   permalink: string | null;
   tijd: string;
+  /** Eerste slide of videoomslag (CDN-URL van Meta). */
+  beeld: string | null;
+}
+
+/** Alleen een https-URL van redelijke lengte bewaren (de rest: geen beeld). */
+function veiligBeeld(url: unknown): string | null {
+  return typeof url === 'string' && url.startsWith('https://') && url.length <= 4000 ? url : null;
 }
 
 /** De bekende kanalen van dit account: extern_post_id → kanaal-id. */
@@ -170,7 +177,7 @@ async function slaExternOp(service: SupabaseClient, accountId: string, posts: Ex
     const postId = (ins.data as { id: string }).id;
     const k = await service
       .from('social_post_kanalen')
-      .insert({ post_id: postId, account_id: accountId, status: 'geplaatst', extern_post_id: p.id, permalink: p.permalink?.slice(0, 2000) ?? null, geplaatst_op: p.tijd })
+      .insert({ post_id: postId, account_id: accountId, status: 'geplaatst', extern_post_id: p.id, permalink: p.permalink?.slice(0, 2000) ?? null, geplaatst_op: p.tijd, beeld_url: p.beeld })
       .select('id')
       .single();
     if (k.error || !k.data) {
@@ -183,6 +190,23 @@ async function slaExternOp(service: SupabaseClient, accountId: string, posts: Ex
     nieuw++;
   }
   return nieuw;
+}
+
+/**
+ * De beelden van bekende posts verversen (CDN-URL's van Meta verlopen na een paar dagen).
+ * Ook voor posts die via het dashboard zijn geplaatst, zodat elke kaart een beeld heeft.
+ */
+async function ververBeelden(service: SupabaseClient, accountId: string, posts: ExternePost[], bekend: Map<string, string>): Promise<void> {
+  for (const p of posts) {
+    const kanaalId = bekend.get(p.id);
+    if (!kanaalId || !p.beeld) continue;
+    const { error } = await service.from('social_post_kanalen').update({ beeld_url: p.beeld }).eq('id', kanaalId).eq('account_id', accountId);
+    if (error) {
+      // Migratie 0043 nog niet uitgevoerd: niet blijven proberen.
+      if ((error as { code?: string }).code === '42703' || (error as { code?: string }).code === 'PGRST204') return;
+      logFout('[social-sync] beeld bijwerken', error);
+    }
+  }
 }
 
 async function slaInzichtenOp(
@@ -248,6 +272,8 @@ interface IgMedia {
   timestamp?: string;
   like_count?: number;
   comments_count?: number;
+  media_url?: string;
+  thumbnail_url?: string;
 }
 
 async function syncInstagram(service: SupabaseClient, a: SocialAccountRij, token: string, nu: Date) {
@@ -259,9 +285,9 @@ async function syncInstagram(service: SupabaseClient, a: SocialAccountRij, token
   const sinds = nu.getTime() - SYNC_DAGEN * 86_400_000;
   const lijst: IgMedia[] = [];
   let na: string | undefined;
-  for (let i = 0; i < 3; i++) {
+  for (let i = 0; i < 6; i++) {
     const d = await graph<{ data?: IgMedia[]; paging?: { cursors?: { after?: string }; next?: string } }>(token, `/${ig}/media`, {
-      params: { fields: 'id,caption,media_type,media_product_type,permalink,timestamp,like_count,comments_count', limit: 50, after: na }
+      params: { fields: 'id,caption,media_type,media_product_type,permalink,timestamp,like_count,comments_count,media_url,thumbnail_url', limit: 50, after: na }
     });
     const pagina = (d.data ?? []).filter((m) => typeof m.id === 'string' && /^\d{1,40}$/.test(m.id));
     lijst.push(...pagina);
@@ -272,12 +298,17 @@ async function syncInstagram(service: SupabaseClient, a: SocialAccountRij, token
   const recent = lijst.filter((m) => m.timestamp && new Date(m.timestamp).getTime() >= sinds);
 
   const bekend = await bekendeKanalen(service, a.id);
-  const nieuw = await slaExternOp(
-    service,
-    a.id,
-    recent.map((m) => ({ id: m.id, soort: igSoort(m.media_type, m.media_product_type), caption: m.caption ?? '', permalink: m.permalink ?? null, tijd: new Date(m.timestamp!).toISOString() })),
-    bekend
-  );
+  const extern = recent.map((m) => ({
+    id: m.id,
+    soort: igSoort(m.media_type, m.media_product_type),
+    caption: m.caption ?? '',
+    permalink: m.permalink ?? null,
+    tijd: new Date(m.timestamp!).toISOString(),
+    // Video: de omslag. Foto en carrousel: media_url is de (eerste) foto.
+    beeld: veiligBeeld(m.media_type === 'VIDEO' ? m.thumbnail_url : m.media_url ?? m.thumbnail_url)
+  }));
+  const nieuw = await slaExternOp(service, a.id, extern, bekend);
+  await ververBeelden(service, a.id, extern, bekend);
 
   // Cijfers per post
   const vandaag = amsterdamDatum(nu);
@@ -300,6 +331,15 @@ async function syncInstagram(service: SupabaseClient, a: SocialAccountRij, token
     }
     if (cijfers.likes == null && typeof m.like_count === 'number') cijfers.likes = m.like_count;
     if (cijfers.reacties == null && typeof m.comments_count === 'number') cijfers.reacties = m.comments_count;
+    rijen.push({ account_id: a.id, extern_post_id: m.id, post_kanaal_id: bekend.get(m.id) ?? null, datum: vandaag, cijfers });
+  }
+  // Oudere posts: geen inzichten-aanroep, wel de likes en reacties die Meta gratis meestuurt.
+  const metInzicht = new Set(rijen.map((r) => r.extern_post_id));
+  for (const m of recent) {
+    if (metInzicht.has(m.id) || (typeof m.like_count !== 'number' && typeof m.comments_count !== 'number')) continue;
+    const cijfers: InzichtCijfers = {};
+    if (typeof m.like_count === 'number') cijfers.likes = m.like_count;
+    if (typeof m.comments_count === 'number') cijfers.reacties = m.comments_count;
     rijen.push({ account_id: a.id, extern_post_id: m.id, post_kanaal_id: bekend.get(m.id) ?? null, datum: vandaag, cijfers });
   }
   const inzichten = await slaInzichtenOp(service, rijen);
@@ -344,6 +384,7 @@ interface FbPost {
   message?: string;
   created_time?: string;
   permalink_url?: string;
+  full_picture?: string;
   attachments?: { data?: { media_type?: string; type?: string; subattachments?: { data?: unknown[] } }[] };
 }
 
@@ -355,17 +396,21 @@ async function syncFacebook(service: SupabaseClient, a: SocialAccountRij, token:
 
   const sinds = nu.getTime() - SYNC_DAGEN * 86_400_000;
   const d = await graph<{ data?: FbPost[] }>(token, `/${page}/published_posts`, {
-    params: { fields: 'id,message,created_time,permalink_url,attachments{media_type,type,subattachments}', limit: 50, since: unix(new Date(sinds)) }
+    params: { fields: 'id,message,created_time,permalink_url,full_picture,attachments{media_type,type,subattachments}', limit: 100, since: unix(new Date(sinds)) }
   });
   const recent = (d.data ?? []).filter((p) => typeof p.id === 'string' && /^[\d_]{1,80}$/.test(p.id) && p.created_time);
 
   const bekend = await bekendeKanalen(service, a.id);
-  const nieuw = await slaExternOp(
-    service,
-    a.id,
-    recent.map((p) => ({ id: p.id, soort: fbSoort(p), caption: p.message ?? '', permalink: p.permalink_url ?? null, tijd: new Date(p.created_time!).toISOString() })),
-    bekend
-  );
+  const extern = recent.map((p) => ({
+    id: p.id,
+    soort: fbSoort(p),
+    caption: p.message ?? '',
+    permalink: p.permalink_url ?? null,
+    tijd: new Date(p.created_time!).toISOString(),
+    beeld: veiligBeeld(p.full_picture)
+  }));
+  const nieuw = await slaExternOp(service, a.id, extern, bekend);
+  await ververBeelden(service, a.id, extern, bekend);
 
   const vandaag = amsterdamDatum(nu);
   const inzichtGrens = nu.getTime() - INZICHT_DAGEN * 86_400_000;

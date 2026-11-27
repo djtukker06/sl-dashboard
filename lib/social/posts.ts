@@ -125,7 +125,7 @@ export async function leesJson(request: Request): Promise<Record<string, unknown
 
 const POST_KOLOMMEN =
   'id,status,soort,titel,caption,eerste_reactie,hashtags,hashtags_plek,locatie_id,locatie_naam,gebruikers_tags,collaborators,gepland_op,geplaatst_op,notities,bron,aangemaakt_door,aangemaakt_op,gewijzigd_op';
-const KANAAL_KOLOMMEN = 'id,post_id,account_id,status,caption_eigen,extern_post_id,permalink,fout,pogingen,volgende_poging_op,geplaatst_op';
+const KANAAL_KOLOMMEN = 'id,post_id,account_id,status,caption_eigen,extern_post_id,permalink,fout,pogingen,volgende_poging_op,geplaatst_op,beeld_url';
 export const ACCOUNT_KOLOMMEN = 'id,platform,extern_id,naam,gebruikersnaam,afbeelding_url,page_id,token_verloopt_op,gekoppeld_op,laatst_gesynct_op,fout,actief';
 const MEDIA_KOLOMMEN = 'id,post_id,volgorde,pad,type,mime,breedte,hoogte,duur_sec,alt_tekst,grootte';
 
@@ -216,7 +216,8 @@ export async function naarDtos(service: SupabaseClient, posts: SocialPostRij[], 
           fout: k.fout,
           pogingen: k.pogingen,
           volgende_poging_op: k.volgende_poging_op,
-          geplaatst_op: k.geplaatst_op
+          geplaatst_op: k.geplaatst_op,
+          beeld_url: k.beeld_url ?? null
         };
       }),
       media: media

@@ -63,7 +63,7 @@ export type MediaType = 'afbeelding' | 'video';
 
 /** De privé-bucket met de foto's en video's (pad = <post-id>/<bestand>). */
 export const MEDIA_BUCKET = 'social-media';
-export const MIGRATIE_MELDING = 'Voer migratie 0041 en 0042 uit (supabase/UITVOEREN_0041.sql en UITVOEREN_0042.sql).';
+export const MIGRATIE_MELDING = 'Voer migraties 0041 t/m 0043 uit (supabase/UITVOEREN_0041.sql, _0042.sql en _0043.sql).';
 
 /** Een gebruikerstag op een foto (IG user_tags). x en y van 0 t/m 1 (linksboven = 0,0). */
 export interface GebruikersTag {
@@ -161,6 +161,8 @@ export interface SocialPostKanaalRij {
   pogingen: number;
   volgende_poging_op: string | null;
   geplaatst_op: string | null;
+  /** Beeld van de geplaatste post zoals Meta hem toont (CDN-URL, ververst bij elke sync; 0043). */
+  beeld_url: string | null;
 }
 
 export interface SocialMediaRij {
@@ -244,6 +246,7 @@ export interface PostKanaalDto {
   pogingen: number;
   volgende_poging_op: string | null;
   geplaatst_op: string | null;
+  beeld_url: string | null;
 }
 
 export interface MediaDto {
