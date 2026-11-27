@@ -21,7 +21,7 @@ export function PlatformIcoon({ platform, grootte = 16, titel }: { platform: Pla
   );
 }
 
-export function Icoon({ naam, grootte = 16 }: { naam: 'plus' | 'omhoog' | 'omlaag' | 'links' | 'rechts' | 'kruis' | 'video' | 'beeld' | 'tekst' | 'hart' | 'reactie' | 'bewaar' | 'deel' | 'sleep'; grootte?: number }) {
+export function Icoon({ naam, grootte = 16 }: { naam: 'plus' | 'omhoog' | 'omlaag' | 'links' | 'rechts' | 'kruis' | 'video' | 'beeld' | 'tekst' | 'hart' | 'reactie' | 'bewaar' | 'deel' | 'sleep' | 'oog'; grootte?: number }) {
   const p = { className: 'so-icoon', width: grootte, height: grootte, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.6, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const, 'aria-hidden': true };
   switch (naam) {
     case 'plus':
@@ -50,6 +50,8 @@ export function Icoon({ naam, grootte = 16 }: { naam: 'plus' | 'omhoog' | 'omlaa
       return <svg {...p}><path d="M6 4h12v16l-6-4-6 4V4Z" /></svg>;
     case 'deel':
       return <svg {...p}><path d="M21 3 10 14M21 3l-7 18-4-7-7-4 18-7Z" /></svg>;
+    case 'oog':
+      return <svg {...p}><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12Z" /><circle cx="12" cy="12" r="3" /></svg>;
     case 'sleep':
       return <svg {...p}><circle cx="9" cy="6" r="1" /><circle cx="15" cy="6" r="1" /><circle cx="9" cy="12" r="1" /><circle cx="15" cy="12" r="1" /><circle cx="9" cy="18" r="1" /><circle cx="15" cy="18" r="1" /></svg>;
   }

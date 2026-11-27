@@ -1,5 +1,5 @@
 import type { InzichtCijfers, PostDto, PostInvoer, PostSoort, PostStatus } from './types';
-import { amsterdamDatum, amsterdamNaarUtc, utcNaarAmsterdam } from './kern';
+import { SOORT_LABEL, amsterdamDatum, amsterdamNaarUtc, utcNaarAmsterdam } from './kern';
 
 // Pure hulpjes voor de social-schermen (overzicht, kalender, editor, analytics). Zonder
 // @/-imports en zonder DOM, zodat scripts/test-social-ui.mjs ze direct kan testen en zowel
@@ -64,6 +64,18 @@ export function groepeerVoorLijst(posts: PostDto[], nu: Date): LijstGroep[] {
 }
 
 /** Een korte versie van de caption voor een kaart (op een woordgrens, met …). */
+/**
+ * De naam van een post in lijsten en de kalender: de eigen titel, anders het begin van de
+ * caption, anders de soort ("Foto", "Reel") of "Lege post".
+ */
+export function postNaam(post: Pick<PostDto, 'titel' | 'caption' | 'soort' | 'media'>, max = 140): string {
+  const titel = kortCaption(post.titel ?? '', max);
+  if (titel) return titel;
+  const cap = kortCaption(post.caption, max);
+  if (cap) return cap;
+  return post.media?.length ? SOORT_LABEL[post.soort] : 'Lege post';
+}
+
 export function kortCaption(tekst: string, max = 140): string {
   const s = String(tekst ?? '').replace(/\s+/g, ' ').trim();
   const tekens = [...s];
@@ -275,6 +287,7 @@ export function samenvoegen(bestaand: PostDto, w: Partial<PostInvoer>): PostInvo
   return {
     status: heeft('status') ? w.status : huidigeStatus,
     soort: heeft('soort') ? (w.soort as PostSoort) : bestaand.soort,
+    titel: heeft('titel') ? w.titel : bestaand.titel,
     caption: heeft('caption') ? w.caption : bestaand.caption,
     eerste_reactie: heeft('eerste_reactie') ? w.eerste_reactie : bestaand.eerste_reactie,
     hashtags: heeft('hashtags') ? w.hashtags : bestaand.hashtags,
@@ -426,7 +439,7 @@ export function lijnPad(waarden: number[], breedte: number, hoogte: number, marg
   return { d, min, max, punten };
 }
 
-export type EditorVeld = 'kanalen' | 'soort' | 'media' | 'caption' | 'hashtags' | 'reactie' | 'tags' | 'collaborators' | 'locatie' | 'tijd' | 'notities' | 'algemeen';
+export type EditorVeld = 'titel' | 'kanalen' | 'soort' | 'media' | 'caption' | 'hashtags' | 'reactie' | 'tags' | 'collaborators' | 'locatie' | 'tijd' | 'notities' | 'algemeen';
 
 /**
  * Bij welk veld in de editor een melding van parsePost/controleerMedia hoort (zodat hij
@@ -437,6 +450,7 @@ export function foutVeld(melding: string): EditorVeld {
   if (/^(bestand|dit bestand)\b/.test(m) || /voeg een (afbeelding|video) toe|carrousel heeft|reel heeft|foto-post heeft|tekstpost heeft geen/.test(m)) return 'media';
   if (/kanaal|account staat uit|kan geen .* plaatsen/.test(m)) return 'kanalen';
   if (/soort post/.test(m)) return 'soort';
+  if (/^de titel/.test(m)) return 'titel';
   if (/hashtag/.test(m) && !/te lang/.test(m)) return 'hashtags';
   if (/eerste reactie/.test(m)) return 'reactie';
   if (/caption|tekstpost heeft een tekst|vermelding/.test(m)) return 'caption';

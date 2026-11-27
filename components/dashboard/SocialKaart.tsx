@@ -3,7 +3,7 @@ import type { Teamlid } from '@/lib/auth/team';
 import { createServiceRoleClient } from '@/lib/supabase/service-role';
 import { formatGepland } from '@/lib/social/kern';
 import { SocialFout, dashboardSocial } from '@/lib/social/posts';
-import { kortCaption } from '@/lib/social/weergave';
+import { postNaam } from '@/lib/social/weergave';
 import { Kanaaliconen, PostThumb } from '@/components/social/PostKaart';
 import { Kaart, KaartMelding } from './Kaart';
 import { OpnieuwKnop } from './OpnieuwKnop';
@@ -20,7 +20,7 @@ export async function SocialKaart({ lid }: { lid: Teamlid }) {
     return (
       <Kaart label="Social" href="/social" className="db-social">
         <KaartMelding toon={migratie ? 'setup' : 'fout'} titel={migratie ? 'Social nog niet ingericht' : 'Social nu niet bereikbaar'} actie={<OpnieuwKnop />}>
-          {migratie ? 'Voer in Supabase supabase/UITVOEREN_0041.sql uit.' : 'De posts konden niet worden opgehaald. Probeer het zo opnieuw.'}
+          {migratie ? 'Voer in Supabase supabase/UITVOEREN_0041.sql en UITVOEREN_0042.sql uit.' : 'De posts konden niet worden opgehaald. Probeer het zo opnieuw.'}
         </KaartMelding>
       </Kaart>
     );
@@ -47,7 +47,7 @@ export async function SocialKaart({ lid }: { lid: Teamlid }) {
                 <PostThumb post={p} klein />
                 <span className="so-dash-tekst">
                   <span className="so-dash-tijd">{p.gepland_op ? formatGepland(p.gepland_op, nu) : ''}</span>
-                  <span className="so-dash-caption">{kortCaption(p.caption, 60) || 'Post zonder tekst'}</span>
+                  <span className="so-dash-caption">{postNaam(p, 60)}</span>
                 </span>
                 <Kanaaliconen post={p} />
               </Link>
