@@ -999,7 +999,6 @@ het plaatsen en de cijfers niet. Vóór migratie 0041 tonen alle schermen een me
    | `pages_manage_posts` | op de Facebookpagina plaatsen |
    | `pages_manage_engagement` | de eerste reactie onder een Facebookpost |
    | `read_insights` | cijfers van de pagina en de posts |
-   | `publish_video` | reels op de Facebookpagina |
    | `business_management` | pagina's die in een Business Portfolio staan |
    | `instagram_basic` | het Instagram-account en zijn posts lezen |
    | `instagram_content_publish` | op Instagram plaatsen |

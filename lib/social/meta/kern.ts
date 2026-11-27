@@ -72,10 +72,9 @@ export function graphVersie(waarde: string | null | undefined): string {
  * dezelfde in de configuratie). Waarvoor:
  *   pages_show_list            je pagina's (en de Instagram-accounts eraan) tonen
  *   pages_read_engagement      posts, reacties en de pagina-gegevens lezen (ook nodig voor IG)
- *   pages_manage_posts         op de Facebookpagina plaatsen
+ *   pages_manage_posts         op de Facebookpagina plaatsen (ook reels)
  *   pages_manage_engagement    de eerste reactie onder een Facebookpost
  *   read_insights              de cijfers van de pagina en de posts
- *   publish_video              reels op de Facebookpagina
  *   business_management        pagina's die in een Business Portfolio (Business Manager) staan
  *   instagram_basic            het Instagram-account en zijn posts lezen
  *   instagram_content_publish  op Instagram plaatsen
@@ -88,7 +87,6 @@ export const SCOPES = [
   'pages_manage_posts',
   'pages_manage_engagement',
   'read_insights',
-  'publish_video',
   'business_management',
   'instagram_basic',
   'instagram_content_publish',
