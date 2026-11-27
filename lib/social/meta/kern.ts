@@ -85,14 +85,15 @@ export const SCOPES = [
   'pages_show_list',
   'pages_read_engagement',
   'pages_manage_posts',
-  'pages_manage_engagement',
   'read_insights',
   'business_management',
   'instagram_basic',
-  'instagram_content_publish',
-  'instagram_manage_comments',
-  'instagram_manage_insights'
+  'instagram_content_publish'
 ] as const;
+// pages_manage_engagement (trekt pages_read_user_content mee), instagram_manage_comments en
+// instagram_manage_insights (eerste reactie en cijfers van Instagram) staan er bewust niet in:
+// Meta keurt ze voor nieuwe apps af via de gewone Facebook-login ("Invalid Scopes"), en dan opent het inlogscherm niet. Zonder werkt plaatsen
+// gewoon; de eerste reactie geeft dan een waarschuwing en de IG-cijfers blijven leeg.
 
 /** Zonder deze permissies heeft koppelen geen zin. */
 export const MINIMALE_SCOPES = ['pages_show_list', 'pages_read_engagement'] as const;

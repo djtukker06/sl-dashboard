@@ -997,13 +997,14 @@ het plaatsen en de cijfers niet. Vóór migratie 0041 tonen alle schermen een me
    | `pages_show_list` | je pagina's en de Instagram-accounts eraan tonen |
    | `pages_read_engagement` | pagina-gegevens en posts lezen (ook nodig voor Instagram) |
    | `pages_manage_posts` | op de Facebookpagina plaatsen |
-   | `pages_manage_engagement` | de eerste reactie onder een Facebookpost |
    | `read_insights` | cijfers van de pagina en de posts |
    | `business_management` | pagina's die in een Business Portfolio staan |
    | `instagram_basic` | het Instagram-account en zijn posts lezen |
    | `instagram_content_publish` | op Instagram plaatsen |
-   | `instagram_manage_comments` | de eerste reactie onder een Instagrampost |
-   | `instagram_manage_insights` | cijfers van Instagram |
+
+   Niet gevraagd (Meta keurt ze voor nieuwe apps af via deze login): `pages_manage_engagement`,
+   `instagram_manage_comments` en `instagram_manage_insights`. Gevolg: de eerste reactie lukt
+   niet (waarschuwing bij de post) en de cijfers van Instagram blijven leeg.
 
 5. App settings → **Basic**: kopieer *App ID* (`META_APP_ID`) en *App secret*
    (`META_APP_SECRET`). Vul een privacybeleid-URL in. Zet onder **Advanced** *Require App
