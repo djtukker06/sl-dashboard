@@ -2,24 +2,34 @@
 
 import Link from 'next/link';
 import { useRef, useState } from 'react';
-import { SOORT_LABEL, captionSamenstellen, formatGepland } from '@/lib/social/kern';
+import { captionSamenstellen, formatGepland } from '@/lib/social/kern';
 import { formatGetal, kortCaption, postNaam } from '@/lib/social/weergave';
 import type { Platform, PostDto } from '@/lib/social/types';
 import { Icoon, PlatformIcoon } from './Iconen';
 import { StatusPil } from './StatusPil';
 import { Voorbeeld } from './Voorbeeld';
 
+/** Het beeld van een post: het eerste eigen bestand, anders het beeld dat Meta toont (externe posts). */
+export function beeldVan(post: PostDto): { url: string; video: boolean } | null {
+  const eerste = post.media[0];
+  if (eerste?.type === 'afbeelding' && eerste.url) return { url: eerste.url, video: false };
+  const meta = post.kanalen.find((k) => k.beeld_url)?.beeld_url;
+  if (meta) return { url: meta, video: eerste?.type === 'video' || post.soort === 'reel' };
+  return null;
+}
+
 /** Miniatuur van een post: het eerste beeld, een video- of tekstvlak. */
 export function PostThumb({ post, klein = false }: { post: PostDto; klein?: boolean }) {
   const eerste = post.media[0];
+  const beeld = beeldVan(post);
   return (
     <span className={`so-thumb${klein ? ' so-thumb-klein' : ''}`} aria-hidden="true">
-      {eerste?.type === 'afbeelding' && eerste.url ? (
-        // eslint-disable-next-line @next/next/no-img-element -- kortlevende signed URL uit de privé-bucket
-        <img src={eerste.url} alt="" loading="lazy" />
+      {beeld ? (
+        // eslint-disable-next-line @next/next/no-img-element -- signed URL uit de privé-bucket of CDN-URL van Meta
+        <img src={beeld.url} alt="" loading="lazy" referrerPolicy="no-referrer" />
       ) : (
         <span className="so-thumb-leeg">
-          <Icoon naam={eerste?.type === 'video' ? 'video' : post.soort === 'tekst' ? 'tekst' : 'beeld'} grootte={klein ? 16 : 22} />
+          <Icoon naam={eerste?.type === 'video' || post.soort === 'reel' ? 'video' : post.soort === 'tekst' ? 'tekst' : 'beeld'} grootte={klein ? 16 : 22} />
         </span>
       )}
       {post.media.length > 1 && <span className="so-thumb-aantal">{post.media.length}</span>}
@@ -48,49 +58,71 @@ export function Kanaaliconen({ post }: { post: PostDto }) {
   );
 }
 
-/** Kerncijfers van een geplaatste post: bereik, likes, reacties, opslagen. */
+/** Kerncijfers van een geplaatste post: weergaven, likes, reacties (met icoon). */
 export function Kerncijfers({ post }: { post: PostDto }) {
   const c = post.inzichten;
   if (!c) return null;
-  const items: [string, number | undefined][] = [
-    ['bereik', c.bereik ?? c.weergaven],
-    ['likes', c.likes],
-    ['reacties', c.reacties],
-    ['opslagen', c.opslagen]
+  const items: { label: string; icoon: 'oog' | 'hart' | 'reactie'; waarde: number | undefined }[] = [
+    { label: 'weergaven', icoon: 'oog', waarde: c.weergaven ?? c.bereik },
+    { label: 'likes', icoon: 'hart', waarde: c.likes },
+    { label: 'reacties', icoon: 'reactie', waarde: c.reacties }
   ];
   return (
     <dl className="so-cijfers">
-      {items.map(([label, waarde]) => (
-        <div key={label}>
-          <dt>{label}</dt>
-          <dd>{formatGetal(waarde ?? null)}</dd>
+      {items.map((i) => (
+        <div key={i.label} title={i.waarde == null ? `${i.label}: (nog) niet beschikbaar` : `${i.waarde} ${i.label}`}>
+          <dt>
+            <Icoon naam={i.icoon} grootte={14} />
+            <span className="so-sr">{i.label}</span>
+          </dt>
+          <dd>{formatGetal(i.waarde ?? null)}</dd>
         </div>
       ))}
     </dl>
   );
 }
 
+/** Een post in de lijst: het beeld groot (eerste slide), daaronder de titel en de cijfers. */
 export function PostKaart({ post, nu, onOpnieuw, bezig }: { post: PostDto; nu: Date; onOpnieuw?: (p: PostDto) => void; bezig?: boolean }) {
   const fouten = [...new Set(post.kanalen.map((k) => k.fout).filter((f): f is string => !!f))];
-  const titel = postNaam(post, 140);
-  // Met een eigen titel staat het begin van de caption eronder (zonder titel is de caption de titel).
-  const onder = post.titel?.trim() ? kortCaption(post.caption, 160) : '';
+  const titel = postNaam(post, 120);
+  const beeld = beeldVan(post);
+  const eerste = post.media[0];
+  const geplaatst = post.status === 'geplaatst' || post.status === 'deels';
   return (
-    <article className={`so-kaart so-kaart-${post.status}`}>
-      <PostThumb post={post} />
-      <div className="so-kaart-tekst">
-        <div className="so-kaart-boven">
-          <StatusPil status={post.status} />
+    <article className={`so-tegel so-kaart-${post.status}`}>
+      <div className="so-tegel-beeld">
+        {beeld ? (
+          // eslint-disable-next-line @next/next/no-img-element -- signed URL uit de privé-bucket of CDN-URL van Meta
+          <img src={beeld.url} alt="" loading="lazy" referrerPolicy="no-referrer" />
+        ) : post.soort === 'tekst' && post.caption ? (
+          <p className="so-tegel-tekstpost">{kortCaption(post.caption, 220)}</p>
+        ) : (
+          <span className="so-tegel-leeg" aria-hidden="true">
+            <Icoon naam={eerste?.type === 'video' || post.soort === 'reel' ? 'video' : post.soort === 'tekst' ? 'tekst' : 'beeld'} grootte={28} />
+          </span>
+        )}
+        <span className="so-tegel-boven">
+          {!geplaatst && <StatusPil status={post.status} />}
+          <span className="so-tegel-soort">
+            {(post.soort === 'reel' || beeld?.video) && <Icoon naam="video" grootte={13} />}
+            {post.media.length > 1 && <span>1/{post.media.length}</span>}
+          </span>
+        </span>
+        <span className="so-tegel-kanalen">
           <Kanaaliconen post={post} />
-          <span className="so-kaart-soort">{SOORT_LABEL[post.soort]}</span>
-          {post.bron === 'extern' && <span className="so-kaart-soort">Buiten het dashboard geplaatst</span>}
-        </div>
+        </span>
+        <PostVoorbeeldKnop post={post} titel={titel} />
+      </div>
+      <div className="so-tegel-tekst">
         <Link className="so-kaart-link" href={`/social/${post.id}`}>
           {titel}
         </Link>
-        {onder && <p className="so-kaart-caption">{onder}</p>}
-        <p className="so-kaart-moment">{momentTekst(post, nu)}</p>
-        {(post.status === 'geplaatst' || post.status === 'deels') && <Kerncijfers post={post} />}
+        <p className="so-kaart-moment">
+          {momentTekst(post, nu)}
+          {post.bron === 'extern' && <span className="so-zacht"> · buiten het dashboard</span>}
+        </p>
+        {geplaatst && <Kerncijfers post={post} />}
         {(post.status === 'mislukt' || post.status === 'deels') && (
           <div className="so-kaart-fout">
             {fouten.length ? fouten.map((f) => <p key={f}>{f}</p>) : <p>Plaatsen is niet gelukt.</p>}
@@ -102,7 +134,6 @@ export function PostKaart({ post, nu, onOpnieuw, bezig }: { post: PostDto; nu: D
           </div>
         )}
       </div>
-      <PostVoorbeeldKnop post={post} titel={titel} />
     </article>
   );
 }
