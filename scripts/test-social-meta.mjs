@@ -481,5 +481,15 @@ test("bron: README en .env.local.example noemen de Meta-variabelen", () => {
   assert.ok(r.includes("/api/social/meta/callback"));
 });
 
+test("isProfielWijziging: omslagfoto en profielfoto zijn geen echte posts", () => {
+  assert.equal(M.isProfielWijziging({ attachments: { data: [{ type: "cover_photo" }] } }), true);
+  assert.equal(M.isProfielWijziging({ attachments: { data: [{ type: "profile_media" }] } }), true);
+  assert.equal(M.isProfielWijziging({ story: "Studio Levant updated their cover photo." }), true);
+  assert.equal(M.isProfielWijziging({ story: "Studio Levant heeft de profielfoto bijgewerkt." }), true);
+  assert.equal(M.isProfielWijziging({ message: "Nieuw project!", attachments: { data: [{ type: "photo" }] } }), false);
+  assert.equal(M.isProfielWijziging({ attachments: { data: [{ type: "album" }] } }), false);
+  assert.equal(M.isProfielWijziging({}), false);
+});
+
 console.log(`test-social-meta: ${geslaagd} geslaagd${mislukt ? `, ${mislukt} mislukt` : ""}`);
 if (mislukt) process.exit(1);

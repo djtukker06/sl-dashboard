@@ -124,7 +124,7 @@ export async function leesJson(request: Request): Promise<Record<string, unknown
 // ---------------------------------------------------------------------------------
 
 const POST_KOLOMMEN =
-  'id,status,soort,titel,caption,eerste_reactie,hashtags,hashtags_plek,locatie_id,locatie_naam,gebruikers_tags,collaborators,gepland_op,geplaatst_op,notities,bron,aangemaakt_door,aangemaakt_op,gewijzigd_op';
+  'id,status,soort,titel,verborgen,caption,eerste_reactie,hashtags,hashtags_plek,locatie_id,locatie_naam,gebruikers_tags,collaborators,gepland_op,geplaatst_op,notities,bron,aangemaakt_door,aangemaakt_op,gewijzigd_op';
 const KANAAL_KOLOMMEN = 'id,post_id,account_id,status,caption_eigen,extern_post_id,permalink,fout,pogingen,volgende_poging_op,geplaatst_op,beeld_url';
 export const ACCOUNT_KOLOMMEN = 'id,platform,extern_id,naam,gebruikersnaam,afbeelding_url,page_id,token_verloopt_op,gekoppeld_op,laatst_gesynct_op,fout,actief';
 const MEDIA_KOLOMMEN = 'id,post_id,volgorde,pad,type,mime,breedte,hoogte,duur_sec,alt_tekst,grootte';
@@ -258,6 +258,7 @@ export function parseFilter(params: URLSearchParams): PostFilter {
     if (!/^[0-9a-f-]{36}$/i.test(kanaal)) throw new SocialFout(400, 'Onbekend kanaal.');
     f.kanaal = kanaal;
   }
+  if (params.get('verborgen') === '1') f.verborgen = true;
   for (const k of ['van', 'tot'] as const) {
     const v = params.get(k);
     if (!v) continue;
@@ -274,6 +275,7 @@ export function parseFilter(params: URLSearchParams): PostFilter {
  */
 export async function leesPosts(service: SupabaseClient, f: PostFilter): Promise<PostDto[]> {
   let q = service.from('social_posts').select(POST_KOLOMMEN).order('gewijzigd_op', { ascending: false }).limit(MAX_LIJST);
+  q = q.eq('verborgen', !!f.verborgen);
   if (f.status) q = q.in('status', statussenVoorFilter(f.status));
   if (f.kanaal) {
     const { data, error } = await service.from('social_post_kanalen').select('post_id').eq('account_id', f.kanaal).limit(2000);
@@ -471,6 +473,15 @@ export async function verwijderPost(service: SupabaseClient, id: string, definit
   if (!data?.length) throw new SocialFout(409, 'De post wordt op dit moment geplaatst en kan nu niet weg.', { code: 'bezig' });
   await verwijderBestanden(service, paden);
   return { geannuleerd: false };
+}
+
+/** POST /api/social/posts/[id]/verbergen: een post verbergen of terugzetten (alleen in het dashboard). */
+export async function zetVerborgen(service: SupabaseClient, id: string, body: Record<string, unknown>): Promise<{ post: PostDto }> {
+  if (typeof body.verborgen !== 'boolean') throw new SocialFout(400, 'Geef aan of de post verborgen moet worden.');
+  await moetPost(service, id);
+  const { error } = await service.from('social_posts').update({ verborgen: body.verborgen }).eq('id', id);
+  if (error) throw dbFout(error);
+  return { post: await moetPost(service, id) };
 }
 
 /**

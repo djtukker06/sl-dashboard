@@ -972,6 +972,7 @@ het plaatsen en de cijfers niet. Vóór migratie 0041 tonen alle schermen een me
 1. Voer `supabase/UITVOEREN_0041.sql` uit in de SQL Editor van Supabase (alle regels `ok`).
    Daarna `supabase/UITVOEREN_0042.sql` (eigen titel per post; alle regels `ok`).
    Daarna `supabase/UITVOEREN_0043.sql` (beeld van geplaatste posts uit Meta; alle regels `ok`).
+   Daarna `supabase/UITVOEREN_0044.sql` (posts verbergen in het overzicht; alle regels `ok`).
 2. Daarna `supabase/UITVOEREN_0041_cron.sql`, zie stap 3 hieronder.
 
 **Omgevingsvariabelen** (Vercel Production + Preview en `.env.local`; zie ook de tabel bij

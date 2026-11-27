@@ -44,7 +44,7 @@ function OverzichtInhoud({ accounts, melding, startMaand, startStatus }: Props) 
   const router = useRouter();
   const [weergave, setWeergave] = useState<Weergave>('lijst');
   const [kanaal, setKanaal] = useState<string>('');
-  const [status, setStatus] = useState<PostStatus | ''>(startStatus ?? '');
+  const [status, setStatus] = useState<PostStatus | 'verborgen' | ''>(startStatus ?? '');
   // In de lijst kan de maand ook "alles" zijn; de kalender toont altijd één maand.
   const [maand, setMaand] = useState<string>('');
   const [kalenderMaand, setKalenderMaand] = useState<string>(startMaand);
@@ -76,7 +76,8 @@ function OverzichtInhoud({ accounts, melding, startMaand, startStatus }: Props) 
   const actieveMaand = weergave === 'kalender' ? kalenderMaand : maand;
   const query = useMemo(() => {
     const q = new URLSearchParams();
-    if (status) q.set('status', status);
+    if (status === 'verborgen') q.set('verborgen', '1');
+    else if (status) q.set('status', status);
     if (kanaal) q.set('kanaal', kanaal);
     if (actieveMaand) {
       const b = maandBereik(actieveMaand);
@@ -125,6 +126,19 @@ function OverzichtInhoud({ accounts, melding, startMaand, startStatus }: Props) 
     }
   }
 
+  async function verberg(p: PostDto, verborgen: boolean) {
+    setBezigId(p.id);
+    try {
+      await api(`/api/social/posts/${p.id}/verbergen`, { method: 'POST', body: JSON.stringify({ verborgen }) });
+      setPosts((lijst) => lijst?.filter((x) => x.id !== p.id) ?? lijst);
+      toast(verborgen ? 'Verborgen. Terugzetten kan via Status → Verborgen.' : 'Teruggezet in het overzicht.');
+    } catch (e) {
+      toast(foutTekst(e), { fout: true });
+    } finally {
+      setBezigId(null);
+    }
+  }
+
   const maandOpties: KeuzeOptie<string>[] = useMemo(() => {
     const basis = amsterdamDatum(new Date()).slice(0, 7);
     const lijst: KeuzeOptie<string>[] = [{ waarde: 'alles', label: 'Alle maanden' }];
@@ -139,7 +153,11 @@ function OverzichtInhoud({ accounts, melding, startMaand, startStatus }: Props) 
     { waarde: 'alle', label: 'Alle kanalen' },
     ...accounts.map((a) => ({ waarde: a.id, label: a.naam || a.gebruikersnaam || PLATFORM_LABEL[a.platform], sub: PLATFORM_LABEL[a.platform] }))
   ];
-  const statusOpties: KeuzeOptie<string>[] = [{ waarde: 'alle', label: 'Alle statussen' }, ...FILTER_STATUSSEN.map((s) => ({ waarde: s.waarde, label: s.label }))];
+  const statusOpties: KeuzeOptie<string>[] = [
+    { waarde: 'alle', label: 'Alle statussen' },
+    ...FILTER_STATUSSEN.map((s) => ({ waarde: s.waarde, label: s.label })),
+    { waarde: 'verborgen', label: 'Verborgen', sub: 'Posts die je hebt verborgen' }
+  ];
 
   return (
     <div className="so-inhoud">
@@ -171,7 +189,7 @@ function OverzichtInhoud({ accounts, melding, startMaand, startStatus }: Props) 
             </div>
           )}
           <div className="so-filter">
-            <Keuzelijst label="Status" waarde={status || 'alle'} opties={statusOpties} onChange={(w) => setStatus(w === 'alle' ? '' : (w as PostStatus))} />
+            <Keuzelijst label="Status" waarde={status || 'alle'} opties={statusOpties} onChange={(w) => setStatus(w === 'alle' ? '' : (w as PostStatus | 'verborgen'))} />
           </div>
           {weergave === 'lijst' ? (
             <div className="so-filter">
@@ -212,13 +230,27 @@ function OverzichtInhoud({ accounts, melding, startMaand, startStatus }: Props) 
       ) : posts && weergave === 'kalender' ? (
         <Kalender maand={kalenderMaand} posts={posts} nu={nu} onNieuw={(dag) => router.push(`/social/nieuw?datum=${dag}`)} />
       ) : posts ? (
-        <Lijst posts={posts} nu={nu} gefilterd={!!(status || kanaal || maand)} onOpnieuw={opnieuw} bezigId={bezigId} />
+        <Lijst posts={posts} nu={nu} gefilterd={!!(status || kanaal || maand)} onOpnieuw={opnieuw} onVerberg={verberg} bezigId={bezigId} />
       ) : null}
     </div>
   );
 }
 
-function Lijst({ posts, nu, gefilterd, onOpnieuw, bezigId }: { posts: PostDto[]; nu: Date; gefilterd: boolean; onOpnieuw: (p: PostDto) => void; bezigId: string | null }) {
+function Lijst({
+  posts,
+  nu,
+  gefilterd,
+  onOpnieuw,
+  onVerberg,
+  bezigId
+}: {
+  posts: PostDto[];
+  nu: Date;
+  gefilterd: boolean;
+  onOpnieuw: (p: PostDto) => void;
+  onVerberg: (p: PostDto, verborgen: boolean) => void;
+  bezigId: string | null;
+}) {
   const groepen = groepeerVoorLijst(posts, nu);
   if (!groepen.length) {
     return (
@@ -246,7 +278,7 @@ function Lijst({ posts, nu, gefilterd, onOpnieuw, bezigId }: { posts: PostDto[];
           </h2>
           <div className="so-kaarten">
             {g.posts.map((p) => (
-              <PostKaart key={p.id} post={p} nu={nu} onOpnieuw={onOpnieuw} bezig={bezigId === p.id} />
+              <PostKaart key={p.id} post={p} nu={nu} onOpnieuw={onOpnieuw} onVerberg={onVerberg} bezig={bezigId === p.id} />
             ))}
           </div>
         </section>

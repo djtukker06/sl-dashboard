@@ -83,7 +83,19 @@ export function Kerncijfers({ post }: { post: PostDto }) {
 }
 
 /** Een post in de lijst: het beeld groot (eerste slide), daaronder de titel en de cijfers. */
-export function PostKaart({ post, nu, onOpnieuw, bezig }: { post: PostDto; nu: Date; onOpnieuw?: (p: PostDto) => void; bezig?: boolean }) {
+export function PostKaart({
+  post,
+  nu,
+  onOpnieuw,
+  onVerberg,
+  bezig
+}: {
+  post: PostDto;
+  nu: Date;
+  onOpnieuw?: (p: PostDto) => void;
+  onVerberg?: (p: PostDto, verborgen: boolean) => void;
+  bezig?: boolean;
+}) {
   const fouten = [...new Set(post.kanalen.map((k) => k.fout).filter((f): f is string => !!f))];
   const titel = postNaam(post, 120);
   const beeld = beeldVan(post);
@@ -132,6 +144,17 @@ export function PostKaart({ post, nu, onOpnieuw, bezig }: { post: PostDto; nu: D
               </button>
             )}
           </div>
+        )}
+        {onVerberg && (post.verborgen || geplaatst) && (
+          <button
+            type="button"
+            className="ag-link-knop so-tegel-verberg"
+            onClick={() => onVerberg(post, !post.verborgen)}
+            disabled={bezig}
+            title={post.verborgen ? 'Weer tonen in het overzicht' : 'Alleen uit het dashboard; op Instagram/Facebook blijft hij staan'}
+          >
+            {post.verborgen ? 'Terugzetten' : 'Verbergen'}
+          </button>
         )}
       </div>
     </article>

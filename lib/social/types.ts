@@ -63,7 +63,7 @@ export type MediaType = 'afbeelding' | 'video';
 
 /** De privé-bucket met de foto's en video's (pad = <post-id>/<bestand>). */
 export const MEDIA_BUCKET = 'social-media';
-export const MIGRATIE_MELDING = 'Voer migraties 0041 t/m 0043 uit (supabase/UITVOEREN_0041.sql, _0042.sql en _0043.sql).';
+export const MIGRATIE_MELDING = 'Voer migraties 0041 t/m 0044 uit (supabase/UITVOEREN_0041.sql t/m UITVOEREN_0044.sql).';
 
 /** Een gebruikerstag op een foto (IG user_tags). x en y van 0 t/m 1 (linksboven = 0,0). */
 export interface GebruikersTag {
@@ -127,6 +127,7 @@ export interface SocialPostRij {
   soort: PostSoort;
   /** Eigen titel (alleen intern, nooit geplaatst). Leeg = begin van de caption. */
   titel: string;
+  verborgen: boolean;
   caption: string;
   eerste_reactie: string;
   /** Los veld ("#a #b"); komt achter de caption of in de eerste reactie (hashtags_plek). */
@@ -269,6 +270,8 @@ export interface PostDto {
   soort: PostSoort;
   /** Eigen titel (alleen intern, nooit geplaatst). Leeg = begin van de caption. */
   titel: string;
+  /** Verborgen in het overzicht (alleen in het dashboard; 0044). */
+  verborgen: boolean;
   caption: string;
   eerste_reactie: string;
   hashtags: string;
@@ -304,6 +307,8 @@ export interface PostAntwoord {
 /** Query van GET /api/social/posts. van/tot = YYYY-MM-DD (Europe/Amsterdam), inclusief. */
 export interface PostFilter {
   status?: PostStatus;
+  /** true = alleen de verborgen posts (om ze terug te zetten). Standaard alleen zichtbare. */
+  verborgen?: boolean;
   /** account-id */
   kanaal?: string;
   van?: string;
